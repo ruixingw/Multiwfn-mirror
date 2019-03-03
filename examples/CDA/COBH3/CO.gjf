@@ -1,0 +1,9 @@
+%chk=C:\CO.chk
+# HF/6-31G* nosymm
+
+CO for CDA
+
+0 1
+ C                     0.        0.       -0.09962 
+ O                     0.        0.       -1.20782 
+

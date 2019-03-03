@@ -1,0 +1,69 @@
+c   Sp2 C carbonyl group 
+c1  Sp C
+c2  Sp2 C  
+c3  Sp3 C
+ca  Sp2 C in pure aromatic systems
+cp  Head Sp2 C that connect two rings in biphenyl sys. 
+cq  Head Sp2 C that connect two rings in biphenyl sys. identical to cp 
+cc  Sp2 carbons in non-pure aromatic systems
+cd  Sp2 carbons in non-pure aromatic systems, identical to cc
+ce  Inner Sp2 carbons in conjugated systems
+cf  Inner Sp2 carbons in conjugated systems, identical to ce
+cg  Inner Sp carbons in conjugated systems
+ch  Inner Sp carbons in conjugated systems, identical to cg
+cx  Sp3 carbons in triangle systems
+cy  Sp3 carbons in square systems
+cu  Sp2 carbons in triangle systems
+cv  Sp2 carbons in square systems
+h1  H bonded to aliphatic carbon with 1 electrwd. group  
+h2  H bonded to aliphatic carbon with 2 electrwd. group 
+h3  H bonded to aliphatic carbon with 3 electrwd. group 
+h4  H bonded to non-sp3 carbon with 1 electrwd. group 
+h5  H bonded to non-sp3 carbon with 2 electrwd. group 
+ha  H bonded to aromatic carbon  
+hc  H bonded to aliphatic carbon without electrwd. group 
+hn  H bonded to nitrogen atoms
+ho  Hydroxyl group
+hp  H bonded to phosphate 
+hs  Hydrogen bonded to sulphur 
+hw  Hydrogen in water 
+hx  H bonded to C next to positively charged group  
+f   Fluorine
+cl  Chlorine 
+br  Bromine 
+i   Iodine 
+n   Sp2 nitrogen in amide groups
+n1  Sp N  
+n2  aliphatic Sp2 N with two connected atoms 
+n3  Sp3 N with three connected atoms
+n4  Sp3 N with four connected atoms 
+na  Sp2 N with three connected atoms 
+nb  Sp2 N in pure aromatic systems 
+nc  Sp2 N in non-pure aromatic systems
+nd  Sp2 N in non-pure aromatic systems, identical to nc
+ne  Inner Sp2 N in conjugated systems
+nf  Inner Sp2 N in conjugated systems, identical to ne
+nh  Amine N connected one or more aromatic rings 
+no  Nitro N  
+o   Oxygen with one connected atom
+oh  Oxygen in hydroxyl group
+os  Ether and ester oxygen
+ow  Oxygen in water 
+p2  Phosphate with two connected atoms 
+p3  Phosphate with three connected atoms, such as PH3
+p4  Phosphate with three connected atoms, such as O=P(CH3)2
+p5  Phosphate with four connected atoms, such as O=P(OH)3
+pb  Sp2 P in pure aromatic systems 
+pc  Sp2 P in non-pure aromatic systems
+pd  Sp2 P in non-pure aromatic systems, identical to pc
+pe  Inner Sp2 P in conjugated systems
+pf  Inner Sp2 P in conjugated systems, identical to pe
+px  Special p4 in conjugated systems
+py  Special p5 in conjugated systems
+s   S with one connected atom 
+s2  S with two connected atom, involved at least one double bond  
+s4  S with three connected atoms 
+s6  S with four connected atoms 
+sh  Sp3 S connected with hydrogen 
+ss  Sp3 S in thio-ester and thio-ether
+sx  Special s4 in conjugated systems

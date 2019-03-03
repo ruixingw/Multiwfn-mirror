@@ -1,0 +1,3 @@
+C:\C.txt 1
+C:\G.txt 1
+C:\C3.txt 1

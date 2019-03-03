@@ -1,0 +1,20 @@
+color Display Background white
+axes location Off
+display depthcue off
+display rendermode GLSL
+#light 3 on
+
+material change specular Translucent 0.200000
+material change diffuse Translucent 0.5
+material change Opacity Translucent 0.85
+set colorlow -0.6
+set colorhigh 0.6
+
+mol new surf.cub
+mol addfile mapfunc.cub
+mol modstyle 0 top Licorice 0.200000 17.000000 17.000000
+mol addrep top
+mol modstyle 1 top Isosurface 0.5 0 0 0 1 1
+mol modmaterial 1 top Translucent
+mol modcolor 1 top Volume 1
+mol scaleminmax top 1 $colorlow $colorhigh

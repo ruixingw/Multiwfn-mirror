@@ -1,0 +1,14 @@
+color Name C tan
+color change rgb tan 0.700000 0.560000 0.360000
+material change mirror Opaque 0.15
+material change outline Opaque 4.000000
+material change outlinewidth Opaque 0.5
+material change ambient Glossy 0.1
+material change diffuse Glossy 0.600000
+material change opacity Glossy 0.75
+material change shininess Glossy 1.0
+mol modcolor 1 0 ColorID 12
+mol modcolor 2 0 ColorID 22
+display distance -7.0
+display height 10
+light 3 on

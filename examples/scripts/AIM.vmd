@@ -1,0 +1,35 @@
+color Display Background white
+axes location Off
+display depthcue off
+
+set CPsize 0.07
+set pathsize 0.02
+
+mol new CPs.pdb
+#Set color for (3,-3)
+mol modselect 0 0 name C
+mol modstyle 0 0 VDW $CPsize 22.0
+mol modcolor 0 0 ColorID 11
+#Load and set (3,-1)
+mol addrep 0
+mol modselect 1 0 name N
+mol modstyle 1 0 VDW $CPsize 22.0
+mol modcolor 1 0 ColorID 3
+#Load and set (3,+1)
+mol addrep 0
+mol modselect 2 0 name O
+mol modstyle 2 0 VDW $CPsize 22.0
+mol modcolor 2 0 ColorID 4
+#Load and set (3,+3)
+mol addrep 0
+mol modselect 3 0 name F
+mol modstyle 3 0 VDW $CPsize 22.0
+mol modcolor 3 0 ColorID 7
+#Load and set topology paths
+mol new paths.pdb
+mol modstyle 0 1 VDW $pathsize 22.0
+mol modcolor 0 1 ColorID 32
+#Load molecular structure
+mol new mol.pdb
+mol modstyle 0 2 CPK 0.7 0.3 22.0 22.0
+mol off 2

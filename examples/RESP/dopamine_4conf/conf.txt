@@ -1,0 +1,4 @@
+dopamine1.fch 0.0848
+dopamine2.fch 0.0265
+dopamine3.fch 0.4844
+dopamine4.fch 0.4041

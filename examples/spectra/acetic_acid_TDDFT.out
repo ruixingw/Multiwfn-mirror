@@ -1,0 +1,574 @@
+ Default is to use a total of   4 processors:
+                                4 via shared-memory
+                                1 via Linda
+ Entering Link 1 = d:\study\G09W\l1.exe PID=      4408.
+  
+ Copyright (c) 1988,1990,1992,1993,1995,1998,2003,2009, Gaussian, Inc.
+                  All Rights Reserved.
+  
+ This is part of the Gaussian(R) 09 program.  It is based on
+ the Gaussian(R) 03 system (copyright 2003, Gaussian, Inc.),
+ the Gaussian(R) 98 system (copyright 1998, Gaussian, Inc.),
+ the Gaussian(R) 94 system (copyright 1995, Gaussian, Inc.),
+ the Gaussian 92(TM) system (copyright 1992, Gaussian, Inc.),
+ the Gaussian 90(TM) system (copyright 1990, Gaussian, Inc.),
+ the Gaussian 88(TM) system (copyright 1988, Gaussian, Inc.),
+ the Gaussian 86(TM) system (copyright 1986, Carnegie Mellon
+ University), and the Gaussian 82(TM) system (copyright 1983,
+ Carnegie Mellon University). Gaussian is a federally registered
+ trademark of Gaussian, Inc.
+  
+ This software contains proprietary and confidential information,
+ including trade secrets, belonging to Gaussian, Inc.
+  
+ This software is provided under written license and may be
+ used, copied, transmitted, or stored only in accord with that
+ written license.
+  
+ The following legend is applicable only to US Government
+ contracts under FAR:
+  
+                    RESTRICTED RIGHTS LEGEND
+  
+ Use, reproduction and disclosure by the US Government is
+ subject to restrictions as set forth in subparagraphs (a)
+ and (c) of the Commercial Computer Software - Restricted
+ Rights clause in FAR 52.227-19.
+  
+ Gaussian, Inc.
+ 340 Quinnipiac St., Bldg. 40, Wallingford CT 06492
+  
+  
+ ---------------------------------------------------------------
+ Warning -- This program may not be used in any manner that
+ competes with the business of Gaussian, Inc. or will provide
+ assistance to any competitor of Gaussian, Inc.  The licensee
+ of this program is prohibited from giving any competitor of
+ Gaussian, Inc. access to this program.  By using this program,
+ the user acknowledges that Gaussian, Inc. is engaged in the
+ business of creating and licensing software in the field of
+ computational chemistry and represents and warrants to the
+ licensee that it is not a competitor of Gaussian, Inc. and that
+ it will not use this program in any manner prohibited above.
+ ---------------------------------------------------------------
+  
+
+ Cite this work as:
+ Gaussian 09, Revision A.02,
+ M. J. Frisch, G. W. Trucks, H. B. Schlegel, G. E. Scuseria, 
+ M. A. Robb, J. R. Cheeseman, G. Scalmani, V. Barone, B. Mennucci, 
+ G. A. Petersson, H. Nakatsuji, M. Caricato, X. Li, H. P. Hratchian, 
+ A. F. Izmaylov, J. Bloino, G. Zheng, J. L. Sonnenberg, M. Hada, 
+ M. Ehara, K. Toyota, R. Fukuda, J. Hasegawa, M. Ishida, T. Nakajima, 
+ Y. Honda, O. Kitao, H. Nakai, T. Vreven, J. A. Montgomery, Jr., 
+ J. E. Peralta, F. Ogliaro, M. Bearpark, J. J. Heyd, E. Brothers, 
+ K. N. Kudin, V. N. Staroverov, R. Kobayashi, J. Normand, 
+ K. Raghavachari, A. Rendell, J. C. Burant, S. S. Iyengar, J. Tomasi, 
+ M. Cossi, N. Rega, J. M. Millam, M. Klene, J. E. Knox, J. B. Cross, 
+ V. Bakken, C. Adamo, J. Jaramillo, R. Gomperts, R. E. Stratmann, 
+ O. Yazyev, A. J. Austin, R. Cammi, C. Pomelli, J. W. Ochterski, 
+ R. L. Martin, K. Morokuma, V. G. Zakrzewski, G. A. Voth, 
+ P. Salvador, J. J. Dannenberg, S. Dapprich, A. D. Daniels, 
+ O. Farkas, J. B. Foresman, J. V. Ortiz, J. Cioslowski, 
+ and D. J. Fox, Gaussian, Inc., Wallingford CT, 2009.
+ 
+ ******************************************
+ Gaussian 09:  IA32W-G09RevA.02 11-Jun-2009
+                06-Nov-2012 
+ ******************************************
+ %chk=C:\gtest\aceticacid.chk
+ ------------------------------
+ #t b3lyp/cc-pvdz td(nstate=15)
+ ------------------------------
+ -------------------
+ b3lyp/cc-pvdz opted
+ -------------------
+ Symbolic Z-matrix:
+ Charge =  0 Multiplicity = 1
+ C                    -0.09243   0.12584  0. 
+ O                    -0.64527   1.20074  0. 
+ O                    -0.77788  -1.04624   0. 
+ C                     1.3962   -0.10908  0. 
+ H                     1.68165  -0.69627   0.88679 
+ H                     1.68165  -0.69637  -0.88672 
+ H                     1.92008   0.85406  -0.00006 
+ H                    -1.72082  -0.79801   0.00001 
+ 
+                    Distance matrix (angstroms):
+                    1          2          3          4          5
+     1  C    0.000000
+     2  O    1.208733   0.000000
+     3  O    1.357798   2.250881   0.000000
+     4  C    1.507049   2.425535   2.367468   0.000000
+     5  H    2.147003   3.130431   2.637837   1.101216   0.000000
+     6  H    2.147009   3.130472   2.637796   1.101216   1.773516
+     7  H    2.140207   2.588671   3.300020   1.096396   1.801907
+     8  H    1.872213   2.269756   0.975066   3.192252   3.517609
+                    6          7          8
+     6  H    0.000000
+     7  H    1.801911   0.000000
+     8  H    3.517588   3.998190   0.000000
+ Framework group  C1[X(C2H4O2)]
+ Deg. of freedom    18
+                         Standard orientation:                         
+ ---------------------------------------------------------------------
+ Center     Atomic      Atomic             Coordinates (Angstroms)
+ Number     Number       Type             X           Y           Z
+ ---------------------------------------------------------------------
+      1          6           0       -0.092425    0.125842   -0.000004
+      2          8           0       -0.645272    1.200735    0.000000
+      3          8           0       -0.777881   -1.046236    0.000002
+      4          6           0        1.396202   -0.109076    0.000000
+      5          1           0        1.681653   -0.696267    0.886792
+      6          1           0        1.681648   -0.696374   -0.886724
+      7          1           0        1.920081    0.854062   -0.000056
+      8          1           0       -1.720822   -0.798011    0.000009
+ ---------------------------------------------------------------------
+ Rotational constants (GHZ):     11.2876557      9.4198536      5.3056406
+    76 basis functions,   160 primitive gaussians,    80 cartesian basis functions
+    16 alpha electrons       16 beta electrons
+       nuclear repulsion energy       120.7620165655 Hartrees.
+ NAtoms=    8 NActive=    8 NUniq=    8 SFac= 7.50D-01 NAtFMM=   80 NAOKFM=F Big=F
+ Harris functional with IExCor=  402 diagonalized for initial guess.
+ ExpMin= 1.22D-01 ExpMax= 1.17D+04 ExpMxC= 4.01D+02 IAcc=1 IRadAn=         1 AccDes= 0.00D+00
+ HarFok:  IExCor=  402 AccDes= 0.00D+00 IRadAn=         1 IDoV= 1
+ ScaDFX=  1.000000  1.000000  1.000000  1.000000
+ FoFCou: FMM=F IPFlag=           0 FMFlag=      100000 FMFlg1=           0
+         NFxFlg=           0 DoJE=T BraDBF=F KetDBF=T FulRan=T
+         Omega=  0.000000  0.000000  1.000000  0.000000  0.000000 ICntrl=     500 IOpCl=  0
+         NMat0=    1 NMatS0=    1 NMatT0=    0 NMatD0=    1 NMtDS0=    0 NMtDT0=    0
+         I1Cent=           4 NGrid=           0.
+ Petite list used in FoFCou.
+ Initial guess orbital symmetries:
+       Occupied  (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A)
+       Virtual   (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+ The electronic state of the initial guess is 1-A.
+ Integral accuracy reduced to 1.0D-05 until final iterations.
+ Initial convergence to 1.0D-05 achieved.  Increase integral accuracy.
+ SCF Done:  E(RB3LYP) =  -229.100171787     A.U. after   13 cycles
+             Convg  =    0.8443D-08             -V/T =  2.0062
+ ExpMin= 1.22D-01 ExpMax= 1.17D+04 ExpMxC= 4.01D+02 IAcc=1 IRadAn=         1 AccDes= 0.00D+00
+ HarFok:  IExCor=  205 AccDes= 0.00D+00 IRadAn=         1 IDoV=-2
+ ScaDFX=  1.000000  1.000000  1.000000  1.000000
+ NROrb=     72 NOA=    12 NOB=    12 NVA=    60 NVB=    60
+ Orbital symmetries:
+       Occupied  (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A)
+       Virtual   (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+    60 initial guesses have been made.
+ Iteration     1 Dimension    60 NMult    60
+ New state      3 was old state      4
+ New state      4 was old state      5
+ New state      5 was old state      9
+ New state      6 was old state      3
+ New state      7 was old state      6
+ New state      9 was old state     11
+ New state     11 was old state      7
+ New state     13 was old state     14
+ New state     14 was old state     13
+ Iteration     2 Dimension    90 NMult    90
+ New state      5 was old state      6
+ New state      6 was old state      5
+ Iteration     3 Dimension   120 NMult   120
+ Iteration     4 Dimension   132 NMult   132
+ ***********************************************************************
+ Excited states from <AA,BB:AA,BB> singles matrix:
+ ***********************************************************************
+ 
+ Ground to excited state transition electric dipole moments (Au):
+       state          X           Y           Z        Dip. S.      Osc.
+         1         0.0000      0.0000      0.0916      0.0084      0.0012
+         2         0.5192     -0.0126      0.0000      0.2697      0.0512
+         3         0.1685      0.3808      0.0000      0.1734      0.0360
+         4         0.0000      0.0000      0.1092      0.0119      0.0025
+         5        -0.1600     -0.6761      0.0000      0.4827      0.1066
+         6         0.0000      0.0000     -0.0451      0.0020      0.0005
+         7         0.0000      0.0000      0.0389      0.0015      0.0004
+         8         0.0064     -0.1274      0.0000      0.0163      0.0039
+         9         0.0000      0.0000     -0.0844      0.0071      0.0018
+        10        -0.0003      0.0002     -0.1656      0.0274      0.0068
+        11         0.7616     -0.4379      0.0000      0.7717      0.1913
+        12         0.0000      0.0000      0.1108      0.0123      0.0033
+        13        -0.6916      0.0505      0.0000      0.4809      0.1293
+        14         0.0000      0.0000      0.1236      0.0153      0.0042
+        15        -0.1505     -0.0640      0.0000      0.0267      0.0075
+ Ground to excited state transition velocity dipole moments (Au):
+       state          X           Y           Z        Dip. S.      Osc.
+         1         0.0000      0.0000     -0.0317      0.0010      0.0031
+         2        -0.1489      0.0000      0.0000      0.0222      0.0520
+         3        -0.0587     -0.1111      0.0000      0.0158      0.0338
+         4         0.0000      0.0000     -0.0750      0.0056      0.0117
+         5         0.0531      0.2029      0.0000      0.0440      0.0885
+         6         0.0000      0.0000      0.0206      0.0004      0.0008
+         7         0.0000      0.0000      0.0137      0.0002      0.0003
+         8        -0.0255      0.0447      0.0000      0.0026      0.0049
+         9         0.0000      0.0000      0.0298      0.0009      0.0016
+        10         0.0001     -0.0001      0.0680      0.0046      0.0083
+        11        -0.2708      0.1603      0.0000      0.0990      0.1775
+        12         0.0000      0.0000     -0.0382      0.0015      0.0024
+        13         0.3022     -0.0600      0.0000      0.0950      0.1570
+        14         0.0000      0.0000     -0.0572      0.0033      0.0054
+        15         0.0382      0.0222      0.0000      0.0020      0.0031
+ Ground to excited state transition magnetic dipole moments (Au):
+       state          X           Y           Z
+         1        -0.3930      0.8561      0.0000
+         2         0.0000      0.0000      0.6515
+         3         0.0000      0.0000      0.2963
+         4         0.3950     -0.2225      0.0000
+         5         0.0000      0.0000     -0.0905
+         6        -1.0409     -0.8024      0.0000
+         7         0.1358      0.1987      0.0000
+         8         0.0000      0.0000     -0.1951
+         9        -0.3468      0.0606      0.0000
+        10        -0.1022     -0.0717      0.0000
+        11         0.0000      0.0000      0.2110
+        12        -0.0792      0.7477      0.0000
+        13         0.0000      0.0000      0.7631
+        14         0.1462      0.2059      0.0000
+        15         0.0000      0.0000     -0.2746
+ <0|del|b> * <b|rxdel|0> + <0|del|b> * <b|delr+rdel|0>
+ Rotatory Strengths (R) in cgs (10**-40 erg-esu-cm/Gauss)
+       state          XX          YY          ZZ    R(velocity)
+         1        -0.0008      0.0014      0.0000      0.0002
+ Total R(velocity) tensor for State=          1
+                 1             2             3 
+      1  -0.786347D-03  0.228925D-02  0.000000D+00
+      2  -0.683374D-03  0.135449D-02  0.000000D+00
+      3  -0.210345D+02  0.412265D+02  0.000000D+00
+ R(velocity) tensor in inp. orien. for State=          1
+                 1             2             3 
+      1  -0.786347D-03  0.228925D-02  0.000000D+00
+      2  -0.683374D-03  0.135449D-02  0.000000D+00
+      3  -0.210345D+02  0.412265D+02  0.000000D+00
+         2        -0.0003     -0.0023     -0.0018     -0.0015
+ Total R(velocity) tensor for State=          2
+                 1             2             3 
+      1  -0.287108D-03  0.105828D-02  0.126726D+03
+      2  -0.339829D-05 -0.226282D-02  0.160366D+01
+      3  -0.567495D-03  0.549830D+01 -0.181884D-02
+ R(velocity) tensor in inp. orien. for State=          2
+                 1             2             3 
+      1  -0.287108D-03  0.105828D-02  0.126726D+03
+      2  -0.339815D-05 -0.226282D-02  0.160367D+01
+      3  -0.567881D-03  0.549830D+01 -0.181884D-02
+         3        -0.0004      0.0013      0.0000      0.0003
+ Total R(velocity) tensor for State=          3
+                 1             2             3 
+      1  -0.445862D-03  0.778240D-03  0.579357D+02
+      2  -0.283016D-02  0.130496D-02 -0.203540D+02
+      3  -0.101370D+02  0.535687D+01 -0.143347D-04
+ R(velocity) tensor in inp. orien. for State=          3
+                 1             2             3 
+      1  -0.445862D-03  0.778240D-03  0.579357D+02
+      2  -0.283016D-02  0.130496D-02 -0.203540D+02
+      3  -0.101370D+02  0.535687D+01 -0.143347D-04
+         4        -0.0017     -0.0004     -0.0001     -0.0007
+ Total R(velocity) tensor for State=          4
+                 1             2             3 
+      1  -0.174383D-02 -0.481583D-03  0.000000D+00
+      2  -0.129780D-02 -0.411603D-03  0.000000D+00
+      3   0.914827D+01  0.282136D-01 -0.666857D-04
+ R(velocity) tensor in inp. orien. for State=          4
+                 1             2             3 
+      1  -0.174383D-02 -0.481583D-03  0.000000D+00
+      2  -0.129780D-02 -0.411603D-03  0.000000D+00
+      3   0.914827D+01  0.282143D-01 -0.666857D-04
+         5        -0.0008     -0.0004     -0.0035     -0.0016
+ Total R(velocity) tensor for State=          5
+                 1             2             3 
+      1  -0.796157D-03  0.233988D-03 -0.450854D+02
+      2   0.176958D-02 -0.429173D-03 -0.591692D+02
+      3   0.901560D+01 -0.235847D+01 -0.354600D-02
+ R(velocity) tensor in inp. orien. for State=          5
+                 1             2             3 
+      1  -0.796157D-03  0.233988D-03 -0.450854D+02
+      2   0.176958D-02 -0.429173D-03 -0.591692D+02
+      3   0.901560D+01 -0.235847D+01 -0.354600D-02
+         6         0.0031      0.0008      0.0025      0.0021
+ Total R(velocity) tensor for State=          6
+                 1             2             3 
+      1   0.307881D-02 -0.829637D-03  0.000000D+00
+      2  -0.374212D-02  0.787439D-03  0.000000D+00
+      3   0.174784D+02  0.138004D+02  0.246661D-02
+ R(velocity) tensor in inp. orien. for State=          6
+                 1             2             3 
+      1   0.307881D-02 -0.829636D-03  0.000000D+00
+      2  -0.374212D-02  0.787439D-03  0.000000D+00
+      3   0.174784D+02  0.138004D+02  0.246661D-02
+         7         0.0007     -0.0011     -0.0002     -0.0002
+ Total R(velocity) tensor for State=          7
+                 1             2             3 
+      1   0.729105D-03  0.166895D-02  0.000000D+00
+      2  -0.130697D-04 -0.105932D-02  0.000000D+00
+      3  -0.688700D+00  0.137494D-01 -0.201360D-03
+ R(velocity) tensor in inp. orien. for State=          7
+                 1             2             3 
+      1   0.729105D-03  0.166895D-02  0.000000D+00
+      2  -0.130696D-04 -0.105932D-02  0.000000D+00
+      3  -0.688700D+00  0.137494D-01 -0.201360D-03
+         8        -0.0036     -0.0006     -0.0007     -0.0017
+ Total R(velocity) tensor for State=          8
+                 1             2             3 
+      1  -0.364502D-02 -0.129628D-02 -0.774924D+01
+      2   0.180308D-02 -0.622076D-03  0.163891D+02
+      3   0.716644D+00  0.408155D+00 -0.706004D-03
+ R(velocity) tensor in inp. orien. for State=          8
+                 1             2             3 
+      1  -0.364502D-02 -0.129628D-02 -0.774924D+01
+      2   0.180308D-02 -0.622076D-03  0.163891D+02
+      3   0.716643D+00  0.408155D+00 -0.706004D-03
+         9         0.0006     -0.0053     -0.0005     -0.0018
+ Total R(velocity) tensor for State=          9
+                 1             2             3 
+      1   0.565426D-03  0.916170D-03  0.000000D+00
+      2   0.199124D-02 -0.533160D-02  0.000000D+00
+      3   0.551033D+01 -0.835087D+01 -0.508481D-03
+ R(velocity) tensor in inp. orien. for State=          9
+                 1             2             3 
+      1   0.565426D-03  0.916170D-03  0.000000D+00
+      2   0.199124D-02 -0.533160D-02  0.000000D+00
+      3   0.551033D+01 -0.835087D+01 -0.508481D-03
+        10         0.0136     -0.0238     -0.0100     -0.0067
+ Total R(velocity) tensor for State=         10
+                 1             2             3 
+      1   0.136145D-01  0.299319D-01  0.262409D-05
+      2  -0.231347D-01 -0.238291D-01  0.203440D-04
+      3  -0.300010D+01 -0.168715D+02 -0.100062D-01
+ R(velocity) tensor in inp. orien. for State=         10
+                 1             2             3 
+      1   0.136145D-01  0.299319D-01  0.262409D-05
+      2  -0.231347D-01 -0.238291D-01  0.203440D-04
+      3  -0.300010D+01 -0.168715D+02 -0.100062D-01
+        11        -0.0083      0.0283      0.0110      0.0103
+ Total R(velocity) tensor for State=         11
+                 1             2             3 
+      1  -0.830031D-02 -0.174416D-01  0.305882D+02
+      2   0.212312D-01  0.283396D-01  0.675537D+02
+      3   0.509581D+02  0.861178D+02  0.109726D-01
+ R(velocity) tensor in inp. orien. for State=         11
+                 1             2             3 
+      1  -0.830031D-02 -0.174416D-01  0.305882D+02
+      2   0.212312D-01  0.283396D-01  0.675537D+02
+      3   0.509581D+02  0.861178D+02  0.109726D-01
+        12        -0.0008     -0.0005     -0.0007     -0.0007
+ Total R(velocity) tensor for State=         12
+                 1             2             3 
+      1  -0.791129D-03 -0.667098D-02  0.000000D+00
+      2  -0.889913D-03 -0.486267D-03  0.000000D+00
+      3  -0.522924D+01  0.152319D+01 -0.713568D-03
+ R(velocity) tensor in inp. orien. for State=         12
+                 1             2             3 
+      1  -0.791129D-03 -0.667098D-02  0.000000D+00
+      2  -0.889913D-03 -0.486268D-03  0.000000D+00
+      3  -0.522924D+01  0.152319D+01 -0.713568D-03
+        13         0.0033      0.0028      0.0031      0.0030
+ Total R(velocity) tensor for State=         13
+                 1             2             3 
+      1   0.327264D-02  0.121416D-01 -0.129631D+03
+      2   0.908583D-03  0.275915D-02 -0.542832D+02
+      3   0.310869D+01  0.156510D+02  0.306685D-02
+ R(velocity) tensor in inp. orien. for State=         13
+                 1             2             3 
+      1   0.327264D-02  0.121416D-01 -0.129631D+03
+      2   0.908583D-03  0.275916D-02 -0.542832D+02
+      3   0.310869D+01  0.156510D+02  0.306685D-02
+        14        -0.0001      0.0014      0.0008      0.0007
+ Total R(velocity) tensor for State=         14
+                 1             2             3 
+      1  -0.144924D-03 -0.491343D-02  0.000000D+00
+      2   0.283667D-03  0.139605D-02  0.000000D+00
+      3   0.227320D+01 -0.371623D+01  0.775611D-03
+ R(velocity) tensor in inp. orien. for State=         14
+                 1             2             3 
+      1  -0.144923D-03 -0.491343D-02  0.000000D+00
+      2   0.283667D-03  0.139605D-02  0.000000D+00
+      3   0.227320D+01 -0.371623D+01  0.775611D-03
+        15        -0.0041     -0.0004     -0.0004     -0.0016
+ Total R(velocity) tensor for State=         15
+                 1             2             3 
+      1  -0.408778D-02  0.236114D-02  0.151605D+02
+      2   0.107343D-02 -0.376445D-03 -0.477017D+01
+      3  -0.239734D+01  0.412913D+01 -0.361443D-03
+ R(velocity) tensor in inp. orien. for State=         15
+                 1             2             3 
+      1  -0.408778D-02  0.236114D-02  0.151605D+02
+      2   0.107343D-02 -0.376445D-03 -0.477017D+01
+      3  -0.239734D+01  0.412913D+01 -0.361443D-03
+ 1/2[<0|r|b>*<b|rxdel|0> + (<0|rxdel|b>*<b|r|0>)*]
+ Rotatory Strengths (R) in cgs (10**-40 erg-esu-cm/Gauss)
+       state          XX          YY          ZZ     R(length)     R(au)
+         1         0.0013     -0.0018      0.0005      0.0000      0.0000
+         2        -0.0038      0.0000      0.0003     -0.0012      0.0000
+         3         0.0010     -0.0010      0.0008      0.0003      0.0000
+         4        -0.0001     -0.0005     -0.0003     -0.0003      0.0000
+         5        -0.0007     -0.0045      0.0001     -0.0017      0.0000
+         6         0.0030      0.0044      0.0001      0.0025      0.0000
+         7        -0.0010     -0.0008     -0.0003     -0.0007      0.0000
+         8         0.0001     -0.0040     -0.0016     -0.0019      0.0000
+         9        -0.0072      0.0006      0.0010     -0.0019      0.0000
+        10        -0.0249      0.0086     -0.0042     -0.0068      0.0000
+        11         0.0257     -0.0007      0.0068      0.0106      0.0000
+        12        -0.0005      0.0008     -0.0014     -0.0004      0.0000
+        13         0.0043      0.0006      0.0020      0.0023      0.0000
+        14         0.0034     -0.0021      0.0017      0.0010      0.0000
+        15        -0.0017     -0.0008     -0.0025     -0.0016      0.0000
+  1/2[<0|del|b>*<b|r|0> + (<0|r|b>*<b|del|0>)*] (Au)
+       state          X           Y           Z        Dip. S.   Osc.(frdel)
+         1         0.0000      0.0000     -0.0029      0.0029      0.0019
+         2        -0.0773      0.0000      0.0000      0.0773      0.0515
+         3        -0.0099     -0.0423      0.0000      0.0522      0.0348
+         4         0.0000      0.0000     -0.0082      0.0082      0.0055
+         5        -0.0085     -0.1372      0.0000      0.1457      0.0971
+         6         0.0000      0.0000     -0.0009      0.0009      0.0006
+         7         0.0000      0.0000      0.0005     -0.0005     -0.0004
+         8        -0.0002     -0.0057      0.0000      0.0059      0.0039
+         9         0.0000      0.0000     -0.0025      0.0025      0.0017
+        10         0.0000      0.0000     -0.0113      0.0113      0.0075
+        11        -0.2062     -0.0702      0.0000      0.2764      0.1843
+        12         0.0000      0.0000     -0.0042      0.0042      0.0028
+        13        -0.2090     -0.0030      0.0000      0.2121      0.1414
+        14         0.0000      0.0000     -0.0071      0.0071      0.0047
+        15        -0.0058     -0.0014      0.0000      0.0072      0.0048
+ Ground to excited state transition densities written to RWF  633
+
+ Excitation energies and oscillator strengths:
+ 
+ Excited State   1:      Singlet-A      5.8003 eV  213.75 nm  f=0.0012  <S**2>=0.000
+      16 -> 17         0.70462
+ This state for optimization and/or second-order correction.
+ Copying the excited state density for this state as the 1-particle RhoCI density.
+ 
+ Excited State   2:      Singlet-A      7.7413 eV  160.16 nm  f=0.0512  <S**2>=0.000
+      15 -> 17         0.22800
+      16 -> 18         0.66133
+ 
+ Excited State   3:      Singlet-A      8.4814 eV  146.18 nm  f=0.0360  <S**2>=0.000
+      15 -> 17        -0.43397
+      16 -> 18         0.22066
+      16 -> 19         0.50401
+ 
+ Excited State   4:      Singlet-A      8.7277 eV  142.06 nm  f=0.0025  <S**2>=0.000
+      15 -> 18         0.68647
+      15 -> 19        -0.15092
+ 
+ Excited State   5:      Singlet-A      9.0171 eV  137.50 nm  f=0.1066  <S**2>=0.000
+      14 -> 17        -0.15788
+      15 -> 17         0.46234
+      16 -> 18        -0.10377
+      16 -> 19         0.47663
+      16 -> 23         0.10039
+ 
+ Excited State   6:      Singlet-A      9.2763 eV  133.66 nm  f=0.0005  <S**2>=0.000
+      13 -> 17         0.70217
+ 
+ Excited State   7:      Singlet-A      9.8084 eV  126.41 nm  f=0.0004  <S**2>=0.000
+      15 -> 18         0.15622
+      15 -> 19         0.68502
+ 
+ Excited State   8:      Singlet-A      9.8101 eV  126.38 nm  f=0.0039  <S**2>=0.000
+      16 -> 20         0.70055
+ 
+ Excited State   9:      Singlet-A     10.0454 eV  123.42 nm  f=0.0018  <S**2>=0.000
+      12 -> 17         0.70074
+ 
+ Excited State  10:      Singlet-A     10.1062 eV  122.68 nm  f=0.0068  <S**2>=0.000
+      16 -> 21         0.70384
+ 
+ Excited State  11:      Singlet-A     10.1196 eV  122.52 nm  f=0.1913  <S**2>=0.000
+      14 -> 17         0.66785
+      15 -> 17         0.12075
+ 
+ Excited State  12:      Singlet-A     10.8934 eV  113.82 nm  f=0.0033  <S**2>=0.000
+      14 -> 18         0.66823
+      15 -> 20        -0.20401
+ 
+ Excited State  13:      Singlet-A     10.9724 eV  113.00 nm  f=0.1293  <S**2>=0.000
+      13 -> 18         0.69850
+ 
+ Excited State  14:      Singlet-A     11.1062 eV  111.63 nm  f=0.0042  <S**2>=0.000
+      14 -> 18         0.20396
+      15 -> 20         0.67496
+ 
+ Excited State  15:      Singlet-A     11.4242 eV  108.53 nm  f=0.0075  <S**2>=0.000
+      15 -> 21         0.68475
+      16 -> 22        -0.13441
+ SavETr:  write IOETrn=   770 NScale= 10 NData=  16 NLR=1 LETran=     266.
+
+ **********************************************************************
+
+            Population analysis using the SCF density.
+
+ **********************************************************************
+
+ Orbital symmetries:
+       Occupied  (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A)
+       Virtual   (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+                 (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A) (A)
+ The electronic state is 1-A.
+ Alpha  occ. eigenvalues --  -19.18561 -19.12979 -10.31962 -10.20397  -1.10481
+ Alpha  occ. eigenvalues --   -1.01488  -0.75815  -0.60728  -0.48849  -0.47569
+ Alpha  occ. eigenvalues --   -0.46741  -0.41086  -0.39320  -0.39074  -0.31856
+ Alpha  occ. eigenvalues --   -0.27482
+ Alpha virt. eigenvalues --    0.00924   0.05135   0.08065   0.12517   0.13448
+ Alpha virt. eigenvalues --    0.20441   0.27825   0.30332   0.43369   0.45590
+ Alpha virt. eigenvalues --    0.49927   0.51532   0.52835   0.56189   0.61469
+ Alpha virt. eigenvalues --    0.61954   0.64512   0.65913   0.76944   0.85640
+ Alpha virt. eigenvalues --    0.89748   0.94043   0.94328   1.02274   1.06719
+ Alpha virt. eigenvalues --    1.08339   1.15292   1.16799   1.29561   1.30219
+ Alpha virt. eigenvalues --    1.38998   1.42864   1.48014   1.56718   1.60352
+ Alpha virt. eigenvalues --    1.62256   1.62741   1.69110   1.77504   1.81718
+ Alpha virt. eigenvalues --    1.86058   1.94403   2.05968   2.08977   2.15177
+ Alpha virt. eigenvalues --    2.20410   2.26799   2.38510   2.40888   2.48016
+ Alpha virt. eigenvalues --    2.61719   2.68524   2.84073   2.91472   3.07521
+ Alpha virt. eigenvalues --    3.14756   3.15305   3.42321   3.48589   3.67942
+          Condensed to atoms (all electrons):
+ Mulliken atomic charges:
+              1
+     1  C    0.097578
+     2  O   -0.236732
+     3  O   -0.176690
+     4  C    0.007265
+     5  H    0.055309
+     6  H    0.055307
+     7  H    0.046003
+     8  H    0.151960
+ Sum of Mulliken atomic charges =   0.00000
+ Mulliken charges with hydrogens summed into heavy atoms:
+              1
+     1  C    0.097578
+     2  O   -0.236732
+     3  O   -0.024730
+     4  C    0.163885
+ Sum of Mulliken charges with hydrogens summed into heavy atoms =   0.00000
+ Electronic spatial extent (au):  <R**2>=            253.6187
+ Charge=              0.0000 electrons
+ Dipole moment (field-independent basis, Debye):
+    X=              0.5656    Y=             -1.4725    Z=              0.0000  Tot=              1.5774
+ 1|1|UNPC-X500|SP|RTD-B3LYP-FC|CC-pVDZ|C2H4O2|SOBEREVA|06-Nov-2012|0||#
+ t b3lyp/cc-pvdz td(nstate=15)||b3lyp/cc-pvdz opted||0,1|C,0,-0.092425,
+ 0.125842,-0.000004|O,0,-0.645272,1.200735,-0.000001|O,0,-0.777881,-1.0
+ 46236,0.000002|C,0,1.396202,-0.109076,-0.000001|H,0,1.681653,-0.696267
+ ,0.886792|H,0,1.681648,-0.696374,-0.886724|H,0,1.920081,0.854062,-0.00
+ 0056|H,0,-1.720822,-0.798011,0.000009||Version=IA32W-G09RevA.02|State=
+ 1-A|HF=-229.1001718|RMSD=8.443e-009|PG=C01 [X(C2H4O2)]||@
+
+
+ TIME IS NATURE'S WAY OF MAKING SURE EVERYTHING
+ DOESN'T HAPPEN AT ONCE.
+                     - WOODY ALLEN
+ Job cpu time:  0 days  0 hours  0 minutes 57.0 seconds.
+ File lengths (MBytes):  RWF=     27 Int=      0 D2E=      0 Chk=      8 Scr=      1
+ Normal termination of Gaussian 09 at Tue Nov 06 11:20:59 2012.

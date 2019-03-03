@@ -1,0 +1,29 @@
+#This script is used to draw ESP colored molecular vdW surface (rho=0.001)
+#density1.cub, ESP1.cub, density2.cub, ESP2.cub ... should be presented in current folder
+
+color scale method BWR
+color Display Background white
+axes location Off
+display depthcue off
+display rendermode GLSL
+light 2 on
+light 3 on
+material change transmode EdgyGlass 1.000000
+
+#The maximum number of systems to be loaded
+set nsystem 1
+#Lower and upper limit of color scale of ESP (a.u.)
+set colorlow -0.03
+set colorhigh 0.03
+
+for {set i 1} {$i<=$nsystem} {incr i} {
+set id [expr $i-1]
+mol new density$i.cub
+mol addfile ESP$i.cub
+mol modstyle 0 $id CPK 1.000000 0.300000 22.000000 22.000000
+mol addrep $id
+mol modstyle 1 $id Isosurface 0.001000 0 0 0 1 1
+mol modmaterial 1 $id EdgyGlass
+mol modcolor 1 $id Volume 1
+mol scaleminmax $id 1 $colorlow $colorhigh
+}

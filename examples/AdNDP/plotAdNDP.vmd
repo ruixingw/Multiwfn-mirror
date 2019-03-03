@@ -1,0 +1,24 @@
+#0 blue, 1 red, 2 gray, 3 orange, 4 yellow, 5 tan, 6 silver, 7 green, 8 white, 9 pink, 10 cyan, 11 purple
+set posclr 1
+set negclr 0
+set istart 1
+set iend 17
+set isoval 0.06
+set idinit 0 
+
+color Display Background white
+display depthcue off
+for {set i $istart} {$i<=$iend} {incr i 1} {
+set idx [format %04d $i]
+set name "D:\\CM\\my_program\\Multiwfn\\AdNDPorb$idx.cub"
+puts Loading\ $name
+mol new $name type {cube}
+mol modstyle 0 $idinit Isosurface $isoval 0 0 0 1 1
+mol modcolor 0 $idinit ColorID $posclr
+mol modmaterial 0 $idinit Transparent
+mol addrep $idinit
+mol modstyle 1 $idinit Isosurface -$isoval 0 0 0 1 1
+mol modcolor 1 $idinit ColorID $negclr
+mol modmaterial 1 $idinit Transparent
+incr idinit 1
+} 

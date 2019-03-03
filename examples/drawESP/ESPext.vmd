@@ -1,0 +1,10 @@
+#Load surfanalysis.pdb to show ESP extrema on vdW surface
+
+mol new surfanalysis.pdb
+mol modstyle 0 top VDW 0.07 20
+mol modselect 0 top name C
+mol modcolor 0 top ColorID 32
+mol addrep top
+mol modstyle 1 top VDW 0.07 20
+mol modselect 1 top name O
+mol modcolor 1 top ColorID 21

@@ -1,0 +1,63 @@
+C   sp2 C carbonyl group 
+CA  sp2 C pure aromatic (benzene)
+CB  sp2 aromatic C, 5&6 membered ring junction
+CC  sp2 aromatic C, 5 memb. ring HIS
+CD  sp2 C atom in the middle of: C=CD-CD=C
+CK  sp2 C 5 memb.ring in purines
+CM  sp2 C  pyrimidines in pos. 5 & 6
+CN  sp2 C aromatic 5&6 memb.ring junct.(TRP)
+CQ  sp2 C in 5 mem.ring of purines between 2 N
+CR  sp2 arom as CQ but in HIS
+CT  sp3 aliphatic C
+CV  sp2 arom. 5 memb.ring w/1 N and 1 H (HIS)
+CW  sp2 arom. 5 memb.ring w/1 N-H and 1 H (HIS)
+C*  sp2 arom. 5 memb.ring w/1 subst. (TRP)
+CY  nitrile C (Howard et al.JCC,16,243,1995)
+CZ  sp C (Howard et al.JCC,16,243,1995)
+C0  calcium
+H   H bonded to nitrogen atoms
+HC  H aliph. bond. to C without electrwd.group
+H1  H aliph. bond. to C with 1 electrwd. group
+H2  H aliph. bond. to C with 2 electrwd.groups
+H3  H aliph. bond. to C with 3 eletrwd.groups
+HA  H arom. bond. to C without elctrwd. groups
+H4  H arom. bond. to C with 1 electrwd. group
+H5  H arom.at C with 2 elctrwd. gr,+HCOO group
+HO  hydroxyl group
+HS  hydrogen bonded to sulphur (pol?)
+HW  H in TIP3P water
+HP  H bonded to C next to positively charged gr
+HZ  H bond sp C (Howard et al.JCC,16,243,1995)
+F   fluorine
+Cl  chlorine  (Applequist)
+Br  bromine  (Applequist)
+I   iodine   (Applequist)
+IM  assumed to be Cl- (ion minus)
+IB  'big ion w/ waters' for vacuum (Na+, 6H2O)
+MG  magnesium
+N   sp2 nitrogen in amide groups
+NA  sp2 N in 5 memb.ring w/H atom (HIS)
+NB  sp2 N in 5 memb.ring w/LP (HIS,ADE,GUA)
+NC  sp2 N in 6 memb.ring w/LP (ADE,GUA)
+N2  sp2 N in amino groups
+N3  sp3 N for charged amino groups (Lys, etc)
+NT  sp3 N for amino groups amino groups 
+N*  sp2 N 
+NY  nitrile N (Howard et al.JCC,16,243,1995)
+O   carbonyl group oxygen
+O2  carboxyl and phosphate group oxygen
+OW  oxygen in TIP3P water
+OH  oxygen in hydroxyl group
+OS  ether and ester oxygen
+P   phosphate,pol:JACS,112,8543,90,K.J.Miller
+S   S in disulfide linkage,pol:JPC,102,2399,98
+SH  S in cystine
+CU  copper
+FE  iron
+Li  lithium, ions pol:J.PhysC,11,1541,(1978)
+IP  assumed to be Na+ (ion plus)
+Na  Na+, ions pol:J.PhysC,11,1541,(1978)
+K   potassium
+Rb  rubidium
+Cs  cesium
+Zn  Zn2+ 

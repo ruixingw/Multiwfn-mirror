@@ -1,0 +1,11 @@
+molecule h2o {
+   O     0.0000000000   0.0000000000  -0.0647163165
+   H     0.0000000000  -0.7490459647   0.5135474533
+   H     0.0000000000   0.7490459647   0.5135474533
+}
+
+set basis 6-31G**
+energy, wfn = energy('b3lyp', return_wfn=True)
+fchk_writer = psi4.FCHKWriter(wfn)
+fchk_writer.write('h2o.fchk')
+

@@ -1,0 +1,25 @@
+#This script is used to draw ESP colored surface vertices
+#mol1.pdb, vtx1.pdb, mol2.pdb, vtx2.pdb, ... should be presented in current folder
+
+color scale method BWR
+color Display Background white
+axes location Off
+display depthcue off
+display rendermode Normal
+
+#The maximum number of systems to be loaded
+set nsystem 1
+#Lower and upper limit of color scale of ESP (kcal/mol in most case)
+set colorlow -50
+set colorhigh 50
+#Point size
+set ptsize 4.0
+
+for {set i 1} {$i<=$nsystem} {incr i} {
+mol new mol$i.pdb
+mol new vtx$i.pdb
+mol modstyle 0 [expr 2*($i-1)] CPK 1.000000 0.300000 22.000000 22.000000
+mol modcolor 0 [expr 2*($i-1)+1] Beta
+mol modstyle 0 [expr 2*($i-1)+1] Points $ptsize
+mol scaleminmax [expr 2*($i-1)+1] 0 $colorlow $colorhigh
+}
