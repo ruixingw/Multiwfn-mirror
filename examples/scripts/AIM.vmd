@@ -33,3 +33,25 @@ mol modcolor 0 1 ColorID 32
 mol new mol.pdb
 mol modstyle 0 2 CPK 0.7 0.3 22.0 22.0
 mol off 2
+
+proc labcp {cptype {labsize 1.8} {offsetx -0.1} {offsety 0.0}} {
+label delete Atoms all
+if {$cptype=="no"} {return}
+color Labels Atoms blue
+label textthickness 2.000000
+label textsize $labsize
+set atmsel all
+if {$cptype=="3n3"} {set atmsel "name C"}
+if {$cptype=="3n1"} {set atmsel "name N"}
+if {$cptype=="3p1"} {set atmsel "name O"}
+if {$cptype=="3p3"} {set atmsel "name F"}
+set sel [atomselect 0 $atmsel]
+set k 0
+foreach i [$sel list] {
+label add Atoms 0/$i
+label textformat Atoms $k { %1i }
+label textoffset Atoms $k "$offsetx $offsety"
+incr k
+}
+$sel delete
+}
