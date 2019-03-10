@@ -3018,7 +3018,7 @@ end subroutine
 
 !!-------- Randomly generate name of Sobereva's lover
 subroutine mylover(outname)
-integer,parameter :: nlovers=50
+integer,parameter :: nlovers=51
 character*80 lovername(nlovers),outname
 CALL RANDOM_SEED()
 CALL RANDOM_NUMBER(tmp)
@@ -3051,7 +3051,6 @@ lovername(25)="Fate_Zero\Saber"
 lovername(26)="Baka_to_Test_to_Shoukanjuu\Hideyoshi_Kinoshita"
 lovername(27)="Watamote\Tomoko_Kuroki"
 lovername(28)="Genshiken_Nidaime\Kenjirou_Hato"
-! lovername(29)="The_World_God_Only_Knows\Chihiro_Kosaka"
 lovername(29)="Love_is_Like_After_the_Rain\Akira_Tachibana"
 lovername(30)="Kan_Colle\Shimakaze"
 lovername(31)="Kan_Colle\Kongou"
@@ -3074,6 +3073,7 @@ lovername(47)="Violet_Evergarden\Violet_Evergarden"
 lovername(48)="Otobuko\Mizuho_Miyanokouji"
 lovername(49)="iDOLM@STER\Makoto_Kikuchi"
 lovername(50)="Fate\Rin_Tohsaka"
+lovername(51)="Magical Girl Spec-Ops Asuka\Asuka Otori"
 !Dear Kanan,
 !
 !You are the only one I deeply love forever in the real world,

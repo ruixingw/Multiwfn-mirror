@@ -32,6 +32,8 @@ else if (thisfilename(inamelen-2:inamelen)=="gms") then
 	call readgms(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="mol") then
 	call readmol(thisfilename,infomode)
+else if (thisfilename(inamelen-2:inamelen)=="gjf") then
+	call readgjf(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="chk") then !Foolish users often do this!
 	write(*,"(a)") " Error: .chk file is not supported! Please check Section 2.3 of Multiwfn manual to understand basic knowledge about input files!"
 	write(*,*) "Press ENTER button to exit"
@@ -1003,6 +1005,82 @@ a%name=ind2name(a%index)
 if (infomode==0) then
 	write(*,"(a)") titleline
 	write(*,"(' Totally',i8,' atoms')") ncenter
+end if
+end subroutine
+
+
+
+!!--------------------------------------------------------
+!!-------------------- Read .gjf file --------------------
+! Only support Cartesian coordinate currently
+! infomode=0: Output summary, =1: do not
+subroutine readgjf(name,infomode) 
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer infomode
+character(len=*) name
+character c200tmp*200
+ifiletype=12
+open(10,file=name,status="old")
+iskip=0 !How many lines before charge and multiplicity line
+iblank=0
+do while(.true.)
+	read(10,"(a)") c200tmp
+	iskip=iskip+1
+	if (c200tmp==" ") iblank=iblank+1
+	if (iblank==2) exit
+end do
+read(10,*) netcharge,multi
+
+ncenter=0
+do while(.true.)
+	read(10,"(a)") c200tmp
+	if (c200tmp==" ") exit
+	ncenter=ncenter+1
+end do
+
+if (allocated(a)) deallocate(a)
+allocate(a(ncenter))
+rewind(10)
+do i=1,iskip
+	read(10,*)
+end do
+read(10,*)
+
+do i=1,ncenter
+	read(10,*,iostat=ierror) a(i)%name,a(i)%x,a(i)%y,a(i)%z
+	if (ierror/=0) then
+		write(*,*) "Error: Unable to load atom information. Note that Z-matrix is not supported"
+		write(*,*) "Press ENTER to exit program"
+		read(*,*)
+		stop
+	end if
+	if (iachar(a(i)%name(1:1))>=48.and.iachar(a(i)%name(1:1))<=57) then
+		read(a(i)%name,*) a(i)%index
+	else
+		call lc2uc(a(i)%name(1:1)) !Convert to upper case
+		call uc2lc(a(i)%name(2:2)) !Convert to lower case
+		do j=1,nelesupp
+			if ( a(i)%name==ind2name(j) ) then
+				a(i)%index=j
+				exit
+			end if
+		end do
+	end if
+end do
+close(10)
+a%x=a%x/b2a
+a%y=a%y/b2a
+a%z=a%z/b2a
+a%charge=a%index
+a%name=ind2name(a%index)
+nelec=sum(a%index)
+naelec=(nelec+multi-1)/2
+nbelec=nelec-naelec
+if (infomode==0) then
+	write(*,"(' Totally',i8,' atoms')") ncenter
+	write(*,"(' The number of alpha and beta electrons:',2i8)") nint(naelec),nint(nbelec)
 end if
 end subroutine
 

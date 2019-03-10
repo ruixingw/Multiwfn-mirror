@@ -1326,7 +1326,13 @@ do while(.true.)
 		if (idrawplanevdwctr==0.and.iorbsel2==0.and.allocated(b)) write(*,*) "15 Enable showing the contour line corresponding to vdW surface (rho=0.001)" !meaningless if custom operation is performed
 		if (idrawplanevdwctr==1) write(*,*) "15 Disable showing the contour line corresponding to vdW surface (rho=0.001)"
 		if (idrawplanevdwctr==1) write(*,*) "16 Set label size, style and color of the contour line of vdW surface" !When iorbsel2/=0, that means plot another orbital, cubmattmp will be pre-occupied
-		if (iatom_on_plane==1) write(*,"(a,f7.3,' Bohr')") " 17 Set the distance criterion for showing atom labels, current:",disshowlabel
+		if (iatom_on_plane==1) then
+			if (idrawintbasple==0) then
+				write(*,"(a,f7.3,' Bohr')") " 17 Set distance threshold for showing atom labels, current:",disshowlabel
+			else
+				write(*,"(a,f6.3,' Bohr')") " 17 Set distance threshold for showing atoms & interbasin paths:",disshowlabel
+			end if
+		end if
 		if (iatmlabtype==1) write(*,*) "18 Change style of atomic labels: Only plot element symbol"
 		if (iatmlabtype==2) write(*,*) "18 Change style of atomic labels: Only plot atomic index"
 		if (iatmlabtype==3) write(*,*) "18 Change style of atomic labels: Plot both element symbol and atomic index"
@@ -1346,8 +1352,8 @@ do while(.true.)
 		if (ibond_on_plane==1) write(*,*) "8 Disable showing bonds" 
 
 		if (idrawtype==6) then
-			if (igrad_arrow==0) write(*,*) "10 Show arrows"
-			if (igrad_arrow==1) write(*,*) "10 Do not show arrows"
+			if (igrad_arrow==0) write(*,*) "10 Show arrow on the gradient lines"
+			if (igrad_arrow==1) write(*,*) "10 Do not show arrow on the gradient lines"
 			write(*,"(a,f8.4)") " 11 Set integration step for gradient line, current:",gradplotstep
 			write(*,"(a,f8.4)") " 12 Set interstice between gradient line, current:",gradplotdis
 			write(*,"(a,f8.4)") " 13 Set test value for drawing a new gradient line, current:",gradplottest
@@ -1363,7 +1369,13 @@ do while(.true.)
 		if (idrawplanevdwctr==0.and.iorbsel2==0.and.allocated(b)) write(*,*) "15 Enable showing the contour line corresponding to vdW surface (rho=0.001)" !meaningless if custom operation is performed
 		if (idrawplanevdwctr==1) write(*,*) "15 Disable showing the contour line corresponding to vdW surface (rho=0.001)"
 		if (idrawplanevdwctr==1) write(*,*) "16 Set label size, style and color of the contour line of vdW surface"
-		if (iatom_on_plane==1) write(*,"(a,f7.3,' Bohr')") " 17 Set the distance criterion for showing atom labels, current:",disshowlabel
+		if (iatom_on_plane==1) then
+			if (idrawintbasple==0) then
+				write(*,"(a,f7.3,' Bohr')") " 17 Set distance threshold for showing atom labels, current:",disshowlabel
+			else
+				write(*,"(a,f6.3,' Bohr')") " 17 Set distance threshold for showing atoms & interbasin paths:",disshowlabel
+			end if
+		end if
 		if (iatmlabtype==1) write(*,*) "18 Change style of atomic labels: Only plot element symbol"
 		if (iatmlabtype==2) write(*,*) "18 Change style of atomic labels: Only plot atomic index"
 		if (iatmlabtype==3) write(*,*) "18 Change style of atomic labels: Plot both element symbol and atomic index"
@@ -1522,6 +1534,7 @@ do while(.true.)
 		if (i==8) then
 			if (ibond_on_plane==0) then
 				ibond_on_plane=1
+				write(*,"(a,/)") " Note: The bonding will be empirically determined according to interatomic distance and atomic covalent radii"
 				write(*,*) "Use which color for drawing the bonds?"
 				call selcolor(iclrindbndlab)
 			else
@@ -1559,10 +1572,12 @@ do while(.true.)
 			read(*,*) vdwctrstyle
 			write(*,*) "Done, now you can replot the graph to check effect"
 		else if (i==17) then
-			write(*,"(a)") " Note: If the distance between an atom nucleus/critical point and the plane of interest is less than this criterion, &
-			the atom/critical point will be labelled on the graph"
-			write(*,*) "Input the criterion value in Bohr, e.g. 0.5"
+			write(*,*) "Input vertical distance threshold for plotting the objects in Bohr, e.g. 0.5"
+			write(*,*) "Note: The default value can be set by ""disshowlabel"" in settings.ini"
 			read(*,*) disshowlabel
+			disshowCP=disshowlabel
+			disshowpath=disshowlabel
+			if (numCP>0.or.numpath>0) write(*,"(a,/)") " Note: The distance threshold for showing CPs/paths has also been changed to this value"
 			write(*,"(a)") " If also show the labels of the atoms that beyond this criterion as light face type? (y/n)"
 			read(*,*) selectyn
 			if (selectyn=='y'.or.selectyn=='Y') then
@@ -1574,7 +1589,7 @@ do while(.true.)
 			write(*,*) "1: Only plot element symbol"
 			write(*,*) "2: Only plot atomic index"
 			write(*,*) "3: Plot both element symbol and atomic index"
-			write(*,*) "Note that the default value can be set by ""iatmlabtype"" in settings.ini"
+			write(*,*) "Note that the default setting can be set by ""iatmlabtype"" in settings.ini"
 			read(*,*) iatmlabtype
 		end if
 		
@@ -1688,13 +1703,16 @@ do while(.true.)
 						igrad_arrow=1
 					end if
 				else if (i==11) then
-					write(*,*) "Input a value, default value is 0.002D0"
+					write(*,*) "Input a value, the default value is 0.002"
+					write(*,"(a)") " Note: The smaller the value, the smoother the gradient lines, but higher the cost"
 					read(*,*) gradplotstep
 				else if (i==12) then
-					write(*,"(a,f8.4)") "Input a value, should be larger than",gradplotstep
+					write(*,*) "Input a value, the default value is 0.01"
+					write(*,*) "Note: The larger the value, the sparser the gradient lines"
 					read(*,*) gradplotdis
 				else if (i==13) then
 					write(*,*) "Input a value, default value is 0.2"
+					write(*,"(a)") " Note: The smaller the value, the more gradient lines will be emitted for maxima"
 					read(*,*) gradplottest
 				else if (i==14) then
 					write(*,*) "Use which color?"
@@ -2342,6 +2360,8 @@ do while(.true.)
 	if (imark3p3==1) write(*,*) "4 Disable showing (3,+3) CPs"
 	if (imarkpath==0) write(*,*) "5 Enable showing paths"
 	if (imarkpath==1) write(*,*) "5 Disable showing paths"
+	write(*,"(a,f8.3,' Bohr')") " 8 Set distance threshold for showing CPs, current: ",disshowCP
+	write(*,"(a,f8.3,' Bohr')") " 9 Set distance threshold for showing paths, current: ",disshowpath
 	write(*,"(a,i3)") " 10 Set size of markers of CPs, current: ",sizemarkcp
 	write(*,"(a,i3)") " 11 Set thickness of topology paths, current: ",sizemarkpath
 	write(*,"(a,a)") " 12 Set color of topology paths, current: ",trim(colorname(iclrpath))
@@ -2381,6 +2401,12 @@ do while(.true.)
 		else
 			imarkpath=1
 		end if
+	else if (isel==8) then
+		write(*,*) "Input the distance threshold in Bohr, e.g. 0.5"
+		read(*,*) disshowCP
+	else if (isel==9) then
+		write(*,*) "Input the distance threshold in Bohr, e.g. 0.5"
+		read(*,*) disshowpath
 	else if (isel==10) then
 		write(*,*) "Input the size value, e.g. 30"
 		read(*,*) sizemarkcp

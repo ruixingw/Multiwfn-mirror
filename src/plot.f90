@@ -783,6 +783,8 @@ init2=init2inp*scll
 end1=end1inp*scll
 end2=end2inp*scll
 disshowlabel=disshowlabel*scll
+disshowCP=disshowCP*scll
+disshowpath=disshowpath*scll
 if (iplaneoutall==1) goto 10 !Don't plot anything, but only output coordinate of critical points and paths, and then directly return
 if (ilenunit2D==2) call convgridlenunit(1) !Convert plane parameters to Angstrom. At the end of the routine, they will be converted back
 
@@ -1155,14 +1157,14 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 			open(10,file="planepath.txt",status="replace")
 		end if
 		do ipath=1,numpath
-			if ( plesel==1.and.any(abs(topopath(3,1:pathnumpt(ipath),ipath)*scll-orgz2D) > disshowlabel) ) cycle
-			if ( plesel==2.and.any(abs(topopath(2,1:pathnumpt(ipath),ipath)*scll-orgy2D) > disshowlabel) ) cycle
-			if ( plesel==3.and.any(abs(topopath(1,1:pathnumpt(ipath),ipath)*scll-orgx2D) > disshowlabel) ) cycle
+			if ( plesel==1.and.any(abs(topopath(3,1:pathnumpt(ipath),ipath)*scll-orgz2D) > disshowpath) ) cycle
+			if ( plesel==2.and.any(abs(topopath(2,1:pathnumpt(ipath),ipath)*scll-orgy2D) > disshowpath) ) cycle
+			if ( plesel==3.and.any(abs(topopath(1,1:pathnumpt(ipath),ipath)*scll-orgx2D) > disshowpath) ) cycle
 			if ( plesel==4.or.plesel==5.or.plesel==6.or.plesel==7 ) then
 				ioutplane=0
 				do ipt=1,pathnumpt(ipath)
 					if (potpledis(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,&
-					topopath(1,ipt,ipath)*scll,topopath(2,ipt,ipath)*scll,topopath(3,ipt,ipath)*scll)>disshowlabel) then
+					topopath(1,ipt,ipath)*scll,topopath(2,ipt,ipath)*scll,topopath(3,ipt,ipath)*scll)>disshowpath) then
 						ioutplane=1
 						exit
 					end if
@@ -1289,20 +1291,20 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 			posmarkx=CPpos(1,icp)*scll
 			posmarky=CPpos(2,icp)*scll
 			posmarkz=CPpos(3,icp)*scll
-			if (plesel==1.and.abs(posmarkz-orgz2D)<disshowlabel) then
+			if (plesel==1.and.abs(posmarkz-orgz2D)<disshowCP) then
 				if (posmarkx<init1.or.posmarkx>end1.or.posmarky<init2.or.posmarky>end2) cycle !To avoid path out of plotting range
 				if (iplaneoutall==0) call rlsymb(21,posmarkx,posmarky)
 				if (iplaneoutall==1) write(10,"(2f12.6,i4)") posmarkx*b2a,posmarky*b2a,CPtype(icp)
-			else if (plesel==2.and.abs(posmarky-orgy2D)<disshowlabel) then
+			else if (plesel==2.and.abs(posmarky-orgy2D)<disshowCP) then
 				if (posmarkx<init1.or.posmarkx>end1.or.posmarkz<init2.or.posmarkz>end2) cycle !To avoid path out of plotting range
 				if (iplaneoutall==0) call rlsymb(21,posmarkx,posmarkz)
 				if (iplaneoutall==1) write(10,"(2f12.6,i4)") posmarkx*b2a,posmarkz*b2a,CPtype(icp)
-			else if (plesel==3.and.abs(posmarkx-orgx2D)<disshowlabel) then
+			else if (plesel==3.and.abs(posmarkx-orgx2D)<disshowCP) then
 				if (posmarky<init1.or.posmarky>end1.or.posmarkz<init2.or.posmarkz>end2) cycle !To avoid path out of plotting range
 				if (iplaneoutall==0) call rlsymb(21,posmarky,posmarkz)
 				if (iplaneoutall==1) write(10,"(2f12.6,i4)") posmarky*b2a,posmarky*b2a,CPtype(icp)
 			else if (plesel==4.or.plesel==5.or.plesel==6.or.plesel==7) then
-				if (potpledis(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz)<disshowlabel) then
+				if (potpledis(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz)<disshowCP) then
 					call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz,prjx,prjy,prjz)
 					if (abs(v1x*v2y-v2x*v1y)>1D-8) then
 						det2_2=v1x*v2y-v2x*v1y
@@ -1396,6 +1398,8 @@ call DISFIN
 
 !Convert to original length unit
 disshowlabel=disshowlabel/scll
+disshowCP=disshowCP/scll
+disshowpath=disshowpath/scll
 if (ilenunit2D==2) call convgridlenunit(2)
 end subroutine
 
