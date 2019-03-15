@@ -1908,6 +1908,17 @@ else if (isel==1) then !Standard RESP fitting
 				chgconsatm(1,icons)=icen
 			end if
 		end do
+		!If current folder has chgcons_stage2.txt, then export constrainted charges in the RESP stage 2 to this file
+		inquire(file="chgcons_stage2.txt",exist=alive)
+		if (alive) then
+			open(10,file="chgcons_stage2.txt",status="replace")
+			do idx=1,icons
+				write(10,"(i6,f12.6)") chgconsatm(1,idx),chgconsval(idx)
+			end do
+			close(10)
+			write(*,"(/,a)") " The charges that kept fixed at stage 2 of RESP fitting &
+			has been written to chgcons_stage2.txt in current folder"
+		end if
 		
 		write(*,*)
 		call RESPiter(hyper_a_2,hyper_b,nconf,confweight,nfitcen,fitcen,maxESPpt,nESPpt,ESPpt,ESPptval,&

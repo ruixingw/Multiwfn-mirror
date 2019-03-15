@@ -64,6 +64,7 @@ unitstr=" a.u."
 ispin=0 !restricted wavefunction
 if (wfntype==1.or.wfntype==4) ispin=1 !Unrestricted wavefunction, output alpha part by default
 iusersetYleft=0 !If user has set lower and upper range of Y axis by himself
+iusersetcolorscale=0 !If user has set color scale of 2D LDOS by himself
 Yrightscafac=0.5D0 !Scale factor relative to left Y-axis of OPDOS (right Y-axis)
 yxratio=1D0
 
@@ -622,14 +623,24 @@ else if (isel==0.or.isel==10) then
 	do while(.true.)
 		if (idraw==1.and.isilent==0) then
 			!======Draw DOS now=======
-			if (isavepic==0) call METAFL('xwin')
-			if (isavepic==1) call METAFL(graphformat)
-			call window(200,100,1030,600)
+			if (isavepic==0) then
+				call METAFL('xwin')
+				call window(200,100,1030,600)
+			else if (isavepic==1) then
+				call METAFL(graphformat)
+				call winsiz(graph1Dwidth,graph1Dheight)
+			end if
 			call SCRMOD('REVERSE')
 			CALL IMGFMT("RGB")
 			CALL PAGE(3000,1800)
 			CALL setxid(0,'NONE')
 			call disini
+			if (isavepic==0.and.isys==1) then
+				call height(45)
+				CALL HNAME(45)
+			else
+				call height(40) !The text shown in graphic file is strangely larger than window, so slight decrease it
+			end if
 			call hwfont
 			call AXSLEN(2440,1400)
 			call AXSPOS(300,1550)
@@ -732,6 +743,7 @@ else if (isel==0.or.isel==10) then
 			
 			!Draw LDOS
 			else if (isel==10) then
+				CALL LABDIG(3,"Y")
 				CALL GRAF(enelow,enehigh,enelow,stepx, ylowerleft,yupperleft,ylowerleft,stepy)
 				if (ishowLDOScurve==1) CALL CURVE(curvexpos,LDOScurve,num1Dpoints)
 				if (ishowLDOSline==1) CALL CURVE(DOSlinex,LDOSliney,3*imoend)
@@ -742,8 +754,10 @@ else if (isel==0.or.isel==10) then
 			if (isavepic==1) write(*,*) "Graphic file has been saved to current folder with ""DISLIN"" prefix"
 		end if
 		idraw=0
-
-		!======Submenu=======
+		
+		!====== Post-process menu =======
+		!====== Post-process menu =======
+		!====== Post-process menu =======
 		write(*,*)
 		write(*,*) "                    -------- Post-process menu --------"
 		if (isel==0) then !T/P/OPDOS
@@ -752,9 +766,9 @@ else if (isel==0.or.isel==10) then
 			write(*,*) "2 Save the picture to current folder"
 			write(*,*) "3 Export curve data to plain text file in current folder"
 			if (idoPDOS==1) then
-				write(*,"(' 4 Set Y-axis range and step for TDOS+PDOS, current:',f8.2,' to',f8.2,',',f6.2)") ylowerleft,yupperleft,stepy
+				write(*,"(' 4 Set Y-axis range and step for TDOS+PDOS, current:',f8.2,' to',f8.2,', step:',f6.2)") ylowerleft,yupperleft,stepy
 			else
-				write(*,"(' 4 Set Y-axis range and step for TDOS, current:',f8.2,' to',f8.2,',',f6.2)") ylowerleft,yupperleft,stepy
+				write(*,"(' 4 Set Y-axis range and step for TDOS, current:',f8.2,' to',f8.2,', step:',f6.2)") ylowerleft,yupperleft,stepy
 			end if
 			if (ishowTDOScurve==1) write(*,*) "5 Toggle showing TDOS curve, current: Yes"
 			if (ishowTDOScurve==0) write(*,*) "5 Toggle showing TDOS curve, current: No"
@@ -956,13 +970,15 @@ else if (isel==0.or.isel==10) then
 		else if (isel==10) then !LDOS in 1D
 			write(*,*) "0 Return"
 			write(*,*) "1 Show graph again"
-			write(*,*) "2 Save graphical file of the DOS map in current folder"
+			write(*,*) "2 Save graphical file of the LDOS map in current folder"
 			write(*,*) "3 Export curve data to plain text file in current folder"
+			write(*,"(' 4 Set Y-axis range and step, current:',f9.3,' to',f9.3,', step:',f7.3)") ylowerleft,yupperleft,stepy
 			if (ishowLDOSline==1) write(*,*) "6 Toggle showing LDOS line, current: Yes"
 			if (ishowLDOSline==0) write(*,*) "6 Toggle showing LDOS line, current: No"
 			read(*,*) isel2
 
 			if (isel2==0) then
+				iusersetYleft=0
 				exit
 			else if (isel2==1) then
 				idraw=1
@@ -985,6 +1001,10 @@ else if (isel==0.or.isel==10) then
 				write(*,*) "Discrete line data have been written to LDOS_line.txt in current folder"
 				write(*,*) "Column 1: Energy ("//trim(unitstr)//")"
 				write(*,*) "Column 2: LDOS"
+			else if (isel2==4) then
+				write(*,*) "Input lower and upper limit as well as stepsize, e.g. 0.0,2.4,0.3"
+				read(*,*) ylowerleft,yupperleft,stepy
+				iusersetYleft=1
 			else if (isel2==6) then
 				if (ishowLDOSline==0) then
 					ishowLDOSline=1
@@ -1098,7 +1118,19 @@ else if (isel==11) then
 				call winsiz(graph2Dwidth,graph2Dheight)
 				CALL IMGFMT('RGB')
 			end if
+			if (iusersetcolorscale==0) then
+				clrscllow=0D0
+				clrsclhigh=maxval(LDOS2Dmap)
+				clrsclstep=maxval(LDOS2Dmap)/10
+			end if
 			call DISINI
+			if (isavepic==0.and.isys==1) then
+				call height(60)
+				CALL HNAME(50)
+			else !The text shown in graphic file is strangely larger than window, so slight decrease it
+				call height(50)
+				CALL HNAME(45)
+			end if
 			call ERRMOD("ALL","OFF") !If don't set this, when atom label in contour map is out of page range, DISLIN annoys users
 			call HWFONT
 			CALL LABDIG(2,"X")
@@ -1114,7 +1146,7 @@ else if (isel==11) then
 			call AUTRES(num2Dpoints,numLDOSpt)
 ! 			call AX3LEN(lengthx,nint(lengthx*dfloat(numLDOSpt)/num2Dpoints),nint(lengthx*dfloat(numLDOSpt)/num2Dpoints))
 			call AX3LEN(lengthx,nint(lengthx*yxratio),nint(lengthx*yxratio))
-			call GRAF3(enelow,enehigh,enelow,(enehigh-enelow)/10,0D0,totlen,0D0,totlen/10,0D0,maxval(LDOS2Dmap),0D0,maxval(LDOS2Dmap)/10)
+			call GRAF3(enelow,enehigh,enelow,(enehigh-enelow)/10,0D0,totlen,0D0,totlen/10,clrscllow,clrsclhigh,clrscllow,clrsclstep)
 			call CRVMAT(LDOS2Dmap,num2Dpoints,numLDOSpt,fillcoloritpx,fillcoloritpy)
 			call DISFIN
 		end if
@@ -1128,9 +1160,11 @@ else if (isel==11) then
 		write(*,*) "2 Save the picture to current folder"
 		write(*,*) "3 Export curve data to plain text file in current folder"
 		write(*,"(a,f8.3)") " 4 Set ratio of Y-axis relative to X-axis, current:",yxratio
+		write(*,"(' 5 Set range and step of color scale, current:',f8.3,' to',f8.3,', step:',f7.3)") clrscllow,clrsclhigh,clrsclstep
 		read(*,*) isel2
 
 		if (isel2==0) then
+			iusersetcolorscale=0
 			exit
 		else if (isel2==1) then
 			idraw=1
@@ -1153,6 +1187,11 @@ else if (isel==11) then
 		else if (isel2==4) then
 			write(*,*) "Input the ratio, e.g. 1.4"
 			read(*,*) yxratio
+		else if (isel2==5) then
+			write(*,*) "Input lower and upper limits as well as stepsize of color scale"
+			write(*,*) "e.g. 0.0,0.6,0.05"
+			read(*,*) clrscllow,clrsclhigh,clrsclstep
+			iusersetcolorscale=1
 		end if
 	end do
 end if

@@ -828,7 +828,7 @@ CALL LABDIG(numdigz,"Z")
 if (isavepic==0.and.isys==1) then
 	call height(60)
 	CALL HNAME(50)
-else
+else !The text shown in graphic file is strangely larger than window, so slight decrease it
 	call height(50)
 	CALL HNAME(45)
 end if
