@@ -238,7 +238,7 @@ integer,allocatable :: basstart(:),basend(:) !The ith element means the basis fr
 integer,allocatable :: primstart(:),primend(:)  !The ith element means the GTF from where to where is attributed to the ith basis function
 real*8,allocatable :: primconnorm(:) !element i means the contract. coeff. * normalization coeff. of GTF i, can be used for e.g. constructing basis integral from GTF integral
 real*8,allocatable :: Sbas(:,:),Sbas_org(:,:) !Overlap matrix and its backup
-real*8,allocatable,target :: Dbas(:,:,:) !Dipole moment integral matrix, the first index 1,2,3=X,Y,Z
+real*8,allocatable,target :: Dbas(:,:,:) !Dipole moment integral matrix, the first index 1,2,3=X,Y,Z, the last two indices are basis index
 real*8,allocatable,target :: DorbA(:,:,:),DorbB(:,:,:) !Dipole moment integral matrix between orbitals, the first index 1,2,3=X,Y,Z. A/B corresponds to (closed or Alpha)/Beta orbitals
 real*8,allocatable,target :: Tbas(:,:) !Kinetic energy integral matrix
 real*8,allocatable,target :: Vbas(:,:) !Nuclear attraction potential integral matrix

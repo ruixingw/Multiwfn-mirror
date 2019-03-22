@@ -2264,7 +2264,7 @@ if (wfntype==0.or.wfntype==1.or.wfntype==2) then
 	write(*,*) "3 Between all orbitals"
 	write(*,*) "4 Between the same orbitals"
 	write(*,*) "5 Between specific range of orbitals"
-	write(*,*) "6 Between two orbitals"
+	write(*,*) "6 Between two specific orbitals"
 	read(*,*) irange
 end if
 if (irange==5) then
@@ -2338,10 +2338,12 @@ do imo=1,nmo
 			vecint=vecint+vecinttmp
 			!$OMP END CRITICAL
 			!$OMP END PARALLEL
+			valnorm=sqrt(sum(vecint(:)**2))
 			if (irange==6) then
-				write(*,"(' Result:',3f18.10)") vecint(:)
+				write(*,"(' X, Y, Z:',3f18.10,' a.u.')") vecint(:)
+				write(*,"(' Norm:',f18.10,' a.u.')") valnorm
 			else
-				write(10,"(2i8,4x,3f18.10)") imo,jmo,vecint(:)
+				write(10,"(2i8,4x,4f18.10)") imo,jmo,vecint(:),valnorm
 			end if
 		else !Scalar integral
 			intval=0D0
@@ -2373,9 +2375,10 @@ else
 	close(10)
 	call walltime(iwalltime2)
 	write(*,"(' Done! Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
-	write(*,*) "The integrals has been outputted to orbint.txt in current folder"
+	write(*,*) "The integrals have been outputted to orbint.txt in current folder"
 	if (itype==1.or.itype==2.or.itype==3) then
-		write(*,"(a)") " The first and the second columns correspond to orbital indices. The last three columns correspond to the integral in X/Y/Z (a.u.)"
+		write(*,"(a)") " The first and the second columns correspond to orbital indices, &
+		the next three columns correspond to the integral in X/Y/Z (a.u.), the final column is the norm"
 	else
 		write(*,"(a)") " The first and the second columns correspond to orbital indices. The last column corresponds to the integral value (a.u.)"
 	end if

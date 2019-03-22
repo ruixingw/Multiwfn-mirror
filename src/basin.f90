@@ -1878,7 +1878,7 @@ use basinintmod
 use function
 implicit real*8 (a-h,o-z)
 do while(.true.)
-	write(*,*) "Input the index of the basin in question, e.g. 5"
+	write(*,*) "Input the index of the basin, e.g. 5"
 	write(*,"(a)") " Note: -1 means printing all basin results on screen, -2 means printing to multipol.txt in current folder. Input 0 can return"
 	read(*,*) itmp
 	if (itmp==-1.or.itmp==-2) then

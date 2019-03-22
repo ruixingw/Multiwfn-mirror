@@ -23,8 +23,8 @@ do while(.true.)
 	write(*,*) "4 Mulliken bond order analysis"
 	write(*,*) "5 Decompose Mulliken bond order between two atoms to orbital contributions"
 	write(*,*) "6 Orbital occupancy-perturbed Mayer bond order"
-	write(*,*) "7 Fuzzy bond order analysis"
-	write(*,*) "8 Laplacian bond order"
+	write(*,*) "7 Fuzzy bond order analysis (FBO)"
+	write(*,*) "8 Laplacian bond order (LBO)"
 	write(*,*) "9 Decompose Wiberg bond order in NAO basis as atomic orbital pair contribution"
 	read(*,*) ibondana
 	if (.not.allocated(CObasa).and.(ibondana>=1.and.ibondana<=6)) then

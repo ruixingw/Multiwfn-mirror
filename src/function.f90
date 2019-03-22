@@ -360,6 +360,8 @@ end do
 end subroutine
 
 
+
+
 !!!------ A general routine used to calculate value, gradient and Hessian matrix at a given point for some real space functions
 ! itype=1 Only calculate value and grad
 ! itype=2 Calculate value, gradient and Hessian
@@ -550,7 +552,7 @@ end subroutine
 !!!--------- User-defined function, the content is needed to be filled by users or selected by iuserfunc
 !The units should be given in a.u.
 real*8 function userfunc(x,y,z)
-real*8 x,y,z
+real*8 x,y,z,vec(3),mat(3,3)
 userfunc=1D0 !Default value. Note: default "iuserfunc" is 0
 !Below functions can be selected by "iuserfunc" parameter in settings.ini
 if (iuserfunc==-2) userfunc=calcprodens(x,y,z,0) !Promolecular density
@@ -669,6 +671,9 @@ if (iuserfunc==101) then !Positive part of ESP
 else if (iuserfunc==102) then !Negative part of ESP
 	userfunc=totesp(x,y,z)
 	if (userfunc>0D0) userfunc=0D0
+else if (iuserfunc==103) then !Magnitude of electric field
+	call gencalchessmat(1,12,x,y,z,value,vec,mat) !Get gradient of ESP
+	userfunc=dsqrt(sum(vec**2))
 end if
 if (iuserfunc>=802.and.iuserfunc<=807) userfunc=funcvalLSB(x,y,z,iuserfunc-800)
 if (iuserfunc>=812.and.iuserfunc<=817) userfunc=1/funcvalLSB(x,y,z,iuserfunc-810)

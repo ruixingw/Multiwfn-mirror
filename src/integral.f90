@@ -104,7 +104,7 @@ end subroutine
 
 
 
-!!!-------- Evaluate dipole moment integral for two unnormalized GTFs. The negative charge of electron has been considered!
+!!!-------- Evaluate dipole moment integral for two unnormalized GTFs, <GTF|-r|GTF>, the negative charge of electron has been considered!
 !~p arguments are the shifts of GTF index as doSintactual
 !xint/yint/zint correspond to dipole moment integral in X/Y/Z
 subroutine dodipoleint(iGTF,jGTF,ix1p,iy1p,iz1p,ix2p,iy2p,iz2p,xint,yint,zint)
@@ -203,7 +203,7 @@ if (icomp==1) dipintcomp=xcomp
 if (icomp==2) dipintcomp=ycomp
 if (icomp==3) dipintcomp=zcomp
 end function
-!!!--------------- Generate dipole moment integral matrix between all GTFs
+!!!--------------- Generate dipole moment integral matrix between all GTFs <{GTF}|-r|{GTF}>
 !nsize should be nprims*(nprims+1)/2
 subroutine genGTFDmat(GTFdipmat,nsize)
 use defvar
@@ -222,7 +222,7 @@ do iGTF=1,nprims
 end do
 !$OMP END PARALLEL DO
 end subroutine
-!!!------------------ Generate dipole moment integral matrix between all Cartesian basis functions
+!!!----------- Generate dipole moment integral matrix between all Cartesian basis functions <{basis}|-r|{basis}>
 !Dbas should be allocated first. The resultant matrix is for Cartesian basis functions, may be converted to spherical-harmonic later
 !An alternative way to generate Dbas is set igenDbas to 1 and reload the input file, this way can generate the matrix for both Cartesian and spherical basis functions
 subroutine genDbas
@@ -245,7 +245,7 @@ do i=1,nbasis
 end do
 !$OMP END PARALLEL DO
 end subroutine
-!!!-------------- Generate dipole moment integral matrix between all orbitals via unitary transformation of Dbas
+!!!---------- Generate dipole moment integral matrix between all orbitals via unitary transformation of Dbas <{orb}|-r|{orb}>
 !Dbas must be already filled. DorbA and DorbB are global arrays
 subroutine genDorb
 use defvar

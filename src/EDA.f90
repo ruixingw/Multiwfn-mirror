@@ -5,16 +5,21 @@ implicit real*8 (a-h,o-z)
 do while(.true.)
 	write(*,*) "           ============ Energy decomposition analysis ============ "
 	write(*,*) "0 Return"
-		write(*,*) "1 Energy decomposition analysis based on molecular forcefield (EDA-FF)"
+	write(*,*) "1 Energy decomposition analysis based on molecular forcefield (EDA-FF)"
 ! 		write(*,*) "2 Mayer energy decomposition analysis"
 ! 		write(*,*) "3 Fuzzy space based energy decomposition analysis"
 ! 		write(*,*) "4 ETS-NOCV analysis based on ORCA output"
-! 		write(*,*) "5 Simple energy decomposition analysis (Gaussian is needed)"
+	write(*,*) "5 Simple energy decomposition analysis (Gaussian is needed)"
 	read(*,*) infuncsel2
 	if (infuncsel2==0) then
 		return
 	else if (infuncsel2==1) then
 		call EDA_forcefield
+	else if (infuncsel2==5) then
+		write(*,"(a)") " Please check the example in Section 4.100.8 of the manual. &
+		Currently to realize this function you need to manually use subfunction 8 of main function 100"
+		write(*,*) "Press ENTER button to continue"
+		read(*,*)
 	end if
 end do
 end subroutine

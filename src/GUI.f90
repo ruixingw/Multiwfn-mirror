@@ -1785,9 +1785,9 @@ use defvar
 integer,intent (in) :: id
 CALL swgtit(" ")
 if (any(a%index==0)) then
-	call dwglis("Choose label type","Element symbol|Atom index|Both|Only show index of Bq",iatmlabtype3D)
+	call dwglis("Choose label type","Element symbol|Atom index|Element+Index|Only Bq index|Bq index starts from 1",iatmlabtype3D)
 else
-	call dwglis("Choose label type","Element symbol|Atom index|Both",iatmlabtype3D)
+	call dwglis("Choose label type","Element symbol|Atom index|Element+Index",iatmlabtype3D)
 end if
 call drawmol
 end subroutine

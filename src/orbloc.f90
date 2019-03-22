@@ -12,13 +12,17 @@ real*8 :: arrayi(nbasis),arrayj(nbasis),crit=1D-4,tmpbasarr(nbasis),tmpprimarr(n
 real*8,pointer :: Cmat(:,:)
 real*8,allocatable :: FLMOA(:,:),FLMOB(:,:),Xmat(:,:),Xmatinv(:,:),SC(:,:)
 real*8 :: orbcomp(ncenter,nbasis) !Used in printing major orbital character
+integer :: orbtype(nmo) !LMO type determined according to composition, 0=other, 1=one-center, 2=two-center
+integer :: orbatm(2,nmo) !The index of the atom mainly involved in the LMO. one-center LMO has first element, two-center LMO has two elements
 integer :: istatarr(nbasis),iatmarr(ncenter,nbasis) !Used in printing major orbital character
 real*8 :: irj(3),iri(3),jrj(3) !Used for Boys localization, store dipole moment integral between two orbitals
 real*8 :: crit1c=0.9D0,crit2c=0.85D0
-character c200tmp*200,typestr*4
-!Below for calculating LMO centers
+integer :: thres_1c=90,thres_2c=85
+character c200tmp*200,typestr*4,selectyn
+!Below for calculating LMO centers and dipole moments
 real*8,allocatable :: orbvalpt(:,:)
-real*8 beckeweigrid(radpot*sphpot),lmoposx(nmo),lmoposy(nmo),lmoposz(nmo)
+real*8 LMOpos(3,nmo),tmpvec(3)
+real*8 beckeweigrid(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 
 if (wfntype==2.or.wfntype==3.or.wfntype==4) then
@@ -37,10 +41,9 @@ end if
 do while(.true.)
 	write(*,*)
 	write(*,*) "                ======== Orbital localization analysis ========"
-	if (iorbcomp==1) write(*,*) "-10 If identifying major character of LMOs, current: Yes"
-	if (iorbcomp==0) write(*,*) "-10 If identifying major character of LMOs, current: No"
-	if (ilmocen==1) write(*,*) "-8 If adding center of LMOs as Bq atoms, current: Yes"
-	if (ilmocen==0) write(*,*) "-8 If adding center of LMOs as Bq atoms, current: No"
+	write(*,"(a,2i4,' %')") " -10 Set threshold for determining one- and two-center LMO, current:",nint(crit1c*100),nint(crit2c*100)
+	if (ilmocen==1) write(*,*) "-8 If calculating center position and dipole moment of LMOs, current: Yes"
+	if (ilmocen==0) write(*,*) "-8 If calculating center position and dipole moment of LMOs, current: No"
 	!By default exponent of 2 is used for PM. exponent of 4 can also be used by option -7. However, according to my test, 
 	!p=4 converges slower than p=2 for both Mulliken and Lowdin populations, and the localization is not as substantial, idea as p=2, 
 	!so I finally decide not to expose this option to users
@@ -124,13 +127,14 @@ do while(.true.)
 			ilmocen=0
 		end if
 	else if (isel==-10) then
-		if (iorbcomp==1) then
+		write(*,"(a)") " Input thresholds for identifying one- and two-center LMOs. For example, &
+		inputting 0.9,0.85 means using 90% and 85%, respectively"
+		write(*,*) "If inputting 0,0, then character of LMO will not be automatically identified"
+		read(*,*) crit1c,crit2c
+		if (crit1c==0.and.crit2c==0) then
 			iorbcomp=0
-		else if (iorbcomp==0) then
+		else
 			iorbcomp=1
-			write(*,*) "Input threshold for determining single and two center LMOs"
-			write(*,"(a)") " e.g. Input 0.9,0.85 means using 90% and 85% for the former and latter, respectively"
-			read(*,*) crit1c,crit2c
 		end if
 	else if (isel==1.or.isel==2) then
 		exit
@@ -389,6 +393,7 @@ if (iorbcomp==1) then
 	for the LMOs. Result is unreliable when diffuse functions are presented"
 	if (isel==2) write(*,"(a)") " Note: Mulliken and SCPA methods are used to derive orbital compositions &
 	for occupied and virtual LMOs, respectively. Result is unreliable when diffuse functions are presented)"
+	orbtype=0
 	!Alpha-occ,Alpha-vir,Beta-occ,Beta-vir
 	do itime=1,4
 		if (domark(itime)==0) cycle
@@ -457,6 +462,13 @@ if (iorbcomp==1) then
 				itmp=itmp+1
 				if (mod(itmp,3)==0) write(*,*)
 				istatarr(iorb)=1
+				if (itime<=2) then
+					orbtype(iorb)=1
+					orbatm(1,iorb)=iatmarr(1,iorb)
+				else
+					orbtype(iorb+nbasis)=1
+					orbatm(1,iorb+nbasis)=iatmarr(1,iorb)
+				end if
 			end if
 		end do
 		if (mod(itmp,3)/=0) write(*,*)
@@ -464,7 +476,7 @@ if (iorbcomp==1) then
 		write(*,*)
 		
 		if (all(istatarr(ibeg:iend)==1)) cycle
-		write(*,"(' Almost two center LMOs: (Sum of two largest contributions >',f5.1,'%)')") crit2c*100
+		write(*,"(' Almost two-center LMOs: (Sum of two largest contributions >',f5.1,'%)')") crit2c*100
 		itmp=0
 		do iorb=ibeg,iend
 			if (istatarr(iorb)==1) cycle
@@ -475,6 +487,13 @@ if (iorbcomp==1) then
 				itmp=itmp+1
 				if (mod(itmp,2)==0) write(*,*)
 				istatarr(iorb)=1
+				if (itime<=2) then
+					orbtype(iorb)=2
+					orbatm(:,iorb)=iatmarr(1:2,iorb)
+				else
+					orbtype(iorb+nbasis)=2
+					orbatm(:,iorb+nbasis)=iatmarr(1:2,iorb)
+				end if
 			end if
 		end do
 		if (mod(itmp,2)/=0) write(*,*)
@@ -500,7 +519,7 @@ if (ilmocen==1) igenDbas=1
 write(*,*) "Exporting localized orbitals to new.fch in current folder"
 call outfch("new.fch",10,1)
 
-if (ireload==1) then
+if (ireload==1) then !Automatically reload the newly generated new.fch as requested
 	call dealloall
 	write(*,*) "Loading new.fch..."
 	call readfch("new.fch",1)
@@ -528,28 +547,11 @@ if (ireload==1) then
 		a_tmp(1:ncenter)=a
 		itmp=ncenter
 		
-		!Calculate LMO center and add Bq
-		if (iautointgrid==1) then !This setting is good balance between cost and accuracy
-			radpotold=radpot
-			sphpotold=sphpot
-			radcutold=radcut
-			radpot=20
-			sphpot=170
-			radcut=18 !Enlarge radcut, because for Rydberg orbital, the default radcut 10 Bohr is not sufficient
-			write(*,"(a)") " Note: The default integration grid in general should be sufficient. If you want to change, &
-			set ""iautointgrid"" in settings.ini to 0, and set ""radpot"" and ""sphpot"" to expected values"
-		end if
-		
-		write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
-		call gen1cintgrid(gridatmorg,iradcut)
-		
-		lmoposx=0;lmoposy=0;lmoposz=0
-		allocate(orbvalpt(nmo,radpot*sphpot))
-		
+		LMOpos=0
 		open(10,file="LMOcen.txt",status="replace")
 		if (wfntype==0) ntime=1
 		if (wfntype==1) ntime=2
-		do itime=1,ntime !=1: total or alpha, =2: beta
+		do itime=1,ntime !=1: Total or alpha, =2: Beta
 			if (itime==1) then
 				ibeg=1
 				if (idocore==0) ibeg=ninnerele/2+1
@@ -561,63 +563,229 @@ if (ireload==1) then
 				iend=nbasis+nint(nbelec)
 				if (isel==2) iend=2*nbasis
 			end if
-			do iatm=1,ncenter
-				!write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
-				gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
-				gridatm%y=gridatmorg%y+a(iatm)%y
-				gridatm%z=gridatmorg%z+a(iatm)%z
-				!$OMP parallel do shared(orbvalpt) private(i) num_threads(nthreads)
-				do i=1+iradcut*sphpot,radpot*sphpot
-					call orbderv(1,ibeg,iend,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,orbvalpt(:,i))
-				end do
-				!$OMP end parallel do
-		
-				call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
-				do ipt=1+iradcut*sphpot,radpot*sphpot
-					totwei=gridatmorg(ipt)%value*beckeweigrid(ipt)
-					do iorb=ibeg,iend
-						orbsqr=orbvalpt(iorb,ipt)**2
-						lmoposx(iorb)=lmoposx(iorb)+gridatm(ipt)%x*orbsqr*totwei
-						lmoposy(iorb)=lmoposy(iorb)+gridatm(ipt)%y*orbsqr*totwei
-						lmoposz(iorb)=lmoposz(iorb)+gridatm(ipt)%z*orbsqr*totwei
-					end do
-				end do
-			end do
 			do iorb=ibeg,iend
-				xcen=lmoposx(iorb)
-				ycen=lmoposy(iorb)
-				zcen=lmoposz(iorb)
+				!The Dbas contains negative sign of operator r, therefore we need to use "minus"
+				if (itime==1) then
+					do ibas=1,nbasis
+						do jbas=1,nbasis
+							LMOpos(:,iorb)=LMOpos(:,iorb)-Dbas(:,ibas,jbas)*CObasa(ibas,iorb)*CObasa(jbas,iorb)
+						end do
+					end do
+				else
+					do ibas=1,nbasis
+						do jbas=1,nbasis
+							LMOpos(:,iorb)=LMOpos(:,iorb)-Dbas(:,ibas,jbas)*CObasb(ibas,iorb-nbasis)*CObasb(jbas,iorb-nbasis)
+						end do
+					end do
+				end if
 				itmp=itmp+1
-				a_tmp(itmp)%x=xcen;a_tmp(itmp)%y=ycen;a_tmp(itmp)%z=zcen
+				a_tmp(itmp)%x=LMOpos(1,iorb)
+				a_tmp(itmp)%y=LMOpos(2,iorb)
+				a_tmp(itmp)%z=LMOpos(3,iorb)
 				a_tmp(itmp)%index=0
 				a_tmp(itmp)%charge=0
 				a_tmp(itmp)%name="Bq"
 				if (itime==1) then
-					if (wfntype==0) write(10,"(' LMO',i6,' corresponds to Bq',i6,', X,Y,Z:',3f10.4,' Bohr')") iorb,itmp,xcen,ycen,zcen
-					if (wfntype==1) write(10,"(' Alpha LMO',i6,': Bq',i6,', X,Y,Z:',3f10.4,' Bohr')") iorb,itmp,xcen,ycen,zcen
+					if (wfntype==0) write(10,"(' LMO',i6,' corresponds to Bq',i6,', X,Y,Z:',3f10.4,' Bohr')") iorb,itmp,LMOpos(:,iorb)
+					if (wfntype==1) write(10,"(' Alpha LMO',i6,': Bq',i6,', X,Y,Z:',3f10.4,' Bohr')") iorb,itmp,LMOpos(:,iorb)
 				else
-					write(10,"(' Beta LMO ',i6,': Bq',i6,', X,Y,Z:',3f10.4,' Bohr')") iorb-nbasis,itmp,xcen,ycen,zcen
+					write(10,"(' Beta LMO ',i6,': Bq',i6,', X,Y,Z:',3f10.4,' Bohr')") iorb-nbasis,itmp,LMOpos(:,iorb)
 				end if
 			end do
 		end do
-		deallocate(orbvalpt)
 		close(10)
-		if (iautointgrid==1) then
-			radpot=radpotold
-			sphpot=sphpotold
-			radcut=radcutold
-		end if
 		
 		ncenter=ncenter_new
 		deallocate(a)
 		allocate(a(ncenter))
 		a=a_tmp
 		deallocate(a_tmp)
-		write(*,"(/,a)") " The Bq atoms in current system now correspond to center of LMOs. The LMO center coordinates, &
-		correspondence between LMO indices and Bq indices have been exported to LMOcen.txt in current folder"
+		!Set plotting parameters in main function 0 to the best status for showing LMO centers
+		iatmlabtype3D=4
+		ishowaxis=0
+		bondradius=0.06D0
+		ratioatmsphere=0.6D0
+		iatmlabtype3D=5
+		isosur1style=2
+		isosur2style=2
+		atmlabclrR=1D0;atmlabclrG=0D0;atmlabclrB=0D0
+		write(*,"(/,a)") " Done! The Bq atoms in current system now correspond to center of LMOs. The LMO center coordinates, &
+		correspondence between LMO indices and Bq indices have been exported to LMOcen.txt in current folder. In addition, &
+		the plotting parameters in main function 0 have been set to the best status for showing LMO centers"
 		write(*,"(a)") " Note: Since these Bq atoms do not have corresponding basis functions, &
 		the present wavefunction should not be subjected to wavefunction analyses, otherwise Multiwfn may crash"
 		write(*,*)
+		
+		
+		!---- Calculate dipole moment LMOs
+		!LMOpos is <phi|r|phi>, therefore its negative is LMO electronic contribution to dipole moment
+		write(*,*) "Would you like to perform dipole moment analysis for occupied LMOs? (y/n)"
+		read(*,*) selectyn
+		if (selectyn=='y'.or.selectyn=='Y') then
+			!Evaluate system total dipole moment
+			x_nuc=sum(a%charge*a%x);y_nuc=sum(a%charge*a%y);z_nuc=sum(a%charge*a%z)
+			x_ele=0;y_ele=0;z_ele=0
+			if (wfntype==0) then
+				occval=2D0
+				do iLMO=1,nint(naelec)
+					x_ele=x_ele-LMOpos(1,iLMO);y_ele=y_ele-LMOpos(2,iLMO);z_ele=z_ele-LMOpos(3,iLMO)
+				end do
+				x_ele=x_ele*occval;y_ele=y_ele*occval;z_ele=z_ele*occval
+			else if (wfntype==1) then
+				occval=1D0
+				do iLMO=1,nint(naelec)
+					x_ele=x_ele-LMOpos(1,iLMO);y_ele=y_ele-LMOpos(2,iLMO);z_ele=z_ele-LMOpos(3,iLMO)
+				end do
+				do iLMO=1,nint(nbelec)
+					x_ele=x_ele-LMOpos(1,iLMO+nbasis);y_ele=y_ele-LMOpos(2,iLMO+nbasis);z_ele=z_ele-LMOpos(3,iLMO+nbasis)
+				end do
+			end if
+			x_tot=x_nuc+x_ele;y_tot=y_nuc+y_ele;z_tot=z_nuc+z_ele
+			
+			open(10,file="LMOdip.txt",status="replace")
+			write(10,"(' Dipole moment of the whole system (including nuclear and electronic contributions)',/,&
+			' X/Y/Z:',3f10.5,'  Norm:',f10.5,' a.u.')") &
+			x_tot,y_tot,z_tot,dsqrt(x_tot**2+y_tot**2+z_tot**2)
+			write(10,"(' Nuclear contribution:',/,' X/Y/Z:',3f10.5,'  Norm:',f10.5,' a.u.')") &
+			x_nuc,y_nuc,z_nuc,dsqrt(x_nuc**2+y_nuc**2+z_nuc**2)
+			write(10,"(' Electronic contribution:',/,' X/Y/Z:',3f10.5,'  Norm:',f10.5,' a.u.',/)") &
+			x_ele,y_ele,z_ele,dsqrt(x_ele**2+y_ele**2+z_ele**2)
+			!Total or alpha part
+			if (wfntype==1) then
+				write(10,*) "===================================="
+				write(10,*) "============ Alpha LMOs ============"
+				write(10,*) "===================================="
+				write(10,*)
+			end if
+			write(10,*) "Single-center orbital dipole moments (a.u.):"
+			tmpbx=0;tmpby=0;tmpbz=0
+			do iLMO=1,nint(naelec)
+				if (orbtype(iLMO)==1) then
+					iatm=orbatm(1,iLMO)
+					xdip=(a(iatm)%x-LMOpos(1,iLMO)) *occval
+					ydip=(a(iatm)%y-LMOpos(2,iLMO)) *occval
+					zdip=(a(iatm)%z-LMOpos(3,iLMO)) *occval
+					write(10,"(i5,' (',i4,a,')  X/Y/Z:',3f10.5,'  Norm:',f10.5)") &
+					iLMO,iatm,a(iatm)%name,xdip,ydip,zdip,dsqrt(xdip**2+ydip**2+zdip**2)
+					tmpbx=tmpbx+xdip;tmpby=tmpby+ydip;tmpbz=tmpbz+zdip
+				end if
+			end do
+			write(10,"(' Sum            X/Y/Z:',3f10.5,'  Norm:',f10.5)") tmpbx,tmpby,tmpbz,dsqrt(tmpbx**2+tmpby**2+tmpbz**2)
+			write(10,*)
+			!If you want to visualize the positive charge center, uncomment below lines
+			!allocate(a_tmp(ncenter+count(orbtype==2)))
+			!a_tmp(1:ncenter)=a
+			write(10,*) "Two-center bond dipole moments (a.u.):"
+			tmpbx=0;tmpby=0;tmpbz=0
+			do iLMO=1,nint(naelec)
+				if (orbtype(iLMO)==2) then
+					iatm=orbatm(1,iLMO)
+					jatm=orbatm(2,iLMO)
+					ratioi=covr(a(iatm)%index) !Adjust positive charge center according to covalent radii
+					ratioj=covr(a(jatm)%index)
+					!ratioi=0.5D0 !Use bond midpoint as positive charge center, as the "dipole" keyword of NBO used
+					!ratioj=0.5D0
+					tmpsum=ratioi+ratioj
+					ratioi=ratioi/tmpsum
+					ratioj=ratioj/tmpsum
+					posx=a(iatm)%x*ratioj+a(jatm)%x*ratioi
+					posy=a(iatm)%y*ratioj+a(jatm)%y*ratioi
+					posz=a(iatm)%z*ratioj+a(jatm)%z*ratioi
+					xdip=occval*posx-occval*LMOpos(1,iLMO)
+					ydip=occval*posy-occval*LMOpos(2,iLMO)
+					zdip=occval*posz-occval*LMOpos(3,iLMO)
+					!ncenter=ncenter+1
+					!a_tmp(ncenter)%x=posx;a_tmp(ncenter)%y=posy;a_tmp(ncenter)%z=posz
+					!a_tmp(ncenter)%index=0;a_tmp(ncenter)%name="Bq";a_tmp(ncenter)%charge=0
+					!write(*,"(3i5,2f6.3,3f10.4)") ncenter,iatm,jatm,ratioi,ratioj,posx,posy,posz
+					!write(*,"(3f10.4)") -LMOpos(:,iLMO)
+					write(10,"(i5,' (',i4,a,' -',i4,a,')  X/Y/Z:',3f10.5,'  Norm:',f10.5)") &
+					iLMO,iatm,a(iatm)%name,jatm,a(jatm)%name,xdip,ydip,zdip,dsqrt(xdip**2+ydip**2+zdip**2)
+					tmpbx=tmpbx+xdip;tmpby=tmpby+ydip;tmpbz=tmpbz+zdip
+				end if
+			end do
+			write(10,"(' Sum                    X/Y/Z:',3f10.5,'  Norm:',f10.5)") tmpbx,tmpby,tmpbz,dsqrt(tmpbx**2+tmpby**2+tmpbz**2)
+			!deallocate(a)
+			!allocate(a(ncenter))
+			!a=a_tmp
+			!deallocate(a_tmp)
+			if (any(orbtype(1:nint(naelec))==0)) then
+				write(10,"(/,a)") " Some more delocalized LMOs exist, but ignored here" 
+			end if
+			write(10,*)
+			write(10,*) "Contributions of all occupied LMOs to system dipole moment (a.u.):"
+			do iLMO=1,nint(naelec)
+				write(10,"(i5,'  X/Y/Z:',3f10.5,'  Norm:',f10.5)") iLMO,-LMOpos(:,iLMO)*occval,dsqrt(sum(LMOpos(:,iLMO)**2))*occval
+			end do
+			x_LMOs=sum(-LMOpos(1,1:nint(naelec)))*occval
+			y_LMOs=sum(-LMOpos(2,1:nint(naelec)))*occval
+			z_LMOs=sum(-LMOpos(3,1:nint(naelec)))*occval
+			write(10,"(' Sum   X/Y/Z:',3f10.5,'  Norm:',f10.5)") x_LMOs,y_LMOs,z_LMOs,dsqrt(x_LMOs**2+y_LMOs**2+z_LMOs**2)
+			
+			!Beta part, simply repeat above codes
+			if (wfntype==1) then
+				write(10,*)
+				write(10,*) "===================================="
+				write(10,*) "============ Beta LMOs ============="
+				write(10,*) "===================================="
+				write(10,*)
+				write(10,*) "Single-center orbital dipole moments (a.u.):"
+				tmpbx=0;tmpby=0;tmpbz=0
+				do iLMO=1,nint(nbelec)
+					if (orbtype(iLMO+nbasis)==1) then
+						iatm=orbatm(1,iLMO+nbasis)
+						xdip=(a(iatm)%x-LMOpos(1,iLMO+nbasis)) *occval
+						ydip=(a(iatm)%y-LMOpos(2,iLMO+nbasis)) *occval
+						zdip=(a(iatm)%z-LMOpos(3,iLMO+nbasis)) *occval
+						write(10,"(i5,' (',i4,a,')  X/Y/Z:',3f10.5,'  Norm:',f10.5)") &
+						iLMO,iatm,a(iatm)%name,xdip,ydip,zdip,dsqrt(xdip**2+ydip**2+zdip**2)
+						tmpbx=tmpbx+xdip;tmpby=tmpby+ydip;tmpbz=tmpbz+zdip
+					end if
+				end do
+				write(10,"(' Sum            X/Y/Z:',3f10.5,'  Norm:',f10.5)") tmpbx,tmpby,tmpbz,dsqrt(tmpbx**2+tmpby**2+tmpbz**2)
+				write(10,*)
+				write(10,*) "Two-center bond dipole	moments (a.u.):"
+				tmpbx=0;tmpby=0;tmpbz=0
+				do iLMO=1,nint(nbelec)
+					if (orbtype(iLMO+nbasis)==2) then
+						iatm=orbatm(1,iLMO+nbasis)
+						jatm=orbatm(2,iLMO+nbasis)
+						ratioi=covr(a(iatm)%index) !Adjust positive charge center according to covalent radii
+						ratioj=covr(a(jatm)%index)
+						!ratioi=0.5D0 !Use bond midpoint as positive charge center, this is the "dipole" keyword of NBO used
+						!ratioj=0.5D0
+						tmpsum=ratioi+ratioj;ratioi=ratioi/tmpsum;ratioj=ratioj/tmpsum
+						posx=a(iatm)%x*ratioj+a(jatm)%x*ratioi
+						posy=a(iatm)%y*ratioj+a(jatm)%y*ratioi
+						posz=a(iatm)%z*ratioj+a(jatm)%z*ratioi
+						xdip=occval*posx-occval*LMOpos(1,iLMO+nbasis)
+						ydip=occval*posy-occval*LMOpos(2,iLMO+nbasis)
+						zdip=occval*posz-occval*LMOpos(3,iLMO+nbasis)
+						write(10,"(i5,' (',i4,a,' -',i4,a,')  X/Y/Z:',3f10.5,'  Norm:',f10.5)") &
+						iLMO,iatm,a(iatm)%name,jatm,a(jatm)%name,xdip,ydip,zdip,dsqrt(xdip**2+ydip**2+zdip**2)
+						tmpbx=tmpbx+xdip;tmpby=tmpby+ydip;tmpbz=tmpbz+zdip
+					end if
+				end do
+				write(10,"(' Sum                    X/Y/Z:',3f10.5,'  Norm:',f10.5)") tmpbx,tmpby,tmpbz,dsqrt(tmpbx**2+tmpby**2+tmpbz**2)
+				if (any(orbtype(1:nint(naelec))==0)) then
+					write(10,"(/,a)") " Some more delocalized LMOs exist, but ignored here" 
+				end if
+				write(10,*)
+				write(10,*) "Contributions of all occupied LMOs to system dipole moment (a.u.):"
+				do iLMO=1,nint(nbelec)
+					write(10,"(i5,'  X/Y/Z:',3f10.5,'  Norm:',f10.5)") iLMO,&
+					-LMOpos(:,iLMO+nbasis)*occval,dsqrt(sum(LMOpos(:,iLMO+nbasis)**2))*occval
+				end do
+				x_LMOs=sum(-LMOpos(1,1:nint(nbelec)))*occval
+				y_LMOs=sum(-LMOpos(2,1:nint(nbelec)))*occval
+				z_LMOs=sum(-LMOpos(3,1:nint(nbelec)))*occval
+				write(10,"(' Sum   X/Y/Z:',3f10.5,'  Norm:',f10.5)") x_LMOs,y_LMOs,z_LMOs,dsqrt(x_LMOs**2+y_LMOs**2+z_LMOs**2)
+			end if
+			
+			close(10)
+			write(*,"(a)") " Done! Dipole moment of occupied LMOs as well as their contribution to &
+			system dipole moment have been exported as LMOdip.txt in current folder"
+		end if
 	end if
 end if
 end subroutine

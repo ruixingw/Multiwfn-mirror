@@ -1926,6 +1926,7 @@ else !Calculate grid data
 				do i=1,nx
 					tmpx=orgx+(i-1)*dx
 					cubmat(i,j,k)=beckewei(tmpx,tmpy,tmpz,iatmbecke1,iatmbecke2)
+					!cubmat(i,j,k)=beckewei(tmpx,tmpy,tmpz,iatmbecke1,iatmbecke2)*ELF_LOL(tmpx,tmpy,tmpz,"ELF")  !Becke's weight multiplied by ELF
 				end do
 			end do
 		end do

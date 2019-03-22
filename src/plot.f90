@@ -440,10 +440,20 @@ if (ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.i
 				screenx=nint(xplotcoor-textheighmod/2D0)
 				if (a(i)%name(2:2)/=" ") screenx=nint(xplotcoor-textheighmod/1.3D0)
 				call messag(trim(a(i)%name),screenx,screeny)
-			else if (iatmlabtype3D==2.or.iatmlabtype3D==4) then !Show index all atoms / Bq atoms
-				if (iatmlabtype3D==4.and.a(i)%index/=0) cycle
+			else if (iatmlabtype3D==2) then !Show index all atoms (including Bq)
 				screenx=nint(xplotcoor-textheighmod/2D0)
 				if (i>=10) screenx=nint(xplotcoor-textheighmod/1.7D0)
+				call messag(ADJUSTL(ctemp),screenx,screeny)
+			else if (iatmlabtype3D==4.or.iatmlabtype3D==5) then !Show index	only for Bq atoms
+				if (a(i)%index/=0) cycle
+				screenx=nint(xplotcoor-textheighmod/2D0)
+				if (iatmlabtype3D==4) then
+					if (i>=10) screenx=nint(xplotcoor-textheighmod/1.7D0)
+				else
+					itmp=count(a(1:i)%index==0)
+					write(ctemp,"(i5)") itmp
+					if (itmp>=10) screenx=nint(xplotcoor-textheighmod/1.7D0)
+				end if
 				call messag(ADJUSTL(ctemp),screenx,screeny)
 			else !Show element and index
 				if (i<10) then !Slightly move center of text so that they can at center of atom

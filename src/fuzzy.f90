@@ -546,6 +546,11 @@ do iatm=1,ncenter !! Cycle each atom
 			
 			if (isel==8) then !Integration between two fuzzy atoms
 				tmpval=Pvec(iatm)*funcval(i)*gridatm(i)%value
+				!if (ELF_LOL(rnowx,rnowy,rnowz,"LOL")>0.7D0) then
+				!	tmpval=Pvec(iatm)*funcval(i)*gridatm(i)%value
+				!else
+				!	tmpval=0
+				!end if
 				do ii=1,ncenter !Note, ovlpint is lower triangular matrix, will be convert to full matrix during statistic stage
 					do jj=ii,ncenter
 						tmpval2=Pvec(jj)*Pvec(ii)*tmpval
@@ -1201,14 +1206,14 @@ else if (isel==4) then !Show LI and DI or fuzzy bond order
 		end do
 		
 	else if (iwork==1) then !Output fuzzy bond order
-		write(*,"('The total bond order >=',f10.6)") bndordthres
+		write(*,"(' The total bond order >=',f10.6)") bndordthres
 		itmp=0
 		if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 			do i=1,ncenter
 				do j=i+1,ncenter
 					if (DIa(i,j)+DIb(i,j)>=bndordthres) then
 						itmp=itmp+1
-						write(*,"('#',i5,':',i5,a,i5,a,' Alpha: ',f10.6,' Beta:',f10.6,' Total:',f10.6)") &
+						write(*,"(' #',i5,':',i5,a,i5,a,' Alpha: ',f10.6,' Beta:',f10.6,' Total:',f10.6)") &
 						itmp,i,'('//a(i)%name//')',j,'('//a(j)%name//')',DIa(i,j),DIb(i,j),DIa(i,j)+DIb(i,j)
 					end if
 				end do
@@ -1403,13 +1408,13 @@ else if (isel==8) then !Integral in overlap region
 	end do
 	ovlpinttot=ovlpintpos+ovlpintneg
 	if (iwork==2) then !Output Laplacian bond order
-		write(*,"('The bond order >=',f10.6)") bndordthres
+		write(*,"(' The bond orders >=',f10.6)") bndordthres
 		itmp=0
 		do i=1,ncenter
 			do j=i+1,ncenter
 				if (-10*ovlpintneg(i,j)>=bndordthres) then
 					itmp=itmp+1
-					write(*,"('#',i5,':',i5,a,i5,a,':',f10.6)") &
+					write(*,"(' #',i5,':',i5,a,i5,a,':',f10.6)") &
 					itmp,i,'('//a(i)%name//')',j,'('//a(j)%name//')',-10*ovlpintneg(i,j)
 				end if
 			end do
@@ -1422,7 +1427,7 @@ else if (isel==8) then !Integral in overlap region
 				end do
 			end do
 			write(*,*)
-			write(*,"('The bond order between fragment 1 and 2:',f12.6)") bndordfragtot
+			write(*,"(' The bond order between fragment 1 and 2:',f12.6)") bndordfragtot
 		end if
 		write(*,*)
 		write(*,*) "If output bond order matrix to bndmat.txt in current folder? (y/n)"
