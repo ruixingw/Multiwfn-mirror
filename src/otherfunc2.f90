@@ -1580,43 +1580,46 @@ else if (isel==1.or.isel==5.or.isel==15) then ! Calculate polarizability
 	
 	write(*,*) "Please wait..."
 	do numstat=istart,iend
-	do freq=freqbeg,freqend,freqstep
-		do idir=1,3
-			do jdir=1,3
-				tmpval=0
-				do istat=1,numstat
-					tmpval1=trandip(0,istat,idir)*trandip(istat,0,jdir)/(excene(istat)-freq)
-					tmpval2=trandip(0,istat,jdir)*trandip(istat,0,idir)/(excene(istat)+freq)
-					tmpval=tmpval+tmpval1+tmpval2
-				end do
-				alpha(idir,jdir)=tmpval
-			end do
-		end do
-		alphaiso=(alpha(1,1)+alpha(2,2)+alpha(3,3))/3D0
-		term1=(alpha(1,1)-alpha(2,2))**2 + (alpha(1,1)-alpha(3,3))**2 + (alpha(2,2)-alpha(3,3))**2
-		term2=6*(alpha(1,2)**2+alpha(1,3)**2+alpha(2,3)**2)
-		alphaani1=dsqrt((term1+term2)/2D0)
-		call diagmat(alpha,eigvecmat,eigval,300,1D-10)
-		call sort(eigval)
-		alphaani2=eigval(3)-(eigval(1)+eigval(2))/2D0
-		
-		if (isel==1) then
-			write(*,*) "Polarizability tensor:"
-			write(*,*) "             1              2              3"
+		freq=freqbeg
+		do while(.true.)
 			do idir=1,3
-				write(*,"(i3,3f15.6)") idir,alpha(idir,:)
+				do jdir=1,3
+					tmpval=0
+					do istat=1,numstat
+						tmpval1=trandip(0,istat,idir)*trandip(istat,0,jdir)/(excene(istat)-freq)
+						tmpval2=trandip(0,istat,jdir)*trandip(istat,0,idir)/(excene(istat)+freq)
+						tmpval=tmpval+tmpval1+tmpval2
+					end do
+					alpha(idir,jdir)=tmpval
+				end do
 			end do
-			write(*,"(' Isotropic average polarizability:',f15.6)") alphaiso
-			write(*,"(' Isotropic average polarizability volume:',f15.6,' Angstrom^3')") alphaiso*0.14818470D0
-			write(*,"(' Polarizability anisotropy (definition 1):',f15.6)") alphaani1
-			write(*,"(' Eigenvalues:',3f15.6)") eigval(:)
-			write(*,"(' Polarizability anisotropy (definition 2):',f15.6)") alphaani2
-		else if (isel==5) then
-			write(10,"(i6,9f15.6)") numstat,alphaiso,alphaani1,alphaani2,alpha(1,1),alpha(2,2),alpha(3,3),alpha(1,2),alpha(1,3),alpha(2,3)
-		else if (isel==15) then
-			write(10,"(f12.6,9(1PE14.5))") freq,alphaiso,alphaani1,alphaani2,alpha(1,1),alpha(2,2),alpha(3,3),alpha(1,2),alpha(1,3),alpha(2,3)
-		end if
-	end do
+			alphaiso=(alpha(1,1)+alpha(2,2)+alpha(3,3))/3D0
+			term1=(alpha(1,1)-alpha(2,2))**2 + (alpha(1,1)-alpha(3,3))**2 + (alpha(2,2)-alpha(3,3))**2
+			term2=6*(alpha(1,2)**2+alpha(1,3)**2+alpha(2,3)**2)
+			alphaani1=dsqrt((term1+term2)/2D0)
+			call diagmat(alpha,eigvecmat,eigval,300,1D-10)
+			call sort(eigval)
+			alphaani2=eigval(3)-(eigval(1)+eigval(2))/2D0
+		
+			if (isel==1) then
+				write(*,*) "Polarizability tensor:"
+				write(*,*) "             1              2              3"
+				do idir=1,3
+					write(*,"(i3,3f15.6)") idir,alpha(idir,:)
+				end do
+				write(*,"(' Isotropic average polarizability:',f15.6)") alphaiso
+				write(*,"(' Isotropic average polarizability volume:',f15.6,' Angstrom^3')") alphaiso*0.14818470D0
+				write(*,"(' Polarizability anisotropy (definition 1):',f15.6)") alphaani1
+				write(*,"(' Eigenvalues:',3f15.6)") eigval(:)
+				write(*,"(' Polarizability anisotropy (definition 2):',f15.6)") alphaani2
+			else if (isel==5) then
+				write(10,"(i6,9f15.6)") numstat,alphaiso,alphaani1,alphaani2,alpha(1,1),alpha(2,2),alpha(3,3),alpha(1,2),alpha(1,3),alpha(2,3)
+			else if (isel==15) then
+				write(10,"(f12.6,9(1PE14.5))") freq,alphaiso,alphaani1,alphaani2,alpha(1,1),alpha(2,2),alpha(3,3),alpha(1,2),alpha(1,3),alpha(2,3)
+			end if
+			freq=freq+freqstep
+			if (freq>freqend) exit
+		end do
 	end do
 	if (isel==5.or.isel==15) then
 		close(10)

@@ -11,7 +11,7 @@ call getarg(1,filename)
 call getarg(2,cmdarg2)
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.6(dev), release date: 2019-Mar-17"
+write(*,*) "Version 3.6(dev), release date: 2019-Mar-30"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper *MUST BE CITED* if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -222,8 +222,11 @@ do while(.true.) !Main loop
 				end if
 			else if (wfntype==1) then
 				write(*,"(' Range of alpha orbitals:',i5,' -',i5,'      Range of Beta orbitals:',i5,' -',i5)") 1,nbasis,nbasis+1,nmo
-				write(*,"(' Note: Orbital',i6,' is HOMO of alpha spin, orbital',i6,' is HOMO of beta spin')") nint(naelec),nbasis+nint(nbelec)
+				write(*,"(' Note: Orbital',i6,' is alpha-HOMO, energy:',f12.6,' a.u.',f12.6,' eV')") nint(naelec),MOene(nint(naelec)),MOene(nint(naelec))*au2eV
+				write(*,"('       Orbital',i6,' is beta-HOMO, energy: ',f12.6,' a.u.',f12.6,' eV')") nbasis+nint(nbelec),MOene(nbasis+nint(nbelec)),MOene(nbasis+nint(nbelec))*au2eV
 				if (nbasis>=nint(naelec)+1) then
+					write(*,"('       Orbital',i6,' is alpha-LUMO, energy:',f12.6,' a.u.',f12.6,' eV')") nint(naelec)+1,MOene(nint(naelec)+1),MOene(nint(naelec)+1)*au2eV
+					write(*,"('       Orbital',i6,' is beta-LUMO, energy: ',f12.6,' a.u.',f12.6,' eV')") nbasis+nint(nbelec)+1,MOene(nbasis+nint(nbelec)+1),MOene(nbasis+nint(nbelec)+1)*au2eV
 					gapenea=MOene(nint(naelec)+1)-MOene(nint(naelec))
 					write(*,"('       LUMO/HOMO gap of alpha orbitals:',f12.6,' a.u.',f12.6,' eV')") gapenea,gapenea*au2eV
 					gapeneb=MOene(nbasis+nint(nbelec)+1)-MOene(nbasis+nint(nbelec))
