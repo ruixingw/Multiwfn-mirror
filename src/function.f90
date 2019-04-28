@@ -2158,7 +2158,7 @@ end function
 subroutine planeesp(maxnumgrid)
 use util
 implicit real*8(a-h,o-z)
-character c200tmp*200,c400tmp*400
+character c200tmp*200,c400tmp*400,filename_tmp*200
 integer maxnumgrid
 integer,parameter :: narrmax=396 !Enough for h-type GTF, 5+5=10. Alri(0:10,0:5,0:5)-->11*6*6=396
 real*8 Cx,Cy,Cz,Cxold,Cyold,Czold,term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval
@@ -2174,13 +2174,14 @@ alive=.false.
 if (cubegenpath/=" ".and.ifiletype==1) then
 	inquire(file=cubegenpath,exist=alive)
 	if (alive==.false.) then
-		write(*,"(a)") " Note: Albeit current file type is fch/fchk and ""cubegenpath"" parameter in settings.ini has been defined, &
+		write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
 		the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 	end if
 end if
 if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
-	write(*,"(a)") " Since the input file type is .fch/fchk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
+	write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
 	now Multiwfn directly invokes cubegen to calculate electrostatic potential"
+	
 	!Generate cubegen input file
 	open(10,file="cubegenpt.txt",status="replace")
 	do ipt=1,ngridnum1
@@ -2192,12 +2193,19 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 		end do
 	end do
 	close(10)
+	
 	ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
 	if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
+	
+	!if input file is .chk, convert it to .fch before invoking cubegen
+	filename_tmp=filename
+	if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
 	write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
-	""""//trim(filename)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
+	""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 	write(*,"(a)") " Running: "//trim(c400tmp)
 	call system(c400tmp)
+	if (index(filename,".chk")/=0) call delfch(filename_tmp)
+	
 	!Load ESP data from cubegen resulting file
 	open(10,file="ESPresult.cub",status="old")
 	do iskip=1,6+ncenter
@@ -2209,6 +2217,7 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 		end do
 	end do
 	close(10)
+	
 	!Delete intermediate files
 	if (isys==1) then
 		call system("del cubegenpt.txt ESPresult.cub nouseout /Q")

@@ -3,6 +3,7 @@ subroutine readinfile(thisfilename,infomode)
 use defvar
 implicit real*8 (a-h,o-z)
 character(len=*) thisfilename
+character fchname*200
 integer infomode,inamelen
 inamelen=len_trim(thisfilename)
 if (infomode==0) write(*,*) "Please wait..."
@@ -32,16 +33,41 @@ else if (thisfilename(inamelen-2:inamelen)=="gms") then
 	call readgms(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="mol") then
 	call readmol(thisfilename,infomode)
+else if (thisfilename(inamelen-3:inamelen)=="mol2") then
+	call readmol2(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="gjf") then
 	call readgjf(thisfilename,infomode)
-else if (thisfilename(inamelen-2:inamelen)=="chk") then !Foolish users often do this!
-	write(*,"(a)") " Error: .chk file is not supported! Please check Section 2.3 of Multiwfn manual to understand basic knowledge about input files!"
-	write(*,*) "Press ENTER button to exit"
-	read(*,*)
-	stop
 else if (index(thisfilename,".molden")/=0.or.index(thisfilename,".molden.input")/=0.or.index(thisfilename,"molden.inp")/=0) then
 	!ORCA uses .molden.input as suffix, Dalton uses molden.inp
 	call readmolden(thisfilename,infomode)
+else if (thisfilename(inamelen-2:inamelen)=="chk") then
+	if (formchkpath==" ") then
+		write(*,"(a)") " Error: .chk file is not directly supported. You should use formchk to convert it to fch/fchk before loading. &
+		Alternatively, you can set ""formchkpath"" parameter in settings.ini to actual path, so that Multiwfn can directly open .chk file"
+		write(*,*) "Press ENTER button to exit"
+		read(*,*)
+		stop
+	end if
+	inquire(file=formchkpath,exist=alive)
+	if (alive==.false.) then
+		write(*,"(a)") " Note: Albeit ""formchkpath"" parameter in settings.ini has been defined, &
+		the formchk executable file cannot be located, therefore the .chk file cannot be directly opened by Multiwfn"
+		write(*,*) "Press ENTER button to exit"
+		read(*,*)
+		stop
+	else
+		call chk2fch(fchname)
+		inquire(file=fchname,exist=alive)
+		if (alive) then
+			call readfch(fchname,infomode)
+			call delfch(fchname)
+		else
+			write(*,*) "Error: formchk conversion failed!"
+			write(*,*) "Press ENTER button to exit"
+			read(*,*)
+			stop
+		end if
+	end if
 else
 	ifiletype=0
 end if
@@ -58,6 +84,42 @@ if (allocated(b)) then
 		end if	
 	end if
 end if
+end subroutine
+
+
+!!-------- Convert chk to fch/fchk via formchk
+subroutine chk2fch(fchname)
+use defvar
+implicit real*8 (a-h,o-z)
+character*200 fchname,c200tmp
+inamelen=len_trim(filename)
+if (isys==1) then
+	c200tmp=trim(formchkpath)//' "'//trim(filename)//'" > NUL'
+else
+	c200tmp=trim(formchkpath)//' "'//trim(filename)//'" > /dev/null'
+end if
+write(*,"(a)") " Running: "//trim(c200tmp)
+call system(trim(c200tmp))
+fchname=filename
+if (isys==1) then
+	fchname(inamelen-2:inamelen)="fch"
+else
+	fchname(inamelen-2:inamelen+1)="fchk"
+end if
+end subroutine
+
+!!-------- Delete the automatically generated fch/fchk file due to formchk
+subroutine delfch(fchname)
+use defvar
+implicit real*8 (a-h,o-z)
+character*200 fchname,c200tmp
+if (isys==1) then
+	c200tmp='del /Q "'//trim(fchname)//'"'
+else
+	c200tmp='rm -f "'//trim(fchname)//'"'
+end if
+write(*,"(a)") " Running: "//trim(c200tmp)
+call system(trim(c200tmp))
 end subroutine
 
 
@@ -881,10 +943,11 @@ end subroutine
 ! ipqr=0: read as pdb, =1: read as pqr
 subroutine readpdb_pqr(name,infomode,ipqr)
 use defvar
+use util
 implicit real*8 (a-h,o-z)
 integer infomode,ipqr
 character(len=*) name
-character test*6,tmpname*4,element*3
+character test*6,tmpname*4,tmpname_up*4,element*3
 character c80tmp*80
 ifiletype=5
 open(10,file=name,access="sequential",status="old")
@@ -909,23 +972,23 @@ do while(.true.)
 			read(10,"(a)") c80tmp
 			read(c80tmp(55:76),*) a(i)%charge
 		end if
-		tmpname=adjustl(tmpname)
 		element=adjustl(element)
 		ifound=0
+		!Use "element" term to determine actual element
 		do j=1,nelesupp
-			!Use "element" term to determine actual element
 			if (ind2name_up(j)==element(1:2).or.ind2name(j)==element(1:2)) then
 				a(i)%index=j
 				ifound=1
 				exit
 			end if
 		end do
+		!"Element" term is missing, use atomic name to determine element
 		if (ifound==0) then
-			!"Element" term is missing, use first character of atomic name to determine element
-			!Check for name such as C5,N11,O3B, also check name such as 1H5* (at this time, the first letter much be digital)
+			tmpname_up=adjustl(tmpname)
+			call strlc2uc(tmpname_up)
 			do j=1,nelesupp
-				if (ind2name_up(j)==tmpname(1:1)//' '.or.&
-				(ichar(tmpname(1:1))<=57).and.ind2name_up(j)==tmpname(2:2)//' ') then
+				if (ind2name_up(j)==tmpname_up(1:1)//' ' .or. ind2name_up(j)==tmpname_up(1:2) .or. & !Recognize e.g. C, N11, Li
+				((ichar(tmpname_up(1:1))<=57).and.ind2name_up(j)==tmpname_up(2:2)//' ')) then !Recognize such as 1H5*
 					a(i)%index=j
 					ifound=1
 					exit
@@ -1152,6 +1215,68 @@ do ibond=1,nbond
 	connmat(j,i)=ntmp
 end do
 close(10)
+end subroutine
+
+
+
+
+!!------------------- Read .mol2 file -------------------
+! infomode=0: Output summary, =1: do not
+subroutine readmol2(name,infomode) 
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer infomode
+character(len=*) name
+character c80tmp*80
+ifiletype=13
+open(10,file=name,status="old")
+call loclabel(10,"@<TRIPOS>MOLECULE")
+read(10,*)
+read(10,"(a)") titleline
+read(10,*) ncenter,nbond
+
+if (allocated(a)) deallocate(a)
+allocate(a(ncenter))
+call loclabel(10,"@<TRIPOS>ATOM")
+read(10,*)
+do i=1,ncenter
+	read(10,*) inouse,c80tmp,a(i)%x,a(i)%y,a(i)%z,a(i)%name
+	ico=index(a(i)%name,'.')
+	if (ico/=0) a(i)%name(ico:)=" "
+	call lc2uc(a(i)%name(1:1)) !Convert to upper case
+	call uc2lc(a(i)%name(2:2)) !Convert to lower case
+	do j=1,nelesupp
+		if ( a(i)%name==ind2name(j) ) then
+			a(i)%index=j
+			exit
+		end if
+	end do
+end do
+
+if (allocated(connmat)) deallocate(connmat)
+allocate(connmat(ncenter,ncenter))
+call loclabel(10,"@<TRIPOS>BOND")
+read(10,*)
+connmat=0
+!gview records aromatic carbon as type of 4 in .mol, but record it as Ar
+!When loading such kind of atom, Multiwfn still recognize it as type 4
+do ibond=1,nbond
+	read(10,*) inouse,i,j,c80tmp
+	if (c80tmp=="ar".or.c80tmp=="Ar") then
+		ntmp=4
+	else
+		read(c80tmp,*) ntmp
+	end if
+	connmat(i,j)=ntmp
+	connmat(j,i)=ntmp
+end do
+close(10)
+a%x=a%x/b2a
+a%y=a%y/b2a
+a%z=a%z/b2a
+a%charge=a%index
+if (infomode==0) write(*,"(' Totally',i8,' atoms')") ncenter
 end subroutine
 
 
@@ -2658,11 +2783,11 @@ if (ilenunit==2) then !Angstrom->a.u.
 	a%z=a%z/b2a
 end if
 
-!Detect the Molden input file is produced by which program
-!If iorca=1, that means this file was generated by orca or xtb, because they have the same problem
-!If icfour=1, that means this file was generated by CFOUR, special treatment is needed
+!Detect the Molden input file is produced by which program. Special treatment is needed for ORCA, xtb and CFOUR
+!If iorca/ixtb/icfour=1, that means this file was generated by orca/xtb/CFOUR
 rewind(10)
 iorca=0
+ixtb=0
 icfour=0
 do while(.true.)
 	read(10,"(a)") c80
@@ -2686,8 +2811,8 @@ if (iorca==0.and.icfour==0) then !Test if it may be generated by xtb using the f
 		if (c80=="[Title]") then
 			read(10,"(a)") c80
 			if (c80=="[Atoms] AU") then
-				iorca=1
-				if (iorca==1.and.infomode==0) write(*,*) "This file is found to be generated by xtb! Special treatment is applied..."
+				ixtb=1
+				if (ixtb==1.and.infomode==0) write(*,*) "This file is found to be generated by xtb! Special treatment is applied..."
 			end if
 		end if
 	end if
@@ -2768,7 +2893,7 @@ do while(.true.)
 			iprimshell=iprimshell+1
 			shellcon(ishell)=shellcon(ishell)+1
 			primexp(iprimshell)=exptmp
-			if (iorca==1) then !ORCA doesn't present SP shell in Molden input file, so don't worry about -1
+			if (iorca==1.or.ixtb==1) then !ORCA/xtb doesn't present SP shell in Molden input file, so don't worry about -1
 				!The normalization factor of spherical harmonic GTFs are weirdly multiplied into contraction coefficients,&
 				!so here normalization factor is eliminated out from contraction coefficients to meet common convention
 				rnorm=renormgau_ORCA(primexp(iprimshell),shelltype(ishell))
@@ -2896,9 +3021,11 @@ iloadorb=0
 do while(.true.)
 	iloadorb=iloadorb+1
 	read(10,"(a)") c80 !Test if it is "Sym=", some programs do not output this field
-	backspace(10)
-	if (index(c80,"Sym")/=0.or.index(c80,"SYM")/=0) then
-		read(10,*) c80,symtmp
+	isym=index(c80,"Sym")
+	if (isym==0) isym=index(c80,"SYM")
+	if (isym/=0) then
+		ieq=index(c80,'=')
+		read(c80(ieq+1:),*) symtmp
 		!Remove digitals before the IRREP, e.g. 23B1 should be changed to B1
 		do jtmp=1,len(symtmp)
 			if (ichar(symtmp(jtmp:jtmp))<48.or.ichar(symtmp(jtmp:jtmp))>57) exit !Find the first position of non-digital
@@ -2906,11 +3033,15 @@ do while(.true.)
 		symtmp=symtmp(jtmp:len(symtmp))
 	else
 		symtmp="?"
+		backspace(10)
 	end if
+	
 	read(10,"(a)") c80 !Read orbital energy. Since there may be no spacing between = and energy (Bagel program), position of = should be tested
+	!write(*,"(a)") trim(c80)
 	ieq=index(c80,'=')
 	read(c80(ieq+1:),*) enetmp
-! 	write(*,*) iloadorb,enetmp,nbasis,nmo  !<<------ If encountering problem when loading MOs, using this to locate the problematic MO
+ 	!write(*,*) iloadorb,enetmp,nbasis,nmo  !<<------ If encountering problem when loading MOs, using this to locate the problematic MO
+	
 	read(10,"(a)") c80 !Read orbital spin
 	ispintmp=1 !Alpha
 	if (index(c80,"Beta")/=0) ispintmp=2 !Beta
@@ -2942,6 +3073,7 @@ do while(.true.)
 			bmocoeff(iMOb,itmp)=tmpval
 		end do
 	end if
+	
 	read(10,"(a)",iostat=ierror) c80 !Test if the ending of [MO] field is reached
 	if (ierror/=0.or.c80==" ".or.c80(1:1)=='[') exit
 	backspace(10)
@@ -2995,6 +3127,17 @@ if (icfour==1) then
 		end if
 		ibasis=ibasis+shtype2nbas(shelltype(ishell))
 	end do	
+end if
+!xtb ignore inner core orbitals, therefore the nuclear charge of atoms must be substracted by number of core electrons
+if (ixtb==1) then
+	do i=1,ncenter
+		if (a(i)%index>2.and.a(i)%index<=10) a(i)%charge=a(i)%charge-2
+		if (a(i)%index>10.and.a(i)%index<=18) a(i)%charge=a(i)%charge-10
+		if (a(i)%index>18.and.a(i)%index<=36) a(i)%charge=a(i)%charge-18
+		if (a(i)%index>36.and.a(i)%index<=54) a(i)%charge=a(i)%charge-36
+		if (a(i)%index>54.and.a(i)%index<=86) a(i)%charge=a(i)%charge-54
+		if (a(i)%index>86) a(i)%charge=a(i)%charge-86
+	end do
 end if
 
 !Determine wavefunction type
@@ -5119,6 +5262,8 @@ call loclabel(20,'cubegenpath=',ifound)
 if (ifound==1) read(20,*) c200tmp,cubegenpath
 call loclabel(20,'cubegendenstype=',ifound)
 if (ifound==1) read(20,*) c200tmp,cubegendenstype
+call loclabel(20,'formchkpath=',ifound)
+if (ifound==1) read(20,*) c200tmp,formchkpath
 call loclabel(20,'isilent=',ifound)
 if (ifound==1) read(20,*) c80tmp,isilent
 call loclabel(20,'outmedinfo=',ifound)

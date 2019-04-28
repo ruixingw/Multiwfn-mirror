@@ -1,6 +1,6 @@
 # About this repository
 
-This repository tracks the latest *Linux* version of Multiwfn and its manual (*the Software*). I merely download *the Software* from official Multiwfn website and upload it to this repository without any change. I will try to update this repository as soon as possible when there is a new version published on Multiwfn website, usually within 5 days, however there is no guarantee. 
+This repository tracks the latest *Linux* version of Multiwfn and its manual (hereinafter referred to as *the Software*). I merely download *the Software* from official Multiwfn website and upload it to this repository without any change. I will try to update this repository as soon as possible when there is a new version published on Multiwfn website, usually within 5 days, however there is no guarantee. 
 
 **Disclaimer:**
 

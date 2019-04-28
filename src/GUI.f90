@@ -12,6 +12,7 @@ end subroutine
 !!--------- A GUI for drawing molecular structure and orbital isosurface
 subroutine drawmolgui
 character ictmp*4,molorblist*50000 !max 9999 orbitals (the 0th is "none"), each one take up 4 characters, adding "|",so 10000*(4+1)=50000
+isavepic=0
 ! Set variables for viewing orbital
 molorblist(1:4)="None"
 molorblist(5:)=" "
@@ -286,6 +287,7 @@ idrawisosur=1
 ishowattlab=1 !Show attractors, so that one can compare attractors with isosurfaces
 ishowatt=1
 GUI_mode=3 !Use GUI_mode setting in dislin response routine
+isavepic=0
 CALL swgtit('Isosurface graph')
 if (imodlayout==2) then
 	call swgwth(73)
@@ -441,6 +443,7 @@ end subroutine
 !!----------------- A GUI for drawing molecule and CPs and paths
 subroutine drawmoltopogui
 GUI_mode=4
+isavepic=0
 CALL swgtit('Molecular structure, critical points and topology paths')
 if (imodlayout==2) then
 	call swgwth(73)
@@ -534,6 +537,7 @@ end subroutine
 !!----------------- A GUI for drawing molecule and surface minima and maxima for quantitative surface analysis
 subroutine drawsurfanalysis
 GUI_mode=5
+isavepic=0
 CALL swgtit('Molecular structure, surface minima and maxima')
 if (imodlayout==2) then
 	call swgwth(73)
@@ -611,6 +615,7 @@ subroutine drawbasinintgui
 use basinintmod
 character ictmp*4,basinlist*50000 !max 9999 basins (the 0th is "none"), each one take up 4 characters, adding "|",so 10000*(4+1)=50000
 GUI_mode=6
+isavepic=0
 basinlist(1:4)="None"
 basinlist(5:)=" "
 do irealatt=1,numrealatt
@@ -718,6 +723,7 @@ end subroutine
 subroutine drawdomaingui
 character ictmp*4,domainlist*50000 !max 9999 domainlist (the 0th is "none"), each one take up 4 characters, adding "|",so 10000*(4+1)=50000
 GUI_mode=6
+isavepic=0
 domainlist(1:4)="None"
 domainlist(5:)=" "
 do idomain=1,ndomain
@@ -767,7 +773,7 @@ call SWGSTP(2.0D0)
 if (isys==1) then
 	call WGLAB(idisright,"Domains:",idomainseltext)
 	CALL WGBAS(idisright,"FORM",idisbotrig)
-	call swgwin(0,5,80,130)
+	call swgwin(0,5,80,150)
 	call swgtyp("VSCROLL","LIST")
 	CALL WGLIS(idisbotrig,domainlist,1,idisdomainplot)
 else if (isys==2) then
@@ -915,6 +921,7 @@ end subroutine
 subroutine miniGUI
 use defvar
 GUI_mode=7 !Use GUI_mode setting in dislin response routine
+isavepic=0
 CALL swgtit(' ')
 if (imodlayout==2) then
 	call swgwth(73)

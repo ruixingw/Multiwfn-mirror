@@ -11,7 +11,7 @@ call getarg(1,filename)
 call getarg(2,cmdarg2)
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.6(dev), release date: 2019-Mar-30"
+write(*,*) "Version 3.6(dev), release date: 2019-Apr-27"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper *MUST BE CITED* if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -172,7 +172,7 @@ do while(.true.) !Main loop
 	write(*,*) "7 Population analysis and atomic charges"
 	write(*,*) "8 Orbital composition analysis"
 	write(*,*) "9 Bond order analysis"
-	write(*,*) "10 Plot Total/Partial/Overlap population density-of-states (DOS)"
+	write(*,*) "10 Plot total DOS, partial DOS, OPDOS, local DOS and photoelectron spectrum"
 	write(*,*) "11 Plot IR/Raman/UV-Vis/ECD/VCD/ROA spectrum"
 	write(*,*) "12 Quantitative analysis of molecular surface"
 	if (allocated(cubmat)) write(*,*) "13 Process grid data"
@@ -218,7 +218,7 @@ do while(.true.) !Main loop
 				if (nint(nelec/2)+1<=nmo) then
 					write(*,"('       Orbital',i6,' is LUMO, energy:',f12.6' a.u.',f12.6,' eV')") nint(nelec/2)+1,MOene(nint(nelec/2)+1),MOene(nint(nelec/2)+1)*au2eV
 					gapene=MOene(nint(nelec/2)+1)-MOene(nint(nelec/2))
-					write(*,"('       LUMO/HOMO gap:',f12.6,' a.u.',f12.6,' eV',f14.6,' kJ/mol')") gapene,gapene*au2eV,gapene*au2kJ
+					write(*,"('       HOMO-LUMO gap:',f12.6,' a.u.',f12.6,' eV',f14.6,' kJ/mol')") gapene,gapene*au2eV,gapene*au2kJ
 				end if
 			else if (wfntype==1) then
 				write(*,"(' Range of alpha orbitals:',i5,' -',i5,'      Range of Beta orbitals:',i5,' -',i5)") 1,nbasis,nbasis+1,nmo
@@ -228,9 +228,9 @@ do while(.true.) !Main loop
 					write(*,"('       Orbital',i6,' is alpha-LUMO, energy:',f12.6,' a.u.',f12.6,' eV')") nint(naelec)+1,MOene(nint(naelec)+1),MOene(nint(naelec)+1)*au2eV
 					write(*,"('       Orbital',i6,' is beta-LUMO, energy: ',f12.6,' a.u.',f12.6,' eV')") nbasis+nint(nbelec)+1,MOene(nbasis+nint(nbelec)+1),MOene(nbasis+nint(nbelec)+1)*au2eV
 					gapenea=MOene(nint(naelec)+1)-MOene(nint(naelec))
-					write(*,"('       LUMO/HOMO gap of alpha orbitals:',f12.6,' a.u.',f12.6,' eV')") gapenea,gapenea*au2eV
+					write(*,"('       HOMO-LUMO gap of alpha orbitals:',f12.6,' a.u.',f12.6,' eV')") gapenea,gapenea*au2eV
 					gapeneb=MOene(nbasis+nint(nbelec)+1)-MOene(nbasis+nint(nbelec))
-					write(*,"('       LUMO/HOMO gap of beta orbitals: ',f12.6,' a.u.',f12.6,' eV')") gapeneb,gapeneb*au2eV
+					write(*,"('       HOMO-LUMO gap of beta orbitals: ',f12.6,' a.u.',f12.6,' eV')") gapeneb,gapeneb*au2eV
 				end if
 			else if (wfntype==2) then
 				write(*,"(' Index of SOMO orbitals:',10i6)") (i,i=nint(nbelec+1),nint(naelec))

@@ -271,6 +271,7 @@ do while(.true.)
 	read(*,*) isel
 	
 	if (isel==-3) then
+		istrtype=0
 		return
 	else if (isel==-2) then !Export transition data
 		if (nsystem==1) then
@@ -975,16 +976,19 @@ do while(.true.)
 		if (iunitx==2) CALL NAME('Wavelength (nm)','X')
 		if (iunitx==3) CALL NAME('Wavenumber (1000cm$^{-1}$)','X')
 		! Name of Y-axis
+		call TEXMOD("ON")
 		if (ispectrum==1.or.ispectrum==3) then
-			CALL NAME('Molar absorption coefficient (L/mol/cm)','Y')
+			CALL NAME('Molar absorption coefficient  $\epsilon$ (L mol$^{-1}$cm$^{-1}$)','Y')
 		else if (ispectrum==2) then
 			CALL NAME('Relative Raman intensity','Y')
 		else if (ispectrum==4.or.ispectrum==5) then
-			CALL NAME('Delta molar absorption coefficient (L/mol/cm)','Y')
+			CALL NAME('$\Delta\epsilon$ (L mol$^{-1}$cm$^{-1}$)','Y')
 		else if (ispectrum==6) then
-			call TEXMOD("ON")
-			if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) CALL NAME('$I_R+I_L$','Y')
-			if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) CALL NAME('$I_R-I_L$','Y')
+			if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) then
+				CALL NAME('$I_R+I_L$','Y')
+			else if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) then
+				CALL NAME('$I_R-I_L$','Y')
+			end if
 		end if
 		
 		tmprange1=abs(endy1-orgy1)
@@ -1055,16 +1059,18 @@ do while(.true.)
 			end do
 		end if
 		call color("WHITE")
+		call xaxgit !Draw a line corresponding to Y=0
 		call box2d !The dashed line of "call grid" overlaied frame of axis, so redraw frame
+		call legopt(2.5D0,0.5D0,1D0) !Decrease the length of legend color line
 		if (nsystem>1) call legend(clegend,3)
 		call endgrf
 		
 		if (ishowline==1) then !Draw discrete lines
 			if (ispectrum==1) then
-				if (iunitliney==1) CALL NAME('IR intensities (km/mol)','Y')
-				if (iunitliney==2) CALL NAME('IR intensities (esu^2*cm^2)','Y')
+				if (iunitliney==1) CALL NAME('IR intensities (km mol$^{-1}$)','Y')
+				if (iunitliney==2) CALL NAME('IR intensities (esu$^2$ cm$^2$)','Y')
 			else if (ispectrum==2) then
-				if (iramantype==1) CALL NAME('Raman scattering activities (A^4/amu)','Y')
+				if (iramantype==1) CALL NAME('Raman scattering activities (A$^4$ amu$^{-1}$)','Y')
 				if (iramantype==2) CALL NAME('Raman scattering intensities','Y')
 			else if (ispectrum==3) then
 				call name("Oscillator strength",'Y')
@@ -1076,7 +1082,7 @@ do while(.true.)
 				if (iramantype==1) then !Directly loaded from Gaussian output file, formally they are known as intensity
 					!Raman SCP(180) loaded from Gaussian output file is simply 4 times of pre-resonance Raman activity, clearly it is not "real" intensity
 					if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) call name("Raman intensity (K)",'Y')
-					if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) call name("ROA intensity (10^4 K)",'Y')
+					if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) call name("ROA intensity (10$^4$ K)",'Y')
 				else if (iramantype==2) then !Convert to "real" intensity
 					if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) call name("Raman intensity",'Y')
 					if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) call name("ROA intensity",'Y')
@@ -1095,7 +1101,6 @@ do while(.true.)
 			call setgrf('NONE','NONE','NONE','NAME')
 			call LINWID(thk_axis)
 			CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, orgy2,endy2,orgy2,stepy2)
-			call xaxgit !Draw a line corresponding to Y=0
 			call setcolor(ilineclr)
 			CALL LINWID(thk_discrete)
 			do imol=1,nsystem
@@ -1112,6 +1117,7 @@ do while(.true.)
 				CALL CURVE(linexall(imol,1:3*numdataall(imol)),lineyall(imol,1:3*numdataall(imol)),3*numdataall(imol))
 			end do
 			call color("WHITE")
+			call xaxgit !Draw a line corresponding to Y=0
 		end if
 		call disfin
 		if (isavepic==1) write(*,*) "Graphic file has been saved to current folder with ""DISLIN"" prefix"
@@ -1127,6 +1133,7 @@ end subroutine
 !!----- Load transition data from a file to datax,str,FWHM in global memory
 ! ispectrum decides spectrum type, "filename" indicate the file to be loaded, numdata is the number of transitions in the file
 ! For electronic spectra, transition energies are loaded as eV
+! istrtype is a global variable, it records type of strength. When loading multiple files, this variable avoids select type of strength multiple times
 subroutine loadtransdata(ispectrum,loadspecname,numdata)
 use defvar
 use util
@@ -1143,12 +1150,12 @@ open(10,file=loadspecname,status="old")
 !Check if is sTDA output file
 if (index(loadspecname,".dat")/=0) then
 	write(*,*) "Recognized as sTDA program output file"
-	if (ispectrum==4) then
+	if (ispectrum==4.and.istrtype==0) then
 		write(*,*)
 		write(*,*) "Read the rotatory strengths in which representation?"
 		write(*,*) "1: Length representation     2: Velocity representation"
 		write(*,*) "3: Mixed-form representation (recommended)"
-		read(*,*) irotrep
+		read(*,*) istrtype
 	end if
 	call loclabel(10,"DATXY")
 	read(10,*)
@@ -1169,9 +1176,9 @@ if (index(loadspecname,".dat")/=0) then
 		if (ispectrum==3) then
 			str(i)=fl
 		else if (ispectrum==4) then
-			if (irotrep==1) str(i)=Rl
-			if (irotrep==2) str(i)=Rv
-			if (irotrep==3) then
+			if (istrtype==1) str(i)=Rl
+			if (istrtype==2) str(i)=Rv
+			if (istrtype==3) then
 				str(i)=Rv
 				if (fv/=0) str(i)=Rv*fl/fv
 			end if
@@ -1407,10 +1414,12 @@ if (igauout==1) then
 			read(10,*) str(i) !Read oscillator strength
 		end do
 		if (ispectrum==4) then !Read ECD rotatory strength
-			write(*,*) "Read the rotatory strengths in which representation?"
-			write(*,*) "1: Length representation     2: Velocity representation (Recommended)"
-			read(*,*) itmp
-			if (itmp==1) then
+			if (istrtype==0) then
+				write(*,*) "Read the rotatory strengths in which representation?"
+				write(*,*) "1: Length representation     2: Velocity representation (Recommended)"
+				read(*,*) istrtype
+			end if
+			if (istrtype==1) then
 				call loclabel(10,"R(length)",ifound,1)
 				read(10,*)
 				do i=1,numdata
@@ -1464,6 +1473,7 @@ if (iORCAout==1) then
 			if (ispectrum==1) call loclabel(10,"IR SPECTRUM",ifound,1)
 			if (ispectrum==2) call loclabel(10,"RAMAN SPECTRUM",ifound,1)
 			call loclabel(10,"Mode    freq (cm**-1)",ifound,0)
+			!The IR data under T**2 is in KM/mole
 			read(10,*)
 			read(10,*)
 			do i=1,numdata
@@ -1510,12 +1520,12 @@ if (iORCAout==1) then
 		end if
 	else if (isTDA==1) then !sTDA or sTD-DFT calculation
 		write(*,*) "This is a sTDA or sTD-DFT calculation"
-		if (ispectrum==4) then
+		if (ispectrum==4.and.istrtype==0) then
 			write(*,*)
 			write(*,*) "Read the rotatory strengths in which representation?"
 			write(*,*) "1: Length representation     2: Velocity representation"
 			write(*,*) "3: Mixed-form representation (recommended)"
-			read(*,*) irotrep
+			read(*,*) istrtype
 		end if
 		call loclabel(10,"roots found,",ifound,0)
 		read(10,*) numdata
@@ -1527,9 +1537,9 @@ if (iORCAout==1) then
 			if (ispectrum==3) then
 				str(i)=fl
 			else if (ispectrum==4) then
-				if (irotrep==1) str(i)=Rl
-				if (irotrep==2) str(i)=Rv
-				if (irotrep==3) then
+				if (istrtype==1) str(i)=Rl
+				if (istrtype==2) str(i)=Rv
+				if (istrtype==3) then
 					str(i)=Rv
 					if (fv/=0) str(i)=Rv*fl/fv
 				end if
@@ -1560,6 +1570,10 @@ if (ixtb==1) then
 	call loclabel(10,"IR intensities (amu)",ifound,0)
 	read(10,*)
 	read(10,"(8(5x,f6.2))") str
+	write(*,"(a)") " Note: The IR intensities printed by xtb are in ""amu"", but Multiwfn does not convert the unit automatically"
+	!From Gaussian manual one can find 1 Debye^2*angstrom^-2*amu^-1 = 42.2561 km*mol^-1, &
+	!however I don't know if Debye^2*angstrom-2*amu-1 is just the "amu" used in xtb output, therefore I decide not to convert the unit
+	write(*,*)
 	write(*,"(a)") " xtb program outputs all frequencies including overall rotation and translation modes. Now remove how many lowest modes to discard these modes? e.g. 6"
 	write(*,*) "If press ENTER directly, 6 lowest modes will be discarded"
 	read(*,"(a)") c80tmp

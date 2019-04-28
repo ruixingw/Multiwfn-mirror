@@ -101,7 +101,7 @@ use defvar
 use function
 use plot
 implicit real*8 (a-h,o-z)
-character c200tmp*200,c400tmp*400
+character c200tmp*200,c400tmp*400,filename_tmp*200
 
 !Clean custom operation setting (global)that possibly defined by other modules
 ncustommap=0
@@ -222,13 +222,14 @@ do while(.true.)
 		if (cubegenpath/=" ".and.ifiletype==1.and.isel==12) then
 			inquire(file=cubegenpath,exist=alive)
 			if (alive==.false.) then
-				write(*,"(a)") " Note: Albeit current file type is fch/fchk and ""cubegenpath"" parameter in settings.ini has been defined, &
+				write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
 				the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 			end if
 		end if
 		if (alive.and.ifiletype==1.and.isel==12) then !Use cubegen to calculate ESP
-			write(*,"(a)") " Since the input file type is .fch/fchk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
+			write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
 			now Multiwfn directly invokes cubegen to calculate electrostatic potential"
+			
 			!Generate cubegen input file
 			open(10,file="cubegenpt.txt",status="replace")
 			do ipt=1,npointcurve
@@ -241,10 +242,14 @@ do while(.true.)
 			close(10)
 			ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
 			if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
+			
+			if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
 			write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
-			""""//trim(filename)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
+			""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 			write(*,"(a)") " Running: "//trim(c400tmp)
 			call system(c400tmp)
+			if (index(filename,".chk")/=0) call delfch(filename_tmp)
+			
 			!Load ESP data from cubegen resulting file
 			open(10,file="ESPresult.cub",status="old")
 			do iskip=1,6+ncenter
@@ -254,6 +259,7 @@ do while(.true.)
 				read(10,*) rnouse,rnouse,rnouse,curvey(ipt)
 			end do
 			close(10)
+			
 			!Delete intermediate files
 			if (isys==1) then
 				call system("del cubegenpt.txt ESPresult.cub nouseout /Q")

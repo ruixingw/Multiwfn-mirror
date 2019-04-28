@@ -3,9 +3,11 @@ subroutine EDA_main
 use defvar
 implicit real*8 (a-h,o-z)
 do while(.true.)
+	write(*,*)
 	write(*,*) "           ============ Energy decomposition analysis ============ "
 	write(*,*) "0 Return"
 	write(*,*) "1 Energy decomposition analysis based on molecular forcefield (EDA-FF)"
+	write(*,*) "2 Shubin Liu's energy decomposition analysis (Gaussian is needed)"
 ! 		write(*,*) "2 Mayer energy decomposition analysis"
 ! 		write(*,*) "3 Fuzzy space based energy decomposition analysis"
 ! 		write(*,*) "4 ETS-NOCV analysis based on ORCA output"
@@ -15,6 +17,8 @@ do while(.true.)
 		return
 	else if (infuncsel2==1) then
 		call EDA_forcefield
+	else if (infuncsel2==2) then	
+		call EDA_SBL
 	else if (infuncsel2==5) then
 		write(*,"(a)") " Please check the example in Section 4.100.8 of the manual. &
 		Currently to realize this function you need to manually use subfunction 8 of main function 100"
@@ -23,8 +27,9 @@ do while(.true.)
 	end if
 end do
 end subroutine
-	
-	
+
+
+
 
 !=====================================================================
 !==== Energy decomposition analysis based on molecular forcefield ====
@@ -553,4 +558,81 @@ atmcyc:	do iatm=1,ncenter
 end if
 
 istatus=0
+end subroutine
+
+
+
+
+
+!====================================================
+!==== Shubin Liu's energy decomposition analysis ====
+!====================================================
+subroutine EDA_SBL
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c200tmp*200
+
+write(*,*) "Citation: J. Chem. Phys., 126, 244103 (2007)"
+write(*,*)
+
+write(*,*) "Input path of Gaussian output file with ""ExtraLinks=L608"", e.g. C:\Yohane.out"
+do while(.true.)
+	read(*,"(a)") c200tmp
+	inquire(file=c200tmp,exist=alive)
+	if (alive) exit
+	write(*,*) "Cannot find the file, input again"
+end do
+
+open(10,file=c200tmp,status="old")
+call loclabel(10,"ET=",ifound)
+if (ifound==0) then
+	write(*,"(a)") " Error: Unable to find ""ET="" term, please double check your Gaussian input file and Multiwfn manual"
+	write(*,*) "Press ENTER button to exit"
+	read(*,*)
+	return
+end if
+read(10,"(4x,f12.6,4x,f12.6,4x,f12.6,4x,f12.6,6x,f12.6)") ET,EV,EJ,EK,ENuc
+call loclabel(10,"Ex=")
+read(10,"(34x,f12.6,4x,f12.6)") Ex,Ec
+close(10)
+write(*,*) "Data has been successfully loaded from this file"
+
+write(*,*)
+write(*,*) "Calculating E_steric (Weizsacker kinetic energy)"
+iuserfunc_old=iuserfunc
+iuserfunc=5
+call intfunc_silent(100,TW)
+iuserfunc=iuserfunc_old
+
+E_elst=EJ+EV+ENuc
+E_quan=ET-TW+Ex+Ec
+E_tot=TW+E_elst+E_quan
+write(*,"(/,a,f16.6,' Hartree')") " Electronic kinetic energy (ET):",ET
+write(*,"(a,f16.6,' Hartree')") " Weizsacker kinetic energy (TW):",TW
+write(*,"(a,f16.6,' Hartree')") " Interelectronic Coulomb repulsion energy (EJ):",EJ
+write(*,"(a,f16.6,' Hartree')") " Internuclear Coulomb repulsion energy (ENuc):",ENuc
+write(*,"(a,f16.6,' Hartree')") " Nuclear-electronic Coulomb attraction energy (EV):",EV
+write(*,"(a,f16.6,' Hartree')") " Energy without electronic correlation (ET+EV+EJ+ENuc):",ET+EV+EJ+ENuc
+write(*,"(a,f16.6,' Hartree')") " Exchange correlation energy (Ex):",Ex
+write(*,"(a,f16.6,' Hartree')") " Coulomb correlation energy (Ec):",Ec
+write(*,"(a,f16.6,' Hartree')") " Pauli kinetic energy (ET-TW):",ET-TW
+write(*,*)
+write(*,*) "----- EDA-SBL energy decomposition terms:"
+write(*,"(a,f16.6,' Hartree')") " E_steric:       ",TW
+write(*,"(a,f16.6,' Hartree')") " E_electrostatic:",E_elst
+write(*,"(a,f16.6,' Hartree')") " E_quantum:      ",E_quan
+write(*,"(/,a,f16.6,' Hartree')") " E_total:        ",E_tot
+
+!I found for G16 A.03 with M06-2X, the E_tot shown above, which is exactly equals to "ETot=" printed by L608, is remarkably
+!different to the single point energy printed in either output file or fch file. By comparing with G09, I found the reason is
+!that the "Ec=" shown by G16 with M06-2X is incorrect
+diff=totenergy-E_tot
+if (abs(diff)>2D-5) then
+	write(*,"(a)") " Warning: The total energy shown above is detectably different to the total energy in fch/fchk file! &
+	This issue is known in some versions of Gaussian for certain DFT functionals, it is caused by the fact that the &
+	correlation energy printed by L608 is wrong. You should either change Gaussian version, or use other functional instead"
+	write(*,*) "Press ENTER button to exit"
+	read(*,*)
+end if
 end subroutine

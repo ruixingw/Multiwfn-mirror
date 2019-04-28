@@ -1587,6 +1587,36 @@ else if (ifunc==10) then
 end if
 end subroutine
 
+!!----------- Silent and simplied version of subroutine intfunc, directly return the integrated result
+subroutine intfunc_silent(ifunc,intval)
+use function
+use util
+implicit real*8 (a-h,o-z)
+real*8 intval,funcval(radpot*sphpot),beckeweigrid(radpot*sphpot)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+call gen1cintgrid(gridatmorg,iradcut)
+intval=0
+call showprog(0,ncenter)
+do iatm=1,ncenter
+	call showprog(iatm,ncenter)
+	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+	!$OMP parallel do shared(funcval) private(i) num_threads(nthreads)
+	do i=1+iradcut*sphpot,radpot*sphpot
+		funcval(i)=calcfuncall(ifunc,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
+	end do
+	!$OMP end parallel do
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+	do i=1+iradcut*sphpot,radpot*sphpot
+		intval=intval+funcval(i)*gridatmorg(i)%value*beckeweigrid(i)
+	end do
+end do
+end subroutine
+
+
+
 
 
 !------ Calculate overlap and distance between two orbitals

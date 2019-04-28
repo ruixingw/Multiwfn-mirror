@@ -1217,7 +1217,7 @@ do while(.true.)
 	write(*,*) "6 Show isosurface of transition dipole moment density"
 	write(*,*) "7 Show isosurface of charge density difference"
 	write(*,*) "8 Show isosurface of Cele and Chole functions simultaneously"
-	if (idomag==1) write(*,*) "9 Show isosurface of transition magnetic dipole moment density"
+	write(*,*) "9 Show isosurface of transition magnetic dipole moment density"
 	write(*,*) "10 Output cube file of hole distribution to current folder"
 	write(*,*) "11 Output cube file of electron distribution to current folder"
 	write(*,*) "12 Output cube file of overlap of hole-electron to current folder"
@@ -1301,6 +1301,13 @@ do while(.true.)
 	 		cubmat=elegrid-holegrid
 	 		sur_value=0.002D0
 	 	else if (isel==9) then
+            if (idomag==0) then
+                write(*,"(a)") " Error: In order to visualize transition magnetic dipole moment density, you must select &
+                ""-1 Toggle calculating transit. magnetic dip. density in option 1"" to switch status to ""Yes"" before calculating grid data!"
+                write(*,*) "Press ENTER button to continue"
+                read(*,*)
+                cycle
+            end if
 			write(*,*) "Select the component of transition magnetic dipole moment density"
 			write(*,*) "1: X component  2: Y component  3: Z component"
 	 		read(*,*) ifac
@@ -1437,6 +1444,13 @@ do while(.true.)
 		close(10)
 		write(*,"('Chole function has been outputted to ""Chole.cub"" in current folder')")
  	else if (isel==17) then
+        if (idomag==0) then
+            write(*,"(a)") " Error: In order to export transition magnetic dipole moment density, you must select &
+            ""-1 Toggle calculating transit. magnetic dip. density in option 1"" to switch status to ""Yes"" before calculating grid data!"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            cycle
+        end if
 		write(*,*) "Select the component of transition magnetic dipole moment density"
 		write(*,*) "1: X component  2: Y component  3: Z component"
  		read(*,*) ifac

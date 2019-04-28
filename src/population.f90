@@ -1492,7 +1492,7 @@ do while(.true.) !Interface loop
 				if (isel2==0) then
 					exit
 				else if (isel2==1) then
-					write(*,*) "Input a value in per Angstrom^2, e.g. 6.0"
+					write(*,*) "Input a number (in per Angstrom^2), e.g. 6.0"
 					read(*,*) MKptdens
 					MKptdens=MKptdens*b2a**2
 				else if (isel2==2) then
@@ -2307,7 +2307,7 @@ forall(i=1:ncenter) MKatmlist(i)=i
 		exit
 	else if (isel==2) then
 		if (igridtype==1) then
-			write(*,*) "Input a value in per Angstrom^2, e.g. 0.2"
+			write(*,*) "Input a number (in per Angstrom^2), e.g. 6.0"
 			read(*,*) MKptdens
 			MKptdens=MKptdens*b2a**2 !Convert to per Bohr^2
 		else if (igridtype==2) then
@@ -2874,7 +2874,7 @@ use util
 implicit real*8 (a-h,o-z)
 integer ishowprompt,nESPpt,iESPtype
 real*8 ESPpt(3,nESPpt),ESPptval(nESPpt)
-character c400tmp*400
+character c400tmp*400,filename_tmp*200
 character(len=*) calcfilepath
 
 call walltime(iwalltime1)
@@ -2884,13 +2884,14 @@ alive=.false.
 if (cubegenpath/=" ".and.ifiletype==1) then
 	inquire(file=cubegenpath,exist=alive)
 	if (alive==.false..and.ishowprompt==1) then
-		write(*,"(a)") " Note: Albeit current file type is fch/fchk and ""cubegenpath"" parameter in settings.ini has been defined, &
+		write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
 		the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 	end if
 end if
 if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
-	if (ishowprompt==1) write(*,"(a)") " Since the input file type is .fch/fchk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
+	if (ishowprompt==1) write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
 	now Multiwfn directly invokes cubegen to calculate electrostatic potential"
+	
 	!Generate cubegen input file
 	open(10,file="cubegenpt.txt",status="replace")
 	do ipt=1,nESPpt
@@ -2899,10 +2900,15 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 	close(10)
 	ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
 	if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
+	
+	filename_tmp=calcfilepath
+	if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
 	write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
-	""""//trim(calcfilepath)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
+	""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 	write(*,"(a)") " Running: "//trim(c400tmp)
 	call system(c400tmp)
+	if (index(filename,".chk")/=0) call delfch(filename_tmp)
+	
 	!Load ESP data from cubegen resulting file
 	open(10,file="ESPresult.cub",status="old")
 	do iskip=1,6+ncenter

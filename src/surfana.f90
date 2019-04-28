@@ -10,7 +10,7 @@ integer*2,allocatable :: corpos(:,:,:) !corner position
 logical,allocatable :: ifbndcub(:,:,:) !if true, means this is a boundary cub
 integer,allocatable :: mergerelat(:),HirBecatm(:)
 integer tmpintarr3(3)
-character pdbfilename*200,c200tmp*200,c400tmp*400,c80tmp*80,c2000tmp*2000,c10000tmp*10000,selectyn,grdfilename*200,char1tmp
+character pdbfilename*200,c200tmp*200,filename_tmp*200,c400tmp*400,c80tmp*80,c2000tmp*2000,c10000tmp*10000,selectyn,grdfilename*200,char1tmp
 real*8 fragsurarea(ncenter,3),fragsuravg(ncenter,3),fragsurvar(ncenter,3) !Area, average value and variance of each atom surface. 1,2,3 corresponds to all,positive,negative part
 real*8 fragsurmax(ncenter),fragsurmin(ncenter),fragsurchgsep(ncenter)
 integer surfrag(ncenter),ifatmfrag(ncenter) !User-defined fragment contain which atoms; ifatmfrag(iatm)=1/0 means iatm belong / doesn't belong to user-defined fragment
@@ -814,13 +814,14 @@ if (ireadextmapval==0) then !Directly calculate
 	if (cubegenpath/=" ".and.ifiletype==1.and.imapfunc==1) then
 		inquire(file=cubegenpath,exist=alive)
 		if (alive==.false.) then
-			write(*,"(a)") " Note: Albeit current file type is fch/fchk and ""cubegenpath"" parameter in settings.ini has been defined, &
+			write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
 			the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 		end if
 	end if
 	if (alive.and.ifiletype==1.and.imapfunc==1) then !Use cubegen to calculate ESP
-		write(*,"(a)") " Since the input file type is .fch/fchk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
+		write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
 		now Multiwfn directly invokes cubegen to calculate electrostatic potential"
+		
 		!Generate cubegen input file
 		open(10,file="cubegenpt.txt",status="replace")
 		do icyc=1,nsurvtx
@@ -830,10 +831,15 @@ if (ireadextmapval==0) then !Directly calculate
 		close(10)
 		ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
 		if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
+		
+		filename_tmp=filename
+		if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
 		write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
-		""""//trim(filename)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
+		""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 		write(*,"(a)") " Running: "//trim(c400tmp)
 		call system(c400tmp)
+		if (index(filename,".chk")/=0) call delfch(filename_tmp)
+		
 		!Load ESP data from cubegen resulting file
 		open(10,file="ESPresult.cub",status="old")
 		do iskip=1,6+ncenter
@@ -844,6 +850,7 @@ if (ireadextmapval==0) then !Directly calculate
 			read(10,*) rnouse,rnouse,rnouse,survtx(icyc)%value
 		end do
 		close(10)
+		
 		!Delete intermediate files
 		if (isys==1) then
 			call system("del cubegenpt.txt ESPresult.cub nouseout /Q")
@@ -983,6 +990,7 @@ do icyc=1,nsurtri
 	surtriang(icyc)%value=(survtx(idx1)%value+survtx(idx2)%value+survtx(idx3)%value)/3D0
 end do
 if (size(survtx)>0) then !The number of vertex is zero for empty grid data
+	write(*,*)
 	write(*,"(' Global surface minimum:',f10.6,' a.u. at',3f11.6,' Ang')") survtx(indsurfmin)%value,survtx(indsurfmin)%x*b2a,survtx(indsurfmin)%y*b2a,survtx(indsurfmin)%z*b2a
 	write(*,"(' Global surface maximum:',f10.6,' a.u. at',3f11.6,' Ang')") survtx(indsurfmax)%value,survtx(indsurfmax)%x*b2a,survtx(indsurfmax)%y*b2a,survtx(indsurfmax)%z*b2a
 end if

@@ -212,13 +212,13 @@ integer :: shtype2nbas(-5:5)=(/ 11,9,7,5,4,1,3,6,10,15,21 /)
 integer :: ibasmode=0 !0/1 = GTO/STO is used in current wavefunction
 integer :: nmo=0,nprims=0,ncenter=0,ncenter_org=0,nmo_org=0,nprims_org=0 !Number of orbitals, primitive functions, nuclei
 integer :: idxHOMO=0 !For fch and molden, record the index of original HOMO, this will be used to calculate linear response kernel for pi-electrons
-integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd=8, molden=9, gms=10, MDL mol=11, gjf=12
+integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13
 integer :: wfntype=0 !0/1/2/3/4 means R/U/ROHF /R/U-Post-HF wavefunction
 real*8 :: totenergy=0,virialratio=2,nelec=0,naelec=0,nbelec=0
 !-------- Variables for nuclei & basis function & Molecular orbital
 type(atomtype),allocatable :: a(:),a_org(:),a_tmp(:)
 type(primtype),allocatable :: b(:),b_org(:),b_tmp(:)
-integer,allocatable :: connmat(:,:) !Connectivity matrix. Could be loaded from .mol file using readmol or readmolconn routine
+integer,allocatable :: connmat(:,:) !Connectivity matrix. Could be loaded from .mol/mol2 file using readmol/readmol2 or readmolconn routine
 real*8,allocatable :: MOocc(:),MOocc_org(:),MOene(:),MOene_org(:) !Occupation number & energy of orbital
 integer,allocatable :: MOtype(:) !The type of orbitals, (alpha&beta)=0/alpha=1/beta=2, not read from .wfn directly
 character*4,allocatable :: MOsym(:) !The symmetry of orbitals, meaningful when .molden/.gms is used since it sometimes records irreducible representation
@@ -266,6 +266,7 @@ real*8,allocatable :: atmradrho(:,:) !(iatm,j) corresponds to density value at j
 !---------- Used for passing data of spectrum plotting, as well as used by DOS
 real*8,allocatable :: datax(:),str(:),FWHM(:) !Transition energy, strength and FWHM loaded from only one file
 integer iROAtype !Type of ROA spectrum
+integer :: istrtype=0 !Strength type. Avoid selecting the type every time when loading multiple files
 
 
 !!!!!!!!!!!!!!!!!!!!!! Parameter !!!!!!!!!!!!!!!!!!!!!!
@@ -354,7 +355,7 @@ integer :: iuserfunc=0,iDFTxcsel=84,iKEDsel=0,ispheratm=1,ishowchgtrans=0,SpherI
 integer :: NICSnptlim=8000
 real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0,espprecutoff=0D0
 integer :: nthreads=4,ompstacksize=100000000
-character :: lastfile*200="",gaupath*200="",cubegenpath*200="",cubegendenstype*80="SCF"
+character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="",cubegendenstype*80="SCF"
 !About function calculation, external or internal parameters
 integer :: RDG_addminimal=1,ELF_addminimal=1,num1Dpoints=3000,atomdenscut=1,nprevorbgrid=120000,paircorrtype=3,pairfunctype=1,srcfuncmode=1
 integer :: ELFLOL_type=0,ipolarpara=0,iALIEdecomp=0,iskipnuc=0
