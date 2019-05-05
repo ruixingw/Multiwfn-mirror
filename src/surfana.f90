@@ -326,9 +326,9 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 	xlength=endx-orgx
 	ylength=endy-orgy
 	zlength=endz-orgz
-	dx=grdspc
-	dy=grdspc
-	dz=grdspc
+	dx=grdspc;gridvec1=0;gridvec1(1)=dx
+	dy=grdspc;gridvec2=0;gridvec2(2)=dy
+	dz=grdspc;gridvec3=0;gridvec3(3)=dz
 	nx=nint(xlength/dx)+1
 	ny=nint(ylength/dy)+1
 	nz=nint(zlength/dz)+1
@@ -945,7 +945,7 @@ else if (ireadextmapval==3) then !Will calculate mapped function by interpolatin
 	write(*,*)
 	write(*,*) "Outputting template cube file..."
 	open(10,file="template.cub",status="replace")
-	call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+	call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 	close(10)
 	write(*,"(/,a)") " The template cube file has been outputted to template.cub in current folder"
 	write(*,"(a)") " Now input the name of the cube file representing mapped function, e.g. C:\t.cub. &
@@ -1218,7 +1218,7 @@ do while(.true.)
 		
 	else if (isel==-2) then
 		open(10,file="surf.cub",status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done, the grid data has been exported to surf.cub in current folder"
 		
@@ -1857,7 +1857,7 @@ do while(.true.)
 		end do
 		!$OMP END PARALLEL DO
 		open(10,file="mapfunc.cub",status="replace")
-		call outcube(cubmattmp,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmattmp,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done! grid data has been exported to mapfunc.cub in current folder"
 	

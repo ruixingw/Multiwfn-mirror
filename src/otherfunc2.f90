@@ -326,7 +326,7 @@ if (ioutmode==1) then
 		write(*,"(' Calculating and exporting orbital',i6)") iorb
 		call savecubmat(4,1,iorb)
 		open(10,file=cubname,status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"(' Orbital',i7,' has been exported to ',a,' in current folder',/)") iorb,trim(cubname)
 	end do
@@ -595,7 +595,7 @@ do while(.true.)
 		if (iload==3) open(10,file="ICSSXX.cub",status="replace")
 		if (iload==4) open(10,file="ICSSYY.cub",status="replace")
 		if (iload==5) open(10,file="ICSSZZ.cub",status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"(a)") " The cube file has been exported to current folder"
 	end if

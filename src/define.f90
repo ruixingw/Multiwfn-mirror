@@ -366,10 +366,11 @@ real*8 :: refx=0D0,refy=0D0,refz=0D0
 real*8 :: pleA=0D0,pleB=0D0,pleC=0D0,pleD=0D0 !!ABCD of the plane defined by main function 1000, used for special aims
 real*8 :: globaltmp=0 !A variable can be used anywhere and can be set by option 5 of main function 1000, for debugging purpose avoiding re-compile code
 !About line/plane/grid calculation, inner parameter
-!For 3D grid data
-real*8 :: orgx,orgy,orgz,endx,endy,endz,dx=0,dy,dz !Origin, end point and translation length. dx=0 means the box was not defined before
+!For 3D grid data. If the grid is not rectangle, only gridvec can fully define translation vectors
+real*8 :: orgx,orgy,orgz,endx,endy,endz,dx=0,dy,dz !Origin, end point and translation length in X/Y/Z. dx=0 means the box was not defined before
 integer :: nx=80,ny=80,nz=80 !The number of points in three directions
 real*8 :: boxlenX,boxlenY,boxlenZ,boxcenX,boxcenY,boxcenZ !For temporary exchange data for setting box in GUI
+real*8 :: gridvec1(3),gridvec2(3),gridvec3(3) !1/2/3th translation vector. dx,dy,dz corresponds to 1(1), 2(2), 3(3) terms
 !For 2D plane map
 real*8 :: v1x,v1y,v2x,v2y,v1z,v2z,a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,d1,d2 !Translation vector 1 and 2, three point in self-defined plane for projecting label, d1,d2=Length of v1,v2
 real*8 :: orgx2D,orgy2D,orgz2D !Origin

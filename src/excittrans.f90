@@ -1364,9 +1364,9 @@ do while(.true.)
  		read(*,*) isel2
 		write(*,*) "Outputting hole distribution to hole.cub in current folder"
 		open(10,file="hole.cub",status="replace")
-		if (isel2==1) call outcube(holegrid,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
-		if (isel2==2) call outcube(holegrid-holecross,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
-		if (isel2==3) call outcube(holecross,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		if (isel2==1) call outcube(holegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (isel2==2) call outcube(holegrid-holecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (isel2==3) call outcube(holecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==11) then
@@ -1377,9 +1377,9 @@ do while(.true.)
  		read(*,*) isel2
 		write(*,*) "Outputting electron distribution to electron.cub in current folder"
 		open(10,file="electron.cub",status="replace")
-		if (isel2==1) call outcube(elegrid,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
-		if (isel2==2) call outcube(elegrid-elecross,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
-		if (isel2==3) call outcube(elecross,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		if (isel2==1) call outcube(elegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (isel2==2) call outcube(elegrid-elecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (isel2==3) call outcube(elecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==12) then
@@ -1390,18 +1390,18 @@ do while(.true.)
  		if (iovlptype==1) then
 			write(*,*) "Outputting Sm function to Sm.cub in current folder"
 			open(10,file="Sm.cub",status="replace")
-			call outcube(Sm,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+			call outcube(Sm,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
  		else if (iovlptype==2) then
 			write(*,*) "Outputting Sr function to Sr.cub in current folder"
 			open(10,file="Sr.cub",status="replace")
-			call outcube(Sr,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+			call outcube(Sr,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
  		end if
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==13) then
 		write(*,"(a)") " Outputting transition density to transdens.cub in current folder"
 		open(10,file="transdens.cub",status="replace")
-		call outcube(transdens,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(transdens,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
  	else if (isel==14) then
@@ -1424,23 +1424,23 @@ do while(.true.)
 		end do
 		write(*,*) "Outputting to transdipdens.cub in current folder"
 		open(10,file="transdipdens.cub",status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 		deallocate(cubmat)
 	else if (isel==15) then
 		write(*,*) "Outputting charge density difference to CDD.cub in current folder"
 		open(10,file="CDD.cub",status="replace")
-		call outcube(elegrid-holegrid,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(elegrid-holegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==16) then
 		open(10,file="Cele.cub",status="replace")
-		call outcube(Cele,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(Cele,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"('Cele function has been outputted to ""Cele.cub"" in current folder')")
 		open(10,file="Chole.cub",status="replace")
-		call outcube(Chole,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(Chole,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"('Chole function has been outputted to ""Chole.cub"" in current folder')")
  	else if (isel==17) then
@@ -1456,9 +1456,9 @@ do while(.true.)
  		read(*,*) ifac
 		write(*,*) "Outputting to magtrdipdens.cub in current folder"
 		open(10,file="magtrdipdens.cub",status="replace")
-		if (ifac==1) call outcube(magtrdens(:,:,:,1),nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
-		if (ifac==2) call outcube(magtrdens(:,:,:,2),nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
-		if (ifac==3) call outcube(magtrdens(:,:,:,3),nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		if (ifac==1) call outcube(magtrdens(:,:,:,1),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (ifac==2) call outcube(magtrdens(:,:,:,2),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (ifac==3) call outcube(magtrdens(:,:,:,3),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
  	else if (isel==18) then
@@ -3299,11 +3299,11 @@ do while(.true.)
 		clrBcub2oppomeshpt=clrBcub2oppomeshptold
 	else if (isel==2) then
 		open(10,file="Cpos.cub",status="replace")
-		call outcube(Cpos,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(Cpos,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"(' C+ function has been outputted to ""Cpos.cub"" in current folder')")
 		open(10,file="Cneg.cub",status="replace")
-		call outcube(Cneg,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(Cneg,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"(' C- function has been outputted to ""Cneg.cub"" in current folder')")
 	end if

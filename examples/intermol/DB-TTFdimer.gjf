@@ -1,4 +1,5 @@
-#P pw91pw91/6-31G* IOp(3/33=1) nosymm guess(only)
+%chk=DB-TTFdimer.chk
+# B3LYP/6-31G* nosymm guess(save,only) pop=none
 
 Title Card Required
 

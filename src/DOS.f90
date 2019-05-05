@@ -1077,27 +1077,27 @@ else if (isel==0.or.isel==10) then
 else if (isel==11) then
 	if (allocated(LDOS2Dmap)) deallocate(LDOS2Dmap,LDOSptscomp)
 	write(*,*) "Input the starting point (in Bohr), e.g. 1.0,0,0.2"
-	read(*,*) orgx,orgy,orgz
+	read(*,*) vorgx,vorgy,vorgz
 	write(*,*) "Input the end point (in Bohr), e.g. 2.0,0,0.4"
-	read(*,*) endx,endy,endz
+	read(*,*) vendx,vendy,vendz
 	write(*,*) "Input the number of points along the line"
 	read(*,*) numLDOSpt
 	allocate(LDOS2Dmap(num2Dpoints,numLDOSpt),LDOSptscomp(nmo,numLDOSpt))
 	write(*,*) "Calculating orbital composition, please wait..."
-	xlen=endx-orgx
-	dx=xlen/(numLDOSpt-1)
-	ylen=endy-orgy
-	dy=ylen/(numLDOSpt-1)
-	zlen=endz-orgz
-	dz=zlen/(numLDOSpt-1)
+	xlen=vendx-vorgx
+	vx=xlen/(numLDOSpt-1)
+	ylen=vendy-vorgy
+	vy=ylen/(numLDOSpt-1)
+	zlen=vendz-vorgz
+	vz=zlen/(numLDOSpt-1)
 	totlen=dsqrt(xlen**2+ylen**2+zlen**2)
-	dlen=dsqrt(dx**2+dy**2+dz**2)
+	dlen=dsqrt(vx**2+vy**2+vz**2)
 	LDOSptscomp=0D0
 	FWHMmax=maxval(FWHM)
 	do ipt=1,numLDOSpt
-		x=orgx+dx*(ipt-1)
-		y=orgy+dy*(ipt-1)
-		z=orgz+dz*(ipt-1)
+		x=vorgx+vx*(ipt-1)
+		y=vorgy+vy*(ipt-1)
+		z=vorgz+vz*(ipt-1)
 		do imo=1,imoend
 			imoall=imo
 			if (ispin==2) imoall=imo+nbasis
@@ -1143,8 +1143,8 @@ else if (isel==11) then
 	LDOS2Dmap=LDOS2Dmap*scalecurve
 	write(*,*)
 	write(*,"(' Energy range: from',f12.5,' to',f12.5,1x,a)") enelow,enehigh,trim(unitstr)
-	write(*,"(' Starting point:',3f12.6,' Bohr')") orgx,orgy,orgz
-	write(*,"(' End point:     ',3f12.6,' Bohr')") endx,endy,endz
+	write(*,"(' Starting point:',3f12.6,' Bohr')") vorgx,vorgy,vorgz
+	write(*,"(' End point:     ',3f12.6,' Bohr')") vendx,vendy,vendz
 	write(*,"(' Stepsize:',f12.6,' Bohr, total length:',f12.6,' Bohr')") dlen,totlen
 	
 	idraw=1

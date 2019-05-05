@@ -1902,9 +1902,10 @@ end subroutine
 
 
 
-!!------------------ Set up grid setting
-!If ienableloadextpt==1, then show the option used to load external points
-!If igridsel==100, that means user didn't set up grid here but choose to load a set of point coordinates from external plain text file
+!!------------------ Set up grid
+!If ienableloadextpt==1, then show the option used to load external points, =0 don't
+!igridsel is return variable, if igridsel==100, that means user didn't set up grid here &
+!but choose to load a set of point coordinates from external plain text file
 subroutine setgrid(ienableloadextpt,igridsel)
 use defvar
 use GUI
@@ -2052,10 +2053,11 @@ else
 				read(10,*)
 				read(10,*)
 				read(10,*) nouse,orgx,orgy,orgz
-				read(10,*) nx,dx
-				read(10,*) ny,rnouse,dy
-				read(10,*) nz,rnouse,rnouse,dz
+				read(10,*) nx,gridvec1
+				read(10,*) ny,gridvec2
+				read(10,*) nz,gridvec3
 				close(10)
+                dx=gridvec1(1);dy=gridvec2(2);dz=gridvec3(3)
 				exit
 			else
 				write(*,*) "Error: File cannot be found, input again"
@@ -2071,6 +2073,9 @@ else
 	write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6,' Bohr')") endx,endy,endz
 	write(*,"(' Grid spacing in X,Y,Z is',3f12.6,' Bohr')") dx,dy,dz
 	write(*,"(' The number of points in X,Y,Z is',3i5,'   Total:',i12)") nx,ny,nz,nx*ny*nz
+    gridvec1=0;gridvec1(1)=dx
+    gridvec2=0;gridvec2(2)=dy
+    gridvec3=0;gridvec3(3)=dz
 end if
 end subroutine
 
@@ -2223,6 +2228,10 @@ write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6)") orgx,orgy,orgz
 write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6)") endx,endy,endz
 write(*,"(' Spacing in X,Y,Z is',3f11.6)") dx,dy,dz
 write(*,"(' Number of points in X,Y,Z is',3i5,'   Total',i10)") nx,ny,nz,nx*ny*nz
+
+gridvec1=0;gridvec1(1)=dx
+gridvec2=0;gridvec2(2)=dy
+gridvec3=0;gridvec3(3)=dz
 end subroutine
 
 
@@ -2274,9 +2283,9 @@ orgz2D=orgz2D*scll
 endx=endx*scll
 endy=endy*scll
 endz=endz*scll
-dx=dx*scll
-dy=dy*scll
-dz=dz*scll
+dx=dx*scll;gridvec1=gridvec1*scll
+dy=dy*scll;gridvec2=gridvec2*scll
+dz=dz*scll;gridvec3=gridvec3*scll
 v1x=v1x*scll
 v1y=v1y*scll
 v1z=v1z*scll

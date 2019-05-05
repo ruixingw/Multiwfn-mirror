@@ -11,7 +11,7 @@ call getarg(1,filename)
 call getarg(2,cmdarg2)
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.6(dev), release date: 2019-Apr-27"
+write(*,*) "Version 3.6(dev), release date: 2019-May-5"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper *MUST BE CITED* if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -150,7 +150,6 @@ end if
 
 
 !Special treatment
-! call CVB_index
 ! call sys1eprop !Show some system 1e properties, only works when Cartesian basis functions are presented
 
 !!!--------------------- Now everything start ---------------------!!!

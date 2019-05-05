@@ -3765,7 +3765,8 @@ EEMcyc: do while(.true.)
 		do iatm=1,ncenter
 			imulti=maxval(connmat(iatm,:))
 			if (imulti>maxBO) then
-				write(*,"(' Error: Multiplicity of atom',i5,' exceeded upper limit (',i2,')')") iatm,maxBO
+				write(*,"(' Error: Multiplicity of atom',i5,' (',i2,') exceeded upper limit (',i2,')!')") iatm,imulti,maxBO
+                write(*,"(a)") " The present EEM parameters do not support such bonding status, or connectivity in your input file is wrong"
 				cycle EEMcyc
 			end if
 			tmpval=Aparm(a(iatm)%index,imulti)

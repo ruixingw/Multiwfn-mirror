@@ -12,7 +12,6 @@ do while(.true.)
 	write(*,*) "4 Integrate a function in whole space"
 	write(*,*) "5 Show overlap integral between alpha and beta orbitals"
 	write(*,*) "6 Monitor SCF convergence process of Gaussian"
-	write(*,*) "7 Generate Gaussian input file with initial guess from converged wavefunction"
 	write(*,*) "8 Generate Gaussian input file with initial guess from fragment wavefunctions"
 	write(*,*) "9 Evaluate interatomic connectivity and atomic coordination number"
 ! 	write(*,*) "10 Generate spherically averaged atomic radial density" !Rarely used, so, hidden
@@ -25,7 +24,7 @@ do while(.true.)
 	write(*,*) "19 Generate promolecular .wfn file from fragment wavefunctions"
 	write(*,*) "20 Calculate Hellmann-Feynman forces"
 	write(*,*) "21 Calculate properties based on geometry information for specific atoms"
-	write(*,*) "22 Detect pi orbitals and set occupation numbers"
+	write(*,*) "22 Detect pi orbitals, set occupation numbers and calculate pi composition"
 	write(*,*) "23 Fit function distribution to atomic value"
 	write(*,*) "24 Obtain NICS_ZZ value for non-planar or tilted system"
 
@@ -77,8 +76,6 @@ do while(.true.)
 		call aboverlap
 	else if (isel==6) then
 		call monitorscf
-	else if (isel==7) then
-		call gengauguess
 	else if (isel==8) then
 		call fragguess
 	else if (isel==9) then
@@ -104,7 +101,7 @@ do while(.true.)
 	else if (isel==21) then
 		call calcgeomprop
 	else if (isel==22) then
-		call procpiorb
+		call detectpiorb
 	else if (isel==23) then
 		call fitfunc
 	else if (isel==24) then
@@ -187,8 +184,16 @@ write(*,*) "5 Output current wavefunction as .wfn file"
 write(*,*) "6 Output current wavefunction as Molden input file (.molden)"
 write(*,*) "7 Output current wavefunction as .fch file"
 write(*,*) "8 Output current wavefunction as .47 file"
-write(*,*) "10 Output current structure to Gaussian input file"
-write(*,*) "11 Output current structure to GAMESS-US input file"
+if (allocated(CObasa)) then
+    write(*,*) "10 Output current structure and wavefunction to Gaussian input file"
+else
+    write(*,*) "10 Output current structure to Gaussian input file"
+end if
+if (allocated(CObasa)) then
+    write(*,*) "11 Output current structure and wavefunction to GAMESS-US input file"
+else
+    write(*,*) "11 Output current structure to GAMESS-US input file"
+end if
 write(*,*) "12 Output current structure to ORCA input file"
 write(*,*) "13 Output current structure to NWChem input file"
 write(*,*) "14 Output current structure to MOPAC input file"
@@ -500,13 +505,13 @@ do while (.true.)
 		the last two columns should be taken as X and Y axes data"
 	else if (isel==3) then
 		open(10,file="func1.cub",status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"(a)") " The cube file of "//trim(f1name)//" has been exported to func1.cub in current folder"
 		exchangedata=cubmat
 		cubmat=cubmattmp !cubmat store function 2 value temporarily for outcube routine
 		open(10,file="func2.cub",status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,"(a)") " The cube file of "//trim(f2name)//" has been exported to func2.cub in current folder"
 		cubmat=exchangedata !recover function 1
@@ -517,13 +522,13 @@ do while (.true.)
 		write(*,*) "Input lower limit and upper limit of Y axis e.g. 0,1.5"
 		read(*,*) ymin,ymax
 	else if (isel==6) then
-	 	write(*,*) "Input the value of isosurface"
+	 	write(*,*) "Input the value of isosurface, e.g. 0.02"
 		read(*,*) sur_value
 		call drawisosurgui(1)
 	else if (isel==7) then
 		exchangedata=cubmat
 		cubmat=cubmattmp
-	 	write(*,*) "Input the value of isosurface"
+	 	write(*,*) "Input the value of isosurface, e.g. 0.02"
 		read(*,*) sur_value
 		call drawisosurgui(1)
 		cubmat=exchangedata
@@ -560,7 +565,10 @@ end subroutine
 
 
 !!---------- Intermolecular MO overlap
-!First load dimer Gaussian output file (must with iop(3/33=1), then load the two monomer Gaussian output files in turn (must with pop=full)
+!Both alpha and beta are taken into account, the beta index is after alpha index
+!Two cases of input files
+!1 First load dimer Gaussian output file (must with iop(3/33=1), then load the two monomer Gaussian output files in turn (must with pop=full)
+!2 Load dimer wavefunction, compute Sbas, then respectively load two monomer wavefunctions
 subroutine intmolovlp
 use util
 use defvar
@@ -568,98 +576,164 @@ implicit real*8 (a-h,o-z)
 real*8,allocatable :: cobas1(:,:),cobas2(:,:),ovlpbasmat(:,:),orbovlp(:,:) !ovlpmat is overlap matrix of basis functions
 character monofile1*200,monofile2*200,c80tmp*80
 
-open(10,file=filename,status="old")
-call loclabel(10,"NBasis=",ifound) !Number of basis functions
-read(10,*) c80tmp,nbasis
-write(*,"('The number of basis functions in the dimer',i10)") nbasis
-allocate(ovlpbasmat(nbasis,nbasis))
-write(*,*) "Loading overlap matrix of dimer, please wait..."
-call loclabel(10,"*** Overlap ***",ifound,1)
-call readmatgau(10,ovlpbasmat,1,"D14.6",7,5)
-close(10)
+if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
+    open(10,file=filename,status="old")
+    call loclabel(10,"NBasis=",ifound) !Number of basis functions
+    read(10,*) c80tmp,nbasis
+    write(*,"('The number of basis functions in the dimer',i10)") nbasis
+    allocate(ovlpbasmat(nbasis,nbasis))
+    write(*,*) "Loading overlap matrix of dimer, please wait..."
+    call loclabel(10,"*** Overlap ***",ifound,1)
+    call readmatgau(10,ovlpbasmat,1,"D14.6",7,5)
+    close(10)
 
-! monofile1="x\transint\db-ttf1.out"
-write(*,*)
-write(*,*) "Input Gaussian output file of monomer 1"
-do while(.true.)
-	read(*,"(a)") monofile1
-	inquire(file=monofile1,exist=alive)
-	if (alive) exit
-	write(*,*) "File not found, input again"
-end do
-open(10,file=monofile1,status="old")
-call loclabel(10,"NBasis=",ifound)
-read(10,*) c80tmp,nbasis1 !Number of basis functions in monomer 1
-call loclabel(10,"NBsUse=",ifound) !NbsUse must equal to the number of MOs
-read(10,*) c80tmp,nmo1
-write(*,"('The number of basis functions in monomer 1',i10)") nbasis1
-call loclabel(10,"Beta Molecular Orbital Coefficients:",iopsh1,0) !Determine if this monomer is open-shell
-if (iopsh1==1) then
-	nmo1=nmo1*2
-	write(*,"('MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo1/2
-	write(*,"('MOs from',i8,' to',i8,' are Beta orbitals')") nmo1/2+1,nmo1
+    ! monofile1="x\transint\db-ttf1.out"
+    write(*,*)
+    write(*,*) "Input Gaussian output file of monomer 1, e.g. C:\monomer1.out"
+    do while(.true.)
+	    read(*,"(a)") monofile1
+	    inquire(file=monofile1,exist=alive)
+	    if (alive) exit
+	    write(*,*) "File not found, input again"
+    end do
+    open(10,file=monofile1,status="old")
+    call loclabel(10,"NBasis=",ifound)
+    read(10,*) c80tmp,nbasis1 !Number of basis functions in monomer 1
+    call loclabel(10,"NBsUse=",ifound) !NbsUse must equal to the number of MOs
+    read(10,*) c80tmp,nmo1
+    write(*,"(' The number of basis functions in monomer 1',i10)") nbasis1
+    call loclabel(10,"Beta Molecular Orbital Coefficients:",iopsh1,0) !Determine if this monomer is open-shell
 	allocate(cobas1(nbasis,nmo1))
 	cobas1=0D0
-	write(*,*) "Loading molecular orbital coefficients of monomer 1, please wait..."
-	call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound,1)
-	call readmatgau(10,cobas1(1:nbasis1,1:nmo1/2),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
-	call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound,1)
-	call readmatgau(10,cobas1(1:nbasis1,nmo1/2+1:),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
-else !Closed-shell
-	write(*,"('The number of molecular orbitals in monomer 1',i10)") nmo1
-	allocate(cobas1(nbasis,nmo1))
-	cobas1=0D0
-	write(*,*) "Loading molecular orbital coefficients of monomer 1, please wait..."
-	call loclabel(10,"Molecular Orbital Coefficients:",ifound,1)
-	call readmatgau(10,cobas1(1:nbasis1,:),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
-end if
-close(10)
+    if (iopsh1==1) then
+	    nmo1=nmo1*2
+	    write(*,"(' MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo1/2
+	    write(*,"(' MOs from',i8,' to',i8,' are Beta orbitals')") nmo1/2+1,nmo1
+	    write(*,*) "Loading molecular orbital coefficients of monomer 1, please wait..."
+	    call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound,1)
+	    call readmatgau(10,cobas1(1:nbasis1,1:nmo1/2),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
+	    call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound,1)
+	    call readmatgau(10,cobas1(1:nbasis1,nmo1/2+1:),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
+    else !Closed-shell
+	    write(*,"(' The number of molecular orbitals in monomer 1',i10)") nmo1
+	    write(*,*) "Loading molecular orbital coefficients of monomer 1, please wait..."
+	    call loclabel(10,"Molecular Orbital Coefficients:",ifound,1)
+	    call readmatgau(10,cobas1(1:nbasis1,:),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
+    end if
+    close(10)
 
-! monofile2="x\transint\db-ttf2.out"
+    ! monofile2="x\transint\db-ttf2.out"
+    write(*,*)
+    write(*,*) "Input Gaussian output file of monomer 2, e.g. C:\monomer2.out"
+    do while(.true.)
+	    read(*,"(a)") monofile2
+	    inquire(file=monofile2,exist=alive)
+	    if (alive) exit
+	    write(*,*) "File not found, input again"
+    end do
+    open(10,file=monofile2,status="old")
+    call loclabel(10,"NBasis=",ifound)
+    read(10,*) c80tmp,nbasis2 !Number of basis functions in monomer 1
+    if (nbasis1+nbasis2/=nbasis) write(*,*) "Warning: The sum of the number of basis functions of the two monomers is unequal to dimer!"
+    call loclabel(10,"NBsUse=",ifound) !NbsUse must equal to the number of MOs
+    read(10,*) c80tmp,nmo2
+    write(*,"(' The number of basis functions in monomer 2',i10)") nbasis2
+    call loclabel(10,"Beta Molecular Orbital Coefficients:",iopsh2,0) !Determine if this monomer is open-shell
+	allocate(cobas2(nbasis,nmo2))
+	cobas2=0D0
+    if (iopsh2==1) then
+	    nmo2=nmo2*2
+	    write(*,"(' MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo2/2
+	    write(*,"(' MOs from',i8,' to',i8,' are Beta orbitals')") nmo2/2+1,nmo2
+	    write(*,*) "Loading molecular orbital coefficients of monomer 2, please wait..."
+	    call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound,1)
+	    call readmatgau(10,cobas2(nbasis1+1:,1:nmo2/2),0,"f10.5",21,5,3) !1:nbasis1 are empty
+	    call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound,1)
+	    call readmatgau(10,cobas2(nbasis1+1:,nmo2/2+1:),0,"f10.5",21,5,3) !1:nbasis1 are empty
+    else !Closed-shell
+	    write(*,"(' The number of molecular orbitals in monomer 2',i10)") nmo2
+	    write(*,*) "Loading molecular orbital coefficients of monomer 2, please wait..."
+	    call loclabel(10,"Molecular Orbital Coefficients:",ifound,1)
+	    call readmatgau(10,cobas2(nbasis1+1:,:),0,"f10.5",21,5,3) !1:nbasis1 are empty
+    end if
+    close(10)
+    ! call showmatgau(cobas1,"111",0,"f14.8",6)
+
+else !Using wavefunction file of dimer and monomer to do the analysis
+    
+    allocate(ovlpbasmat(nbasis,nbasis))
+    ovlpbasmat=Sbas
+    nmoall=nmo
+    nbasisall=nbasis
+    call dealloall
+    write(*,*)
+    
+    write(*,*) "Input wavefunction of monomer 1, e.g. C:\monomer1.fch"
+    do while(.true.)
+	    read(*,"(a)") monofile1
+	    inquire(file=monofile1,exist=alive)
+	    if (alive) exit
+	    write(*,*) "File not found, input again"
+    end do
+    call readinfile(monofile1,1)
+    write(*,"(' The number of basis functions in monomer 1',i10)") nbasis
+    nmo1=nmo
+    nbasis1=nbasis
+	allocate(cobas1(nbasisall,nmo))
+    cobas1=0
+    iopsh1=0
+    if (wfntype==1) then !Unrestricted
+	    write(*,"(' Note: MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo/2
+	    write(*,"(' Note: MOs from',i8,' to',i8,' are Beta orbitals')") nmo/2+1,nmo
+	    cobas1(1:nbasis,1:nmo/2)=CObasa
+	    cobas1(1:nbasis,nmo/2+1:)=CObasb
+        iopsh1=1
+    else !R or RO
+        cobas1(1:nbasis,:)=CObasa
+        iopsh1=0
+    end if
+    call dealloall
+    
+    write(*,*)
+    write(*,*) "Input wavefunction of monomer 2, e.g. C:\monomer2.fch"
+    do while(.true.)
+	    read(*,"(a)") monofile2
+	    inquire(file=monofile2,exist=alive)
+	    if (alive) exit
+	    write(*,*) "File not found, input again"
+    end do
+    call readinfile(monofile2,1)
+    write(*,"(' The number of basis functions in monomer 2',i10)") nbasis
+    nmo2=nmo
+	allocate(cobas2(nbasisall,nmo))
+    cobas2=0
+    if (wfntype==1) then !Unrestricted
+	    write(*,"(' Note: MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo/2
+	    write(*,"(' Note: MOs from',i8,' to',i8,' are Beta orbitals')") nmo/2+1,nmo
+	    cobas2(nbasis1+1:,1:nmo/2)=CObasa
+	    cobas2(nbasis1+1:,nmo/2+1:)=CObasb
+        iopsh2=1
+    else !R or RO
+        cobas2(nbasis1+1:,:)=CObasa
+        iopsh2=0
+    end if
+    call dealloall
+    
+    write(*,*)
+    write(*,*) "Reloading the file initially loaded..."
+    call readinfile(firstfilename,1)
+
+end if
+
+!Transform the overlap matrix in basis functions to the one between the MOs of the two monomers
 write(*,*)
-write(*,*) "Input Gaussian output file of monomer 2"
-do while(.true.)
-	read(*,"(a)") monofile2
-	inquire(file=monofile2,exist=alive)
-	if (alive) exit
-	write(*,*) "File not found, input again"
-end do
-open(10,file=monofile2,status="old")
-call loclabel(10,"NBasis=",ifound)
-read(10,*) c80tmp,nbasis2 !Number of basis functions in monomer 1
-if (nbasis1+nbasis2/=nbasis) write(*,*) "Warning: The sum of the number of basis functions of the two monomers is unequal to dimer!"
-call loclabel(10,"NBsUse=",ifound) !NbsUse must equal to the number of MOs
-read(10,*) c80tmp,nmo2
-write(*,"('The number of basis functions in monomer 2',i10)") nbasis2
-call loclabel(10,"Beta Molecular Orbital Coefficients:",iopsh2,0) !Determine if this monomer is open-shell
-if (iopsh2==1) then
-	nmo2=nmo2*2
-	write(*,"('MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo2/2
-	write(*,"('MOs from',i8,' to',i8,' are Beta orbitals')") nmo2/2+1,nmo2
-	allocate(cobas2(nbasis,nmo2))
-	cobas2=0D0
-	write(*,*) "Loading molecular orbital coefficients of monomer 2, please wait..."
-	call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound,1)
-	call readmatgau(10,cobas2(nbasis1+1:,1:nmo2/2),0,"f10.5",21,5,3) !1:nbasis1 are empty
-	call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound,1)
-	call readmatgau(10,cobas2(nbasis1+1:,nmo2/2+1:),0,"f10.5",21,5,3) !1:nbasis1 are empty
-else !Closed-shell
-	write(*,"('The number of molecular orbitals in monomer 2',i10)") nmo2
-	allocate(cobas2(nbasis,nmo2))
-	cobas2=0D0
-	write(*,*) "Loading molecular orbital coefficients of monomer 2, please wait..."
-	call loclabel(10,"Molecular Orbital Coefficients:",ifound,1)
-	call readmatgau(10,cobas2(nbasis1+1:,:),0,"f10.5",21,5,3) !1:nbasis1 are empty
-end if
-close(10)
-! call showmatgau(cobas1,"111",0,"f14.8",6)
-
+write(*,*) "Calculating the overlap matrix between MOs of the two monomers..."
 allocate(orbovlp(nmo1,nmo2))
 orbovlp=matmul(transpose(cobas1),matmul(ovlpbasmat,cobas2))
 
 do while(.true.)
 	write(*,*)
-	write(*,"(a)") " Input for example 78,79 can output overlap integral between MO78 in monomer 1 and MO79 in monomer 2"
+	write(*,"(a)") " Input e.g. 78,79 can print overlap integral between MO78 of monomer 1 and MO79 of monomer 2"
 	write(*,"(a)") " Input o can output the whole overlap integral matrix to ovlpint.txt in current folder. Input q can exit"
 	read(*,"(a)") c80tmp
 	if (c80tmp(1:1)=='q') then
@@ -673,17 +747,18 @@ do while(.true.)
 	else
 		read(c80tmp,*) idx1,idx2
 		if (idx1>nmo1.or.idx1<1) then
-			write(*,"('Input error! The MO range of monomer 1 is between',i8,' and',i8)") 1,nmo1
+			write(*,"(' Input error! The MO range of monomer 1 is between',i8,' and',i8)") 1,nmo1
 			cycle
 		end if
 		if (idx2>nmo2.or.idx2<1) then
-			write(*,"('Input error! The MO range of monomer 2 is between',i8,' and',i8)") 1,nmo2
+			write(*,"(' Input error! The MO range of monomer 2 is between',i8,' and',i8)") 1,nmo2
 			cycle
 		end if
-		write(*,"('Overlap integral is',f14.8)") orbovlp(idx1,idx2)
+		write(*,"(' Overlap integral is',f14.8)") orbovlp(idx1,idx2)
 	end if
 end do
 end subroutine
+
 
 
 
@@ -865,124 +940,26 @@ write(10,"(a,/,/,a,/,/,2i3)") trim(ctitle)//" guess=cards","Please check this fi
 do i=1,ncenter
 	write(10,"(a,3f14.8)") ind2name(a(i)%index),a(i)%x,a(i)%y,a(i)%z
 end do
-write(10,"(/,'5(E16.5)',/,'-1')")
+write(10,"(/,'5(E16.9)',/,'-1')")
 do i=1,nbasis !Cycle orbitals
 	if (all(ifunrestrict==0)) then
 		write(10,"('! Orbital:',i6,' Occ:',f10.6,' from fragment',i4)") i,MOocc(i),wherefraga(i)
 	else
 		write(10,"('! Alpha orbital:',i6,' Occ:',f10.6,' from fragment',i4)") i,MOocc(i),wherefraga(i)
 	end if
-	write(10,"(5E16.5)") (CObasa(j,i),j=1,nbasis)
+	write(10,"(5E16.9)") (CObasa(j,i),j=1,nbasis)
 end do
 if (any(ifunrestrict==1)) then
 	write(10,"('-1')")
 	do i=1,nbasis
 		write(10,"('! Beta orbital:',i6,' Occ:',f10.6,' from fragment',i4)") i,MOocc(nbasis+i),wherefragb(i)
-		write(10,"(5E16.5)") (CObasb(j,i),j=1,nbasis)
+		write(10,"(5E16.9)") (CObasb(j,i),j=1,nbasis)
 	end do
 end if
 write(10,"('0',/)")
 close(10)
 write(*,*) "Input file with initial guess have been saved to new.gjf in current folder"
 write(*,*) "Do not forget to manually check route section"
-end subroutine
-
-
-!!----------- Generate Gaussian input file with initial guess (GUESS=CARD)
-! The orbital coefficients come from .out file (pop=full)
-subroutine gengauguess
-use util
-use defvar
-implicit real*8 (a-h,o-z)
-character ctitle*80,c80tmp*80
-open(10,file=filename,status="old")
-call loclabel(10,"Molecular Orbital Coefficients",ifound)
-if (ifound==0) then
-	write(*,"(a,/)") " ERROR: This Gaussian output file does not have MO coefficient information. pop=full keyword is required when generating output file"
-	return
-end if
-call loclabel(10,"#")
-read(10,"(a)") ctitle
-call loclabel(10,"NBasis=")
-read(10,*) c80tmp,nbasis
-call loclabel(10,"NBsUse=")
-read(10,*) c80tmp,nbsuse
-if (nbsuse/=nbasis) then
-	write(*,"(a,/)") " ERROR: Some linearly dependent basis functions were removed by Gaussian! You should regenerate the Gaussian output file with IOp(3/32=2)!"
-	return
-end if
-call loclabel(10,"alpha electrons",ifound,1)
-read(10,*) naelec,c80tmp,c80tmp,nbelec
-allocate(CObasa(nbasis,nbasis))
-call loclabel(10,"NAtoms")
-read(10,*) c80tmp,ncenter
-allocate(a(ncenter))
-call loclabel(10,"Standard orientation:",ifound) !Default circumstance
-if (ifound==0) call loclabel(10,"Input orientation:",ifound) !when nosymm is used, "Standard orientation:" does not appear
-if (ifound==0) call loclabel(10,"Z-Matrix orientation:",ifound)
-if (ifound==0) then
-    write(*,*) "ERROR: Cannot find atom coordinate!"
-    write(*,*)
-    return
-end if
-do i=1,5
-	read(10,*)
-end do
-do i=1,ncenter
-	!Note: As usual, coordinate in Multiwfn is Bohr, but here is Angstrom for simplicity
-	read(10,*) itmp,a(i)%index,itmp2,a(i)%x,a(i)%y,a(i)%z
-end do
-call loclabel(10,"Beta Molecular Orbital",iunrestrict)
-call loclabel(10,"Molecular Orbital Coefficients")
-call readmatgau(10,CObasa,0,"f10.5",21,5,3)
-if (iunrestrict==0) then
-	allocate(MOocc(nbasis))
-	MOocc=0D0
-	MOocc(1:naelec)=2D0
-else
-	allocate(CObasb(nbasis,nbasis))
-	allocate(MOocc(2*nbasis))
-	MOocc=0D0
-	MOocc(1:naelec)=1D0
-	MOocc(nbasis+1:nbasis+nbelec)=1D0
-	call loclabel(10,"Molecular Orbital Coefficients",i,0)
-	call readmatgau(10,CObasb,0,"f10.5",21,5,3)
-end if
-call loclabel(10,"Charge =")
-read(10,"(9x,i3,15x,i2)") icharge,imulti
-close(10)
-call gengjf("new.gjf",icharge,imulti,iunrestrict,ctitle)
-write(*,*) "Input file have been saved to new.gjf in current folder"
-end subroutine
-!!----------- write .gjf file with initial guess according to the information in memory, use unit=10
-! outname: output filename; icharge: total charge; imulti: multiplicity;
-! iunrestrict: =1 this is unrestricted SCF wavefunction =0 not; ctitle: title write to .gjf file
-! Request: ncenter,a,ncenter,nbasis,CObasa/CObasb,MOocc
-subroutine gengjf(outname,icharge,imulti,iunrestrict,ctitle)
-use defvar
-implicit real*8 (a-h,o-z)
-integer icharge,imulti,iunrestrict
-character(len=*) outname,ctitle
-open(10,file=outname,status="replace")
-write(10,"(a,/,/,a,/,/,2i3)") trim(ctitle)//" guess=cards","Please check this file to ensure validity",icharge,imulti
-do i=1,ncenter
-	write(10,"(a,3f14.8)") ind2name(a(i)%index),a(i)%x,a(i)%y,a(i)%z
-end do
-write(10,"(/,'5(E16.5)',/,'-1')")
-do i=1,nbasis
-	if (iunrestrict==0) write(10,"('! Orbital:',i6,' Occ:',f10.6)") i,MOocc(i)
-	if (iunrestrict==1) write(10,"('! Alpha orbital:',i6,' Occ:',f10.6)") i,MOocc(i)
-	write(10,"(5E16.5)") (CObasa(j,i),j=1,nbasis)
-end do
-if (iunrestrict==1) then
-	write(10,"('-1')")
-	do i=1,nbasis
-		write(10,"('! Beta orbital:',i6,' Occ:',f10.6)") i,MOocc(nbasis+i)
-		write(10,"(5E16.5)") (CObasb(j,i),j=1,nbasis)
-	end do
-end if
-write(10,"('0',/)")
-close(10)
 end subroutine
 
 
@@ -2221,9 +2198,9 @@ do while(.true.)
 		xlength=endx-orgx
 		ylength=endy-orgy
 		zlength=endz-orgz
-		dx=grdspc
-		dy=grdspc
-		dz=grdspc
+		dx=grdspc;gridvec1=0;gridvec1(1)=dx
+		dy=grdspc;gridvec2=0;gridvec2(2)=dy
+		dz=grdspc;gridvec3=0;gridvec3(3)=dz
 		nx=nint(xlength/dx)+1
 		ny=nint(ylength/dy)+1
 		nz=nint(zlength/dz)+1
@@ -2459,7 +2436,7 @@ do while (.true.)
 		call drawmolgui
 	else if (isel==-1) then
 		write(*,"(' Note: HOMO is orbital',i7,', LUMO is orbital',i7)") iHOMO,iLUMO
-		write(*,*) "Input orbital range, e.g. 3,55 means all pi-orbtals from orbital 3 to 55"
+		write(*,*) "Input orbital range, e.g. 3,55 means all pi orbitals from orbital 3 to 55"
 		write(*,*) "If input 0,0, then all MOs will be taken into account"
 		read(*,*) iorblow,iorbhigh
 		if (iorblow==0.and.iorbhigh==0) then
@@ -2625,17 +2602,19 @@ end subroutine
 
 
 !!----------- Detect pi orbital and set occupation number
-subroutine procpiorb
+subroutine detectpiorb
 use defvar
 use function
 use util
 implicit real*8 (a-h,o-z)
 integer piorblist(nmo) !1 means this orbital is expected pi orbital
 real*8,allocatable :: tmparr(:)
-real*8 :: thresdens=0.02D0,thressingle=0.85D0
+real*8 :: thresdens=0.03D0,thressingle=0.85D0
 integer :: ionlyocc=1,idebug=0
 integer,allocatable :: atmrange(:)
-character c2000tmp*2000
+character c2000tmp*2000,c200tmp*200
+real*8 CObasa_LMO(nbasis,nbasis),CObasb_LMO(nbasis,nbasis)
+
 if (.not.allocated(b)) then
 	write(*,*) "Error: wavefunction information is not presented but needed!"
 	write(*,*) "Press ENTER button to return"
@@ -2644,25 +2623,24 @@ if (.not.allocated(b)) then
 end if
 write(*,*) "Choose current situation:"
 write(*,*) "-1: Orbitals are in localized form (e.g. LMO, NBO)"
-write(*,*) "0: All atoms are in XY or YZ or XZ plane, automatically detecting actual case"
-write(*,*) "1: All atoms are in XY plane"
-write(*,*) "2: All atoms are in YZ plane"
-write(*,*) "3: All atoms are in XZ plane"
-write(*,"(a)") " Note: Modes 0~4 are suitable for highly delocalized orbitals (e.g. MO, natural orbital, NTO) of purely planar systems"
-read(*,*) iselmolplane
-thres=0.05D0
-avgx=sum(a(:)%x)/ncenter
-avgy=sum(a(:)%y)/ncenter
-avgz=sum(a(:)%z)/ncenter
-if (iselmolplane==0) then
+write(*,"(a)") "  0: Orbitals are in delocalized form (e.g. MO, natural orbital, NTO). The system must be exactly planar"
+read(*,*) iorbform
+
+piorblist=0
+pinelec=0D0
+if (iorbform==0) then !Delocalized case
+    thres=0.05D0
+    avgx=sum(a(:)%x)/ncenter
+    avgy=sum(a(:)%y)/ncenter
+    avgz=sum(a(:)%z)/ncenter
 	if ( all(abs(a(:)%x-avgx)<thres) ) then
-		iselmolplane=2
+		iplane=2
 		write(*,*) "This system is expected to be in YZ plane"
 	else if ( all(abs(a(:)%y-avgy)<thres) ) then
-		iselmolplane=3
+		iplane=3
 		write(*,*) "This system is expected to be in XZ plane"
 	else if ( all(abs(a(:)%z-avgz)<thres) ) then
-		iselmolplane=1
+		iplane=1
 		write(*,*) "This system is expected to be in XY plane"
 	else
 		write(*,"(a)") " Error: Unable to detect the system plane! To use this mode, all atoms must be in XY or XZ or YZ plane!"
@@ -2670,41 +2648,16 @@ if (iselmolplane==0) then
 		read(*,*)
 		return
 	end if
-else if (iselmolplane==1) then !Foolish users frequently do foolish things, so I have to do check
-	if ( any(abs(a(:)%z-avgz)>thres) ) then
-		write(*,*) "Error: Not all atoms are in XY plane!"
-		write(*,*) "Press ENTER button to return"
-		read(*,*)
-		return
-	end if
-else if (iselmolplane==2) then
-	if ( any(abs(a(:)%x-avgx)>thres) ) then
-		write(*,*) "Error: Not all atoms are in YZ plane!"
-		write(*,*) "Press ENTER button to return"
-		read(*,*)
-		return
-	end if
-else if (iselmolplane==3) then
-	if ( any(abs(a(:)%y-avgy)>thres) ) then
-		write(*,*) "Error: Not all atoms are in XZ plane!"
-		write(*,*) "Press ENTER button to return"
-		read(*,*)
-		return
-	end if
-end if
 
-piorblist=0
-pinelec=0D0
-if (iselmolplane/=-1) then !Delocalized orbital cases
 	write(*,*) "Expected pi orbitals, occupation numbers and orbital energies (eV):"
 	do imo=1,nmo
 		do iprim=1,nprims
 			GTFtype=b(iprim)%type
-			if (iselmolplane==1) then
+			if (iplane==1) then
 				if ( (GTFtype==1.or.GTFtype==2.or.GTFtype==3).and.abs(co(imo,iprim))>0.001D0 ) exit !Orbital has S,X,Y component, so this is not pi-Z
-			else if (iselmolplane==2) then
+			else if (iplane==2) then
 				if ( (GTFtype==1.or.GTFtype==3.or.GTFtype==4).and.abs(co(imo,iprim))>0.001D0 ) exit !Orbital has S,Y,Z component, so this is not pi-X
-			else if (iselmolplane==3) then
+			else if (iplane==3) then
 				if ( (GTFtype==1.or.GTFtype==2.or.GTFtype==4).and.abs(co(imo,iprim))>0.001D0 ) exit !Orbital has S,X,Z component, so this is not pi-Y
 			end if
 			if (iprim==nprims) then
@@ -2714,7 +2667,9 @@ if (iselmolplane/=-1) then !Delocalized orbital cases
 			end if
 		end do
 	end do
-else !LMO/NBO case
+    isel=0
+        
+else if (iorbform==-1) then !LMO case
 	if (.not.allocated(CObasa)) then
 		write(*,"(a)") " Error: Basis function information is not presented but needed! See Section 2.5 of Multiwfn manual for detail"
 		write(*,*) "Press ENTER button to return"
@@ -2723,17 +2678,18 @@ else !LMO/NBO case
 	end if
 	do while(.true.)
 		write(*,*)
-		write(*,*) "0 Detect pi-orbitals now!"
-		write(*,"(a,f7.1,' %')") " 1 Set threshold for determining single-center orbital, current:",thressingle*100
-		write(*,"(a,f8.4,' a.u.')") " 2 Set density threshold for determining pi-orbital, current:",thresdens
-		if (ionlyocc==1) write(*,*) "3 Switch the orbitals in consideration, current: all occupied orbitals"
+        write(*,"(a)") " -1 Detect pi orbitals and then evaluate pi composition for orbitals in another wavefunction file"
+		write(*,*) "0 Detect pi orbitals and then set occupation numbers"
+		write(*,"(a,f7.1,' %')") " 1 Set threshold for identifying single-center orbitals, current:",thressingle*100
+		write(*,"(a,f8.4,' a.u.')") " 2 Set density threshold for identifying pi orbitals, current:",thresdens
+		if (ionlyocc==1) write(*,*) "3 Switch the orbitals in consideration, current: occupied orbitals"
 		if (ionlyocc==0) write(*,*) "3 Switch the orbitals in consideration, current: all orbitals"
 		if (idebug==1) write(*,*) "4 Switch outputting debug information, current: Yes"
 		if (idebug==0) write(*,*) "4 Switch outputting debug information, current: No"
 		if (.not.allocated(atmrange)) write(*,*) "5 Set constraint of atom range, current: undefined"
 		if (allocated(atmrange)) write(*,"(a,i6,a)") " 5 Set constraint of atom range, current: ",natmrange," atoms"
 		read(*,*) isel
-		if (isel==0) then
+		if (isel==0.or.isel==-1) then
 			exit
 		else if (isel==1) then
 			write(*,*) "Input the threshold composition, e.g. 0.8"
@@ -2743,7 +2699,8 @@ else !LMO/NBO case
 		else if (isel==2) then
 			write(*,*) "Input the threshold density in a.u., e.g. 0.02"
 			write(*,"(a)") " Note: Assume that in an orbital, A and B are the two atoms having maximum contributions, &
-			the orbital will be regarded as pi orbital if electron density at midpoint between A and B is smaller than the threshold"
+			the orbital will be regarded as pi orbital if electron densities at two representative points between A and B &
+            are both smaller than the threshold density"
 			read(*,*) thresdens
 		else if (isel==3) then
 			if (ionlyocc==1) then
@@ -2767,6 +2724,8 @@ else !LMO/NBO case
 			call str2arr(c2000tmp,natmrange,atmrange)
 		end if
 	end do
+    
+    write(*,*)
 	write(*,*) "Expected pi orbitals, occupation numbers and orbital energies (eV):"
 	allocate(tmparr(ncenter))
 	do imo=1,nmo
@@ -2795,7 +2754,8 @@ else !LMO/NBO case
 		tmpz=0.3D0*a(imax)%z+0.7D0*a(imax2)%z
 		dens2=fdens(tmpx,tmpy,tmpz)
 		MOocc=MOocc_org
-		if (idebug==1) write(*,"(' Orb:',i5,'  max:',i5,f6.1,'%  max2:',i5,f6.1,'%  mid.rho:',f10.5)") imo,imax,tmparr(imax)*100,imax2,tmparr(imax2)*100,densmid
+		if (idebug==1) write(*,"(' Orb:',i5,'  max:',i5,f6.1,'%  max2:',i5,f6.1,'%  rho1:',f9.5,'  rho2:',f9.5)") &
+        imo,imax,tmparr(imax)*100,imax2,tmparr(imax2)*100,dens1,dens2
 		if (tmparr(imax)>thressingle) cycle !Pass single center LMO (Lone pair, inner-core)
 		if (allocated(atmrange)) then
 			if (all(atmrange/=imax).or.all(atmrange/=imax2)) cycle
@@ -2814,66 +2774,132 @@ if (npiorb==0) then
 	write(*,*) "No pi orbital was found!"
 	return
 end if
-
 write(*,"(' Total number of pi orbitals:',i6)") npiorb
 write(*,"(' Total number of electrons in pi orbitals:',f12.6)") pinelec
-if (iselmolplane/=-1.and.imodwfn==0) then !Only for MOs, one can safely separate inner and valence orbitals
+if (iorbform==0.and.imodwfn==0) then !Only for MOs, one can safely separate inner and valence orbitals
 	call getninnerele(ninnerele,0)
 	ndelelec=ninnerele/2
 	write(*,"(' Total number of inner electrons:',i6)") ninnerele
 end if
 write(*,*)
 
-write(*,*) "How to deal with these orbitals?"
-write(*,*) "0 Do nothing"
-write(*,*) "1 Set occupation number of these pi orbitals to zero"
-write(*,*) "2 Set occupation number of all other orbitals to zero"
-if (iselmolplane/=-1.and.imodwfn==0) then
-	write(*,*) "3 Set occupation number of valence pi orbitals to zero"
-	write(*,*) "4 Set occupation number of all except for valence pi orbitals to zero"
-end if
-read(*,*) isel
+if (isel==0) then !Set occupation number
+    write(*,*) "How to deal with these orbitals?"
+    write(*,*) "0 Do nothing"
+    write(*,*) "1 Set occupation number of these pi orbitals to zero"
+    write(*,*) "2 Set occupation number of all other orbitals to zero"
+    if (iorbform==0.and.imodwfn==0) then
+	    write(*,*) "3 Set occupation number of valence pi orbitals to zero"
+	    write(*,*) "4 Set occupation number of all except for valence pi orbitals to zero"
+    end if
+    read(*,*) isel
 
-if (isel/=0) then
-	if (isel==1) then
-		where (piorblist==1) MOocc=0
-	else if (isel==2) then
-		where (piorblist==0) MOocc=0
-	else if (isel==3.or.isel==4) then
-		if (wfntype==1.or.wfntype==4) then !UHF and U-post-HF wfn
-			do isplit=1,nmo !Where the first beta orbital appear now
-				if (motype(isplit)==2) exit
-			end do
-			do imo=1,nmo
-				if (isel==3) then
-					if (piorblist(imo)==1.and.imo<=isplit.and.imo>ndelelec) MOocc(imo)=0 !alpha part
-					if (piorblist(imo)==1.and.imo>isplit.and.imo>(isplit+ndelelec)) MOocc(imo)=0 !beta part
-				else if (isel==4) then
-					if (imo<=isplit) then !alpha part
-						if (piorblist(imo)==0.or.imo<=ndelelec) MOocc(imo)=0
-					else !beta part
-						if (piorblist(imo)==0.or.imo<=(isplit+ndelelec)) MOocc(imo)=0
-					end if
-				end if
-			end do
-		else if (wfntype==0.or.wfntype==2.or.wfntype==3) then !Restricted(=0) or RO(=2) or post-R(=3) wavefunction	
-			do imo=1,nmo
-				if (isel==3.and.piorblist(imo)==1.and.imo>ndelelec) MOocc(imo)=0
-				if (isel==4.and.(piorblist(imo)==0.or.imo<=ndelelec)) MOocc(imo)=0
-			end do
-		end if
-	end if
-	imodwfn=1
-	call updatenelec
-	write(*,*) "Done!"
-	if (allocated(CObasa)) then
-		write(*,*) "Updating density matrix..."
-		call genP
-		write(*,*) "Density matrix has been updated"
-	end if
+    if (isel/=0) then
+	    if (isel==1) then
+		    where (piorblist==1) MOocc=0
+	    else if (isel==2) then
+		    where (piorblist==0) MOocc=0
+	    else if (isel==3.or.isel==4) then
+		    if (wfntype==1.or.wfntype==4) then !UHF and U-post-HF wfn
+			    do isplit=1,nmo !Where the first beta orbital appear now
+				    if (motype(isplit)==2) exit
+			    end do
+			    do imo=1,nmo
+				    if (isel==3) then
+					    if (piorblist(imo)==1.and.imo<=isplit.and.imo>ndelelec) MOocc(imo)=0 !alpha part
+					    if (piorblist(imo)==1.and.imo>isplit.and.imo>(isplit+ndelelec)) MOocc(imo)=0 !beta part
+				    else if (isel==4) then
+					    if (imo<=isplit) then !alpha part
+						    if (piorblist(imo)==0.or.imo<=ndelelec) MOocc(imo)=0
+					    else !beta part
+						    if (piorblist(imo)==0.or.imo<=(isplit+ndelelec)) MOocc(imo)=0
+					    end if
+				    end if
+			    end do
+		    else if (wfntype==0.or.wfntype==2.or.wfntype==3) then !Restricted(=0) or RO(=2) or post-R(=3) wavefunction	
+			    do imo=1,nmo
+				    if (isel==3.and.piorblist(imo)==1.and.imo>ndelelec) MOocc(imo)=0
+				    if (isel==4.and.(piorblist(imo)==0.or.imo<=ndelelec)) MOocc(imo)=0
+			    end do
+		    end if
+	    end if
+	    imodwfn=1
+	    call updatenelec
+	    write(*,*) "Done!"
+	    if (allocated(CObasa)) then
+		    write(*,*) "Updating density matrix..."
+		    call genP
+		    write(*,*) "Density matrix has been updated"
+	    end if
+    end if
+    write(*,*)
+
+else if (isel==-1) then !Calculate pi composition for orbitals in another file
+    CObasa_LMO=CObasa
+    if (allocated(CObasb)) CObasb_LMO=CObasb
+    call dealloall
+    write(*,*) "Input a file containing other set of orbitals, e.g. C:\riko.fch"
+    do while(.true.)
+	    read(*,"(a)") c200tmp
+	    inquire(file=c200tmp,exist=alive)
+	    if (alive) exit
+	    write(*,*) "Cannot find the file, input again!"
+    end do
+    call readinfile(c200tmp,1)
+    write(*,*) "Input threshold for printing (%), e.g. 85"
+    write(*,*) "If press ENTER directly, 50% will be employed as the threshold"
+    read(*,"(a)") c200tmp
+    if (c200tmp==" ") then
+        thres=0.5D0
+    else
+        read(c200tmp,*) thres
+        thres=thres/100
+    end if
+    if (wfntype==0.or.wfntype==2.or.wfntype==3) then !Restricted orbitals
+        do iorb=1,nmo
+            if (ionlyocc==1.and.MOocc(iorb)==0) cycle !Only consider occupied orbitals
+            picomp=0
+            do ilmo=1,nmo
+                if (piorblist(ilmo)==0) cycle !LMO is not pi
+                coeff=sum(matmul(transpose(CObasa_lmo(:,ilmo:ilmo)),matmul(Sbas,CObasa(:,iorb:iorb))))
+                picomp=picomp+coeff**2
+            end do
+            if (picomp>thres) write(*,"(' Orbital',i6,' (Occ=',f8.5')   pi composition:',f8.3,'%')") iorb,MOocc(iorb),picomp*100
+        end do
+    else if (wfntype==1.or.wfntype==4) then !Unrestricted orbitals
+        write(*,*) "===== Alpha part ====="
+        do iorb=1,nmo/2
+            if (ionlyocc==1.and.MOocc(iorb)==0) cycle !Only consider occupied orbitals
+            picomp=0
+            do ilmo=1,nmo/2
+                if (piorblist(ilmo)==0) cycle !LMO is not pi
+                coeff=sum(matmul(transpose(CObasa_lmo(:,ilmo:ilmo)),matmul(Sbas,CObasa(:,iorb:iorb))))
+                picomp=picomp+coeff**2
+            end do
+            if (picomp>thres) write(*,"(' Orbital',i6,' (Occ=',f8.5')   pi composition:',f8.3,'%')") iorb,MOocc(iorb),picomp*100
+        end do
+        write(*,*)
+        write(*,*) "===== Beta part ====="
+        do iorb=1,nmo/2
+            if (ionlyocc==1.and.MOocc(iorb+nbasis)==0) cycle !Only consider occupied orbitals
+            picomp=0
+            do ilmo=1,nmo/2
+                if (piorblist(ilmo+nbasis)==0) cycle !LMO is not pi
+                coeff=sum(matmul(transpose(CObasb_lmo(:,ilmo:ilmo)),matmul(Sbas,CObasb(:,iorb:iorb))))
+                picomp=picomp+coeff**2
+            end do
+            if (picomp>thres) write(*,"(' Orbital',i6,' (Occ=',f8.5')   pi composition:',f8.3,'%')") iorb,MOocc(iorb),picomp*100
+        end do
+    
+    end if
+    write(*,*)
+    write(*,*) "Note: Current wavefunction corresponds to the file just loaded"
 end if
-write(*,*)
 end subroutine
+
+
+
+
 
 
 !!--------- A utility used to generate Bq coordinate for calculating NICS_ZZ, and obtain NICS_ZZ for non-planar system

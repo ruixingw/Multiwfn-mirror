@@ -130,7 +130,7 @@ do while(.true.)
 		write(*,*) "Input path of the new cube file, e.g. C:\Tree.cub"
 		read(*,"(a)") gridfilenew
 		open(10,file=gridfilenew,status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done, new cube file has been outputted"
 	else if (isel==1) then
@@ -402,7 +402,7 @@ do while(.true.)
 			if (isel2==9) cubmat=cubmat**calconstant
 		else if (isel2==2.or.isel2==4.or.isel2==6.or.isel2==8.or.isel2==10.or.isel2==11.or.isel2==12.or.isel2==18.or.isel2==19.or.isel2==21.or.isel2==22) then
 			do while(.true.)
-				write(*,*) "Input another .cub or .grd file name"
+				write(*,*) "Input another .cub or .grd file name, e.g. C:\umi.cub"
 				read(*,"(a)") gridfile2
 				inquire(file=gridfile2,exist=alive)
 				if (alive) exit
@@ -463,7 +463,7 @@ do while(.true.)
 		if (isel2/=0) write(*,*) "Done, grid data has been updated"
 	
 	else if (isel==12) then
-		write(*,*) "Input a value to define a isosurface of present grid data   e.g. 0.001"
+		write(*,*) "Input a value to define a isosurface of present grid data, e.g. 0.001"
 		read(*,*) value_ref
 		write(*,*) "Input allowed deviation (%)   e.g. 4"
 		read(*,*) deviation

@@ -865,6 +865,9 @@ if (dx==0D0) then !The grid has not been set previously
 	dx=0.25D0 !This module always assumes that dx=dy=dz
 	dy=0.25D0
 	dz=0.25D0
+    gridvec1=0;gridvec1(1)=dx
+    gridvec2=0;gridvec2(2)=dy
+    gridvec3=0;gridvec3(3)=dz
 end if
 boxlenX=endx-orgx
 boxlenY=endy-orgy
@@ -1427,6 +1430,9 @@ orgz=minval(a%z)-aug3D
 dx=(molxlen*molylen*molzlen/dfloat(nprevorbgrid))**(1.0D0/3.0D0)
 dy=dx
 dz=dx
+gridvec1=0;gridvec1(1)=dx
+gridvec2=0;gridvec2(2)=dy
+gridvec3=0;gridvec3(3)=dz
 nx=nint(molxlen/dx)+1
 ny=nint(molylen/dy)+1
 nz=nint(molzlen/dz)+1
@@ -2174,6 +2180,9 @@ call GWGSCL(id,grdspc)
 dx=grdspc
 dy=grdspc
 dz=grdspc
+gridvec1=0;gridvec1(1)=dx
+gridvec2=0;gridvec2(2)=dy
+gridvec3=0;gridvec3(3)=dz
 nx=boxlenX/dx+1
 ny=boxlenY/dy+1
 nz=boxlenZ/dz+1

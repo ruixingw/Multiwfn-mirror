@@ -2040,6 +2040,7 @@ else !Calculate grid data
 		outcubfile="MOvalue.cub"
 	else if (ifuncsel==5) then
 		outcubfile="spindensity.cub"
+		sur_value=0.02D0
 	else if (ifuncsel==6) then
 		outcubfile="K(r).cub"
 	else if (ifuncsel==7) then
@@ -2048,19 +2049,19 @@ else !Calculate grid data
 		outcubfile="nucleiesp.cub"
 	else if (ifuncsel==9) then
 		outcubfile="ELF.cub"
-		sur_value=0.7
+		sur_value=0.7D0
 	else if (ifuncsel==10) then
 		outcubfile="LOL.cub"
-		sur_value=0.5
+		sur_value=0.5D0
 	else if (ifuncsel==11) then
 		outcubfile="infoentro.cub"
 	else if (ifuncsel==12) then
 		outcubfile="totesp.cub"
 	else if (ifuncsel==13) then
-		sur_value=0.5
+		sur_value=0.5D0
 		outcubfile="RDG.cub"
 	else if (ifuncsel==14) then
-		sur_value=0.4
+		sur_value=0.4D0
 		outcubfile="RDGprodens.cub"
 	else if (ifuncsel==15) then
 		outcubfile="signlambda2rho.cub"
@@ -2136,7 +2137,7 @@ else !Calculate grid data
 			write(*,*) "Graph has been saved to current folder with ""DISLIN"" prefix"
 		else if (i==2) then
 			open(10,file=outcubfile,status="replace")
-			call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+			call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 			close(10)
 			write(*,"(' New grid file has been outputted to: ',a35)") adjustl(outcubfile)
 		else if (i==3) then
@@ -2152,22 +2153,22 @@ else !Calculate grid data
 			close(10)
 			write(*,"(a)") " Output finished, column 1/2/3/4 correspond to X/Y/Z/Value. The coordinate unit is Angstrom, the unit of the calculated function is a.u."
 		else if (i==4) then
-			write(*,*) "Input the value of isosurface"
+			write(*,*) "Input the value of isosurface, e.g. 0.02"
 			read(*,*) sur_value
 		else if (i==5) then
-			write(*,*) "Input a value"
+			write(*,*) "Input a value, e.g. 1.5"
 			read(*,*) tmpval
 			cubmat=cubmat*tmpval
 		else if (i==6) then
-			write(*,*) "Input a value"
+			write(*,*) "Input a value, e.g. 1.5"
 			read(*,*) tmpval
 			cubmat=cubmat/tmpval
 		else if (i==7) then
-			write(*,*) "Input a value"
+			write(*,*) "Input a value, e.g. 1.5"
 			read(*,*) tmpval
 			cubmat=cubmat+tmpval
 		else if (i==8) then
-			write(*,*) "Input a value"
+			write(*,*) "Input a value, e.g. 1.5"
 			read(*,*) tmpval
 			cubmat=cubmat-tmpval
 		end if

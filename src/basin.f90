@@ -1586,6 +1586,10 @@ write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6)") orgx,orgy,orgz
 write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6)") endx,endy,endz
 write(*,"(' Spacing in X,Y,Z is',3f11.6)") dx,dy,dz
 write(*,"(' Number of points in X,Y,Z is',3i5,'   Total',i10)") nx,ny,nz,nx*ny*nz
+
+gridvec1=0;gridvec1(1)=dx
+gridvec2=0;gridvec2(2)=dy
+gridvec3=0;gridvec3(3)=dz
 ! do i=1,nx
 ! 	write(c80tmp,"(D20.13)") orgx+(i-1)*dx
 ! 	read(c80tmp,*) tmpval

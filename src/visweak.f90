@@ -194,13 +194,13 @@ do while (.true.)
 	else if (isel==6) then
 		write(*,*) "Outputting averaged reduced density gradient to avgRDG.cub in current folder"
 		open(10,file="avgRDG.cub",status="replace")
-		call outcube(avgRDG,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(avgRDG,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 		write(*,*)
 		write(*,*) "Outputting averaged Sign(lambda2)*rho to avgsl2r.cub in current folder"
 		open(10,file="avgsl2r.cub",status="replace")
-		call outcube(avgsl2r,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(avgsl2r,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==7) then
@@ -237,7 +237,7 @@ do while (.true.)
 		write(*,"(' Totally took up CPU time',f12.2,'s, wall clock time',i10,'s',/)") time_end-time_begin,walltime2-walltime1
 		write(*,*) "Outputting thermal fluctuation index to thermflu.cub in current folder"
 		open(10,file="thermflu.cub",status="replace")
-		call outcube(thermflu,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(thermflu,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==8) then
@@ -464,19 +464,19 @@ do while (.true.)
 		write(*,*) "Finished, column 1/2/3/4 = delta_g_inter/delta_g_intra/delta_g/sign(lambda2)rho"
 	else if (isel==3) then
 		open(10,file="dg_inter.cub",status="replace")
-		call outcube(dg_inter,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(dg_inter,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "delta_g_inter has been exported to dg_inter.cub in current folder"
 		open(10,file="dg_intra.cub",status="replace")
-		call outcube(dg_intra,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(dg_intra,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "delta_g_intra has been exported to dg_intra.cub in current folder"
 		open(10,file="dg.cub",status="replace")
-		call outcube(dg,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(dg,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "delta_g has been exported to dg.cub in current folder"
 		open(10,file="sl2r.cub",status="replace")
-		call outcube(sl2r,nx,ny,nz,orgx,orgy,orgz,dx,dy,dz,10)
+		call outcube(sl2r,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "sign(lambda2)rho has been exported to sl2r.cub in current folder"
 	else if (isel==4) then

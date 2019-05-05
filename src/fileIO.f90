@@ -1729,16 +1729,17 @@ open(10,file=cubname,access="sequential",status="old")
 read(10,"(a)") titleline1
 read(10,"(a)") titleline2
 read(10,*) ncentertmp,orgx,orgy,orgz
-read(10,*) nx,v1x,v1y,v1z
-read(10,*) ny,v2x,v2y,v2z
-read(10,*) nz,v3x,v3y,v3z
+read(10,*) nx,gridvec1
+read(10,*) ny,gridvec2
+read(10,*) nz,gridvec3
 if (ionlygrid==0) ncenter=ncentertmp
-dx=v1x !If this is cubic grid. dx,dy,dz are global array in defvar
-dy=v2y
-dz=v3z
-endx=orgx+v1x*(nx-1) !endx,y,z are global array in defvar
-endy=orgy+v2y*(ny-1)
-endz=orgz+v3z*(nz-1)
+dx=gridvec1(1)
+dy=gridvec2(2)
+dz=gridvec3(3)
+endx=orgx+dx*(nx-1) !endx,y,z are global array in defvar
+endy=orgy+dy*(ny-1)
+endz=orgz+dz*(nz-1)
+write(*,*) 
 
 mo_number=0
 if (ncenter<0) then
@@ -1759,12 +1760,12 @@ if (infomode==0) then
 	write(*,*)
 	write(*,"(' Total number of atoms:',i8)") ncenter
 	write(*,"(' Translation vector:        X           Y           Z     (Bohr)')")
-	write(*,"(a20,3f12.6)") "Vector 1: ",v1x,v1y,v1z
-	write(*,"(a20,3f12.6)") "Vector 2: ",v2x,v2y,v2z
-	write(*,"(a20,3f12.6)") "Vector 3: ",v3x,v3y,v3z
-	write(*,"(' The range of x is from ',f12.6,' to ',f12.6,' Bohr,' i5,' points')") ,orgx,orgx+(nx-1)*v1x,nx
-	write(*,"(' The range of y is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgy,orgy+(ny-1)*v2y,ny
-	write(*,"(' The range of z is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgz,orgz+(nz-1)*v3z,nz
+	write(*,"(a20,3f12.6)") "Vector 1: ",gridvec1
+	write(*,"(a20,3f12.6)") "Vector 2: ",gridvec2
+	write(*,"(a20,3f12.6)") "Vector 3: ",gridvec3
+	write(*,"(' The range of x is from ',f12.6,' to ',f12.6,' Bohr,' i5,' points')") ,orgx,orgx+(nx-1)*dx,nx
+	write(*,"(' The range of y is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgy,orgy+(ny-1)*dy,ny
+	write(*,"(' The range of z is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgz,orgz+(nz-1)*dz,nz
 	write(*,"(' Total number of grid points:',i10)") nx*ny*nz
 	write(*,"(' This grid data will take up at least',i6,' MB memory')") nx*ny*nz*8/1024/1024
 end if
@@ -1816,7 +1817,7 @@ if (mo_number==0.or.mo_number==1) then !Commonly case, below code has the best c
 	deallocate(tmpreadcub)
 else !Load specified of many orbitals
 	ii=0
-	do i=1,nx   !a(x,y,z)
+	do i=1,nx !a(x,y,z)
 		do j=1,ny
 			read(10,*) temp_readdata
 			cubmat(i,j,:)=temp_readdata(mo_select:size(temp_readdata):mo_number)
@@ -1831,6 +1832,7 @@ else !Load specified of many orbitals
 end if
 close(10)
 
+!Calculate statistical information
 maxv%value=cubmat(1,1,1)
 maxv%x=orgx
 maxv%y=orgy
@@ -1839,8 +1841,8 @@ minv%value=cubmat(1,1,1)
 minv%x=orgx
 minv%y=orgy
 minv%z=orgz
-sumuppos=0.0D0
-sumupneg=0.0D0
+sumuppos=0D0
+sumupneg=0D0
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
@@ -1863,7 +1865,7 @@ do k=1,nz
 end do
 
 if (infomode==0) then
-	fminivol=v1x*v2y*v3z
+	fminivol=dx*dy*dz
 	write(*,*)
 	write(*,"(' The minimum value:',E16.8,' at',3f12.6,' Bohr')") minv%value,minv%x,minv%y,minv%z
 	write(*,"(' The maximum value:',E16.8,' at',3f12.6,' Bohr')") maxv%value,maxv%x,maxv%y,maxv%z
@@ -1874,7 +1876,18 @@ if (infomode==0) then
 	write(*,"(' After multiplied by differential element:',f30.10)") sumupneg*fminivol
 	write(*,"(' Summing up all value in grid file:       ',f30.10)") sumuppos+sumupneg
 	write(*,"(' After multiplied by differential element:',f30.10)") (sumuppos+sumupneg)*fminivol
+
+    if (sum(gridvec1*gridvec2*gridvec3)/=0) then
+        write(*,*)
+        write(*,*) "   Warning! Warning! Warning! Warning! Warning! Warning! Warning! Warning!"
+        write(*,"(a)") " The grid is not rectangle, in this case, many outputs (including the ones shown above) and &
+        analysis results are completely meaningless. &
+        Only the grid data calculation function in main function 13 must work normally."
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
+    end if
 end if
+
 end subroutine
 
 
@@ -1890,16 +1903,21 @@ character(len=*) cubname
 integer inconsis
 integer,allocatable :: mo_serial(:)
 real*8,allocatable :: temp_readdata(:)
+real*8 gridvectmp1(3),gridvectmp2(3),gridvectmp3(3)
+
 open(10,file=cubname,access="sequential",status="old")
 read(10,*)
 read(10,*)
 read(10,*) ncentertmp
-read(10,*) nxtmp,dxtmp,tmpval,tmpval
-read(10,*) nytmp,tmpval,dytmp,tmpval
-read(10,*) nztmp,tmpval,tmpval,dztmp
+read(10,*) nxtmp,gridvectmp1
+read(10,*) nytmp,gridvectmp2
+read(10,*) nztmp,gridvectmp3
 inconsis=0
-if (nxtmp/=nx.or.nytmp/=ny.or.nztmp/=nz.or.abs(dxtmp-dx)>0.005D0.or.abs(dytmp-dy)>0.005D0.or.abs(dztmp-dz)>0.005D0) then
+if (nxtmp/=nx.or.nytmp/=ny.or.nztmp/=nz.or.&
+maxval(abs(gridvec1-gridvectmp1))>0.005D0.or.maxval(abs(gridvec2-gridvectmp2))>0.005D0.or.maxval(abs(gridvec3-gridvectmp3))>0.005D0) then
 	write(*,"(a)") " Error: The grid setting of this cube file is inconsistent with that of the grid data stored in memory!"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
 	inconsis=1
 	return
 end if
@@ -1941,7 +1959,7 @@ write(*,*)
 write(*,*) "Loading grid data, please wait..."
 !Load data
 ii=0
-do i=1,nx   !a(x,y,z)
+do i=1,nx !a(x,y,z)
 	do j=1,ny
 		if (mo_number==0.or.mo_number==1) then
 			read(10,*) cubmattmp(i,j,:)
@@ -1981,7 +1999,8 @@ read(10,*) flenx,fleny,flenz,anga,angb,angc !Notice that the length unit is in A
 read(10,*) nx,ny,nz !Here nx,ny,nz are total space (between neighbour grid point) in each direction
 read(10,*) ifast,ixback,ixforw,iyback,iyforw,izback,izforw
 if (anga/=90.or.angb/=90.or.angc/=90) then
-	write(*,*) "Error: Only cubic cell is supported in Multiwfn! Press ENTER button to exit"
+	write(*,*) "Error: Only .grd file of rectangle grid is supported in Multiwfn!"
+    write(*,*) "Press ENTER button to exit"
 	read(*,*)
 	stop
 else if (ifast/=1) then !ifast=1 means x varies fastest
@@ -1992,6 +2011,7 @@ end if
 dx=flenx/nx/b2a
 dy=fleny/ny/b2a
 dz=flenz/nz/b2a
+gridvec1(1)=dx;gridvec2(2)=dy;gridvec3(3)=dz
 nx=nx+1 !Convert the number of spacings to the number of points
 ny=ny+1
 nz=nz+1
@@ -4051,17 +4071,45 @@ end subroutine
 subroutine outgjf(outgjfname,ifileid)
 use defvar
 character(len=*) outgjfname
+character selectyn
+selectyn='n'
+if (allocated(CObasa).and.wfntype<=2) then
+    write(*,"(a)") " Do you also want to write current wavefunction as initial guess into the .gjf file? (y/n)"
+    read(*,*) selectyn
+end if
 open(ifileid,file=outgjfname,status="replace")
-write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G*","Generated by Multiwfn"
+if (selectyn=='y') then
+    write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G* guess=cards","Generated by Multiwfn"
+else
+    write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G*","Generated by Multiwfn"
+end if
 netcharge=nint(sum(a%charge)-nelec)
 if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
 write(ifileid,"(2i2)") netcharge,nint(naelec-nbelec)+1
 do i=1,ncenter
 	write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
 end do
+if (selectyn=='y') then
+    write(ifileid,"(/,'5(E16.9)',/,'-1')")
+    do i=1,nbasis
+	    if (wfntype==0.or.wfntype==2) write(ifileid,"('! Orbital:',i6,' Occ:',f10.6)") i,MOocc(i)
+	    if (wfntype==1) write(ifileid,"('! Alpha orbital:',i6,' Occ:',f10.6)") i,MOocc(i)
+	    write(ifileid,"(5E16.9)") (CObasa(j,i),j=1,nbasis)
+    end do
+    if (wfntype==1) then
+	    write(ifileid,"('-1')")
+	    do i=1,nbasis
+		    write(ifileid,"('! Beta orbital:',i6,' Occ:',f10.6)") i,MOocc(nbasis+i)
+		    write(ifileid,"(5E16.9)") (CObasb(j,i),j=1,nbasis)
+	    end do
+    end if
+    write(ifileid,"('0',/)")
+end if
 write(ifileid,*)  !Two blank line at the end of the file
 close(ifileid)
 write(*,"(a)") " Exporting Gaussian input file finished! It corresponds to single point task at B3LYP/6-31G* level"
+if (selectyn=='y') write(*,"(a)") " Note that you must specify the basis set to the one &
+originally used to yield the wavefunction, otherwise Gaussian calculation must be failed"
 end subroutine
 
 
@@ -4141,17 +4189,123 @@ end subroutine
 subroutine outORCAinp(outname,ifileid)
 use defvar
 character(len=*) outname
+character solvname*30,keyword*200,c200tmp*200
+integer :: isolv=0,itask=1
+write(*,"(a)") " Note: The keywords will be at least compatible with ORCA 4.1.2"
+do while(.true.)
+    write(*,*)
+    if (isolv==1) write(*,*) "-1 Toggle employing SMD solvation model, current: Yes, "//trim(solvname)
+    if (isolv==0) write(*,*) "-1 Toggle employing SMD solvation model, current: No"
+    if (itask==1) write(*,*) "0 Select task, current: Single point"
+    if (itask==2) write(*,*) "0 Select task, current: Optimization"
+    if (itask==3) write(*,*) "0 Select task, current: Frequency"
+    if (itask==4) write(*,*) "0 Select task, current: Optimization + Frequency"
+    write(*,*) "1 B97-3c"
+    write(*,*) "2 RI-BLYP-D3(BJ)/def2-TZVP"
+    write(*,*) "3 RI-B3LYP-D3(BJ)/def2-TZVP(-f)"
+    write(*,*) "4 RI-B3LYP-D3(BJ)/def2-TZVP"
+    write(*,*) "5 RI-wB97M-V/def2-TZVP"
+    write(*,*) "6 RI-PWPB95-D3(BJ)/def2-TZVPP"
+    write(*,*) "7 RI-PWPB95-D3(BJ)/def2-QZVPP"
+    write(*,*) "8 DLPNO-CCSD(T)/cc-pVTZ with tightPNO"
+    write(*,*) "9 CCSD(T)/cc-pVTZ"
+    write(*,*) "10 CCSD(T)-F12/cc-pVDZ with RI"
+    write(*,*) "11 CCSD(T)/CBS (cc-pVTZ->cc-pVQZ extrapolation)"
+    write(*,*) "20 TDA-DFT RI-PBE0/def2-SV(P) with riints_disk (much faster than 21)"
+    write(*,*) "21 TDDFT RI-PBE0/def2-SV(P)"
+    write(*,*) "22 TDDFT RI-B2GP-PLYP/def2-TZVP"
+    write(*,*) "23 EOM-CCSD/cc-pVTZ"
+    read(*,*) ilevel
+    if (ilevel==0) then
+        write(*,*) "1 Single point"
+        write(*,*) "2 Optimization"
+        write(*,*) "3 Frequency"
+        write(*,*) "4 Optimization + Frequency"
+        read(*,*) itask
+    else if (ilevel==-1) then
+        if (isolv==1) then
+            isolv=0
+        else
+            isolv=1
+            write(*,*) "Input name of solvent, e.g. water"
+            write(*,*) "If press ENTER button directly, water will be employed as solvent"
+            read(*,"(a)") solvname
+            if (solvname==" ") solvname="water"
+        end if
+    else
+        exit
+    end if
+end do
+
+if (ilevel==1) c200tmp="! B97-3c"
+if (ilevel==2) c200tmp="! BLYP D3 def2-TZVP def2/J"
+if (ilevel==3) c200tmp="! B3LYP D3 def2-TZVP(-f) def2/J RIJCOSX"
+if (ilevel==4) c200tmp="! B3LYP D3 def2-TZVP def2/J RIJCOSX"
+if (ilevel==5) c200tmp="! wB97M-V def2-TZVP def2/J RIJCOSX tightSCF grid4 gridx4"
+if (ilevel==6) c200tmp="! PWPB95 D3 def2-TZVPP def2/J def2-TZVPP/C RIJCOSX grid4 gridx4 tightSCF"
+if (ilevel==7) c200tmp="! PWPB95 D3 def2-QZVPP def2/J def2-QZVPP/C RIJCOSX grid4 gridx4 tightSCF"
+if (ilevel==8) c200tmp="! DLPNO-CCSD(T) tightPNO cc-pVTZ cc-pVTZ/C tightSCF"
+if (ilevel==9) c200tmp="! CCSD(T) cc-pVTZ tightSCF"
+if (ilevel==10) c200tmp="! CCSD(T)-F12/RI cc-pVDZ-F12 cc-pVDZ-F12-CABS cc-pVTZ/C"
+if (ilevel==11) c200tmp="! CCSD(T) Extrapolate(3/4,cc) tightSCF"
+if (ilevel==20) c200tmp="! PBE0 def2-SV(P) def2/J def2-SVP/C RIJCOSX grid4 gridx4 tightSCF"
+if (ilevel==21) c200tmp="! PBE0 def2-SV(P) def2/J RIJCOSX grid4 gridx4 tightSCF"
+!TD-B2GP-PLYP is slightly better than TD-B2PLYP according to DYE12 test. ORCA 4.1.2 doesn't support TD-PWPB95
+if (ilevel==22) c200tmp="! B2GP-PLYP def2-TZVP def2/J def2-TZVP/C RIJCOSX grid4 gridx4 tightSCF"
+if (ilevel==23) c200tmp="! EOM-CCSD cc-pVTZ tightSCF"
+
+if (itask==1) then
+    keyword=trim(c200tmp)//" noautostart miniprint nopop"
+else if (itask==2) then !opt task uses tightSCF by default
+    keyword=trim(c200tmp)//" opt noautostart miniprint nopop"
+else if (itask==3) then
+    if (index(c200tmp,"tightSCF")==0) then
+        keyword=trim(c200tmp)//" freq tightSCF noautostart miniprint nopop"
+    else
+        keyword=trim(c200tmp)//" freq noautostart miniprint nopop"
+    end if
+else if (itask==4) then
+    if (index(c200tmp,"tightSCF")==0) then
+        keyword=trim(c200tmp)//" opt freq tightSCF noautostart miniprint nopop"
+    else
+        keyword=trim(c200tmp)//" opt freq noautostart miniprint nopop"
+    end if
+end if
+
 open(ifileid,file=outname,status="replace")
-write(ifileid,"(a)") "! BLYP def2-SVP def2/J noautostart nopop"
+write(ifileid,"(a)") trim(keyword)
 netcharge=nint(sum(a%charge)-nelec)
 if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
+write(ifileid,"(a)") "%maxcore 1000"
+write(ifileid,"('%pal nprocs',i3,' end')") nthreads
+if (isolv==1) then
+    write(ifileid,"(a)") "%cpcm"
+    write(ifileid,"(a)") "smd true"
+    write(ifileid,"(a)") 'SMDsolvent "'//trim(solvname)//'"'
+    write(ifileid,"(a)") "end"
+end if
+if (ilevel==20) then
+    write(ifileid,"(a)") "%tddft"
+    write(ifileid,"(a)") "nroots 10"
+    write(ifileid,"(a)") "mode riints_disk"
+    write(ifileid,"(a)") "end"
+else if (ilevel==21.or.ilevel==22) then
+    write(ifileid,"(a)") "%tddft"
+    write(ifileid,"(a)") "nroots 10"
+    write(ifileid,"(a)") "TDA false"
+    write(ifileid,"(a)") "end"
+else if (ilevel==23) then
+    write(ifileid,"(a)") "%mdci"
+    write(ifileid,"(a)") "nroots 3"
+    write(ifileid,"(a)") "end"
+end if
 write(ifileid,"('* xyz',2i4)") netcharge,nint(naelec-nbelec)+1
 do i=1,ncenter
 	write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
 end do
 write(ifileid,*) "*"
 close(ifileid)
-write(*,"(a)") " Exporting ORCA input file finished! It corresponds to single point task at RI-BLYP/def2-SVP level"
+write(*,"(a)") " Exporting ORCA input file finished! You should properly check it and modify keywords"
 end subroutine
 
 
@@ -4391,11 +4545,11 @@ end subroutine
 
 
 !!!------------ Output 3D matrix with property to a cube file. fileid must be opened before invoking this routine, and close it after that
-subroutine outcube(matrix,numx,numy,numz,org_x,org_y,org_z,transx,transy,transz,fileid)
+subroutine outcube(matrix,numx,numy,numz,org_x,org_y,org_z,trans1,trans2,trans3,fileid)
 use defvar
 implicit real*8 (a-h,o-z)
 integer numx,numy,numz,fileid
-real*8 org_x,org_y,org_z,transx,transy,transz
+real*8 org_x,org_y,org_z,trans1(3),trans2(3),trans3(3)
 real*8 matrix(numx,numy,numz)
 write(fileid,"(' Generated by Multiwfn')")
 write(fileid,"(' Totally ',i12,' grid points')") numx*numy*numz
@@ -4404,9 +4558,12 @@ if (ncenter>=1) then
 else
 	write(fileid,"(i5,3f12.6)") 1,org_x,org_y,org_z
 end if
-write(fileid,"(i5,3f12.6)") numx,transx,0.0,0.0
-write(fileid,"(i5,3f12.6)") numy,0.0,transy,0.0
-write(fileid,"(i5,3f12.6)") numz,0.0,0.0,transz
+
+
+
+write(fileid,"(i5,3f12.6)") numx,trans1
+write(fileid,"(i5,3f12.6)") numy,trans2
+write(fileid,"(i5,3f12.6)") numz,trans3
 if (ncenter>=1) then
 	do i=1,ncenter
 		write(fileid,"(i5,4f12.6)") a(i)%index,a(i)%charge,a(i)%x,a(i)%y,a(i)%z
