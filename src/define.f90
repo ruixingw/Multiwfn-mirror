@@ -215,7 +215,7 @@ integer :: idxHOMO=0 !For fch and molden, record the index of original HOMO, thi
 integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13
 integer :: wfntype=0 !0/1/2/3/4 means R/U/ROHF /R/U-Post-HF wavefunction
 real*8 :: totenergy=0,virialratio=2,nelec=0,naelec=0,nbelec=0
-!-------- Variables for nuclei & basis function & Molecular orbital
+!-------- Variables for nuclei & GTF & Orbitals
 type(atomtype),allocatable :: a(:),a_org(:),a_tmp(:)
 type(primtype),allocatable :: b(:),b_org(:),b_tmp(:)
 integer,allocatable :: connmat(:,:) !Connectivity matrix. Could be loaded from .mol/mol2 file using readmol/readmol2 or readmolconn routine
@@ -223,7 +223,7 @@ real*8,allocatable :: MOocc(:),MOocc_org(:),MOene(:),MOene_org(:) !Occupation nu
 integer,allocatable :: MOtype(:) !The type of orbitals, (alpha&beta)=0/alpha=1/beta=2, not read from .wfn directly
 character*4,allocatable :: MOsym(:) !The symmetry of orbitals, meaningful when .molden/.gms is used since it sometimes records irreducible representation
 real*8,allocatable :: CO(:,:),CO_org(:,:),CO_tmp(:,:) !Coefficient matrix of primitive basis functions, including both normalization and contraction coefficients
-                                                        !Note: Row/column of CO denote MO/GTF respectively, in contrary to convention
+                                                      !Note: Row/column of CO denote MO/GTF respectively, in contrary to convention
 !-------- Describe inner electron density in EDF section
 type(primtype),allocatable :: b_EDF(:)
 real*8,allocatable :: CO_EDF(:)
@@ -235,7 +235,7 @@ real*8,allocatable :: primshexp(:),primshcoeff(:) !Exponent and contraction coef
 integer,allocatable :: basshell(:) !The ith element is the shell index that the ith basis attributed to
 integer,allocatable :: bascen(:),bastype(:) !Center/type of basis, definition is the same as GTF
 integer,allocatable :: basstart(:),basend(:) !The ith element means the basis from where to where is attributed to the ith atom
-integer,allocatable :: primstart(:),primend(:)  !The ith element means the GTF from where to where is attributed to the ith basis function
+integer,allocatable :: primstart(:),primend(:) !The ith element means the GTF from where to where is attributed to the ith Cartesian basis function (which may be yielded during reading spherical wavefunction)
 real*8,allocatable :: primconnorm(:) !element i means the contract. coeff. * normalization coeff. of GTF i, can be used for e.g. constructing basis integral from GTF integral
 real*8,allocatable :: Sbas(:,:),Sbas_org(:,:) !Overlap matrix and its backup
 real*8,allocatable,target :: Dbas(:,:,:) !Dipole moment integral matrix, the first index 1,2,3=X,Y,Z, the last two indices are basis index
@@ -289,7 +289,7 @@ integer idisboxsizeX,idisboxsizeY,idisboxsizeZ,idisboxposX,idisboxposY,idisboxpo
 integer GUI_mode 
 
 !Plotting external parameter, can be set in settings.ini
-character :: graphformat*4="png " !ps/eps/pdf/wmf/gif/tiff/bmp
+character :: graphformat*4="png ",graphformatname(9)=(/"png","gif","tiff","bmp","ps","eps","pdf","wmf","svg"/)
 integer :: graph1Dwidth=1280,graph1Dheight=800,graph2Dwidth=1280,graph2Dheight=1200,graph3Dwidth=1400,graph3Dheight=1400
 integer :: itickreverse=0,iticks=2,symbolsize=8,ilenunit1D=1,ilenunit2D=1,iatmlabtype=1,iatmlabtype3D=3,iplaneextdata=0
 integer :: numdigx=2,numdigy=2,numdigz=3,numdiglinex=3,numdigliney=3,numdigctr=3

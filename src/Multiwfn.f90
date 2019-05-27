@@ -4,14 +4,14 @@ use util
 use GUI
 implicit real*8(a-h,o-z)
 character nowdate*20,nowtime*20,c200tmp*200,lovername*80,settingpath*200
-real*8,allocatable :: tmparr(:)
+real*8,allocatable :: tmparr(:),tmpmat(:,:)
 
 call kmp_set_warnings_off() !In rare case, "Cannot open message catalog "1041\libiomp5ui.dll"" may occurs, this calling avoid this problem, or user should set KMP_WARNINGS environment variable to 0
 call getarg(1,filename)
 call getarg(2,cmdarg2)
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.6(dev), release date: 2019-May-5"
+write(*,*) "Version 3.6, release date: 2019-May-21"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper *MUST BE CITED* if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -151,6 +151,8 @@ end if
 
 !Special treatment
 ! call sys1eprop !Show some system 1e properties, only works when Cartesian basis functions are presented
+!allocate(tmpmat(ncenter,nmo))
+!call CDFT
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
@@ -395,6 +397,7 @@ do while(.true.) !Main loop
 		write(*,"(a,1PE18.8)") " 5 Set global temporary variable, current:",globaltmp
 		write(*,"(a,i3)") " 10 Set the number of threads, current:",nthreads
 		write(*,*) "11 Reload settings.ini"
+        write(*,*) "12 Add a Bq atom to specific position"
 		write(*,*) "90 Calculate nuclear attractive energy between a fragment and an orbital"
 		write(*,*) "91 Exchange orbital energies and occupations"
 		write(*,*) "92 Calculate result of various kinetic energy functionals"
@@ -443,6 +446,19 @@ do while(.true.) !Main loop
 		else if (i==11) then
 			call loadsetting
 			write(*,*) "Done!"
+		else if (i==12) then
+            do while(.true.)
+                write(*,*) "Write the X,Y,Z of the Bq atom to be added in Bohr, e.g. 0.2,0,-3.5"
+                write(*,*) "Input ""q"" can exit"
+                read(*,"(a)") c200tmp
+                if (c200tmp=="q") then
+                    exit
+                else
+                    read(c200tmp,*) tmpx,tmpy,tmpz
+                    call addbq(tmpx,tmpy,tmpz)
+			        write(*,*) "Done!"
+                end if
+            end do
 		else if (i==90) then
 			call attene_orb_fragnuc
 		else if (i==91) then

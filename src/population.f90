@@ -1,3 +1,16 @@
+!!!-------- Summary of routines for calculating charges
+!Bickelhaupt !Print Bickelhaupt charges
+!EEM !Calculate EEM charges, including interface
+!fitESP !Calculate MK and CHELPG charges, including interface
+!RESP !Calculate RESP charges, including interface
+!spacecharge !Calculate Hirshfeld, VDD, ADCH, CM5 and so on, including interface
+!Hirshfeld_I !Calculate Hirshfeld-I charge, including interface
+!MMPA !Population analysis of SCPA and Stout & Politzer
+!doADC !Calculate ADC type of charges based on existing atomic charges, invoked by spacecharge
+!doCM5 !Calculate CM5 charges based on existing Hirshfeld charges, invoked by spacecharge
+!genHirshfeld !A routine directly return Hirshfeld charge based on built-in density
+    
+    
 !----------- Interface of various population analyses methods
 subroutine population_main
 use defvar
@@ -141,13 +154,6 @@ else
 			write(*,"(a)") " NOTE: AIM charges cannot be calculated in present module but can be calculated in basin analysis module, &
 			please check the example given in Section 4.17.1 of the manual on how to do this"
 		else if (ipopsel==15) then
-			if (iautointgrid==1) then
-				radpot=30
-				sphpot=170
-				if (any(a%index>18)) radpot=40
-				if (any(a%index>36)) radpot=50
-				if (any(a%index>54)) radpot=60
-			end if
 			call Hirshfeld_I_wrapper(1)
 		else if (ipopsel==16) then
 			call spacecharge(7)
@@ -793,7 +799,7 @@ if (chgtype==5) then !Select atomic radii for Becke population
 			write(*,"(a)") " 5 1.12"
 			write(*,"(a)") " 14 1.63"
 			write(*,*)
-			write(*,*) "Input filename"
+			write(*,*) "Input file path, e.g. C:\radall.txt"
 			read(*,"(a)") radfilename
 			inquire(file=radfilename,exist=alive)
 			if (alive.eqv..true.) then
@@ -1041,7 +1047,7 @@ do i=1,ncenter
 end do
 totdip=dsqrt(xmoldip**2+ymoldip**2+zmoldip**2)
 write(*,"(' Total dipole moment from atomic charges:',f12.6,' a.u.')") totdip
-write(*,"(' X/Y/Z of dipole from atomic charge:',3f12.6,' a.u.')") xmoldip,ymoldip,zmoldip
+write(*,"(' X/Y/Z of dipole moment from atomic charges:',3f12.6,' a.u.')") xmoldip,ymoldip,zmoldip
 
 if (chgtype==5.or.chgtype==6) then
 	write(*,*)
@@ -1210,7 +1216,7 @@ charge=chargecorr !Overlay charge array, then return to Hirshfeld module and out
 end subroutine
 
 
-!!--------- Calculate CM5 charge based on Hirshfeld charge
+!!--------- Calculate CM5 charges by correcting inputted Hirshfeld charges
 subroutine doCM5(charge)
 use defvar
 implicit real*8 (a-h,o-z)
@@ -2997,8 +3003,8 @@ end subroutine
 subroutine Hirshfeld_I_wrapper(itype)
 use defvar
 implicit real*8 (a-h,o-z)
-radpotold=radpot
-sphpotold=sphpot
+nradpotold=radpot
+nsphpotold=sphpot
 if (iautointgrid==1) then
 	radpot=30
 	sphpot=170
@@ -3008,8 +3014,8 @@ if (iautointgrid==1) then
 end if
 call Hirshfeld_I(itype)
 if (iautointgrid==1) then
-	radpot=radpotold
-	sphpot=sphpotold
+	radpot=nradpotold
+	sphpot=nsphpotold
 end if
 end subroutine
 
@@ -3090,7 +3096,6 @@ call genatmradfile
 
 !====== Start calculation ======!
 call walltime(iwalltime1)
-CALL CPU_TIME(time_begin)
 
 !Currently all atoms share the same radial points
 nradpt=200
@@ -3107,17 +3112,18 @@ write(*,*)
 write(*,"(' Radial grids:',i4,'  Angular grids:',i5,'  Total:',i7,'  After pruning:',i7)") radpot,sphpot,radpot*sphpot,radpot*sphpot-iradcut*sphpot
 
 !Calculate molecular density
-write(*,*) "Calculating density of actual molecule for all grids..."
-!$OMP parallel do shared(molrhoall) private(iatm,ipt,gridatm) num_threads(nthreads)
+write(*,*) "Calculating actual density of molecule at all grids..."
 do iatm=1,ncenter
 	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
 	gridatm%y=gridatmorg%y+a(iatm)%y
 	gridatm%z=gridatmorg%z+a(iatm)%z
+    !$OMP parallel do shared(molrhoall) private(ipt) num_threads(nthreads)
 	do ipt=1+iradcut*sphpot,ntotpot
 		molrhoall(iatm,ipt)=fdens(gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
 	end do
+    !$OMP end parallel do
+    call showprog(iatm,ncenter)
 end do
-!$OMP end parallel do
 
 if (allocated(atmradnpt)) deallocate(atmradnpt)
 if (allocated(atmradrho)) deallocate(atmradrho)
@@ -3131,7 +3137,6 @@ if (imode==2) then
 	atmstatgrid=0
 	write(*,*) "Calculating atomic density contribution to grids..."
 	do iatm=1,ncenter !The center of grids
-		write(*,"(' Progress:',i5,' /',i5)") iatm,ncenter
 		gridatm%value=gridatmorg%value !Weight in this grid point
 		gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
 		gridatm%y=gridatmorg%y+a(iatm)%y
@@ -3157,6 +3162,7 @@ if (imode==2) then
 				end do
 			end do
 		end do
+        call showprog(iatm,ncenter)
 	end do
 end if
 
@@ -3300,9 +3306,9 @@ do icyc=1,maxcyc
 end do
 
 if (allocated(frag1)) write(*,"(/,' Fragment charge:',f12.6)") sum(charge(frag1))
-CALL CPU_TIME(time_end)
+
 call walltime(iwalltime2)
-write(*,"(' Calculation took up CPU time',f12.2,'s, wall clock time',i10,'s')") time_end-time_begin,iwalltime2-iwalltime1
+write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 
 call path2filename(firstfilename,chgfilename)
 write(*,*)
@@ -3315,9 +3321,10 @@ if (selectyn=="y".or.selectyn=="Y") then
 	end do
 	close(10)
 	write(*,"(a)") " Result have been saved to "//trim(chgfilename)//".chg in current folder"
-	write(*,"(a)") " Columns 1 to 5 are name,X,Y,Z,charge respectively, unit is Angstrom"
+	write(*,"(a)") " Columns 1 to 5 are name,X,Y,Z,charge respectively, length unit is Angstrom"
 end if
 end subroutine
+
 
 
 !!------- Generate atomic radial density files at different states, used for such as Hirshfeld-I
@@ -3599,7 +3606,8 @@ call readinfile(firstfilename,1)
 end subroutine
 
 
-!!----- Generate atomic radial density from atomic wfn file
+
+!!----- Generate atomic radial density from atomic .wfn file
 !The code is adapted from sphatmraddens
 subroutine atmwfn2atmrad(infile,outfile)
 use defvar
@@ -3671,7 +3679,7 @@ real*8 :: chgnet=0
 
 if (ifiletype/=11) then
 	write(*,"(a)") " Error: MDL Molfile (.mol) file must be used as input file, since it contains atomic connectivity information!"
-	write(*,*) "Press Enter to return"
+	write(*,*) "Press Enter button to return"
 	read(*,*)
 	return
 end if
@@ -3920,4 +3928,61 @@ else if (iset==4) then !Parameters fitted to NPA charges at B3LYP/6-311G*, see J
 	Aparm(35,1)= 2.4772D0  !Br,multi=1
 	Bparm(35,1)= 1.2131D0
 end if
+end subroutine
+
+
+
+
+
+!!----- A routine directly return Hirshfeld charge based on built-in density, adapted from "spacecharge" routine
+subroutine genHirshfeld(charge)
+use defvar
+use util
+use function
+implicit real*8 (a-h,o-z)
+real*8 charge(ncenter)
+real*8 molrho(radpot*sphpot),promol(radpot*sphpot),tmpdens(radpot*sphpot),selfdens(radpot*sphpot)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+
+!write(*,"(' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
+
+!Generate quadrature point and weighs by combination of Gauss-Chebyshev and Lebedev grids
+call gen1cintgrid(gridatmorg,iradcut)
+
+do iatm=1,ncenter
+	gridatm%value=gridatmorg%value !Weight in this grid point
+	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+	!Calculate molecular density first
+	!$OMP parallel do shared(molrho) private(i) num_threads(nthreads)
+	do i=1,radpot*sphpot
+		molrho(i)=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
+	end do
+	!$OMP end parallel do
+	!Calc free atomic density to obtain promolecule density
+	promol=0D0
+	do jatm=1,ncenter
+		!$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
+		do ipt=1,radpot*sphpot
+			tmpdens(ipt)=calcatmdens(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,0)
+		end do
+		!$OMP end parallel do
+		promol=promol+tmpdens
+		if (jatm==iatm) selfdens=tmpdens
+	end do
+	!Now we have needed data in hand, calculate atomic charges
+	tmpcharge=0D0
+	do i=1,radpot*sphpot
+		if (promol(i)/=0D0) then
+			tmpv=selfdens(i)/promol(i)*molrho(i)*gridatm(i)%value
+			tmpcharge=tmpcharge-tmpv
+		end if
+	end do
+	if (nEDFelec==0) charge(iatm)=a(iatm)%charge+tmpcharge
+	if (nEDFelec>0) charge(iatm)=a(iatm)%index+tmpcharge !EDF is provided
+    
+    call showprog(iatm,ncenter)
+end do
+
 end subroutine

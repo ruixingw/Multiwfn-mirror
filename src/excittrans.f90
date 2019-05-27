@@ -2453,7 +2453,6 @@ use function
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: exccoefftot(:) !Store the coefficient combined from excitation and de-excitation of the same pair
 integer,allocatable :: stateidx(:)
-integer radpotold,sphpotold,radcutold
 real*8 orbovlp(nmo,nmo) !Only (occ,vir) blocks are to be calculated
 real*8 beckeweigrid(radpot*sphpot),orbval(nmo,radpot*sphpot),orbvalpt(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
@@ -2463,8 +2462,8 @@ character strtmp1,strtmp2,selectyn,c2000tmp*2000
 call walltime(iwalltime1)
 write(*,*) "Calculating overlap matrix between MOs, please wait patiently..."
 if (iautointgrid==1) then !Allow change integration grid adapatively
-	radpotold=radpot
-	sphpotold=sphpot
+	nradpotold=radpot
+	nsphpotold=sphpot
 	radcutold=radcut
 	!Although the automatic settings is seemingly quite low, my lots of tests showed that the lose of accuracy was found to be marginal, &
 	!Because MOs are smooth and easy to be integrated
@@ -2622,8 +2621,8 @@ do while(.true.)
 	write(*,*) "Do the lambda analysis again? (y/n)"
 	read(*,*) selectyn
 	if (selectyn=='n'.or.selectyn=='N') then
-		radpot=radpotold
-		sphpot=sphpotold
+		radpot=nradpotold
+		sphpot=nsphpotold
 		radcut=radcutold
 		exit
 	end if

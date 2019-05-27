@@ -20,6 +20,7 @@ do while(.true.)
 	write(*,*) "13 Calculate HOMA and Bird aromaticity index"
 	write(*,*) "14 Calculate LOLIPOP (LOL Integrated Pi Over Plane)"
 	write(*,*) "15 Calculate intermolecular orbital overlap"
+    write(*,*) "16 Calculate various quantities in conceptual density functional theory"
 	write(*,*) "18 Yoshizawa's electron transport route analysis"
 	write(*,*) "19 Generate promolecular .wfn file from fragment wavefunctions"
 	write(*,*) "20 Calculate Hellmann-Feynman forces"
@@ -92,6 +93,8 @@ do while(.true.)
 		call LOLIPOP
 	else if (isel==15) then
 		call intmolovlp
+	else if (isel==16) then
+		call CDFT
 	else if (isel==18) then
 		call Yoshieletrans
 	else if (isel==19) then
@@ -375,7 +378,7 @@ if (iselfunc2==100.and.iuserfunc==20) f2name="DORI"
 
 if (iselfunc1==0.and.iselfunc2==0) then !Directly load grid data
 	if (allocated(cubmattmp)) deallocate(cubmattmp)
-	write(*,*) "Input filename for cube file of function 2, e.g. C:\test.cub"
+	write(*,*) "Input file path for cube file of function 2, e.g. C:\test.cub"
 	read(*,"(a)") c200tmp
 	call readcubetmp(c200tmp,inconsis)
 	if (inconsis==1) then
@@ -1268,13 +1271,13 @@ real*8 Emat(nbasis,nbasis),tmparr(nbasis),orbsingval(nmo)
 
 if (wfntype/=1) then
 	write(*,*) "ERROR: This function is only available for unrestricted SCF wavefunction!"
-	write(*,*) "Press ENTER to return"
+	write(*,*) "Press ENTER button to return"
 	read(*,*)
 	return
 end if
 if (.not.allocated(CObasa)) then
 	write(*,*) "ERROR: This function requires basis function information!"
-	write(*,*) "Press ENTER to return"
+	write(*,*) "Press ENTER button to return"
 	read(*,*)
 	return
 end if
@@ -1606,11 +1609,10 @@ real*8 cenpos(3,2),cenval(radpot*sphpot,3,2) !1st: point,  2st: x/y/z,  3st: ior
 real*8 beckeweigrid(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 character selectyn
-integer radpotold,sphpotold,radcutold
 
 if (iautointgrid==1) then !This setting is good balance between cost and accuracy
-	radpotold=radpot
-	sphpotold=sphpot
+	nradpotold=radpot
+	nsphpotold=sphpot
 	radcutold=radcut
 	radpot=20
 	sphpot=170
@@ -1623,8 +1625,8 @@ do while(.true.)
 	write(*,*) "To exit, input 0,0"
 	read(*,*) iorb,jorb
 	if (iorb==0.and.jorb==0) then
-		radpot=radpotold
-		sphpot=sphpotold
+		radpot=nradpotold
+		sphpot=nsphpotold
 		radcut=radcutold
 		return
 	end if
@@ -1696,8 +1698,8 @@ do while(.true.)
 		a(ncenter+2)%y=cenpos(2,2)
 		a(ncenter+2)%z=cenpos(3,2)
 		ncenter=ncenter+2
-		radpot=radpotold
-		sphpot=sphpotold
+		radpot=nradpotold
+		sphpot=nsphpotold
 		radcut=radcutold
 		write(*,*) "Done!"
 		return
@@ -2274,7 +2276,7 @@ if (ifiletype==0) then
     call loclabel(10,"NBsUse=",ifound) !NbsUse must equal to the number of MOs
     if (ifound==0) then
 	    write(*,"(a)") " Error: The input file you used does not meet requirement! Please carefully check Section 3.100.18 of the manual!"
-	    write(*,*) "Press ENTER to return"
+	    write(*,*) "Press ENTER button to return"
 	    read(*,*)
 	    return
     end if
@@ -2609,11 +2611,11 @@ use util
 implicit real*8 (a-h,o-z)
 integer piorblist(nmo) !1 means this orbital is expected pi orbital
 real*8,allocatable :: tmparr(:)
-real*8 :: thresdens=0.03D0,thressingle=0.85D0
-integer :: ionlyocc=1,idebug=0
+real*8 :: thresdens=0.02D0,thressingle=0.85D0
+integer :: ionlyocc=1,idebug=0,icompmethod=1
 integer,allocatable :: atmrange(:)
 character c2000tmp*2000,c200tmp*200
-real*8 CObasa_LMO(nbasis,nbasis),CObasb_LMO(nbasis,nbasis)
+real*8 CObasa_LMO(nbasis,nbasis),CObasb_LMO(nbasis,nbasis),atmcomp(ncenter,nmo)
 
 if (.not.allocated(b)) then
 	write(*,*) "Error: wavefunction information is not presented but needed!"
@@ -2682,12 +2684,15 @@ else if (iorbform==-1) then !LMO case
 		write(*,*) "0 Detect pi orbitals and then set occupation numbers"
 		write(*,"(a,f7.1,' %')") " 1 Set threshold for identifying single-center orbitals, current:",thressingle*100
 		write(*,"(a,f8.4,' a.u.')") " 2 Set density threshold for identifying pi orbitals, current:",thresdens
-		if (ionlyocc==1) write(*,*) "3 Switch the orbitals in consideration, current: occupied orbitals"
-		if (ionlyocc==0) write(*,*) "3 Switch the orbitals in consideration, current: all orbitals"
+		if (ionlyocc==1) write(*,*) "3 Switch the orbitals in consideration, current: Occupied localized orbitals"
+		if (ionlyocc==0) write(*,*) "3 Switch the orbitals in consideration, current: All localized orbitals"
 		if (idebug==1) write(*,*) "4 Switch outputting debug information, current: Yes"
 		if (idebug==0) write(*,*) "4 Switch outputting debug information, current: No"
 		if (.not.allocated(atmrange)) write(*,*) "5 Set constraint of atom range, current: undefined"
 		if (allocated(atmrange)) write(*,"(a,i6,a)") " 5 Set constraint of atom range, current: ",natmrange," atoms"
+        if (icompmethod==1) write(*,*) "6 Set the method for calculating orbital composition, current: Mulliken+SCPA"
+        if (icompmethod==2) write(*,*) "6 Set the method for calculating orbital composition, current: Hirshfeld"
+        if (icompmethod==3) write(*,*) "6 Set the method for calculating orbital composition, current: Becke"
 		read(*,*) isel
 		if (isel==0.or.isel==-1) then
 			exit
@@ -2722,16 +2727,36 @@ else if (iorbform==-1) then !LMO case
 			call str2arr(c2000tmp,natmrange)
 			allocate(atmrange(natmrange))
 			call str2arr(c2000tmp,natmrange,atmrange)
+        else if (isel==6) then
+            !Mulliken method is better than SCPA for LMOs, in particular for lone pair type of LMO, the SCPA shows it is too delocalized
+            write(*,"(a,/)") " Hint: Option 1 is very fast, however the method is not robust, and it is even useless when diffuse functions are employed. &
+            Options 2 and 3 usually give similar result, they are more expensive, but fully compatible with diffuse functions"
+            write(*,*) "1 Mulliken and SCPA methods for occupied and unoccupied orbitals, respectively"
+            write(*,*) "2 Hirshfeld method"
+            write(*,*) "3 Becke method"
+            read(*,*) icompmethod
 		end if
 	end do
     
+    !Evaluate compositions via Hirshfeld/Becke method, with cheap grid and silent mode
+    if (icompmethod==2) call gen_orbatmcomp_space(1,atmcomp(:,:),1,nmo,0,0)
+    if (icompmethod==3) call gen_orbatmcomp_space(2,atmcomp(:,:),1,nmo,0,0)
     write(*,*)
 	write(*,*) "Expected pi orbitals, occupation numbers and orbital energies (eV):"
 	allocate(tmparr(ncenter))
 	do imo=1,nmo
 		if (ionlyocc==1.and.MOocc(imo)==0) cycle
-		!Compute atomic composition via Mulliken method (better than SCPA for LMOs, in particular for lone pair type of LMO, the SCPA shows it is too delocalized)
-		call orbatmcomp(1,imo,tmparr) !Record composition of atoms in current orbital derived by Mulliken method
+		
+        !tmparr records composition of all atoms in current orbital
+		if (icompmethod==1) then
+            if (MOocc(imo)==0) then
+                call gen_orbatmcomp_MMPA(1,imo,tmparr) !Mulliken method
+            else
+                call gen_orbatmcomp_MMPA(2,imo,tmparr) !SCPA method
+            end if
+        else
+            tmparr=atmcomp(:,imo)
+        end if
 		!Find atom with maximum contribution (imax) and that with second maximum contribution (imax2)
 		imax=maxloc(tmparr,1)
 		tmpmax=-1D99
@@ -2744,15 +2769,21 @@ else if (iorbform==-1) then !LMO case
 		end do
 		MOocc=0
 		MOocc(imo)=2D0
-		!Here we use two points rather than solely using midpoint to detect rho, because the latter will regard sigma* type of virtual LMOs as pi orbitals
-		tmpx=0.7D0*a(imax)%x+0.3D0*a(imax2)%x
-		tmpy=0.7D0*a(imax)%y+0.3D0*a(imax2)%y
-		tmpz=0.7D0*a(imax)%z+0.3D0*a(imax2)%z
+		!Use density of at a few probe points between the atoms to determine if is pi orbital
+        ratio1=0.7D0
+        ratio2=0.3D0
+        tmpx=ratio1*a(imax)%x+ratio2*a(imax2)%x
+		tmpy=ratio1*a(imax)%y+ratio2*a(imax2)%y
+		tmpz=ratio1*a(imax)%z+ratio2*a(imax2)%z
 		dens1=fdens(tmpx,tmpy,tmpz)
-		tmpx=0.3D0*a(imax)%x+0.7D0*a(imax2)%x
-		tmpy=0.3D0*a(imax)%y+0.7D0*a(imax2)%y
-		tmpz=0.3D0*a(imax)%z+0.7D0*a(imax2)%z
+		tmpx=ratio2*a(imax)%x+ratio1*a(imax2)%x
+		tmpy=ratio2*a(imax)%y+ratio1*a(imax2)%y
+		tmpz=ratio2*a(imax)%z+ratio1*a(imax2)%z
 		dens2=fdens(tmpx,tmpy,tmpz)
+		!tmpx=0.5D0*a(imax)%x+0.5D0*a(imax2)%x
+		!tmpy=0.5D0*a(imax)%y+0.5D0*a(imax2)%y
+		!tmpz=0.5D0*a(imax)%z+0.5D0*a(imax2)%z
+		!dens3=fdens(tmpx,tmpy,tmpz)
 		MOocc=MOocc_org
 		if (idebug==1) write(*,"(' Orb:',i5,'  max:',i5,f6.1,'%  max2:',i5,f6.1,'%  rho1:',f9.5,'  rho2:',f9.5)") &
         imo,imax,tmparr(imax)*100,imax2,tmparr(imax2)*100,dens1,dens2
@@ -3929,3 +3960,292 @@ close(10)
 write(*,*) "The result has been output to sphavgval.txt in current folder"
 write(*,*) "The second column is radial distance (Bohr), the third column is value"
 end subroutine
+
+
+
+
+
+
+!!------------ Calculate various quantities in conceptual density functional theory
+subroutine CDFT
+use defvar
+use GUI
+implicit real*8 (a-h,o-z)
+character keywords*200,c200tmp*200,gjfname*200,selectyn
+integer charge(3),spin(3) !Charge and spin multiplicity for N,N+1,N-1 states
+real*8 atmchg(ncenter,3) !Hirshfeld charges of N,N+1,N-1 states
+real*8 ene(3),E_HOMO(3) !Energy and E_HOMO of N,N+1,N-1 states
+real*8 atmfneg(ncenter),atmfpos(ncenter),atmf0(ncenter),atmCDD(ncenter)
+real*8 atmsneg(ncenter),atmspos(ncenter),atms0(ncenter),atmelectphi(ncenter),atmnucleophi(ncenter)
+real*8 nucleophi
+real*8,allocatable :: rhoN(:,:,:),rhoNp1(:,:,:),rhoNn1(:,:,:)
+logical alivewfn(3)
+cubfac=1D0
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "---- Calculate various quantities in conceptual density functional theory ----"
+    write(*,*) "0 Return"
+    write(*,*) "1 Generate .wfn files for N, N+1, N-1 electrons states"
+    write(*,*) "2 Calculate various quantitative indices"
+    write(*,*) "3 Calculate grid data of Fukui function and dual descriptor"
+    read(*,*) isel
+    
+    if (isel==2.or.isel==3) then
+        inquire(file="N.wfn",exist=alivewfn(1))
+        inquire(file="N+1.wfn",exist=alivewfn(2))
+        inquire(file="N-1.wfn",exist=alivewfn(3))
+        if (any(alivewfn==.false.)) then
+            write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn and N-1.wfn must all be presented in current folder!"
+            write(*,*) "Press ENTER button to cancel current analysis"
+            read(*,*)
+            cycle
+        end if
+    end if
+    
+    if (isel==0) then
+        return
+        
+    else if (isel==1) then
+        write(*,*) "Input Gaussian keywords used for single point task, e.g. PBE1PBE/def2SVP"
+        write(*,*) "You can also meantime add some keywords for facilitating SCF convergence"
+        write(*,*) "If press ENTER button directly, B3LYP/6-31G* will be employed"
+        read(*,"(a)") keywords
+        if (keywords==" ") keywords="B3LYP/6-31G*"
+        c200tmp=keywords
+        if (index(keywords,"gen")/=0) then
+            inquire(file="basis.txt",exist=alive)
+            if (.not.alive) then
+                write(*,*) "Error: ""gen"" keyword is found, but basis.txt cannot be found in current folder!"
+                write(*,*) "Press ENTER button to exit"
+                read(*,*)
+                exit
+            end if
+        end if
+        keywords="#P "//trim(c200tmp)//" out=wfn"
+        
+        write(*,*) "Input the net charge and spin multiplicity for N electrons state, e.g. 0 1"
+        write(*,*) "If press ENTER button directly, 0 1 will be used"
+        read(*,"(a)") c200tmp
+        if (c200tmp==" ") then
+            charge(1)=0;spin(1)=1
+            charge(2)=-1;spin(2)=2
+            charge(3)=1;spin(3)=2
+        else
+            read(*,*) charge(1),spin(1)
+            write(*,*) "Input the net charge and spin multiplicity for N+1 electrons state, e.g. -1 2"
+            read(*,*) charge(2),spin(2)
+            write(*,*) "Input the net charge and spin multiplicity for N-1 electrons state, e.g. 1 2"
+            read(*,*) charge(3),spin(3)
+        end if
+        
+        !Generate .gjf for N, N+1, N-1 states
+        do istate=1,3
+            if (istate==1) gjfname="N.gjf"
+            if (istate==2) gjfname="N+1.gjf"
+            if (istate==3) gjfname="N-1.gjf"
+            write(*,*) "Generating "//trim(gjfname)//"..."
+        
+            open(10,file=gjfname)
+            write(10,"(a)") trim(keywords)
+            write(10,*)
+            write(10,"(a)") "Generated by Multiwfn"
+            write(10,*)
+            write(10,"(2i2)") charge(istate),spin(istate)
+            do iatm=1,ncenter
+	            write(10,"(a,1x,3f14.8)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+            end do
+            if (index(keywords,"gen")/=0) then
+                open(11,file="basis.txt")
+                write(10,*)
+                do while(.true.)
+                    read(11,"(a)",iostat=ierror) c200tmp
+                    if (ierror/=0.or.c200tmp==" ") exit
+                    write(10,"(a)") trim(c200tmp)
+                end do
+                close(11)
+            end if
+            write(10,*)
+            if (istate==1) write(10,"(a)") "N.wfn"
+            if (istate==2) write(10,"(a)") "N+1.wfn"
+            if (istate==3) write(10,"(a)") "N-1.wfn"
+            write(10,*)
+            write(10,*)
+            close(10)
+        end do
+        write(*,*) "Gaussian input files for all states have been generated in current folder"
+        write(*,*)
+        write(*,"(a)") " Do you want to invoke Gaussian to calculate these .gjf files now to yield .wfn &
+        files, and then automatically delete the .gjf and .out files? (y/n)"
+        read(*,*) selectyn
+        if (selectyn=='y'.or.selectyn=='Y') then
+            call runGaussian("N.gjf")
+            call runGaussian("N+1.gjf")
+            call runGaussian("N-1.gjf")
+            call delfile("N.gjf N+1.gjf N-1.gjf")
+            call delfile("N.out N+1.out N-1.out")
+            write(*,*) "Now current folder should contain N.wfn, N+1.wfn and N-1.wfn"
+        end if
+    
+    else if (isel==2) then
+        write(*,"(' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
+        call dealloall
+        !N electrons
+        call readinfile("N.wfn",1)
+        ene(1)=totenergy
+        E_HOMO(1)=maxval(MOene)
+        write(*,*) "Calculating Hirshfeld charges for N electrons state..."
+        call genHirshfeld(atmchg(:,1))
+        call dealloall
+        !N+1 electrons
+        call readinfile("N+1.wfn",1)
+        ene(2)=totenergy
+        E_HOMO(2)=maxval(MOene)
+        write(*,*) "Calculating Hirshfeld charges for N+1 electrons state..."
+        call genHirshfeld(atmchg(:,2))
+        call dealloall
+        !N-1 electrons
+        call readinfile("N-1.wfn",1)
+        ene(3)=totenergy
+        E_HOMO(3)=maxval(MOene)
+        write(*,*) "Calculating Hirshfeld charges for N-1 electrons state..."
+        call genHirshfeld(atmchg(:,3))
+        call dealloall
+        write(*,*) "Loading the file initially loaded after booting up Multiwfn..."
+        call readinfile(firstfilename,1)
+        write(*,*)
+        
+        VIP=ene(3)-ene(1)
+        VEA=ene(1)-ene(2)
+        elenegMul=(VIP+VEA)/2D0
+        chempot=-elenegMul
+        hardness=VIP-VEA
+        softness=1/hardness
+        electphi=chempot**2/(2*hardness)
+        E_HOMO_TCE=-0.335198D0 !TCE at B3LYP/6-31G* wavefunction and geometry
+        nucleophi=E_HOMO(1)-E_HOMO_TCE
+        
+        atmfneg(:)=atmchg(:,3)-atmchg(:,1)
+        atmfpos(:)=atmchg(:,1)-atmchg(:,2)
+        atmCDD(:)=atmfpos(:)-atmfneg(:)
+        atmf0(:)=(atmfpos(:)+atmfneg(:))/2
+        atmsneg(:)=atmfneg(:)*softness
+        atmspos(:)=atmfpos(:)*softness
+        atms0(:)=atmf0(:)*softness
+        atmelectphi(:)=atmfpos(:)*electphi !e*Hartree
+        atmnucleophi(:)=atmfneg(:)*nucleophi !e*Hartree
+        
+        open(10,file="CDFT.txt",status="replace")
+        write(10,"(a)") " Note: the E(HOMO) of TCE used for evaluating nucleophilicity index is the value evaluated at B3LYP/6-31G* level"
+        write(10,*)
+        write(10,*) "Hirshfeld charges, condensed Fukui functions and condensed dual descriptors"
+        write(10,*) "Units used below are ""e"" (elementary charge)"
+        write(10,*) "    Atom     q(N)    q(N+1)   q(N-1)     f-       f+       f0      CDD"
+        do iatm=1,ncenter
+            write(10,"(i6,'(',a')',7f9.4)") iatm,a(iatm)%name,atmchg(iatm,:),atmfneg(iatm),atmfpos(iatm),atmf0(iatm),atmCDD(iatm)
+        end do
+        write(10,*)
+        write(10,*) "Condensed local electrophilicity/nucleophilicity index (e*eV)"
+        write(10,*) "    Atom              Electrophilicity          Nucleophilicity"
+        do iatm=1,ncenter
+            write(10,"(i6,'(',a')',2f25.5)") iatm,a(iatm)%name,atmelectphi(iatm)*au2eV,atmnucleophi(iatm)*au2eV
+        end do
+        write(10,*)
+        write(10,"(a)") " Condensed local softnesses (Hartree*e) and relative electrophilicity/nucleophilicity (dimensionless)"
+        write(10,*) "    Atom         s-          s+          s0        s+/s-       s-/s+"
+        do iatm=1,ncenter
+            write(10,"(i6,'(',a')',5f12.4)") iatm,a(iatm)%name,atmsneg(iatm),&
+            atmspos(iatm),atms0(iatm),atmspos(iatm)/atmsneg(iatm),atmsneg(iatm)/atmspos(iatm)
+        end do
+        
+        write(10,*)
+        write(10,"(a,f14.6,' Hartree')") " E(N):  ",ene(1)
+        write(10,"(a,f14.6,' Hartree')") " E(N+1):",ene(2)
+        write(10,"(a,f14.6,' Hartree')") " E(N-1):",ene(3)
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N):  ",E_HOMO(1),E_HOMO(1)*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N+1):",E_HOMO(2),E_HOMO(2)*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N-1):",E_HOMO(3),E_HOMO(3)*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical IP:",VIP,VIP*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical EA:",VEA,VEA*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Mulliken electronegativity: ",elenegMul,elenegMul*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Chemical potential:         ",chempot,chempot*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Hardness (=fundamental gap):",hardness,hardness*au2eV
+        write(10,"(a,f12.6,' Hartree^-1,',f10.4,' eV^-1')") " Softness:",softness,softness/au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Electrophilicity index:",electphi,electphi*au2eV
+        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Nucleophilicity index: ",nucleophi,nucleophi*au2eV
+        close(10)
+        write(*,*) "Done! Data have been outputted to CDFT.txt in current folder!"
+        
+    else if (isel==3) then
+        if (allocated(cubmat)) deallocate(cubmat)
+        aug3Dold=aug3D
+        aug3D=3 !Commonly 3 Bohr extension distance is adequate
+        call setgrid(1,inouse)
+        aug3D=aug3Dold
+        allocate(rhoN(nx,ny,nz),rhoNp1(nx,ny,nz),rhoNn1(nx,ny,nz),cubmat(nx,ny,nz))
+        call dealloall
+        !N electrons
+        call readinfile("N.wfn",1)
+        write(*,*) "Calculating electron density grid data for N electrons state..."
+        call savecubmat(1,1,0)
+        rhoN=cubmat
+        call dealloall
+        !N+1 electrons
+        call readinfile("N+1.wfn",1)
+        write(*,*) "Calculating electron density grid data for N+1 electrons state..."
+        call savecubmat(1,1,0)
+        rhoNp1=cubmat
+        call dealloall
+        !N electrons
+        call readinfile("N-1.wfn",1)
+        write(*,*) "Calculating electron density grid data for N-1 electrons state..."
+        call savecubmat(1,1,0)
+        rhoNn1=cubmat
+        call dealloall
+        write(*,*) "Loading the file initially loaded after booting up Multiwfn..."
+        call readinfile(firstfilename,1)
+        
+	 	sur_value=0.01D0
+        do while(.true.)
+            write(*,*)
+            write(*,"(' -1 Set the value multiplied to all grid data, current:',f12.6)") cubfac
+            write(*,*) "0 Return"
+            write(*,*) "1 Visualize isosurface of f+"
+            write(*,*) "2 Visualize isosurface of f-"
+            write(*,*) "3 Visualize isosurface of f0"
+            write(*,*) "4 Visualize isosurface of dual descriptor"
+            write(*,*) "5 Export grid data of f+ as f+.cub in current folder"
+            write(*,*) "6 Export grid data of f- as f-.cub in current folder"
+            write(*,*) "7 Export grid data of f0 as f0.cub in current folder"
+            write(*,*) "8 Export grid data of dual descriptor as DD.cub in current folder"
+            read(*,*) isel2
+            if (isel2==-1) then
+                write(*,*) "Input the value, e.g. 0.325"
+                read(*,*) cubfac
+            else if (isel2==0) then
+                deallocate(rhoN,rhoNp1,rhoNn1)
+                exit
+            else
+                if (isel2==1.or.isel2==5) cubmat=rhoNp1-rhoN
+                if (isel2==2.or.isel2==6) cubmat=rhoN-rhoNn1
+                if (isel2==3.or.isel2==7) cubmat=(rhoNp1-rhoNn1)/2
+                if (isel2==4.or.isel2==8) cubmat=rhoNp1-2*rhoN+rhoNn1
+                cubmat=cubmat*cubfac
+                if (isel2<=4) then
+		            call drawisosurgui(1)
+                else
+                    if (isel2==5) open(10,file="f+.cub",status="replace")
+                    if (isel2==6) open(10,file="f-.cub",status="replace")
+                    if (isel2==7) open(10,file="f0.cub",status="replace")
+                    if (isel2==8) open(10,file="DD.cub",status="replace")
+                    call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+                    close(10)
+                    write(*,*) "Exporting finished!"
+                end if
+            end if
+        end do
+    end if
+end do
+    
+end subroutine
+

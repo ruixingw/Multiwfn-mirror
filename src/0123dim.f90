@@ -101,7 +101,7 @@ use defvar
 use function
 use plot
 implicit real*8 (a-h,o-z)
-character c200tmp*200,c400tmp*400,filename_tmp*200
+character :: c200tmp*200,c400tmp*400,filename_tmp*200,graphformat_old*4
 
 !Clean custom operation setting (global)that possibly defined by other modules
 ncustommap=0
@@ -338,17 +338,19 @@ curveymin=minval(curvey)-exty
 curveymax=maxval(curvey)+exty
 steplabx=maxval(curvex)/10
 steplaby=exty
-i=-1
+graphformat_old=graphformat
+isel=-1
 
 do while(.true.)
-	if (isilent==0.and.i==-1) then
+	if (isilent==0.and.isel==-1) then
 		if (atomr1==atomr2) then !The line was defined by two terminal, so do not plot circles to highlight atoms
 			call drawcurve(curvex,curvey,npointcurve,0D0,maxval(curvex),steplabx,curveymin,curveymax,steplaby,"show")
 		else !The line was defined by two atoms, plot circles to highlight atoms
 			call drawcurve(curvex,curvey,npointcurve,0D0,maxval(curvex),steplabx,curveymin,curveymax,steplaby,"show",atomr1,atomr2)
 		end if
 	end if
-	write(*,*)
+    write(*,*)
+	write(*,*) "-2 Set format of exported image file, current: "//graphformat
 	write(*,*) "-1 Show the graph again"
 	write(*,*) "0 Return to main menu"
 	write(*,*) "1 Save the graph to a file in current folder"
@@ -368,19 +370,22 @@ do while(.true.)
 	if (ilenunit1D==2) write(*,*) "11 Change length unit of the graph to Bohr"
 	write(*,"(a,i3)") " 12 Set width of curve line, current:",icurvethick
 
-	read(*,*) i
-	if (i==-1) then
+	read(*,*) isel
+    if (isel==-2) then
+        call setgraphformat
+	else if (isel==-1) then
 		cycle
-	else if (i==0) then
+	else if (isel==0) then
+        graphformat=graphformat_old
 		exit
-	else if (i==1) then
+	else if (isel==1) then
 		if (atomr1==atomr2) then
 			call drawcurve(curvex,curvey,npointcurve,0D0,maxval(curvex),steplabx,curveymin,curveymax,steplaby,"save")
 		else
 			call drawcurve(curvex,curvey,npointcurve,0D0,maxval(curvex),steplabx,curveymin,curveymax,steplaby,"save",atomr1,atomr2)
 		end if
 		write(*,"(a,a,a)") " The graph have been saved to ",trim(graphformat)," format file with ""DISLIN"" prefix in current directory"
-	else if (i==2) then		
+	else if (isel==2) then		
 		open(10,file="line.txt",status="replace")
 		do ipt=1,npointcurve  !Output result to file
 			rnowx=orgx1D+(ipt-1)*transx
@@ -392,14 +397,14 @@ do while(.true.)
 		write(*,*) "Data have been exported to line.txt in current folder"
 		write(*,"(a)") " Unit is Angstrom. The first three columns are actual coordinates, the fourth column &
 		is X position in the curve graph, the fifth column is function value"
-	else if (i==3) then
+	else if (isel==3) then
 		if (ilog10y==0) then
 			write(*,*) "Input minimum and maximum value of Y axis, e.g. -0.1,2"
 		else if (ilog10y==1) then
 			write(*,*) "Input minimum and maximum value of Y axis, e.g. -1,5 means from 10^-1 to 10^5"
 		end if
 		read(*,*) curveymin,curveymax
-	else if (i==4) then
+	else if (isel==4) then
 		if (icurve_vertlinex==0) then
 			write(*,*) "Input X position in Bohr, e.g. 1.78"
 			read(*,*) curve_vertlinex
@@ -407,10 +412,10 @@ do while(.true.)
 		else
 			icurve_vertlinex=0
 		end if
-	else if (i==5) then
+	else if (isel==5) then
 		write(*,*) "Input the ratio value, e.g. 0.6"
 		read(*,*) curvexyratio
-	else if (i==6) then
+	else if (isel==6) then
 		numlocmin=0
 		numlocmax=0
 		do ipt=2,npointcurve-1
@@ -435,7 +440,7 @@ do while(.true.)
 			end if
 		end do
 		write(*,"(' Totally found',i5,' minima,',i5,' maxima')") numlocmin,numlocmax
-	else if (i==7) then
+	else if (isel==7) then
 		write(*,*) "Input a value, e.g. 0.4"
 		read(*,*) specvalue
 		numfind=0
@@ -450,7 +455,7 @@ do while(.true.)
 			end if
 		end do
 		if (numfind==0) write(*,*) "Found nothing"
-	else if (i==8) then
+	else if (isel==8) then
 		if (ilog10y==1) then
 			ilog10y=0
 			!Recover default limit
@@ -461,10 +466,10 @@ do while(.true.)
 			write(*,*) "Input minimum and maximum value of Y axis, e.g. -1,5 means from 10^-1 to 10^5"
 			read(*,*) curveymin,curveymax
 		end if
-	else if (i==9) then
+	else if (isel==9) then
 		write(*,*) "Use which color?"
 		call selcolor(iclrcurve)
-	else if (i==10) then
+	else if (isel==10) then
 		if (ilog10y==0) then 
 			write(*,*) "Input the step size between the labels in X and Y axes, respectively"
 			write(*,*) "e.g. 1.5,20"
@@ -473,13 +478,13 @@ do while(.true.)
 			write(*,*) "Input the step size between the labels in X axis, e.g. 1.5"
 			read(*,*) steplabx
 		end if
-	else if (i==11) then
+	else if (isel==11) then
 		if (ilenunit1D==1) then
 			ilenunit1D=2 !Angstrom
 		else if (ilenunit1D==2) then
 			ilenunit1D=1 !Bohr
 		end if
-	else if (i==12) then
+	else if (isel==12) then
 		write(*,*) "Input line width, e.g. 5"
 		read(*,*) icurvethick
 	end if
@@ -2257,14 +2262,14 @@ do while(.true.)
 			end do
 		end if
 	else if (isel==6) then
-		write(*,*) "Input filename for exporting current setting, e.g. C:\ltwd.txt"
+		write(*,*) "Input file path for exporting current setting, e.g. C:\ltwd.txt"
 		read(*,*) outfilename
 		open(10,file=outfilename)
 		write(10,"(f19.8)") (ctrval(i),i=1,ncontour)
 		close(10)
 		write(*,"(a,a)") " Contour setting has been saved to ",trim(outfilename)
 	else if (isel==7) then
-		write(*,*) "Input filename, e.g. C:\ctr.txt"
+		write(*,*) "Input file path, e.g. C:\ctr.txt"
 		do while(.true.)
 			read(*,"(a)") extctrsetting
 			inquire(file=extctrsetting,exist=alive)

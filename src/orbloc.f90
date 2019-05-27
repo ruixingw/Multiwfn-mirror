@@ -7,7 +7,7 @@ use defvar
 use util
 use function
 implicit real*8 (a-h,o-z)
-integer :: maxcyc=80,ireload=1,idoene=0,idocore=1,imethod=1,domark(4),iorbcomp=1,iPMexp=2,ilmocen=0
+integer :: maxcyc=80,ireload=1,idoene=0,idocore=1,imethod=1,domark(4),iPMexp=2,ilmocen=0
 real*8 :: arrayi(nbasis),arrayj(nbasis),crit=1D-4,tmpbasarr(nbasis),tmpprimarr(nprims),bastot(nbasis)
 real*8,pointer :: Cmat(:,:)
 real*8,allocatable :: FLMOA(:,:),FLMOB(:,:),Xmat(:,:),Xmatinv(:,:),SC(:,:)
@@ -16,8 +16,8 @@ integer :: orbtype(nmo) !LMO type determined according to composition, 0=other, 
 integer :: orbatm(2,nmo) !The index of the atom mainly involved in the LMO. one-center LMO has first element, two-center LMO has two elements
 integer :: istatarr(nbasis),iatmarr(ncenter,nbasis) !Used in printing major orbital character
 real*8 :: irj(3),iri(3),jrj(3) !Used for Boys localization, store dipole moment integral between two orbitals
-real*8 :: crit1c=0.9D0,crit2c=0.85D0
-integer :: thres_1c=90,thres_2c=85
+real*8 :: crit1c=0.85D0,crit2c=0.80D0
+integer :: thres_1c=90,thres_2c=85,icompmethod=2
 character c200tmp*200,typestr*4,selectyn
 !Below for calculating LMO centers and dipole moments
 real*8,allocatable :: orbvalpt(:,:)
@@ -41,7 +41,11 @@ end if
 do while(.true.)
 	write(*,*)
 	write(*,*) "                ======== Orbital localization analysis ========"
-	write(*,"(a,2i4,' %')") " -10 Set threshold for determining one- and two-center LMO, current:",nint(crit1c*100),nint(crit2c*100)
+	if (icompmethod>0) write(*,"(a,2i4,' %')") " -10 Set threshold for determining one- and two-center LMO, current:",nint(crit1c*100),nint(crit2c*100)
+    if (icompmethod==0) write(*,*) "-9 Set the method for calculating orbital composition, current: Do not calculate"
+    if (icompmethod==1) write(*,*) "-9 Set the method for calculating orbital composition, current: Mulliken+SCPA"
+    if (icompmethod==2) write(*,*) "-9 Set the method for calculating orbital composition, current: Hirshfeld"
+    if (icompmethod==3) write(*,*) "-9 Set the method for calculating orbital composition, current: Becke"
 	if (ilmocen==1) write(*,*) "-8 If calculating center position and dipole moment of LMOs, current: Yes"
 	if (ilmocen==0) write(*,*) "-8 If calculating center position and dipole moment of LMOs, current: No"
 	!By default exponent of 2 is used for PM. exponent of 4 can also be used by option -7. However, according to my test, 
@@ -118,7 +122,7 @@ do while(.true.)
 		if (ilmocen==0) then
 			if (ireload==0) then
 				write(*,"(a)") " Error: To use this function, you must first switch the option ""If reloading newly generated .fch file"" to ""Yes"""
-				write(*,*) "Press ENTER to continue"
+				write(*,*) "Press ENTER button to continue"
 				read(*,*)
 				cycle
 			end if
@@ -126,23 +130,26 @@ do while(.true.)
 		else if (ilmocen==1) then
 			ilmocen=0
 		end if
+    else if (isel==-9) then
+        !Sometimes SCPA tends to overestimate delocalization character of lone pair type of LMO, &
+        !while Mulliken method tends to result in extremely large atomic composition for virtual LMOs
+        write(*,"(a,/)") " Hint: Option 1 is very fast, however the method is not robust, and it is even useless when diffuse functions are employed. &
+        Options 2 and 3 usually give similar result, they are more expensive, but fully compatible with diffuse functions"
+        write(*,*) "0 Do not calculate orbital compositions"
+        write(*,*) "1 Mulliken method for occupied LMOs and SCPA method for unoccupied LMOs"
+        write(*,*) "2 Hirshfeld method"
+        write(*,*) "3 Becke method"
+        read(*,*) icompmethod
 	else if (isel==-10) then
 		write(*,"(a)") " Input thresholds for identifying one- and two-center LMOs. For example, &
 		inputting 0.9,0.85 means using 90% and 85%, respectively"
-		write(*,*) "If inputting 0,0, then character of LMO will not be automatically identified"
 		read(*,*) crit1c,crit2c
-		if (crit1c==0.and.crit2c==0) then
-			iorbcomp=0
-		else
-			iorbcomp=1
-		end if
 	else if (isel==1.or.isel==2) then
 		exit
 	end if
 end do
 
 call walltime(iwalltime1)
-CALL CPU_TIME(time_begin)
 
 domark=0
 if (wfntype==0) then
@@ -162,7 +169,7 @@ end if
 !Preparation work for specific method
 if (imethod==1) then !PM with Mulliken
 	allocate(SC(nbasis,nbasis))
-else if (imethod==2) then !PM with lowdin
+else if (imethod==2) then !PM with Lowdin
 	write(*,*) "Performing Lowdin orthonormalization..."
 	allocate(Xmat(nbasis,nbasis),Xmatinv(nbasis,nbasis))
 	call symmorthomat(Sbas,Xmat,Xmatinv)
@@ -290,9 +297,8 @@ if (imethod==2) then !PM with lowdin. Back convert CObas from orthonormal basis 
 	Sbas=Sbas_org
 end if
 
-CALL CPU_TIME(time_end)
 call walltime(iwalltime2)
-write(*,"(/,' Calculation took up CPU time',f12.2,'s, wall clock time',i10,'s',/)") time_end-time_begin,iwalltime2-iwalltime1
+write(*,"(/,' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
 
 
 !Print orbital energies, sort orbitals according to energies
@@ -388,18 +394,15 @@ end if
 
 
 !Calculate orbital composition and print major character of LMOs
-if (iorbcomp==1) then
-	if (isel==1) write(*,"(a)") " Note: Mulliken method is used to derive orbital compositions &
-	for the LMOs. Result is unreliable when diffuse functions are presented"
-	if (isel==2) write(*,"(a)") " Note: Mulliken and SCPA methods are used to derive orbital compositions &
-	for occupied and virtual LMOs, respectively. Result is unreliable when diffuse functions are presented)"
+if (icompmethod>0) then
+    
 	orbtype=0
-	!Alpha-occ,Alpha-vir,Beta-occ,Beta-vir
+	!At most four batches, 1: Alpha-occ 2: Alpha-vir 3: Beta-occ 4: Beta-vir
 	do itime=1,4
 		if (domark(itime)==0) cycle
-		if (itime<=2) then
+		if (itime<=2) then !For batches 1 and 2, use alpha density matrix
 			Cmat=>CObasa
-		else
+		else !For batches 3 and 4, use beta density matrix
 			Cmat=>CObasb
 		end if
 		if (itime==1) then
@@ -418,40 +421,59 @@ if (iorbcomp==1) then
 			iend=nbasis
 		end if
 		
-		!Calculate orbital composition and then sort from large to small
+		!Calculate orbital composition and then sort from large to small. Size: orbcomp(1:ncenter,1:nbasis)
+        if (icompmethod==1) then !Mulliken+SCPA
+		    do iorb=ibeg,iend
+			    if (itime==1.or.itime==3) then !For occupied LMOs, use Mulliken
+				    do ibas=1,nbasis
+					    bascross=0D0
+					    do jbas=1,nbasis
+						    if (jbas==ibas) cycle
+						    bascross=bascross+Cmat(ibas,iorb)*Cmat(jbas,iorb)*Sbas(ibas,jbas)
+					    end do
+					    bastot(ibas)=Cmat(ibas,iorb)**2+bascross
+				    end do
+				    do iatm=1,ncenter
+					    orbcomp(iatm,iorb)=sum(bastot(basstart(iatm):basend(iatm)))
+				    end do
+			    else !For virtual LMOs, use SCPA. Since it guarantees that the result is within 0~100%
+ 				    do iatm=1,ncenter
+ 					    orbcomp(iatm,iorb)=sum(Cmat(basstart(iatm):basend(iatm),iorb)**2)
+ 				    end do
+ 				    orbcomp(:,iorb)=orbcomp(:,iorb)/sum(orbcomp(:,iorb))
+			    end if
+            end do
+        else if (icompmethod==2.or.icompmethod==3) then
+            if (icompmethod==2) itmp=1 !Hirshfeld
+            if (icompmethod==3) itmp=2 !Becke
+            allocate(CO_tmp(nmo,nprims))
+            CO_tmp=CO
+            if (itime==1.or.itime==2) then !Alpha
+                call CObas2CO(1) !Convert current CObasa to CO, which is needed by Hirshfeld/Becke method
+                call gen_orbatmcomp_space(itmp,orbcomp(:,ibeg:iend),ibeg,iend,0,0) !Use cheap grid
+            else if (itime==3.or.itime==4) then !Beta
+                call CObas2CO(2) !Convert current CObasb to CO, which is needed by Hirshfeld/Becke method
+                call gen_orbatmcomp_space(itmp,orbcomp(:,ibeg:iend),ibeg+nbasis,iend+nbasis,0,0) !Use cheap grid
+            end if
+            CO=CO_tmp
+            deallocate(CO_tmp)
+        end if
+        
+        !Sort atomic contributions
 		do iorb=ibeg,iend
-			if (itime==1.or.itime==3) then !For occupied LMOs, use Mulliken
-				do ibas=1,nbasis
-					bascross=0D0
-					do jbas=1,nbasis
-						if (jbas==ibas) cycle
-						bascross=bascross+Cmat(ibas,iorb)*Cmat(jbas,iorb)*Sbas(ibas,jbas)
-					end do
-					bastot(ibas)=Cmat(ibas,iorb)**2+bascross
-				end do
-				do iatm=1,ncenter
-					orbcomp(iatm,iorb)=sum(bastot(basstart(iatm):basend(iatm)))
-				end do
-			else !For virtual LMOs, use SCPA. Since it guarantees that the result is within 0~100%
- 				do iatm=1,ncenter
- 					orbcomp(iatm,iorb)=sum(Cmat(basstart(iatm):basend(iatm),iorb)**2)
- 				end do
- 				orbcomp(:,iorb)=orbcomp(:,iorb)/sum(orbcomp(:,iorb))
-			end if
-			
 			forall(iatm=1:ncenter) iatmarr(iatm,iorb)=iatm
 			call sort(orbcomp(:,iorb),"val",iatmarr(:,iorb)) !Sort atomic contributions from small to large
 			call invarr(orbcomp(:,iorb),iatmarr(:,iorb)) !Then become from large to small
 		end do
 		
 		if (wfntype==0) then
-			if (itime==1) write(*,"(/,a)") " Major character of occupied LMOs:"
-			if (itime==2) write(*,"(/,a)") " Major character of unoccupied LMOs:"
+			if (itime==1) write(*,"(/,a)") " **** Major character of occupied LMOs:"
+			if (itime==2) write(*,"(/,a)") " **** Major character of unoccupied LMOs:"
 		else if (wfntype==1) then
-			if (itime==1) write(*,"(/,a)") " Major character of alpha occupied LMOs:"
-			if (itime==2) write(*,"(/,a)") " Major character of alpha unoccupied LMOs:"
-			if (itime==3) write(*,"(/,a)") " Major character of beta occupied LMOs:"
-			if (itime==4) write(*,"(/,a)") " Major character of beta unoccupied LMOs:"
+			if (itime==1) write(*,"(/,a)") " **** Major character of alpha occupied LMOs:"
+			if (itime==2) write(*,"(/,a)") " **** Major character of alpha unoccupied LMOs:"
+			if (itime==3) write(*,"(/,a)") " **** Major character of beta occupied LMOs:"
+			if (itime==4) write(*,"(/,a)") " **** Major character of beta unoccupied LMOs:"
 		end if
 		istatarr=0 !If =1, then the character of the LMO has been identified and printed
 		write(*,"(' Almost single center LMOs: (An atom has contribution >',f5.1,'%)')") crit1c*100
@@ -516,14 +538,14 @@ end if
 igenDbas_old=igenDbas
 if (ilmocen==1) igenDbas=1
 
-write(*,*) "Exporting localized orbitals to new.fch in current folder"
+write(*,*) "Exporting localized orbitals to new.fch in current folder..."
 call outfch("new.fch",10,1)
 
 if (ireload==1) then !Automatically reload the newly generated new.fch as requested
 	call dealloall
 	write(*,*) "Loading new.fch..."
 	call readfch("new.fch",1)
-	write(*,"(a)") " Loading finished, now you can use main function 0 to visualize them as isosurface"
+	write(*,"(a)") " Loading finished!"
 
 	!Adding center of LMOs as Bq atoms
 	if (ilmocen==1) then

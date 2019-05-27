@@ -113,8 +113,13 @@ do while(.true.)
 	
 	else if (iselect==2) then
 		do i=1,nbasis
-			write(*,"(' Basis:',i5,'   Shell:',i5,'   Center:',i5,'(',a2,')   Type:',a)")&
-			 i,basshell(i),bascen(i),a(bascen(i))%name,GTFtype2name(bastype(i))
+            if (isphergau==1) then
+			    write(*,"(' Basis:',i5,'   Shell:',i5,'   Center:',i5,'(',a2,')   Type:',a)")&
+                i,basshell(i),bascen(i),a(bascen(i))%name,GTFtype2name(bastype(i))
+            else !The primstart/end is constructed w.r.t. Cartesian basis functions
+			    write(*,"(' Basis:',i5,'   Shell:',i5,'   Center:',i5,'(',a2,')   Type:',a,'  GTF:',i6,' to',i6)")&
+                i,basshell(i),bascen(i),a(bascen(i))%name,GTFtype2name(bastype(i)),primstart(i),primend(i)
+            end if
 		end do
 	
 	else if (iselect==3) then
@@ -266,7 +271,7 @@ do while(.true.)
 			else
 				write(*,"(a)") " Error: Electric dipole moment integral matrix has not been calculated, please set ""igenDbas"" &
 				in settings.ini to 1, so that this matrix can be generated when loading input file"
-				write(*,*) "Press Enter to skip"
+				write(*,*) "Press Enter button to skip"
 				read(*,*)
 				cycle
 			end if
@@ -281,14 +286,14 @@ do while(.true.)
 			else
 				write(*,"(a)") " Error: Magnetic dipole moment integral matrix has not been calculated, please set ""igenMagbas"" &
 				in settings.ini to 1, so that this matrix can be generated when loading input file"
-				write(*,*) "Press Enter to skip"
+				write(*,*) "Press Enter button to skip"
 				read(*,*)
 				cycle
 			end if
 		else if (imattype==4.or.imattype==5) then
 			if (isphergau==1) then !If you want, you can generate the matrix and perform Cartesian->spherical transformation at file loading stage for Velbas
 				write(*,"(a)") " Error: Spherical-harmonic type of basis functions are found. This function only works when all basis functions are Cartesian type!"
-				write(*,*) "Press Enter to skip"
+				write(*,*) "Press Enter button to skip"
 				read(*,*)
 				cycle
 			end if
@@ -330,11 +335,11 @@ do while(.true.)
 		write(*,*) "4 Swap exponent"
 		write(*,*) "5 Swap orbital expansion coefficient"
 		read(*,*) iswapcontent
-		if (iswapcontent==1) call swap(i,j,"all")
-		if (iswapcontent==2) call swap(i,j,"cen")
-		if (iswapcontent==3) call swap(i,j,"typ")
-		if (iswapcontent==4) call swap(i,j,"exp")
-		if (iswapcontent==5) call swap(i,j,"MO ")
+		if (iswapcontent==1) call swapGTF(i,j,"all")
+		if (iswapcontent==2) call swapGTF(i,j,"cen")
+		if (iswapcontent==3) call swapGTF(i,j,"typ")
+		if (iswapcontent==4) call swapGTF(i,j,"exp")
+		if (iswapcontent==5) call swapGTF(i,j,"MO ")
 		write(*,*) "Swapping finished!"
 	
 	else if (iselect==21) then
@@ -656,7 +661,7 @@ do while(.true.)
 			pbctransy=pbctransy/b2a
 			pbctransz=pbctransz/b2a
 		end if
-		write(*,*) "Duplicate system how many times?"
+		write(*,*) "Duplicate system how many times? e.g. 3"
 		read(*,*) numdup
 		!_tmp is for backing up current information
 		allocate(a_tmp(ncenter))
@@ -731,7 +736,7 @@ do while(.true.)
 		imodwfn=1
 	
 	else if (iselect==35) then
-		call SelMO_IRREP
+		call selMO_IRREP
 	
 	else if (iselect==36) then
 		write(*,*) "Input index of the orbitals, e.g. 2,3,7-10"
@@ -759,7 +764,7 @@ end subroutine
 
 
 !!---------------- Select MOs according to irreducible representation
-subroutine SelMO_IRREP
+subroutine selMO_IRREP
 use defvar
 use util
 character symlab(nmo)*4,c2000tmp*2000,symstat(nmo)*9 !Allocate the array lengths as upper limit
@@ -1070,8 +1075,8 @@ end do
 end subroutine
 
 
-!!!------------------------- Swap two gaussian primitive functions
-subroutine swap(i,j,swaptype)
+!!!------------------------- Swap two GTF
+subroutine swapGTF(i,j,swaptype)
 use defvar
 integer n,i,j
 character*3 swaptype
@@ -1381,8 +1386,8 @@ else if (noatmwfn==1) then !Some or all atomic wfn don't exist, calc them
 	inquire(file=gaupath,exist=alive)
 	if (.not.alive) then
 		write(*,*) "Could not find Gaussian path defined in ""gaupath"" variable in settings.ini"
-		if (isys==1) write(*,*) "Input the path of Gaussian executable file, e.g. ""D:\study\g03w\g03.exe"""
-		if (isys==2) write(*,*) "Input the path of Gaussian executable file, e.g. ""/sob/g09/g09"""
+		if (isys==1) write(*,*) "Input the path of Gaussian executable file, e.g. ""D:\study\g16w\g16.exe"""
+		if (isys==2) write(*,*) "Input the path of Gaussian executable file, e.g. ""/sob/g16/g16"""
 		do while(.true.)
 			read(*,"(a)") gaupath
 			inquire(file=gaupath,exist=alive)
@@ -1904,8 +1909,9 @@ end subroutine
 
 !!------------------ Set up grid
 !If ienableloadextpt==1, then show the option used to load external points, =0 don't
-!igridsel is return variable, if igridsel==100, that means user didn't set up grid here &
+!igridsel is returned variable, corresponding to the selected index; if igridsel==100, that means user didn't set up grid here &
 !but choose to load a set of point coordinates from external plain text file
+!Usual calling instance: call setgrid(1,inouse)
 subroutine setgrid(ienableloadextpt,igridsel)
 use defvar
 use GUI
@@ -2408,7 +2414,7 @@ do i=1,ngridnum1 !Calculate Hirshfeld weighting function
 end do
 end subroutine
 
-!!------- Calculate some quantities involved in shubin's project in a plane
+!!------- Calculate some quantities involved in Shubin's project in a plane
 !itype=1: Calculate the sum of atomic relative Shannon entropy (namely total relative Shannon entropy)
 !itype=2: Calculate the sum of x=[rhoA-rho0A]/rhoA
 !itype=3: Calculate the difference between total relative Shannon entropy and deformation density
@@ -3103,6 +3109,135 @@ lovername(51)="Magical Girl Spec-Ops Asuka\Asuka Otori"
 !
 !I love your brilliant dance, your kawaii smile, your lovely double ponytail, and especially, your extremely pure and beautiful heart.
 !
-!                     ----- The author of Multiwfn, 2015-May-19
+!                     ----- 2015-May-19
 outname=lovername(ceiling(tmp*nlovers))
+end subroutine
+
+
+
+
+
+!!----------- Convert current CObasa / CObasb to CO
+!ispin=1: Only alpha, =2: Only beta, =3: Both alpha and beta
+subroutine CObas2CO(ispin)
+use defvar
+implicit real*8 (a-h,o-z)
+integer ispin
+real*8 conv5d6d(6,5),conv7f10f(10,7),conv9g15g(15,9),conv11h21h(21,11)
+real*8,allocatable :: CObasa_cart(:,:),CObasb_cart(:,:)
+
+call gensphcartab(1,conv5d6d,conv7f10f,conv9g15g,conv11h21h)
+
+nbasis_cart=sum(shtype2nbas(abs(shtype(:))))
+if (ispin==1.or.ispin==3) allocate(CObasa_cart(nbasis_cart,nbasis))
+if (ispin==2.or.ispin==3) allocate(CObasb_cart(nbasis_cart,nbasis))
+CObasa_cart=0
+
+!Map spherical coefficients to Cartesian coefficients
+ipos5D=1
+ipos6D=1
+do ish=1,nshell
+    ishtype=shtype(ish)
+    numshbas5D=shtype2nbas(ishtype)
+    numshbas6D=shtype2nbas(abs(ishtype))
+    !write(*,*) ish,ishtype,numshbas5D,ipos5D,ipos6D
+    if (ispin==1.or.ispin==3) then !alpha part
+        if (ishtype>=0) then !S,P or Cartesian type, in this case numshbas5D=numshbas6D 
+            CObasa_cart(ipos6D:ipos6D+numshbas6D-1,:)=CObasa(ipos5D:ipos5D+numshbas5D-1,:)
+        else
+	        if (ishtype==-2) then
+		        CObasa_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv5d6d,CObasa(ipos5D:ipos5D+numshbas5D-1,:))
+	        else if (ishtype==-3) then
+		        CObasa_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv7f10f,CObasa(ipos5D:ipos5D+numshbas5D-1,:))
+	        else if (ishtype==-4) then
+		        CObasa_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv9g15g,CObasa(ipos5D:ipos5D+numshbas5D-1,:))
+	        else if (ishtype==-5) then
+		        CObasa_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv11h21h,CObasa(ipos5D:ipos5D+numshbas5D-1,:))
+	        end if
+        end if
+    end if
+    if (ispin==2.or.ispin==3) then !beta part
+        if (ishtype>=0) then !S,P or Cartesian type, in this case numshbas5D=numshbas6D 
+            CObasb_cart(ipos6D:ipos6D+numshbas6D-1,:)=CObasb(ipos5D:ipos5D+numshbas5D-1,:)
+        else
+	        if (ishtype==-2) then
+		        CObasb_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv5d6d,CObasb(ipos5D:ipos5D+numshbas5D-1,:))
+	        else if (ishtype==-3) then
+		        CObasb_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv7f10f,CObasb(ipos5D:ipos5D+numshbas5D-1,:))
+	        else if (ishtype==-4) then
+		        CObasb_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv9g15g,CObasb(ipos5D:ipos5D+numshbas5D-1,:))
+	        else if (ishtype==-5) then
+		        CObasb_cart(ipos6D:ipos6D+numshbas6D-1,:)=matmul(conv11h21h,CObasb(ipos5D:ipos5D+numshbas5D-1,:))
+	        end if
+        end if
+    end if
+	ipos5D=ipos5D+numshbas5D
+	ipos6D=ipos6D+numshbas6D
+end do
+
+do imo=1,nbasis
+    do ibas=1,nbasis_cart
+        !if (imo==1) write(*,*) ibas,primstart(ibas),primend(ibas)
+        if (ispin==1.or.ispin==3) then
+            do iGTF=primstart(ibas),primend(ibas)
+                CO(imo,iGTF)=CObasa_cart(ibas,imo)*primconnorm(iGTF)
+            end do
+        end if
+        if (ispin==2.or.ispin==3) then
+            do iGTF=primstart(ibas),primend(ibas)
+                CO(imo+nbasis,iGTF)=CObasb_cart(ibas,imo)*primconnorm(iGTF)
+            end do
+        end if
+    end do
+end do
+end subroutine
+
+
+
+
+!!------- Add a Bq atom to specific position
+subroutine addBq(xpos,ypos,zpos)
+use defvar
+real*8 xpos,ypos,zpos
+allocate(a_tmp(ncenter))
+a_tmp=a
+ncenter=ncenter+1
+deallocate(a)
+allocate(a(ncenter))
+a(1:ncenter-1)=a_tmp
+a(ncenter)%index=0
+a(ncenter)%charge=0
+a(ncenter)%name="Bq"
+a(ncenter)%x=xpos
+a(ncenter)%y=ypos
+a(ncenter)%z=zpos
+deallocate(a_tmp)
+end subroutine
+
+
+!!------- Invoke Gaussian to run a .gjf
+subroutine runGaussian(gjfname)
+use defvar
+character(len=*) gjfname
+character command*200,outname*200
+outname=gjfname(:len(gjfname)-3)//"out"
+command=trim(gaupath)//' "'//gjfname//'" "'//trim(outname)//'"'
+write(*,*) "Running: "//trim(command)
+call system(command)
+write(*,*) "Done!"
+end subroutine
+
+
+!!------- Delete files, cannot delete folder
+subroutine delfile(delname)
+use defvar
+character(len=*) delname
+character command*200
+if (isys==1) then
+    command="del "//delname
+else if (isys==2) then
+    command="rm -f "//delname
+end if
+write(*,*) "Deleting "//delname
+call system(command)
 end subroutine

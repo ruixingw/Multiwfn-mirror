@@ -102,7 +102,7 @@ do while(.true.)
 			CPsearchhigh=0D0
 			if (allocated(bassurpath)) deallocate(bassurpath)
 			if (allocated(ple3n1path)) deallocate(ple3n1path)
-			write(*,*) "Note: All found CPs, paths, surfaces have been clean"
+			write(*,*) "Note: All found CPs, paths, surfaces have been cleaned"
 			!Set special parameters for specific real space functions
 			if (ifunctopo==1.or.ifunctopo==4) then !High criteria for full analytical functions
 				gradconv=1D-7
@@ -308,8 +308,8 @@ do while(.true.)
 				
 			else if (isel2==5) then
 				write(*,"(a)") " Note: The format of the input file must be identical to the one outputted by option 4"
-				if (numpath>0) write(*,*) "Note: After loading the file, all current paths will be clean"
-				write(*,*) "Input filename, e.g. C:\paths.txt"
+				if (numpath>0) write(*,*) "Note: After loading the file, all current paths will be cleaned"
+				write(*,*) "Input file path, e.g. C:\paths.txt"
 				read(*,"(a)") c200
 				inquire(file=c200,exist=alive)
 				if (alive.eqv..false.) then
@@ -373,7 +373,7 @@ do while(.true.)
 			else if (isel2==1.or.isel2==-1) then
 				if (numcp>0) then
 					write(*,*) "Summary of found CPs:"
-					write(*,*) " Index                    Coordinate                     Type"
+                    write(*,*) " Index         X               Y               Z         Type"
 					do icp=1,numcp
 						if (isel2==1) write(*,"(i6,3f16.9,3x,a)") icp,CPpos(:,icp),CPtyp2lab(CPtype(icp))
 						if (isel2==-1) write(*,"(i6,3f16.9,3x,a)") icp,CPpos(:,icp)*b2a,CPtyp2lab(CPtype(icp))
@@ -478,7 +478,7 @@ do while(.true.)
 				end do
 			else if (isel2==3) then
 				numcp=numcp+1
-				write(*,*) "Input coordinate in Bohr, e.g. 1.2,0.0,3.44"
+				write(*,*) "Input X/Y/Z coordinate in Bohr, e.g. 1.2,0.0,3.44"
 				read(*,*) CPpos(1,numcp),CPpos(2,numcp),CPpos(3,numcp)
 				write(*,*) "Input CP type, 1=(3,-3) 2=(3,-1) 3=(3,+1) 4=(3,+3)"
 				read(*,*) CPtype(numcp)
@@ -492,10 +492,12 @@ do while(.true.)
 				write(*,*) "Done, CP information has been saved to CPs.txt in current folder"
 				write(*,*) "Note: The last column is CP type, 1=(3,-3) 2=(3,-1) 3=(3,+1) 4=(3,+3)"
 			else if (isel2==5) then
-				write(*,*) "Input filename, e.g. C:\ltwd\CPs.txt"
+				write(*,*) "Input file path, e.g. C:\ltwd\CPs.txt"
 				write(*,"(a)") " (The format of the file must be identical to the one outputted by option 4)"
-				if (numcp>0) write(*,*) "Note: After loading the file, all found CPs will be clean"
+				if (numcp>0) write(*,*) "Note: After loading the file, all found CPs will be cleaned"
+                write(*,*) "Note: If press ENTER directly, CPs.txt in current folder will be loaded"
 				read(*,"(a)") c200
+                if (c200==" ") c200="CPs.txt"
 				inquire(file=c200,exist=alive)
 				if (alive.eqv..false.) then
 					write(*,*) "Error: File was not found!"
@@ -506,7 +508,7 @@ do while(.true.)
 						read(10,*) nouse,CPpos(:,icp),CPtype(icp)
 					end do
 					close(10)
-					write(*,*) "Done, CP information have been recovered from the file"
+					write(*,*) "Done, CP information have been retrieved from the file"
 				end if
 			else if (isel2==6) then
 				open(10,file="CPs.pdb",status="replace")
@@ -517,7 +519,7 @@ do while(.true.)
 					if (CPtype(icp)==4) write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") "HETATM",icp,' '//"F "//' ',"CPS",'A',1,CPpos(:,icp)*b2a,1.0,0.0,"F "
 				end do
 				write(*,*) "Done, CP information have been saved to CPs.pdb in current folder"
-				write(*,*) "Note: Element C/N/O/F correspond to (3,-3)/(3,-1)/(3,+1)/(3,+3) respectively"
+				write(*,*) "Note: Element C/N/O/F correspond to (3,-3)/(3,-1)/(3,+1)/(3,+3), respectively"
 				close(10)
 			end if
 			write(*,*)
@@ -537,20 +539,25 @@ do while(.true.)
 				exit
 			else
 				if (allocated(bassurpath)) then
-					write(*,*) "If the parameter is changed, all already generated surfaces will be clean, OK?"
-					write(*,*) "0=No  1=Yes"
-					read(*,*) ifok
-					if (ifok==1) then
+					write(*,"(a)") " If the parameter is changed, all already generated interbasin surfaces will be cleaned, OK? (y/n)"
+					read(*,*) selectyn
+					if (selectyn=='y'.or.selectyn=='Y') then
 						deallocate(bassurpath)
 						numbassurf=0
 						CP2surf=0
 					end if
 				end if
 				if (.not.allocated(bassurpath)) then
-					write(*,*) "Input the value"
-					if (isel2==1) read(*,*) nsurfpathpercp
-					if (isel2==2) read(*,*) nsurfpt
-					if (isel2==3) read(*,*) surfpathstpsiz
+					if (isel2==1) then
+				    	write(*,*) "Input the value, e.g. 80"
+                        read(*,*) nsurfpathpercp
+					else if (isel2==2) then
+				    	write(*,*) "Input the value, e.g. 100"
+                        read(*,*) nsurfpt
+					else if (isel2==3) then
+				    	write(*,*) "Input the value, e.g. 0.02"
+                        read(*,*) surfpathstpsiz
+                    end if
 				end if
 			end if
 		end do
@@ -576,7 +583,7 @@ do while(.true.)
 				read(*,*) maxpathpttry
 			else if (isel2==2) then
 				if (numpath>0) then
-					write(*,*) "Warning: All generated paths will be clean, OK? (y/n)"
+					write(*,*) "Warning: All generated paths will be cleaned, OK? (y/n)"
 					read(*,*) selectyn
 				end if
 				if (selectyn=='y'.or.selectyn=='Y') then
@@ -1166,13 +1173,13 @@ do while(.true.)
 		num3n1=count(CPtype(1:numcp)==2)
 		if (num3n1==0) then
 			write(*,"(a)") " Error: You must at least locate one (3,-1) CP before trying to generate topology paths!"
-			write(*,*) "Press ENTER to continue"
+			write(*,*) "Press ENTER button to continue"
 			read(*,*)
 			cycle
 		end if
 		if (count(CPtype(1:numcp)==1)==0) then
 			write(*,"(a)") " Error: You must locate (3,-3) CPs first before trying to generate topology paths!"
-			write(*,*) "Press ENTER to continue"
+			write(*,*) "Press ENTER button to continue"
 			read(*,*)
 			cycle
 		end if
@@ -1201,13 +1208,13 @@ do while(.true.)
 		num3p1=count(CPtype(1:numcp)==3)
 		if (num3p1==0) then
 			write(*,"(a)") " Error: You must at least locate one (3,+1) CP before trying to generate topology paths!"
-			write(*,*) "Press ENTER to continue"
+			write(*,*) "Press ENTER button to continue"
 			read(*,*)
 			cycle
 		end if
 		if (count(CPtype(1:numcp)==4)==0) then
 			write(*,"(a)") " Error: You must at least locate one (3,+3) CP before trying to generate topology paths!"
-			write(*,*) "Press ENTER to continue"
+			write(*,*) "Press ENTER button to continue"
 			read(*,*)
 			cycle
 		end if
@@ -1605,11 +1612,14 @@ iterpt:	do ipt=2,maxpathpttry
 			ztmp=pathtmp(3,ipt,idir)
 			valueold=value
 			call gencalchessmat(1,ifunc,xtmp,ytmp,ztmp,value,grad,hess)
-! 			write(*,*) idir,ipt,value
-			if (itype==1.and.value<valueold) then
+ 			!if (ithisCP==14) write(*,*) idir,ipt,value
+            !For electron density, also check if value decrease during generating bond path
+            !While for other functions like LOL, when path curvature at CP is large, this check often make path generation failed, &
+            !because at initial a few steps, the value may marginally decrease, but in fact this doesn't matter
+            if (ifunc==1.and.itype==1.and.value<valueold) then 
 				if (info==1) write(*,"(a)") " Path generation failed, function value is lower than the last step but no located (3,-3) has reached"
 				exit
-			end if
+            end if
 			k1=grad/dsqrt(sum(grad**2))
 			call gencalchessmat(1,ifunc,xtmp+pathstepsize/2*k1(1),ytmp+pathstepsize/2*k1(2),ztmp+pathstepsize/2*k1(3),value,grad,hess)
 			k2=grad/dsqrt(sum(grad**2))
@@ -1725,6 +1735,7 @@ do i=1,topomaxcyc
 	if (disperr<realdispconv.and.graderr<realgradconv) then
 		if (ishowsearchlevel>1) write(*,"(' After',i6,' iterations')") i
 		if (ishowsearchlevel==3) write(*,*) "---------------------- Iteration ended ----------------------"
+        !$OMP CRITICAL
 		inewcp=1
 		do icp=1,numcp
 			r=dsqrt(sum( (coord(:,1)-CPpos(:,icp))**2 ))
@@ -1739,7 +1750,6 @@ do i=1,topomaxcyc
 			inewcp=0
 		end if
 		if (inewcp==1) then
-			!$OMP CRITICAL
 			numcp=numcp+1
 			CPpos(:,numcp)=coord(:,1)
 			call diagmat(hess,eigvecmat,eigval,300,1D-15)
@@ -1762,8 +1772,8 @@ do i=1,topomaxcyc
 				CPtype(numcp)=1
 			end if
 			if (ishowsearchlevel>1) write(*,"(' Eigenvalue:',3f20.10)") eigval
-			!$OMP end CRITICAL
 		end if
+        !$OMP end CRITICAL
 		exit
 	end if
 	if (i==topomaxcyc.and.(ishowsearchlevel>1)) write(*,*) "!! Exceeded maximum cycle until find stationary point !!"
@@ -1956,7 +1966,7 @@ do while(.true.)
 	if (index(c200,'q')/=0) then
 		return
 	else if (index(c200,'s')/=0) then
-		call SelMO_IRREP
+		call selMO_IRREP
 		cycle
 	end if
 					

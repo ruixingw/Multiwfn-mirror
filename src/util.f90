@@ -133,11 +133,10 @@ contains
 !===============================================================!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!! Geometry operation !!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!! Geometry operation !!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !===============================================================!
-
 
 !!---------- Get angle (degree) between two vectors
 real*8 function vecang(vec1x,vec1y,vec1z,vec2x,vec2y,vec2z)
@@ -150,12 +149,14 @@ if (costheta>1D0) costheta=1
 vecang=acos(costheta)/pi*180
 end function
 
+
 !!---------- Get distance of point 0 to plane(defined by point 1,2,3) 
 real*8 function potpledis(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0)
 real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz
 call pointprjple(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz)
 potpledis=dsqrt((x0-prjx)**2+(y0-prjy)**2+(z0-prjz)**2)
 end function
+
 
 !!---------- Project a point(x0,y0,z0) to a plane defined by x/y/z-1/2/3, prjx/y/z are results
 subroutine pointprjple(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz)
@@ -167,6 +168,7 @@ prjx=x0-t*A
 prjy=y0-t*B
 prjz=z0-t*C
 end subroutine
+
 
 !!-------- Input three points, get ABCD of Ax+By+Cz+D=0
 subroutine pointABCD(x1,y1,z1,x2,y2,z2,x3,y3,z3,A,B,C,D)
@@ -187,6 +189,7 @@ C=v1x*v2y-v1y*v2x
 D=A*(-x1)+B*(-y1)+C*(-z1)
 end subroutine
 
+
 !!-------- Input three points 0,1,2, get the vertical projection point of 0 to the line linking 1-2
 subroutine pointprjline(x0,y0,z0,x1,y1,z1,x2,y2,z2,prjx,prjy,prjz)
 real*8 x0,y0,z0,x1,y1,z1,x2,y2,z2,prjx,prjy,prjz,v12x,v12y,v12z,t
@@ -202,12 +205,14 @@ prjy=y1+t*v12y
 prjz=z1+t*v12z
 end subroutine
 
+
 !!---------- Get distance of point 0 to the line 1-2
 real*8 function potlinedis(x0,y0,z0,x1,y1,z1,x2,y2,z2)
 real*8 x0,y0,z0,x1,y1,z1,x2,y2,z2,prjx,prjy,prjz
 call pointprjline(x0,y0,z0,x1,y1,z1,x2,y2,z2,prjx,prjy,prjz)
 potlinedis=dsqrt((x0-prjx)**2+(y0-prjy)**2+(z0-prjz)**2)
 end function
+
 
 !!--------- Input three points, return angle between 1-2 and 2-3 (in degree)
 real*8 function xyz2angle(x1,y1,z1,x2,y2,z2,x3,y3,z3)
@@ -223,6 +228,7 @@ rnormv1=dsqrt( vec1x**2+vec1y**2+vec1z**2 )
 rnormv2=dsqrt( vec2x**2+vec2y**2+vec2z**2 )
 xyz2angle=acos(dotprod/(rnormv1*rnormv2))/pi*180
 end function
+
 
 !!--------- Input four points, return dihedral angle (in degree)
 real*8 function xyz2dih(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4)
@@ -242,6 +248,7 @@ phi=acos( (p1x*p2x+p1y*p2y+p1z*p2z)/(sqrt(p1x*p1x+p1y*p1y+p1z*p1z)*sqrt(p2x*p2x+
 xyz2dih=phi/pi*180
 end function
 
+
 !!--------------- Get area of a triangle, need input coordinates of three points
 function gettriangarea(pax,pay,paz,pbx,pby,pbz,pcx,pcy,pcz)
 implicit real*8 (a-h,o-z)
@@ -260,6 +267,7 @@ call vecprod(va1,va2,va3,vb1,vb2,vb3,vc1,vc2,vc3)  !vc=va¡Ávb=|va||vb|sin¦È*i  w
 absvc=dsqrt(vc1**2+vc2**2+vc3**2)
 gettriangarea=0.5D0*absvc
 end function
+
 
 !!--------------- Get volume of a tetrahedron, need input coordinates of four points
 function gettetravol(pax,pay,paz,pbx,pby,pbz,pcx,pcy,pcz,pdx,pdy,pdz)
@@ -285,6 +293,8 @@ vec3z=pcz-pdz
 call vecprod(vec2x,vec2y,vec2z,vec3x,vec3y,vec3z,vec2x3x,vec2x3y,vec2x3z)
 gettetravol=abs(vec1x*vec2x3x+vec1y*vec2x3y+vec1z*vec2x3z)/6D0
 end function
+
+
 
 
 
@@ -351,6 +361,7 @@ do i=1,int(len/2D0)
 	end if
 end do
 end subroutine
+
 
 !-------- Sort value from small to big by Bubble method
 !mode=abs: sort by absolute value, =val: sort by value. Default is by value
@@ -469,12 +480,14 @@ else if (mode==2) then
 end if
 end subroutine
 
+
 !!--------- Evaluate standard deviation of array elements
 real*8 function stddevarray(array)
 real*8 array(:),avg
 avg=sum(array)/size(array)
 stddevarray=dsqrt(sum((array-avg)**2)/size(array))
 end function
+
 
 !!--------- Evaluate covariant of two array elements
 real*8 function covarray(array1,array2)
@@ -483,6 +496,7 @@ avg1=sum(array1)/size(array1)
 avg2=sum(array2)/size(array2)
 covarray=sum((array1-avg1)*(array2-avg2))/size(array1)
 end function
+
 
 !--- Vector/cross product, input two vectors, return a new vector (x,y,z)
 subroutine vecprod(x1,y1,z1,x2,y2,z2,x,y,z)
@@ -494,6 +508,7 @@ x=  y1*z2-z1*y2
 y=-(x1*z2-z1*x2)
 z=  x1*y2-y1*x2
 end subroutine
+
 
 !--- Generate full arrangement arry
 !ncol is the number of element, nrow=ncol!
@@ -522,6 +537,10 @@ do icyc=2,nrow
 	arr(icyc,:)=seq
 end do
 end subroutine
+
+
+
+
 
 
 
@@ -573,6 +592,7 @@ do ipos=1,len_trim(inpstr)
 end do
 end subroutine
 
+
 !---------Input path name, e.g. C:\ltwd\MIO.wfn , output file name, e.g. MIO
 subroutine path2filename(pathnamein,filenameout)
 character(len=*) pathnamein,filenameout
@@ -593,6 +613,7 @@ filenameout=' '
 filenameout(1:iend-istart+1)=pathnamein(istart:iend)
 end subroutine
 
+
 !!--------- Convert a character to lower case
 subroutine uc2lc(inc)
 character*1 inc
@@ -600,6 +621,7 @@ itmp=ichar(inc)
 if (itmp>=65.and.itmp<=90) itmp=itmp+32
 inc=char(itmp)
 end subroutine
+
 
 !!--------- Convert a character to upper case
 subroutine lc2uc(inc)
@@ -609,6 +631,7 @@ if (itmp>=97.and.itmp<=122) itmp=itmp-32
 inc=char(itmp)
 end subroutine
 
+
 !!--------- Convert a string to lower case
 subroutine struc2lc(str)
 character(len=*) str
@@ -616,6 +639,7 @@ do i=1,len_trim(str)
 	call uc2lc(str(i:i))
 end do
 end subroutine
+
 
 !!--------- Convert a string to upper case
 subroutine strlc2uc(str)
@@ -627,6 +651,9 @@ end subroutine
 
 
 
+
+
+
 !===============================================================!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -634,7 +661,6 @@ end subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !===============================================================!
-
 
 !!----- Make the matrix to upper trigonal matrix
 subroutine ratio_upper(mat)
@@ -664,6 +690,7 @@ do i=1,a-1
 end do
 deallocate(temp,s,divided)
 end subroutine
+
 
 !!----- Get value of determinant of a matrix
 real*8 function detmat(mat)
@@ -705,6 +732,7 @@ else !Not upper or lower trigonal matrix
 end if
 end function
 
+
 !!-------- Get trace of a matrix
 real*8 function mattrace(mat)
 real*8 mat(:,:)
@@ -713,6 +741,7 @@ do i=1,size(mat,1)
 	mattrace=mattrace+mat(i,i)
 end do
 end function
+
 
 !!--- Use Jacobi method to diagonalize matrix, simple, but much slower than diagsymat and diaggemat if the matrix is large
 subroutine diagmat(mat,S,eigval,inmaxcyc,inthres)
@@ -763,6 +792,7 @@ do i=1,n
 end do
 end subroutine
 
+
 !!------------ Diagonalize a symmetry matrix 
 !Repack the extremely complex "DSYEV" routine in lapack to terse form
 !if istat/=0, means error occurs
@@ -777,6 +807,7 @@ eigvecmat=mat
 mat=0D0
 forall (i=1:isize) mat(i,i)=eigvalarr(i)
 end subroutine
+
 
 !!------------ Diagonalize a general matrix 
 !Repack the extremal complex "DGEEV" routine in lapack to terse form
@@ -1121,6 +1152,10 @@ end if
 end subroutine
 
 
+
+
+
+
 !===============================================================!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1140,6 +1175,7 @@ read(nowtime(5:6),*) inowsecond
 inow=inowhour*3600+inowminute*60+inowsecond
 end subroutine
 
+
 !!----- Find the position of specific value in cube
 subroutine findvalincub(cubfile,value,i,j,k)
 real*8 cubfile(:,:,:),value
@@ -1156,6 +1192,7 @@ do ii=1,size(cubfile,1)
 	end do
 end do
 end subroutine
+
 
 !!------ Display matrix similar to gaussian program
 subroutine showmatgau(mat,label,insemi,form,fileid,useri1,useri2,inncol,titlechar)
@@ -1221,6 +1258,7 @@ do i=1,nt !How many frame
 	end do
 end do
 end subroutine
+
 
 !!------- Read matrix outputted in the gaussian .out file, such as outputted by iop(3/33=1)
 subroutine readmatgau(fileid,mat,semi,inform,inskipcol,inncol,innspace)
@@ -1288,7 +1326,8 @@ if (present(semi).and.semi==1) then !When read is lower trigonal matrix, we assu
 end if
 end subroutine
 
-!!!------------------------- Determine how many lines in the fileid
+
+!!--------------------- Determine how many lines in the fileid
 !If imode==1, space line will be regarded as the sign of end of file. If imode==2, will count actual number of lines in the file
 integer function totlinenum(fileid,imode)
 integer fileid,ierror,imode
@@ -1306,7 +1345,8 @@ end do
 rewind(fileid)
 end function
 
-!!!-------- Locate the line where the label first appears in fileid
+
+!!-------- Locate the line where the label first appears in fileid
 !Return ifound=1 if found the label, else return 0
 !Default is rewind, if irewind=0 then will not rewind
 !If the current line just has the label, calling this subroutine will do nothing
@@ -1342,7 +1382,7 @@ if (present(ifound)) ifound=0
 end subroutine
 
 
-!!!----------- Skip specific number of lines in specific fileid
+!!----------- Skip specific number of lines in specific fileid
 subroutine skiplines(id,nskip)
 integer id,nskip
 do i=1,nskip
@@ -1351,7 +1391,7 @@ end do
 end subroutine
 
 
-!!!---------------- Calculate factorial
+!!---------------- Calculate factorial
 integer function ft(i)
 integer i
 ft=i
@@ -1361,12 +1401,14 @@ do j=i-1,1,-1
 end do
 end function
 
-!---- Calculate gamma(Lval+1/2), see http://en.wikipedia.org/wiki/Gamma_function
+
+!!---- Calculate gamma(Lval+1/2), see http://en.wikipedia.org/wiki/Gamma_function
 real*8 function gamma_ps(n)
 use defvar
 integer n
 gamma_ps=ft(2*n)*dsqrt(pi)/4**n/ft(n)
 end function
+
 
 !!-------- Get all combinations of any ncomb elements of array, which length is ntot
 !outarray(A,B) is output array, A is the length and must be ntot!/ncomb!/(ntot-ncomb)!, B is generated array, should be equal to ncomb

@@ -565,7 +565,7 @@ do while(.true.)
 		write(*,*) "2 Inputting atomic indices by hand"
 		read(*,*) imodinput
 		if (imodinput==1) then
-			write(*,*) "Input filename that recorded atom indices of fragment 1"
+			write(*,*) "Input path of the file recording atom indices of fragment 1"
 			write(*,*) "e.g. C:\nicomaki\frag1.txt"
 			do while(.true.)
 				read(*,"(a)") atmidxfile
@@ -573,7 +573,7 @@ do while(.true.)
 				if (alive) exit
 				write(*,*) "Cannot find the file, input again"
 			end do
-			write(*,*) "Input filename that recorded atom indices of fragment 2"
+			write(*,*) "Input path of the file recording atom indices of fragment 2"
 			write(*,*) "e.g. C:\nicomaki\frag2.txt"
 			do while(.true.)
 				read(*,"(a)") atmidxfile2

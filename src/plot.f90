@@ -456,6 +456,7 @@ if (ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.i
 				end if
 				call messag(ADJUSTL(ctemp),screenx,screeny)
 			else !Show element and index
+                if (iatmlabtype3D==6.and.a(i)%index==0) cycle !Do not show Bq label
 				if (i<10) then !Slightly move center of text so that they can at center of atom
 					screenx=nint(xplotcoor-textheighmod/1.1D0)
 				else !Move in X more, since the index has two or more digitals
@@ -963,201 +964,30 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 		end if
 		call vecmat(gradd1tmp,gradd2tmp,ngridnum1,ngridnum2,xcoord,ycoord,1501)
 	end if
-end if
 
-!Drawing of color-filled, contour, vector maps... has been finished, below we draw more widgets on the map
+    !Drawing of color-filled, contour, vector maps... has been finished, below we draw more widgets on the map
 
-pix2usr=(end1-init1)/lengthx  !Convert actual pixel to user coordinate
+    !Draw vdW contour line (electron density=0.001)
+    if (idrawplanevdwctr==1) then
+	    call setcolor(ivdwclrindctr) !This routine must be invoked before LINWID, else no effect
+	    if (ivdwctrlabsize/=0) then  !Enable showing isovalue on contour lines
+		    call DISALF
+		    call height(ivdwctrlabsize)
+		    call labels('float','contur')
+		    call labdig(3,'contur')
+	    else
+		    call labels('NONE','contur')		
+	    end if
+	    if (vdwctrstyle(2)==0) nsizestyle=1
+	    call myline(vdwctrstyle,nsizestyle)
+	    CALL LINWID(iwidthvdwctr)
+	    call contur(xcoord,ngridnum1,ycoord,ngridnum2,planemattmp,0.001D0)
+	    CALL LINWID(1) !Restore to default
+	    call color("WHITE") !Restore to default
+    end if
 
-!Construct "inplane" list, if =1, the atom or reference point is close enough to the plotting plane
-!The "inplane" will be used for plotting atomic labels and bonds later
-inplane=0
-nallpoints=ncenter
-if (imarkrefpos==1) nallpoints=ncenter+1
-do ipt=1,nallpoints
-	if (ipt<=ncenter) then
-		posmarkx=a(ipt)%x*scll; posmarky=a(ipt)%y*scll; posmarkz=a(ipt)%z*scll
-	else if (ipt==ncenter+1) then !Plot reference point of correlation hole/factor, source function...
-		posmarkx=refx*scll; posmarky=refy*scll; posmarkz=refz*scll
-	end if
-	if (plesel==1) then
-		if (abs(posmarkz-orgz2D)<disshowlabel) inplane(ipt)=1
-	else if (plesel==2) then
-		if (abs(posmarky-orgy2D)<disshowlabel) inplane(ipt)=1
-	else if (plesel==3) then
-		if (abs(posmarkx-orgx2D)<disshowlabel) inplane(ipt)=1
-	else if (plesel==4.or.plesel==5.or.plesel==6.or.plesel==7) then
-		call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz,prjx,prjy,prjz)
-		if ((prjx-posmarkx)**2+(prjy-posmarky)**2+(prjz-posmarkz)**2<disshowlabel**2) inplane(ipt)=1
-	end if
-end do
-
-!Plot bonds as lines
-if (ibond_on_plane==1) then
-	call setcolor(iclrindbndlab); call solid; call LINWID(10)
-	do ipt=1,ncenter
-		posmarkx=a(ipt)%x*scll
-		posmarky=a(ipt)%y*scll
-		posmarkz=a(ipt)%z*scll
-		if (inplane(ipt)==0) cycle
-		if (plesel<=3) then !XY plane
-			do iatm=ipt+1,ncenter
-				if (inplane(iatm)==0) cycle
-				if (distmat(ipt,iatm) < ( covr(a(ipt)%index)+covr(a(iatm)%index) )*bondcrit) then
-					if (plesel==1) call rline(posmarkx,posmarky,a(iatm)%x*scll,a(iatm)%y*scll)
-					if (plesel==2) call rline(posmarkx,posmarkz,a(iatm)%x*scll,a(iatm)%z*scll)
-					if (plesel==3) call rline(posmarky,posmarkz,a(iatm)%y*scll,a(iatm)%z*scll)
-				end if
-			end do
-		else if (plesel<=7) then !Atom defined by three atoms/points
-			call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz,prjx,prjy,prjz)
-			!Get position of ipt in the plotting coordinate. Comment can be found in similar part below
-			if (abs(v1x*v2y-v2x*v1y)>1D-8) then
-				det2_2=v1x*v2y-v2x*v1y
-				n1=( (prjx-orgx2D)*v2y-v2x*(prjy-orgy2D) )/det2_2
-				n2=( v1x*(prjy-orgy2D)-(prjx-orgx2D)*v1y )/det2_2
-			else if (abs(v1x*v2z-v2x*v1z)>1D-8) then
-				det2_2=v1x*v2z-v2x*v1z
-				n1=( (prjx-orgx2D)*v2z-v2x*(prjz-orgz2D) )/det2_2
-				n2=( v1x*(prjz-orgz2D)-(prjx-orgx2D)*v1z )/det2_2
-			else if (abs(v1y*v2z-v2y*v1z)>1D-8) then
-				det2_2=v1y*v2z-v2y*v1z
-				n1=( (prjy-orgy2D)*v2z-v2y*(prjz-orgz2D) )/det2_2
-				n2=( v1y*(prjz-orgz2D)-(prjy-orgy2D)*v1z )/det2_2
-			end if
-			if ( n1>0.and.n2>0.and.n1<(ngridnum1-1).and.n2<(ngridnum2-1) ) then !The ipt is within the scope of drawing range
-				do iatm=ipt+1,ncenter
-					if (inplane(iatm)==0) cycle
-					if (distmat(ipt,iatm) < ( covr(a(ipt)%index)+covr(a(iatm)%index) )*bondcrit) then
-						!Get position of iatm in the plotting coordinate
-						call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,a(iatm)%x*scll,a(iatm)%y*scll,a(iatm)%z*scll,prjx,prjy,prjz)
-						if (abs(v1x*v2y-v2x*v1y)>1D-8) then
-							det2_2=v1x*v2y-v2x*v1y
-							n1_2=( (prjx-orgx2D)*v2y-v2x*(prjy-orgy2D) )/det2_2
-							n2_2=( v1x*(prjy-orgy2D)-(prjx-orgx2D)*v1y )/det2_2
-						else if (abs(v1x*v2z-v2x*v1z)>1D-8) then
-							det2_2=v1x*v2z-v2x*v1z
-							n1_2=( (prjx-orgx2D)*v2z-v2x*(prjz-orgz2D) )/det2_2
-							n2_2=( v1x*(prjz-orgz2D)-(prjx-orgx2D)*v1z )/det2_2
-						else if (abs(v1y*v2z-v2y*v1z)>1D-8) then
-							det2_2=v1y*v2z-v2y*v1z
-							n1_2=( (prjy-orgy2D)*v2z-v2y*(prjz-orgz2D) )/det2_2
-							n2_2=( v1y*(prjz-orgz2D)-(prjy-orgy2D)*v1z )/det2_2
-						end if
-						if ( n1_2>0.and.n2_2>0.and.n1_2<(ngridnum1-1).and.n2_2<(ngridnum2-1) ) then
-							call rline(n1*d1,n2*d2,n1_2*d1,n2_2*d2)
-						end if
-					end if
-				end do
-			end if
-		end if
-	end do
-	CALL LINWID(1) !Restore to default
-end if
-
-!Draw atomic labels or reference point on graph
-if (iatom_on_plane==1) then
-	call height(pleatmlabsize)
-	movetext=pleatmlabsize/2 !Slight movement on the labels to make the center of label just appear at expected position
-	do ipt=1,nallpoints
- 		call SERIF
-		CALL SHDCHA
-		if (ipt<=ncenter) then !Plot atomic label on plane
-			posmarkx=a(ipt)%x*scll; posmarky=a(ipt)%y*scll; posmarkz=a(ipt)%z*scll
-	    	if (iatmlabtype==1) then !Only plot element for atomic label
-	    	    atmlabtext=a(ipt)%name
-	    	else if (iatmlabtype==2.or.iatmlabtype==3) then !Plot index
-	    	    write(atmlabtext,"(i6)") ipt
-	    	    atmlabtext=adjustl(atmlabtext)
-				tmpstr=atmlabtext
-	    	    if (iatmlabtype==3) write(atmlabtext,"(a,a)") trim(a(ipt)%name),trim(tmpstr) !Plot both element and index
-	        end if
-	        call setcolor(iclrindatmlab)
-		else !Plot reference point of correlation hole/factor, source function...
-			posmarkx=refx*scll; posmarky=refy*scll; posmarkz=refz*scll
-			call color('blue')
-			call HSYMBL(pleatmlabsize+20)
-		end if
-		if (plesel==1) then !XY plane
-			if (inplane(ipt)==1) then !Close enough to the plane
-				if (ipt<=ncenter) call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarky+movetext*pix2usr)
-				if (ipt==ncenter+1) call rlsymb(8,posmarkx,posmarky)
-			else if (iatom_on_plane_far==1) then !Far away from the plane
-				call DUPLX
-				call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarky+movetext*pix2usr)
-			end if
-		else if (plesel==2) then !XZ plane
-			if (inplane(ipt)==1) then
-				if (ipt<=ncenter) call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarkz+movetext*pix2usr)
-				if (ipt==ncenter+1) call rlsymb(8,posmarkx,posmarkz)
-			else if (iatom_on_plane_far==1) then
-				call DUPLX
-				call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarkz+movetext*pix2usr)
-			end if
-		else if (plesel==3) then !YZ plane
-			if (inplane(ipt)==1) then
-				if (ipt<=ncenter) call rlmess(trim(atmlabtext),posmarky-movetext*pix2usr,posmarkz+movetext*pix2usr)
-				if (ipt==ncenter+1) call rlsymb(8,posmarky,posmarkz)
-			else if (iatom_on_plane_far==1) then
-				call DUPLX
-				call rlmess(trim(atmlabtext),posmarky-movetext*pix2usr,posmarkz+movetext*pix2usr)
-			end if
-		else if (plesel==4.or.plesel==5.or.plesel==6.or.plesel==7) then
-			call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz,prjx,prjy,prjz)
-			!prjx-orgx2D=n1*v1x+n2*v2x, n1*d1 equals x in user coordinate. prjy as well.  prjx,y,z is projected position from posmark point
-			!prjy-orgy2D=n1*v1y+n2*v2y
-			!prjz-orgz2D=n1*v1z+n2*v2z
-			!Use Kramer rule to solve this linear equation to get n1 and n2
-			!We can use any two conditions, the precondition is det2_2 is not almost zero
-			if (abs(v1x*v2y-v2x*v1y)>1D-8) then
-				det2_2=v1x*v2y-v2x*v1y
-				n1=( (prjx-orgx2D)*v2y-v2x*(prjy-orgy2D) )/det2_2
-				n2=( v1x*(prjy-orgy2D)-(prjx-orgx2D)*v1y )/det2_2
-			else if (abs(v1x*v2z-v2x*v1z)>1D-8) then
-				det2_2=v1x*v2z-v2x*v1z
-				n1=( (prjx-orgx2D)*v2z-v2x*(prjz-orgz2D) )/det2_2
-				n2=( v1x*(prjz-orgz2D)-(prjx-orgx2D)*v1z )/det2_2
-			else if (abs(v1y*v2z-v2y*v1z)>1D-8) then
-				det2_2=v1y*v2z-v2y*v1z
-				n1=( (prjy-orgy2D)*v2z-v2y*(prjz-orgz2D) )/det2_2
-				n2=( v1y*(prjz-orgz2D)-(prjy-orgy2D)*v1z )/det2_2
-			end if
-			if (n1>0.and.n2>0.and.n1<(ngridnum1-1).and.n2<(ngridnum2-1)) then !Avoid atom label out of range
-				if (inplane(ipt)==1) then
-					if (ipt<=ncenter) call rlmess(trim(atmlabtext),n1*d1-movetext*pix2usr,n2*d2+movetext*pix2usr)
-					if (ipt==ncenter+1) call rlsymb(8,n1*d1,n2*d2) ! Note: rlsymb automatically avoids plotting symbol out of axis range
-				else if (iatom_on_plane_far==1) then
-					call DUPLX
-					call rlmess(trim(atmlabtext),n1*d1-movetext*pix2usr,n2*d2+movetext*pix2usr)
-				end if
-			end if
-		end if
-	end do
-	call color("WHITE") !Restore to default
-end if
-
-!Draw vdW contour line (electron density=0.001)
-if (idrawplanevdwctr==1) then
-	call setcolor(ivdwclrindctr) !This routine must be invoked before LINWID, else no effect
-	if (ivdwctrlabsize/=0) then  !Enable showing isovalue on contour lines
-		call DISALF
-		call height(ivdwctrlabsize)
-		call labels('float','contur')
-		call labdig(3,'contur')
-	else
-		call labels('NONE','contur')		
-	end if
-	if (vdwctrstyle(2)==0) nsizestyle=1
-	call myline(vdwctrstyle,nsizestyle)
-	CALL LINWID(iwidthvdwctr)
-	call contur(xcoord,ngridnum1,ycoord,ngridnum2,planemattmp,0.001D0)
-	CALL LINWID(1) !Restore to default
-	call color("WHITE") !Restore to default
-end if
-
-!Draw all kinds of topology information on color-filled/contour/gradient/vector field graph
-if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then	
-10	continue
+    !Draw all kinds of topology information on color-filled/contour/gradient/vector field graph
+    10	continue
 	!Draw topology paths on color-filled/contour/gradient/vector field graph. If iplaneoutall==1, then output the data points
 	if (numpath>0.and.imarkpath==1) then
 		if (iplaneoutall==0) then
@@ -1339,10 +1169,179 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 		if (iplaneoutall==1) close(10)
 	end if
 	if (iplaneoutall==1) return
-end if
+
+
+    !Construct "inplane" list, if =1, the atom or reference point is close enough to the plotting plane
+    !The "inplane" will be used for plotting atomic labels and bonds later
+    inplane=0
+    nallpoints=ncenter
+    if (imarkrefpos==1) nallpoints=ncenter+1
+    do ipt=1,nallpoints
+	    if (ipt<=ncenter) then
+		    posmarkx=a(ipt)%x*scll; posmarky=a(ipt)%y*scll; posmarkz=a(ipt)%z*scll
+	    else if (ipt==ncenter+1) then !Plot reference point of correlation hole/factor, source function...
+		    posmarkx=refx*scll; posmarky=refy*scll; posmarkz=refz*scll
+	    end if
+	    if (plesel==1) then
+		    if (abs(posmarkz-orgz2D)<disshowlabel) inplane(ipt)=1
+	    else if (plesel==2) then
+		    if (abs(posmarky-orgy2D)<disshowlabel) inplane(ipt)=1
+	    else if (plesel==3) then
+		    if (abs(posmarkx-orgx2D)<disshowlabel) inplane(ipt)=1
+	    else if (plesel==4.or.plesel==5.or.plesel==6.or.plesel==7) then
+		    call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz,prjx,prjy,prjz)
+		    if ((prjx-posmarkx)**2+(prjy-posmarky)**2+(prjz-posmarkz)**2<disshowlabel**2) inplane(ipt)=1
+	    end if
+    end do
+
+    !Plot bonds as lines only for the atoms whose labels are shown on the plane
+    if (ibond_on_plane==1) then
+	    call setcolor(iclrindbndlab); call solid; call LINWID(10)
+	    do ipt=1,ncenter
+		    posmarkx=a(ipt)%x*scll
+		    posmarky=a(ipt)%y*scll
+		    posmarkz=a(ipt)%z*scll
+		    if (inplane(ipt)==0) cycle
+		    if (plesel<=3) then !XY plane
+			    do iatm=ipt+1,ncenter
+				    if (inplane(iatm)==0) cycle
+				    if (distmat(ipt,iatm) < ( covr(a(ipt)%index)+covr(a(iatm)%index) )*bondcrit) then
+					    if (plesel==1) call rline(posmarkx,posmarky,a(iatm)%x*scll,a(iatm)%y*scll)
+					    if (plesel==2) call rline(posmarkx,posmarkz,a(iatm)%x*scll,a(iatm)%z*scll)
+					    if (plesel==3) call rline(posmarky,posmarkz,a(iatm)%y*scll,a(iatm)%z*scll)
+				    end if
+			    end do
+		    else if (plesel<=7) then !Atom defined by three atoms/points
+			    call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz,prjx,prjy,prjz)
+			    !Get position of ipt in the plotting coordinate. Comment can be found in similar part below
+			    if (abs(v1x*v2y-v2x*v1y)>1D-8) then
+				    det2_2=v1x*v2y-v2x*v1y
+				    n1=( (prjx-orgx2D)*v2y-v2x*(prjy-orgy2D) )/det2_2
+				    n2=( v1x*(prjy-orgy2D)-(prjx-orgx2D)*v1y )/det2_2
+			    else if (abs(v1x*v2z-v2x*v1z)>1D-8) then
+				    det2_2=v1x*v2z-v2x*v1z
+				    n1=( (prjx-orgx2D)*v2z-v2x*(prjz-orgz2D) )/det2_2
+				    n2=( v1x*(prjz-orgz2D)-(prjx-orgx2D)*v1z )/det2_2
+			    else if (abs(v1y*v2z-v2y*v1z)>1D-8) then
+				    det2_2=v1y*v2z-v2y*v1z
+				    n1=( (prjy-orgy2D)*v2z-v2y*(prjz-orgz2D) )/det2_2
+				    n2=( v1y*(prjz-orgz2D)-(prjy-orgy2D)*v1z )/det2_2
+			    end if
+			    if ( n1>0.and.n2>0.and.n1<(ngridnum1-1).and.n2<(ngridnum2-1) ) then !The ipt is within the scope of drawing range
+				    do iatm=ipt+1,ncenter
+					    if (inplane(iatm)==0) cycle
+					    if (distmat(ipt,iatm) < ( covr(a(ipt)%index)+covr(a(iatm)%index) )*bondcrit) then
+						    !Get position of iatm in the plotting coordinate
+						    call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,a(iatm)%x*scll,a(iatm)%y*scll,a(iatm)%z*scll,prjx,prjy,prjz)
+						    if (abs(v1x*v2y-v2x*v1y)>1D-8) then
+							    det2_2=v1x*v2y-v2x*v1y
+							    n1_2=( (prjx-orgx2D)*v2y-v2x*(prjy-orgy2D) )/det2_2
+							    n2_2=( v1x*(prjy-orgy2D)-(prjx-orgx2D)*v1y )/det2_2
+						    else if (abs(v1x*v2z-v2x*v1z)>1D-8) then
+							    det2_2=v1x*v2z-v2x*v1z
+							    n1_2=( (prjx-orgx2D)*v2z-v2x*(prjz-orgz2D) )/det2_2
+							    n2_2=( v1x*(prjz-orgz2D)-(prjx-orgx2D)*v1z )/det2_2
+						    else if (abs(v1y*v2z-v2y*v1z)>1D-8) then
+							    det2_2=v1y*v2z-v2y*v1z
+							    n1_2=( (prjy-orgy2D)*v2z-v2y*(prjz-orgz2D) )/det2_2
+							    n2_2=( v1y*(prjz-orgz2D)-(prjy-orgy2D)*v1z )/det2_2
+						    end if
+						    if ( n1_2>0.and.n2_2>0.and.n1_2<(ngridnum1-1).and.n2_2<(ngridnum2-1) ) then
+							    call rline(n1*d1,n2*d2,n1_2*d1,n2_2*d2)
+						    end if
+					    end if
+				    end do
+			    end if
+		    end if
+	    end do
+	    CALL LINWID(1) !Restore to default
+    end if
+
+    !Draw atomic labels or reference point on graph
+    pix2usr=(end1-init1)/lengthx  !Convert actual pixel to user coordinate
+    if (iatom_on_plane==1) then
+	    call height(pleatmlabsize)
+	    movetext=pleatmlabsize/2 !Slight movement on the labels to make the center of label just appear at expected position
+	    do ipt=1,nallpoints
+ 		    call SERIF
+		    CALL SHDCHA
+		    if (ipt<=ncenter) then !Plot atomic label on plane
+			    posmarkx=a(ipt)%x*scll; posmarky=a(ipt)%y*scll; posmarkz=a(ipt)%z*scll
+	    	    if (iatmlabtype==1) then !Only plot element for atomic label
+	    	        atmlabtext=a(ipt)%name
+	    	    else if (iatmlabtype==2.or.iatmlabtype==3) then !Plot index
+	    	        write(atmlabtext,"(i6)") ipt
+	    	        atmlabtext=adjustl(atmlabtext)
+				    tmpstr=atmlabtext
+	    	        if (iatmlabtype==3) write(atmlabtext,"(a,a)") trim(a(ipt)%name),trim(tmpstr) !Plot both element and index
+	            end if
+	            call setcolor(iclrindatmlab)
+		    else !Plot reference point of correlation hole/factor, source function...
+			    posmarkx=refx*scll; posmarky=refy*scll; posmarkz=refz*scll
+			    call color('blue')
+			    call HSYMBL(pleatmlabsize+20)
+		    end if
+		    if (plesel==1) then !XY plane
+			    if (inplane(ipt)==1) then !Close enough to the plane
+				    if (ipt<=ncenter) call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarky+movetext*pix2usr)
+				    if (ipt==ncenter+1) call rlsymb(8,posmarkx,posmarky)
+			    else if (iatom_on_plane_far==1) then !Far away from the plane
+				    call DUPLX
+				    call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarky+movetext*pix2usr)
+			    end if
+		    else if (plesel==2) then !XZ plane
+			    if (inplane(ipt)==1) then
+				    if (ipt<=ncenter) call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarkz+movetext*pix2usr)
+				    if (ipt==ncenter+1) call rlsymb(8,posmarkx,posmarkz)
+			    else if (iatom_on_plane_far==1) then
+				    call DUPLX
+				    call rlmess(trim(atmlabtext),posmarkx-movetext*pix2usr,posmarkz+movetext*pix2usr)
+			    end if
+		    else if (plesel==3) then !YZ plane
+			    if (inplane(ipt)==1) then
+				    if (ipt<=ncenter) call rlmess(trim(atmlabtext),posmarky-movetext*pix2usr,posmarkz+movetext*pix2usr)
+				    if (ipt==ncenter+1) call rlsymb(8,posmarky,posmarkz)
+			    else if (iatom_on_plane_far==1) then
+				    call DUPLX
+				    call rlmess(trim(atmlabtext),posmarky-movetext*pix2usr,posmarkz+movetext*pix2usr)
+			    end if
+		    else if (plesel==4.or.plesel==5.or.plesel==6.or.plesel==7) then
+			    call pointprjple(a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,posmarkx,posmarky,posmarkz,prjx,prjy,prjz)
+			    !prjx-orgx2D=n1*v1x+n2*v2x, n1*d1 equals x in user coordinate. prjy as well.  prjx,y,z is projected position from posmark point
+			    !prjy-orgy2D=n1*v1y+n2*v2y
+			    !prjz-orgz2D=n1*v1z+n2*v2z
+			    !Use Kramer rule to solve this linear equation to get n1 and n2
+			    !We can use any two conditions, the precondition is det2_2 is not almost zero
+			    if (abs(v1x*v2y-v2x*v1y)>1D-8) then
+				    det2_2=v1x*v2y-v2x*v1y
+				    n1=( (prjx-orgx2D)*v2y-v2x*(prjy-orgy2D) )/det2_2
+				    n2=( v1x*(prjy-orgy2D)-(prjx-orgx2D)*v1y )/det2_2
+			    else if (abs(v1x*v2z-v2x*v1z)>1D-8) then
+				    det2_2=v1x*v2z-v2x*v1z
+				    n1=( (prjx-orgx2D)*v2z-v2x*(prjz-orgz2D) )/det2_2
+				    n2=( v1x*(prjz-orgz2D)-(prjx-orgx2D)*v1z )/det2_2
+			    else if (abs(v1y*v2z-v2y*v1z)>1D-8) then
+				    det2_2=v1y*v2z-v2y*v1z
+				    n1=( (prjy-orgy2D)*v2z-v2y*(prjz-orgz2D) )/det2_2
+				    n2=( v1y*(prjz-orgz2D)-(prjy-orgy2D)*v1z )/det2_2
+			    end if
+			    if (n1>0.and.n2>0.and.n1<(ngridnum1-1).and.n2<(ngridnum2-1)) then !Avoid atom label out of range
+				    if (inplane(ipt)==1) then
+					    if (ipt<=ncenter) call rlmess(trim(atmlabtext),n1*d1-movetext*pix2usr,n2*d2+movetext*pix2usr)
+					    if (ipt==ncenter+1) call rlsymb(8,n1*d1,n2*d2) ! Note: rlsymb automatically avoids plotting symbol out of axis range
+				    else if (iatom_on_plane_far==1) then
+					    call DUPLX
+					    call rlmess(trim(atmlabtext),n1*d1-movetext*pix2usr,n2*d2+movetext*pix2usr)
+				    end if
+			    end if
+		    end if
+	    end do
+	    call color("WHITE") !Restore to default
+    end if
+
 
 !Relief map & shaded surface map with/without projection
-if (idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
+else if (idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
 	CALL AXSPOS(100,2800) !Make position of coordinate proper
 	planetrunc=planemat
 	!Now truncate the value in planemat to uplimit of Z-scale of relief map and save to planetrunc, else the color scale will range from
@@ -1432,6 +1431,7 @@ write(*,*) "15 = Dark blue"
 read(*,*) clrind
 end subroutine
 
+
 !---- Set color used by DISLIN routine by index
 subroutine setcolor(clrind)
 integer clrind
@@ -1451,6 +1451,7 @@ if (clrind==13) call setRGB(0.4D0,0.0D0,0.84D0) !Purple
 if (clrind==14) call setRGB(0.7D0,0.5D0,0.4D0) !Brown
 if (clrind==15) call setRGB(0.0D0,0.0D0,0.5D0) !Dark blue
 end subroutine
+
 
 !Translate color index (defined by colorname) to R,G,B components
 subroutine clridx2RGB(iclrind,Rcomp,Gcomp,Bcomp)
@@ -1488,4 +1489,30 @@ else if (iclrind==14) then
 else if (iclrind==15) then
 	Bcomp=0.5D0
 end if
+end subroutine
+
+
+subroutine setgraphformat
+use defvar
+write(*,*) "Input index to select a format"
+write(*,*) "Note 1~4 are pixel formats, 5~9 are vector formats"
+write(*,*) "1 png"
+write(*,*) "2 gif"
+write(*,*) "3 tiff"
+write(*,*) "4 bmp"
+write(*,*) "5 ps"
+write(*,*) "6 eps"
+write(*,*) "7 pdf"
+write(*,*) "8 wmf"
+write(*,*) "9 svg"
+read(*,*) itmp
+if (itmp==1) graphformat="png"
+if (itmp==2) graphformat="gif"
+if (itmp==3) graphformat="tiff"
+if (itmp==4) graphformat="bmp"
+if (itmp==5) graphformat="ps"
+if (itmp==6) graphformat="eps"
+if (itmp==7) graphformat="pdf"
+if (itmp==8) graphformat="wmf"
+if (itmp==9) graphformat="svg"
 end subroutine

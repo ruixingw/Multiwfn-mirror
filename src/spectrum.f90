@@ -17,7 +17,7 @@ real*8,allocatable :: curveyall(:,:) !The first index corresponds to system inde
 integer,allocatable :: tmparr(:)
 real*8,allocatable :: indcurve(:,:) !Y value of curve of each individual band
 integer,allocatable :: indband2idx(:),idx2indband(:) !Used to map individual band index
-character c200tmp*200,c200tmp2*200,selectyn
+character c200tmp*200,c200tmp2*200,selectyn,graphformat_old*4
 character clegend*2000 !Buffer for showing legends
 integer :: icurveclr=1,ilineclr=5 !Default: Red for curve, black for discrete lines
 integer :: thk_curve=3,thk_weighted=8,thk_legend=2,thk_discrete=1,thk_axis=1,thk_grid=1 !thickness
@@ -61,7 +61,7 @@ iunitliney=1 !Only for IR
 shiftx=0D0   !Shift value in X direction
 iramantype=1 !1=Raman activities  2=Raman intensities
 iROAtype=2   !1=Raman SCP(180)  2=ROA SCP(180)  3=Raman SCP(90)  4=ROA SCP(90)  5=Raman DCP(180)  6=ROA DCP(180)
-
+graphformat_old=graphformat  !User may change format, backup the old
 
 write(*,*) "Select type of the spectrum"
 write(*,*) "1:IR  2:Raman (or pre-resonance Raman)  3:UV-Vis  4:ECD  5:VCD  6:ROA"
@@ -184,6 +184,7 @@ allocate(linexall(nsystem,3*numdata),lineyall(nsystem,3*numdata))
 !! Main interface
 do while(.true.)
 	write(*,*)
+	write(*,*) "-4 Set format of saved graphical file, current: "//graphformat
 	write(*,*) "-3 Return to main menu"
 	write(*,*) "-2 Export transition data to plain text file"
 	write(*,*) "-1 Show transition data"
@@ -269,9 +270,12 @@ do while(.true.)
 	end if
 	write(*,*) "22 Set thickness of curves/lines/texts/axes/grid"
 	read(*,*) isel
-	
-	if (isel==-3) then
+    
+    if (isel==-4) then
+        call setgraphformat
+	else if (isel==-3) then
 		istrtype=0
+        graphformat=graphformat_old
 		return
 	else if (isel==-2) then !Export transition data
 		if (nsystem==1) then
@@ -442,6 +446,7 @@ do while(.true.)
 			stepy1=stepy2*ratiotmp
 		end if
 	else if (isel==6) then !Set broadening function
+        write(*,*) "Choose one of broadening functions:"
 		write(*,*) "1 Lorentzian"
 		write(*,*) "2 Gaussian"
 		write(*,*) "3 Pseudo-Voigt"
@@ -960,7 +965,11 @@ do while(.true.)
 			CALL HWFONT
 		end if
 		call AXSLEN(2150,1500)
-		call axspos(400,1640)
+        if (ishowline==1) then
+		    call axspos(400,1640)
+        else
+		    call axspos(510,1640)
+        end if
 ! 		call center
 		if (isavepic==0) call WINTIT("Click right mouse button to close")
 		CALL TICKS(1,'XY')

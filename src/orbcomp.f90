@@ -1,14 +1,21 @@
+!Index of routines:
+!orbcomp_main: Main interface of various orbital composition analyses
+!orballcomp_MMPA: Interface for calculating basis function, shell and atom contribution via Mulliken, Stout-Politzer, SCPA
+!orbfragcomp_MMPA: Interface for calculating fragment contribution via Mulliken, Stout-Politzer, SCPA
+!orbatmcomp_space: Interface for calculating atom contribution via fuzzy partition methods
+!orballcomp_NAO: Interface for calculating atom contribution via NAOMO method
+!gen_orbatmcomp_MMPA: Returning all atom contributions to one orbitals via Mulliken and SCPA
+!gen_allorbbascomp_SCPA: Returning all basis function contributions to all orbitals via SCPA
+!gen_allorbatmcomp_SCPA: Returning all atom contributions to all orbitals via SCPA
+    
+    
+    
+    
+
 !!--------- Interface of various orbital composition analyses
 subroutine orbcomp_main
 use defvar
 implicit real*8 (a-h,o-z)
-!Automatically set proper radpot and sphpot for e.g. Becke, Hirshfeld, Hirshfeld-I
-radpotold=radpot
-sphpotold=sphpot
-if (iautointgrid==1) then
-	radpot=50
-	sphpot=170
-end if
 
 do while(.true.)
 	write(*,"(/,a,/)") " If present module is used in your work, citing this paper along with Multiwfn original paper is highly recommended: &
@@ -35,19 +42,15 @@ do while(.true.)
 	if (icompana==-10) then
 		if (allocated(frag1)) deallocate(frag1)
 		if (allocated(frag2)) deallocate(frag2)
-		if (iautointgrid==1) then
-			radpot=radpotold
-			sphpot=sphpotold
-		end if
 		exit
 	else if (icompana==-1) then
 		call deffrag(1)
 	else if (icompana==-2) then
 		call deffrag(2)
 	else if (icompana==1.or.icompana==2.or.icompana==3) then
-		if (icompana==1) call orbcomponent(1)
-		if (icompana==2) call orbcomponent(2)
-		if (icompana==3) call orbcomponent(3)
+		if (icompana==1) call orballcomp_MMPA(1)
+		if (icompana==2) call orballcomp_MMPA(2)
+		if (icompana==3) call orballcomp_MMPA(3)
 	else if (icompana==4.or.icompana==5.or.icompana==6) then
 		if (.not.allocated(frag1)) then
 			write(*,*) "Please use function -1 to define fragment #1"
@@ -57,18 +60,18 @@ do while(.true.)
 		if (.not.allocated(frag2).and.(icompana==4.or.icompana==5)) &
 		write(*,*) "Note: Fragment 2 was not be defined"
 		write(*,*)
-		if (icompana==4) call fragcomponent(1)
-		if (icompana==5) call fragcomponent(2)
-		if (icompana==6) call fragcomponent(3)
+		if (icompana==4) call orbfragcomp_MMPA(1)
+		if (icompana==5) call orbfragcomp_MMPA(2)
+		if (icompana==6) call orbfragcomp_MMPA(3)
 	else if (icompana==7) then
-		call NAOcompana
+		call orballcomp_NAO
 	else if (icompana==8) then
-		call spaceparorb(1)
+		call orbatmcomp_space(1)
 	else if (icompana==9) then
-		call spaceparorb(2)
+		call orbatmcomp_space(2)
 	else if (icompana==10) then
 		call Hirshfeld_I(2)
-		call spaceparorb(3)
+		call orbatmcomp_space(3)
 	else if (icompana==100) then
 		call LOBA
 	end if
@@ -156,13 +159,18 @@ do while(.true.)
 			end if
 		end do
 	else if (c200(1:4)=="list") then
-		write(*,*) "Basis function in current fragment:"
+		write(*,*) "Basis functions in current fragment:"
 		if (all(fragtmp==0)) then
 			write(*,*) "None"
 		else
+            ntmp=0
 			do i=1,nbasis
-				if (fragtmp(i)/=0) write(*,"(i5)",advance="no") fragtmp(i)
+				if (fragtmp(i)/=0) then
+                    write(*,"(i5)",advance="no") fragtmp(i)
+                    ntmp=ntmp+1
+                end if
 			end do
+            write(*,"(/,' Totally',i8,' basis functions')") ntmp
 			write(*,*)
 		end if
 	else if (c200(1:3)=="inv") then
@@ -206,7 +214,8 @@ do while(.true.)
 				cycle
 			end if
 		end if
-		write(*,*) "Condition 3: Choose basis function type, one of S,Y,Z,XY,YY,ZZZ..."
+		write(*,*) "Condition 3: Choose basis function type"
+        write(*,*) "Could be one of such as S, Y, Z, XY, YY, ZZZ, D+1, D 0 ..."
 		write(*,*) "You can also choose shell type, one of S, P, D, F, G, H"
 		write(*,*) """a"" means all types"
 		read(*,"(a)") c200
@@ -340,7 +349,7 @@ end subroutine
 !isel==1 fragment 1 & inter-fragment composition with Mulliken partition"
 !isel==2 fragment 1 & inter-fragment composition with Stout & Politzer partition"
 !isel==3 fragment 1 composition with Ros & Schuit (SCPA) partition"
-subroutine fragcomponent(isel)
+subroutine orbfragcomp_MMPA(isel)
 use defvar
 use util
 implicit real*8 (a-h,o-z)
@@ -431,7 +440,7 @@ end subroutine
 
 !!---------- Calculate basis function, shell and atom contribution to orbitals
 !imethod=1 : Mulliken partition    =2:Stout & Politzer partition   =3: Ros & Schuit (SCPA) partition
-subroutine orbcomponent(imethod)
+subroutine orballcomp_MMPA(imethod)
 use defvar
 implicit real*8 (a-h,o-z)
 real*8 basloc(nbasis),bascross(nbasis),bastot(nbasis)
@@ -526,10 +535,10 @@ end do
 end subroutine
 
 
-!!-------- A routine to calculate atomic contribution to specific orbital, utilized by other routines (e.g. detecting pi orbitals)
+!!-------- A routine to calculate all atomic contributions to specific orbital, utilized by a few routines (e.g. detecting pi orbitals)
 !iorb is the index of the interesting orbital, atmcomp is array with dimension of ncenter to return atomic contribution
 !imethod=1: Mulliken    =2: SCPA
-subroutine orbatmcomp(imethod,iorbin,atmcomp)
+subroutine gen_orbatmcomp_MMPA(imethod,iorbin,atmcomp)
 use defvar
 implicit real*8 (a-h,o-z)
 real*8 atmcomp(ncenter),bastot(nbasis)
@@ -566,8 +575,8 @@ end subroutine
 
 
 !!!-------- Partition orbital to atomic contributions by space partition methods
-!itype=1: Hirshfeld, itype=2: Becke, itype=3: Hirshfeld-I
-subroutine spaceparorb(itype)
+!itype=1: Hirshfeld, itype=2: Becke, itype=3: Hirshfeld-I (must have "call Hirshfeld-I")
+subroutine orbatmcomp_space(itype)
 use defvar
 use util
 use function
@@ -580,9 +589,17 @@ integer,allocatable :: fragorbcomp(:)
 character orbtype*10,c2000tmp*2000
 real*8,external :: fdens_rad
 
+if (iautointgrid==1) then
+	nradpotold=radpot
+	nsphpotold=sphpot
+	radcutold=radcut
+	radpot=30
+	sphpot=302
+    radcut=15
+end if
+
 !Generate allpotx/y/z/w
 !allpotx(iatm,j) is x coordinate of the jth point for integrating center iatm
-write(*,*) "Initializing data, please wait... \(^_^)/"
 call gen1cintgrid(gridorg,iradcut)
 do iatm=1,ncenter
 	allpotx(iatm,:)=gridorg(:)%x+a(iatm)%x
@@ -592,8 +609,11 @@ end do
 
 !allpotw combines Becke multi-center integration weight with Becke/Hirshfeld/Hirshfeld-I weight
 allpotw=0D0
-write(*,"(i7,' quadrature points are used for each atom')") radpot*sphpot
+write(*,"(i6,' quadrature points are used for each atom to compute orbital composition')") radpot*sphpot
+write(*,"(a)") " Note: You can manually define the number of radial and angular points by &
+setting ""iautointgrid"" in settings.ini to 0 and setting ""radpot"" and ""sphpot"""
 call walltime(iwalltime1)
+
 if (itype==1.or.itype==3) then !Hirshfeld or Hirshfeld-I partition
 	write(*,*)
 	if (itype==1) then
@@ -602,6 +622,7 @@ if (itype==1.or.itype==3) then !Hirshfeld or Hirshfeld-I partition
 		write(*,"(a)") " 2 Provide wavefunction file of involved elements by yourself or invoke Gaussian to automatically calculate them"
 		read(*,*) ihirshmode
 	end if
+    
 	if ((itype==1.and.ihirshmode==1).or.itype==3) then !Hirshfeld or Hirshfeld-I based on interpolation density
 		if (itype==1.and.ihirshmode==1) write(*,*) "Generating Hirshfeld atomic weighting functions at all grids..."
 		if (itype==3) write(*,*) "Generating Hirshfeld-I atomic weighting functions at all grids..."
@@ -632,11 +653,13 @@ if (itype==1.or.itype==3) then !Hirshfeld or Hirshfeld-I partition
 				end if
 			end do
 			allpotw(iatm,:)=allpotw(iatm,:)*gridorg(:)%value !Combine Hirshfeld weight with single-center integration weight
-			write(*,"(' Atom',i6,'(',a,') finished')") iatm,a(iatm)%name
+            
+            call showprog(iatm,ncenter)
 		end do
 		
 	else if (itype==1.and.ihirshmode==2) then !Hirshfeld based on atomic .wfn file
 		call setpromol
+        write(*,*) "Generating Hirshfeld atomic weighting functions at all grids..."
 		do iatm=1,ncenter_org
 			promol=0D0
 			do jatm=1,ncenter_org
@@ -658,21 +681,22 @@ if (itype==1.or.itype==3) then !Hirshfeld or Hirshfeld-I partition
 				end if
 			end do
 			allpotw(iatm,:)=allpotw(iatm,:)*gridorg(:)%value !Combine Hirshfeld weight with single-center integration weight
-			write(*,"(' Atom',i6,'(',a,') finished')") iatm,a_org(iatm)%name
+            
+            call showprog(iatm,ncenter_org)
 		end do
 		call dealloall
 		call readinfile(firstfilename,1) !Retrieve the firstly loaded file(whole molecule) in order to calculate real rho later
 	end if
 
 else if (itype==2) then !Becke partition
-	write(*,*) "Generating Becke weight..."
+	write(*,*) "Generating Becke atomic weighting functions at all grids..."
 	do iatm=1,ncenter !Cycle points of each atom
 		gridatm%x=gridorg%x+a(iatm)%x
 		gridatm%y=gridorg%y+a(iatm)%y
 		gridatm%z=gridorg%z+a(iatm)%z
 		call gen1cbeckewei(iatm,iradcut,gridatm,allpotw(iatm,:))
 		allpotw(iatm,:)=allpotw(iatm,:)*gridorg%value !Combine Becke weight with single-center integration weight
-		write(*,"(' Atom',i6,'(',a,') finished')") iatm,a_org(iatm)%name
+        call showprog(iatm,ncenter)
 	end do
 end if
 
@@ -698,6 +722,11 @@ do while(.true.)
 		write(*,"(' Error: Orbital index should within the range of 1 to',i6,/)") nmo
 		cycle
 	else if (ishowmo==0) then
+        if (iautointgrid==1) then
+	        radpot=nradpotold
+	        sphpot=nsphpotold
+            radcut=radcutold
+        end if
 		exit
 	else if (ishowmo==-1) then !Show all orbital information
 		do i=1,nmo
@@ -716,7 +745,7 @@ do while(.true.)
 			write(*,*) "Input atom index, e.g. 4"
 			read(*,*) iatm
 		end if
-		write(*,*) "Input orbital range    e.g.  20,25"
+		write(*,*) "Input orbital range, e.g. 20,25 means from 20 to 25"
 		read(*,*) iorbbeg,iorbend
 		if (iorbbeg<=0) iorbbeg=1
 		if (iorbend>nmo) iorbend=nmo
@@ -780,8 +809,9 @@ do while(.true.)
 		open(10,file="orbcomp.txt",status="replace")
 		do imo=1,nmo
 			write(10,"(' Orbital',i6)") imo
+            valnorm=sum(orbcomp(:,imo))
 			do iatm=1,ncenter
-				write(10,"(i6,f12.6,' %')") iatm,orbcomp(iatm,imo)*100
+				write(10,"(i6,f11.3,' %')") iatm,orbcomp(iatm,imo)/valnorm*100
 			end do
 		end do
 		close(10)
@@ -838,9 +868,9 @@ do while(.true.)
 		end if
 		write(*,*) "Contributions after normalization:"
 		do iatm=1,ncenter
-			write(*,"(' Atom',i6,'(',a,') :',f12.6,'%')") iatm,a(iatm)%name,resultvec(iatm)/accum*100
+			write(*,"(' Atom',i6,'(',a,') :',f11.3,'%')") iatm,a(iatm)%name,resultvec(iatm)/accum*100
 		end do
-		if (allocated(fragorbcomp)) write(*,"(/,' Fragment contribution:',f12.6,'%')") fragresult/accum*100
+		if (allocated(fragorbcomp)) write(*,"(/,' Fragment contribution:',f11.3,'%')") fragresult/accum*100
 	end if
 	write(*,*)
 end do
@@ -850,8 +880,125 @@ end subroutine
 
 
 
+!!!-------- Calculate atomic contributions to specific range of orbitals by Hirshfeld (built-in density) or Becke methods
+!In fact this is a simplified version of orbatmcomp_space
+!itype=1: Hirshfeld, itype=2: Becke
+!atmcomp: The array returned, atmcomp(A,i) is contribution of atom A to orbital ibeg+i-1. The second index has length of iend-ibeg+1
+!ibeg,iend: The beginning and ending index of the orbitals to be computed, ranging from 1 to nmo
+!info=0: silent mode, info=1: print intermediate prompts
+!igrid=0: Use lowest acceptable grid (accurate to one decimal place), =1: Use medium quality grid
+subroutine gen_orbatmcomp_space(itype,atmcomp,ibeg,iend,info,igrid)
+use defvar
+use util
+use function
+implicit real*8(a-h,o-z)
+real*8 atmcomp(ncenter,iend-ibeg+1)
+type(content) gridorg(radpot*sphpot),gridatm(radpot*sphpot)
+real*8 allpotx(ncenter,radpot*sphpot),allpoty(ncenter,radpot*sphpot),allpotz(ncenter,radpot*sphpot),allpotw(ncenter,radpot*sphpot)
+real*8 tmpdens(radpot*sphpot),selfdens(radpot*sphpot),promol(radpot*sphpot),orbval(nmo)
+
+if (iautointgrid==1) then
+	nradpotold=radpot
+	nsphpotold=sphpot
+	radcutold=radcut
+    if (igrid==0) then
+	    radpot=25
+	    sphpot=170
+    else if (igrid==1) then
+	    radpot=30
+	    sphpot=302
+    end if
+    radcut=15
+end if
+
+if (itype==1) write(*,*) "Calculating atomic contributions to orbitals by Hirshfeld method..."
+if (itype==2) write(*,*) "Calculating atomic contributions to orbitals by Becke method..."
+
+if (info==1) then
+    write(*,"(i7,' quadrature points are used for each atom')") radpot*sphpot
+    write(*,"(a)") " Note: You can manually define the number of radial and angular points by &
+    setting ""iautointgrid"" in settings.ini to 0 and setting ""radpot"" and ""sphpot"""
+end if
+
+call gen1cintgrid(gridorg,iradcut)
+do iatm=1,ncenter
+	allpotx(iatm,:)=gridorg(:)%x+a(iatm)%x
+	allpoty(iatm,:)=gridorg(:)%y+a(iatm)%y
+	allpotz(iatm,:)=gridorg(:)%z+a(iatm)%z
+end do
+
+!allpotw combines Becke multi-center integration weight with Becke/Hirshfeld weight
+allpotw=0D0
+if (itype==1) then !Hirshfeld based on built-in atomic density
+	if (info==1) write(*,*) "Generating Hirshfeld atomic weighting functions at all grids..."
+	do iatm=1,ncenter
+		promol=0D0
+		do jatm=1,ncenter
+			!$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
+			do ipt=1+iradcut*sphpot,radpot*sphpot
+				tmpdens(ipt)=calcatmdens(jatm,allpotx(iatm,ipt),allpoty(iatm,ipt),allpotz(iatm,ipt),0)
+			end do
+			!$OMP end parallel do
+			promol=promol+tmpdens
+			if (jatm==iatm) selfdens=tmpdens
+		end do
+		do i=1+iradcut*sphpot,radpot*sphpot !Get Hirshfeld weight of present atom
+			if (promol(i)/=0D0) then
+				allpotw(iatm,i)=selfdens(i)/promol(i)
+			else
+				allpotw(iatm,i)=0D0
+			end if
+		end do
+		allpotw(iatm,:)=allpotw(iatm,:)*gridorg(:)%value !Combine Hirshfeld weight with single-center integration weight
+	end do
+else if (itype==2) then !Becke partition
+	if (info==1) write(*,*) "Generating Becke weights..."
+	do iatm=1,ncenter !Cycle points of each atom
+		gridatm%x=gridorg%x+a(iatm)%x
+		gridatm%y=gridorg%y+a(iatm)%y
+		gridatm%z=gridorg%z+a(iatm)%z
+		call gen1cbeckewei(iatm,iradcut,gridatm,allpotw(iatm,:))
+		allpotw(iatm,:)=allpotw(iatm,:)*gridorg%value !Combine Becke weight with single-center integration weight
+	end do
+end if
+
+if (info==1) write(*,*) "Calculating orbital compositions, please wait..."
+atmcomp=0
+do iatm=1,ncenter
+    !$OMP parallel do shared(atmcomp) private(ipot,orbval) num_threads(nthreads) schedule(dynamic)
+	do ipot=1+iradcut*sphpot,radpot*sphpot
+		if (allpotw(iatm,ipot)<1D-9) cycle !May lose 0.001% accuracy
+		call orbderv(1,ibeg,iend,allpotx(iatm,ipot),allpoty(iatm,ipot),allpotz(iatm,ipot),orbval)
+		atmcomp(iatm,:)=atmcomp(iatm,:)+orbval(ibeg:iend)**2*allpotw(iatm,ipot)
+	end do
+    !$OMP end parallel do
+    call showprog(iatm,ncenter)
+end do
+
+!Do normalization
+do imo=ibeg,iend
+	!write(*,"(' Orbital',i6)") imo
+	!do iatm=1,ncenter
+	!	write(*,"(i6,f12.6,' %')") iatm,atmcomp(iatm,imo)*100
+	!end do
+    !write(*,"(i6,f12.6)") imo,sum(atmcomp(:,imo))*100
+    itmp=imo-ibeg+1
+    atmcomp(:,itmp)=atmcomp(:,itmp)/sum(atmcomp(:,itmp))
+end do
+
+if (iautointgrid==1) then
+	radpot=nradpotold
+	sphpot=nsphpotold
+    radcut=radcutold
+end if
+end subroutine
+
+
+
+
+
 !!------------ Orbital composition analysis by NAO method
-subroutine NAOcompana
+subroutine orballcomp_NAO
 use defvar
 use util
 implicit real*8 (a-h,o-z)
@@ -1247,17 +1394,22 @@ subroutine LOBA
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-real*8 oxdstat(ncenter)
+real*8 oxdstat(ncenter),atmcomp(ncenter,nmo)
 integer,allocatable :: fragLOBA(:)
 character c2000tmp*2000
+
 write(*,*) "Citation: Phys. Chem. Chem. Phys., 11, 11297-11304 (2009)"
-write(*,*) "Note: SCPA method is employed here for calculating orbital composition"
 write(*,*)
+call gen_orbatmcomp_space(1,atmcomp,1,nmo,0,0)
+
 nfragLOBA=0
 do while(.true.)
-	oxdstat=a%charge
 	write(*,*) "Input percentage threshold to determine oxidation state (50 is commonly used)"
-	write(*,*) "Input -1 can define fragment"
+	if (allocated(fragLOBA)) then
+        write(*,"(a,i6,a)") " Input -1 can redefine the fragment, current:",nfragLOBA," atoms"
+    else
+        write(*,*) "Input -1 can define fragment, current: Undefined"
+    end if
 	write(*,*) "Input 0 can exit"
 	read(*,*) thres
 	if (thres==0) then
@@ -1274,17 +1426,11 @@ do while(.true.)
 		write(*,*)
 		cycle
 	else
+	    oxdstat(:)=a(:)%charge
 		thres=thres/100
 		do iatm=1,ncenter
 			do imo=1,nmo
-				if (MOtype(imo)==0.or.MOtype(imo)==1) then
-					tmpnorm=sum(CObasa(:,imo)**2)
-					compval=sum(CObasa(basstart(iatm):basend(iatm),imo)**2)/tmpnorm
-				else if (MOtype(imo)==2) then
-					tmpnorm=sum(CObasb(:,imo-nbasis)**2)
-					compval=sum(CObasb(basstart(iatm):basend(iatm),imo-nbasis)**2)/tmpnorm
-				end if
-				if (compval>thres) oxdstat(iatm)=oxdstat(iatm)-MOocc(imo)
+				if (atmcomp(iatm,imo)>thres) oxdstat(iatm)=oxdstat(iatm)-MOocc(imo)
  				!if (MOocc(imo)>0.and.compval>thres) write(*,"(' Orbital',i4,' belongs to atom',i4)") imo,iatm
 			end do
 			write(*,"(' Oxidation state of atom',i4,'(',a,') :',i3)") iatm,a(iatm)%name,nint(oxdstat(iatm))
@@ -1297,20 +1443,7 @@ do while(.true.)
 				oxdfrag=oxdfrag+a(iatm)%charge
 			end do
 			do imo=1,nmo
-				compval=0
-				if (MOtype(imo)==0.or.MOtype(imo)==1) then
-					tmpnorm=sum(CObasa(:,imo)**2)
-				else if (MOtype(imo)==2) then
-					tmpnorm=sum(CObasb(:,imo-nbasis)**2)
-				end if
-				do iatmidx=1,nfragLOBA
-					iatm=fragLOBA(iatmidx)
-					if (MOtype(imo)==0.or.MOtype(imo)==1) then
-						compval=compval+sum(CObasa(basstart(iatm):basend(iatm),imo)**2)/tmpnorm
-					else if (MOtype(imo)==2) then
-						compval=compval+sum(CObasb(basstart(iatm):basend(iatm),imo-nbasis)**2)/tmpnorm
-					end if
-				end do
+				compval=sum(atmcomp(fragLOBA(:),imo))
 				if (compval>thres) oxdfrag=oxdfrag-MOocc(imo)
 			end do
 			write(*,"(' Oxidation state of the fragment:',i4)") nint(oxdfrag)
@@ -1327,9 +1460,9 @@ end subroutine
 
 
 !!------- Generate all atomic composition of all orbitals by SCPA method, or load them from orbcomp.txt in current folder
-!This routine is used by some functions that requires atomic orbital composition, e.g. IFCT, hole-electron analysis
 !The orbcomp.txt can be exported via e.g. Becke and Hirshfeld orbital composition module
-subroutine genatmcomp(atmcomp)
+!Currently not employed by any function
+subroutine gen_allorbatmcomp_SCPA(atmcomp)
 use defvar
 implicit real*8 (a-h,o-z)
 real*8 atmcomp(ncenter,nmo)
@@ -1373,8 +1506,8 @@ end subroutine
 
 
 !!------- Generate all basis function composition in all orbitals by SCPA method
-!This routine is used by some functions that requires this information, e.g. calculate basis function contribution to hole and electron
-subroutine genbascomp(bascomp)
+!Currently not employed by any function
+subroutine gen_allorbbascomp_SCPA(bascomp)
 use defvar
 implicit real*8 (a-h,o-z)
 real*8 bascomp(nbasis,nmo)

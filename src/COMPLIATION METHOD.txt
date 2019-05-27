@@ -1,4 +1,4 @@
-Here I introduce how to compile Multiwfn (64bit version) in Linux by Intel Fortran compiler, the compiler version I am using is 15.0.0, my system is CentOS 7.2 (64bit). I assume that you have logged on your system as root.
+Here I introduce how to compile Multiwfn (64bit version) in Linux by Intel Fortran compiler, the compiler version I am using is 19.0.1.144, my system is CentOS 6.1 (64bit). I assume that you have logged on your system as root.
 PS: Don't try to use gfortran to compile Multiwfn, you must fail, because gfortran has lunatic requirement on the format of Fortran code, and the code relies on many features of ifort as well as intel MKL library.
 
 1 Uncompress the source code package to your favorite path, I assume the path is /sob/Multiwfn. In the package you can find following files:
@@ -18,8 +18,8 @@ If no any exception occurs, you will find executable file "Multiwfn" in current 
 
 ============ Compile Multiwfn without GUI and plotting functionalities  ============
 
-If you encounter difficulties when compiling Multiwfn due to missing or incompatibility of some graphical library files, and in the meantime you don't need visualization functions of Multiwfn, you can compile Multiwfn without GUI supported, all functions irrelevant to GUI and map plotting will still work normally. The compilation steps are:
+If you encountered difficulties when compiling or running Multiwfn due to missing or incompatibility of some graphical library files, and in the meantime you don't need visualization functions of Multiwfn, you can compile Multiwfn without GUI supported, all functions irrelevant to GUI and map plotting will still work normally. The compilation steps are:
 
 1 ./noGUI.sh
 2 cd noGUI
-3 make
+3 make -j

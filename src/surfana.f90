@@ -1327,7 +1327,7 @@ do while(.true.)
 		if (imapfunc==1.or.imapfunc==3) then
 			if (iESPev==0) then
 				write(*,"(a)") "Function values (kcal/mol) are recorded in B-factor field"
-			else
+			else if (iESPev==1) then
 				write(*,"(a)") "Note that since magnitude of ESP on the surface of this system is quite large, &
 				eV instead of kcal/mol is used to record ESP in the B-factor field of surfanalysis.pdb"
 			end if

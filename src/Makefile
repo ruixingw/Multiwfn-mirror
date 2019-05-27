@@ -1,6 +1,6 @@
 OPT = -O2 -qopenmp -qopenmp-link=static -threads -qopt-matmul -msse3 -diag-disable 8290,8291,6371,10316 -fpp -mkl -static-intel
 #Options in the next line is for debugging purpose
-#OPT = -O0 -openmp -diag-disable 8290,8291,6371 -threads -openmp-link=static -debug all -g -traceback -check all -fstack-protector -fpp -mkl -static-intel
+#OPT = -O0 -qopenmp -diag-disable 8290,8291,6371 -threads -qopenmp-link=static -debug all -g -traceback -check all -fstack-protector -fpp -mkl -static-intel
 
 #LIB = ./dislin_d-11.0.a -lXm -lGL #Works for CentOS 6.1
 LIB = ./dislin_d-11.0.a -lXm -lXt -lX11 -lGL #Works for CentOS 7.2

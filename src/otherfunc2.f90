@@ -537,7 +537,7 @@ do ifile=1,nfile
 					if (ierror/=0) then
 						write(*,"(' Error: Unable to load the',i7,'th Bq in this file!')") iloadthis
 						write(*,"(' This Bq should correspond to the',i7,'th center in this file')") ncenter+iloadthis
-						write(*,*) "Please double check your grid setting. Now press ENTER to exit"
+						write(*,*) "Please double check your grid setting. Press ENTER button to exit"
 						read(*,*)
 						return
 					end if
@@ -779,10 +779,12 @@ integer,allocatable :: comparridx(:)
 character filename2*200,c80tmp*80
 type(content),allocatable :: gridatm(:),gridatmorg(:)
 if (iautointgrid==1) then
-	sphpotold=sphpot
-	radpotold=radpot
-	sphpot=230
-	radpot=50
+	nsphpotold=sphpot
+	nradpotold=radpot
+    radcutold=radcut
+	sphpot=302
+	radpot=30
+    radcut=15
 end if
 allocate(gridatm(radpot*sphpot),gridatmorg(radpot*sphpot),beckeweigrid(radpot*sphpot))
 
@@ -961,8 +963,9 @@ do while(.true.)
 end do
 
 if (iautointgrid==1) then
-	radpot=radpotold
-	sphpot=sphpotold
+	radpot=nradpotold
+	sphpot=nsphpotold
+    radcut=radcutold
 end if
 end subroutine
 

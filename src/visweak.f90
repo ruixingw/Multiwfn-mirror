@@ -631,7 +631,7 @@ do while (.true.)
 		read(*,*) rlower,rupper
 		if (rupper<rlower) then
 			write(*,*) "Error: Upper limit is smaller than lower limit!"
-			write(*,*) "Press ENTER to continue. The data will not be changed"
+			write(*,*) "Press ENTER button to continue. The data will not be changed"
 			read(*,*)
 			cycle
 		end if

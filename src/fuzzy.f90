@@ -28,7 +28,7 @@ real*8,allocatable :: AOM(:,:,:),AOMa(:,:,:),AOMb(:,:,:),AOMsum(:,:),AOMsuma(:,:
 real*8 :: FLUref(nelesupp,nelesupp)=-1D0
 real*8 :: AOMtmp(nmo,nmo),orbval(nmo)
 integer :: iraddefine=-1 !-1= Specific for Laplacian bond order. 0=Custom 1=CSD 2=Pyykko 3=Suresh
-integer :: nbeckeiter=3,sphpotold,radpotold
+integer :: nbeckeiter=3
 integer :: cenind(10) !Record atom index for multicenter DI
 real*8 hess(3,3),rhogradw(3)
 character :: radfilename*200,selectyn,c80inp*80,specatmfilename*80,c200tmp*200,c2000tmp*2000
@@ -59,8 +59,8 @@ if (all(FLUref==-1D0)) then !If =-1, means missing reference value
 	FLUref(7,5)=1.260D0
 end if
 !Backup original grid setting, because calculating bond order may use lower grid quality
-radpotold=radpot
-sphpotold=sphpot
+nradpotold=radpot
+nsphpotold=sphpot
 
 
 !==== Interface loop ====!
@@ -68,9 +68,9 @@ sphpotold=sphpot
 do while(.true.) 
 
 !For some functions, e.g. calculate DI, it is safe to use relatively low grid quality for saving time,
-!so sphpot and radpot may be adjusted automatically, but each time enter main interface we recover the one set by users
-radpot=radpotold
-sphpot=sphpotold
+!so sphpot and radpot may be adjusted automatically, but each time enter main interface we recover the ones set by users
+radpot=nradpotold
+sphpot=nsphpotold
 if (iwork==0) then
 	write(*,*)
 	write(*,*) "                ======== Fuzzy atomic space analysis ========"
@@ -132,10 +132,10 @@ else if (isel==101) then
 	
 else if (isel==-11) then
 	if (numcp>0) then
-		write(*,*) "Summary of found CPs:"
-		write(*,*) " Index              Coordinate               Type"
+		write(*,*) "Summary of found CPs (in Bohr):"
+        write(*,*) " Index         X               Y               Z         Type"
 		do icp=1,numcp
-			write(*,"(i6,3f12.6,3x,a)") icp,CPpos(:,icp),CPtyp2lab(CPtype(icp))
+			write(*,"(i6,3f16.9,3x,a)") icp,CPpos(:,icp),CPtyp2lab(CPtype(icp))
 		end do
 		write(*,*) "Select a CP by inputting its index, e.g. 5"
 		read(*,*) icp
@@ -249,7 +249,7 @@ else if (isel==-2) then
 			write(*,"(a)") " 5 1.12"
 			write(*,"(a)") " 14 1.63"
 			write(*,*)
-			write(*,*) "Input filename"
+			write(*,*) "Input file path, e.g. C:\radall.txt"
 			read(*,"(a)") radfilename
 			inquire(file=radfilename,exist=alive)
 			if (alive.eqv..true.) then
@@ -881,7 +881,7 @@ if (isel==3.or.isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==9.or.isel==10.o
 		AOMerror=identmaterr(AOMsum)/ncenter
 		write(*,"(' Error of AOM is',f14.8)") AOMerror
 		if (AOMerror>0.001D0) write(*,"(a)") " Warning: The integration is not very accurate, in the settings.ini, &
-		you need to set iautointgrid to 0 and proper set radpot and sphpot parameters"		
+		you need to set ""iautointgrid"" to 0 and proper set ""radpot"" and ""sphpot"" parameters"		
 ! 		call showmatgau(AOMsum,"",1,"f14.8",7)
 	else if (wfntype==1.or.wfntype==4) then !UHF,U-post-HF
 		AOMerrorb=0D0
@@ -894,7 +894,7 @@ if (isel==3.or.isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==9.or.isel==10.o
 		write(*,"(' Error of alpha AOM is',f14.8)") AOMerrora
 		if (nmatsizeb>0) write(*,"(' Error of Beta AOM is ',f14.8)") AOMerrorb
 		if (AOMerrora>0.001D0.or.AOMerrorb>0.001D0)  write(*,"(a)") " Warning: The integration is not very accurate, in the settings.ini, &
-		you need to set iautointgrid to 0 and proper set radpot and sphpot parameters"		
+		you need to set ""iautointgrid"" to 0 and proper set ""radpot"" and ""sphpot"" parameters"		
 	end if
 end if
 
@@ -1272,8 +1272,8 @@ else if (isel==4) then !Show LI and DI or fuzzy bond order
 			write(*,*) "Done, bond order matrix has been outputted to bndmat.txt in current folder"
 			write(*,"(a)") " Note: Diagonal terms in the bond order matrix are the sum of corresponding row or column elements, for closed-shell cases, they are also known as atomic valence"
 		end if
-		radpot=radpotold
-		sphpot=sphpotold
+		radpot=nradpotold
+		sphpot=nsphpotold
 		return !Fuzzy bond order has been shown, now (normally) return to bond order analysis interface
 	end if
 	
@@ -1443,8 +1443,8 @@ else if (isel==8) then !Integral in overlap region
 			write(*,"(a)") " Note: Diagonal terms in the bond order matrix are the sum of corresponding row or column elements"
 			write(*,*)
 		end if
-		radpot=radpotold
-		sphpot=sphpotold
+		radpot=nradpotold
+		sphpot=nsphpotold
 		return !Laplacian bond order has been shown, now (normally) return to bond order analysis interface
 	else
 		call showmatgau(ovlpintpos,"Integration of positive values in overlap region",0,"f14.8")
