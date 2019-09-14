@@ -13,6 +13,7 @@ integer,allocatable :: searchlist(:) !Store atom indices for those will be exhau
 real*8,allocatable :: DMNAO(:,:),DMNAObeta(:,:),orbeigval(:),orbeigvec(:,:),removemat(:,:),colvec(:,:),rowvec(:,:),DMNAOblk(:,:),AONAO(:,:)
 ! real*8 :: bndcrit(30)=(/ 1.9D0,1.7D0,1.7D0,(1.8D0,i=4,30) /) !Bond threshold for different center-bonds
 real*8 :: bndcrit=1.7D0
+integer :: numprint=100
 real*8,allocatable :: candiocc(:),candivec(:,:),candinatm(:) !Store candidate orbital information, occupation, eigenvector(in total NAOs), number of atoms
 integer,allocatable :: candiatmlist(:,:) !Store atom list of candidate orbitals
 real*8,allocatable :: savedocc(:),savedvec(:,:),savednatm(:) !Store saved orbital information, occupation, eigenvector(in total NAOs), number of atoms
@@ -118,6 +119,7 @@ read(10,"(a)") c80tmp
 backspace(10)
 nskipcol=16 !NBO3
 if (c80tmp(2:2)==" ") nskipcol=17 !NBO6
+write(*,*) "Loading DMNAO matrix ..."
 call readmatgau(10,DMNAO,0,"f8.4 ",nskipcol,8,3)
 iusespin=0
 !Check if this is open-shell calculation
@@ -128,6 +130,7 @@ if (iopenshell==1) then
 	if (iusespin==1.or.iusespin==2) bndcrit=bndcrit/2D0
 	if (iusespin==0.or.iusespin==2) then !if ==1, that is alpha, this is current DMNAO
 		allocate(DMNAObeta(numNAO,numNAO))
+        write(*,*) "Loading DMNAO matrix of beta electrons ..."
 		call loclabel(10,"*******         Beta  spin orbitals         *******",ifound)
 		call loclabel(10,"NAO density matrix:",ifound,0)
 		call readmatgau(10,DMNAObeta,0,"f8.4 ",nskipcol,8,3)
@@ -186,9 +189,12 @@ do while(.true.)
 			end do
 		end do
 		if (numcandi>0) then
-			write(*,*) "  ---- Current candidate orbital list, sorted according to occupation ----"
-			if (numcandi>50) write(*,*) "Note: Only the 50 orbitals with highest occupancy are listed"
-			do icandi=min(50,numcandi),1,-1 !Print from occupation of small to large, so index is decreased
+			if (numcandi>numprint) then
+                write(*,"(a,i6,a)") " Note: Only",numprint," candidate orbitals with highest occupancy are printed (This &
+                threshold can be changed via suboption 2 of option -2"
+            end if
+            write(*,*) "  ---- Current candidate orbital list, sorted according to occupation ----"
+			do icandi=min(numcandi,numprint),1,-1 !Print from occupation of small to large, so index is decreased
 				write(*,"(' #',i4,' Occ:',f7.4,' Atom:',9(i4,a))") icandi,candiocc(icandi),(candiatmlist(icandi,ii),a(candiatmlist(icandi,ii))%name,ii=1,candinatm(icandi))
 			end do
 			write(*,*)
@@ -207,8 +213,7 @@ do while(.true.)
 	write(*,"(' Residual valence electrons of all atoms in the search list:',f12.6)") remainelec
 
 	write(*,*) "-10 Return to main menu"
-	if (ioutdetail==1) write(*,*) "-2 Switch if output detail of exhaustive searching process, current: Yes"
-	if (ioutdetail==0) write(*,*) "-2 Switch if output detail of exhaustive searching process, current: No"
+    write(*,*) "-2 Various other settings and functions"
 	write(*,*) "-1 Define exhaustive search list"
 	if (numcandi>0) write(*,*) "0 Pick out some candidate orbitals and update occupations of others"
 	write(*,"(' 1 Perform orbitals search for a specific atom combination')")
@@ -228,19 +233,40 @@ do while(.true.)
 	if (allocated(oldDMNAO)) write(*,"(a)") " 12 Load saved density matrix and AdNDP orbital list"
 	write(*,"(a)") " 13 Show residual density distributions on the atoms in the search list"
 	if (numsaved>0) write(*,"(a)") " 14 Output all AdNDP orbitals as .molden file"
-! 	write(*,"(a)") "15 Output current density matrix to DMNAO.txt in current folder" !Rarely used, screen it to cut down list length
-	write(*,"(a)") " 16 Output energy of picked AdNDP orbitals"
+	write(*,"(a)") " 16 Evaluate and output energy of picked AdNDP orbitals"
 	read(*,*) isel
 	
 	
 	if (isel==-10) then
 		return
 	else if (isel==-2) then
-		if (ioutdetail==1) then
-			ioutdetail=0
-		else
-			ioutdetail=1
-		end if
+        do while(.true.)
+            write(*,*)
+            write(*,*) "0 Return"
+	        if (ioutdetail==1) write(*,*) "1 Switch if output detail of exhaustive searching process, current: Yes"
+	        if (ioutdetail==0) write(*,*) "1 Switch if output detail of exhaustive searching process, current: No"
+            write(*,"(a,i5)") " 2 Set maximum number of candidate orbitals to be printed, current:",numprint
+            write(*,*) "3 Output current density matrix to DMNAO.txt in current folder"
+            read(*,*) isel2
+            if (isel2==0) then
+                exit
+            else if (isel2==1) then
+		        if (ioutdetail==1) then
+			        ioutdetail=0
+		        else
+			        ioutdetail=1
+		        end if
+            else if (isel2==2) then
+                write(*,*) "Input a number, e.g. 80"
+                read(*,*) numprint
+            else if (isel2==3) then
+		        open(10,file="DMNAO.txt",status="replace")
+		        call showmatgau(DMNAO,"Density matrix in NAO basis",0,"f12.6",10)
+		        close(10)
+		        write(*,*) "Done, density matrix in NAO basis has been saved to DMNAO.txt in current folder"
+            end if
+        end do
+        
 	else if (isel==-1) then
 		call adndpdeflist(searchlist,lensearchlist)
 	else if (isel==0) then
@@ -395,7 +421,8 @@ do while(.true.)
 						numcandi=numcandi+1
 						if (isel==2.and.ioutdetail==1) write(*,"('Found the ',i4,'th candidate orbital with occupation:',f8.4)") numcandi,orbeigval(iNAO)
 						if (numcandi>nlencandi) then
-							write(*,"(a)") " Error: Candidate orbital list is overflow! You may need to increase variable ""nlencandi"" in AdNDP.f90 or properly tight up occupation threshold"
+							write(*,"(a)") " Error: Candidate orbital list is overflow! You may need to increase ""nlencandi"" in AdNDP.f90 and recompile the code, &
+                            or properly tighten up occupation threshold"
 							write(*,*) "Press ENTER button to continue"
 							read(*,*)
 							deallocate(DMNAOblk,orbeigval,orbeigvec)
@@ -511,12 +538,14 @@ do while(.true.)
 			adndpcobas(:,:)=matmul(AONAO,transpose(savedvec)) !cobasaadndp(i,j) means coefficient of basis function i in orbital j
 			call readfchadndp(fchfilename,iusespin,savedocc,adndpcobas,numsaved)
 			call drawmolgui
+            write(*,*)
             
 		else if (isel==8) then !Visualize candidate orbitals
 			allocate(adndpcobas(nbasis,numcandi))
 			adndpcobas(:,:)=matmul(AONAO,transpose(candivec))
 			call readfchadndp(fchfilename,iusespin,candiocc,adndpcobas,numcandi)
 			call drawmolgui
+            write(*,*)
             
 		else if (isel==14) then !Output all saved AdNDP orbitals as .molden file
 			call dealloall
@@ -631,7 +660,8 @@ do while(.true.)
 			savedocc(1:numsaved)=oldsavedocc
 			savedatmlist(1:numsaved,:)=oldsavedatmlist
 			savednatm(1:numsaved)=oldsavednatm
-			write(*,*) "Done, the saved density matrix in NAO basis and AdNDP orbital list has been recovered"
+			write(*,"(a)") " Done, the saved density matrix in NAO basis and AdNDP orbital list has been recovered"
+            write(*,*)
 		end if
         
 	else if (isel==13) then
@@ -646,12 +676,6 @@ do while(.true.)
 			if (mod(iatm,4)==0) write(*,*)
 		end do
 		write(*,*)
-        
-	else if (isel==15) then
-		open(10,file="DMNAO.txt",status="old")
-		call showmatgau(DMNAO,"Density matrix in NAO basis",0,"f12.6",10)
-		close(10)
-		write(*,*) "Done, density matrix in NAO basis has been saved to DMNAO.txt in current folder"
         
 	else if (isel==16) then !Evaluate orbital energy
 		if (numsaved==0) then

@@ -221,7 +221,10 @@ if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 			end if
 		end do
 	end do
-	write(*,*)
+	write(*,*)    
+    write(*,"(a)") " Note: The ""Total"" bond orders shown above are more meaningful than the below ones. If you are not familiar &
+    related theory, you can simply ignore below output"
+    write(*,*)
 	write(*,"(' Bond order from mixed alpha&beta density matrix >=',f10.6)") bndordthres
 end if
 itmp=0
@@ -314,8 +317,9 @@ end if
 
 do while(.true.)
 	write(*,*)
-	write(*,*) "Input atom indices, e.g. 3,4,7,8,10   (2~12 centers)"
-	write(*,*) "Input -3/-4/-5/-6 can search all possible three/four/five/six-center bonds"
+	write(*,*) "Input atom indices, e.g. 3,4,7,8,10   (2~12 centers are supported)"
+    write(*,*) "Note: The input order must be in consistency with atomic connectivity"
+	write(*,*) "Input -3/-4/-5/-6 will search all possible three/four/five/six-center bonds"
 	write(*,*) "Input 0 can return to upper level menu"
 	read(*,"(a)") c1000tmp
 
@@ -751,13 +755,14 @@ end if
 end subroutine
 
 
-!!---- A routine directly calculate multi-center bond order without complex things, shared by multicenter and bndordNAO
+!!---- A general routine directly calculates two- or multi-center bond order without complex things
+!Shared by subroutine multicenter, bndordNAO and others
 !Note that for open-shell cases, the result variable "result" may then be multiplied by a proper factor
 subroutine calcmultibndord(nbndcen,cenind,PSmat,matdim,result)
 use defvar
 implicit real*8(a-h,o-z)
-real*8 PSmat(matdim,matdim)
-integer nbndcen,cenind(12)
+integer nbndcen,cenind(12),matdim
+real*8 PSmat(matdim,matdim),result
 result=0D0
 if (nbndcen==2) then
 	do ib=basstart(cenind(2)),basend(cenind(2))
@@ -949,7 +954,6 @@ else if (nbndcen==12) then
 	end do
 end if
 end subroutine
-
 
 
 

@@ -468,25 +468,30 @@ real*8 :: UFF_B(103)=(/ & !UFF vdW distance (x) in Angstrom
 4.90D0,3.677D0,3.478D0,3.396D0,3.424D0,3.395D0,3.424D0,3.424D0,3.381D0,3.326D0,3.339D0,3.313D0,3.299D0,3.286D0,3.274D0,3.248D0,3.236D0 /) !87~103 (Fr~Lr)
 
 !AMBER99 atomic information is taken from parm99.dat of AMBERtools package, the lone pair (LP) type is not taken into account
-integer,parameter :: nAMBERtype=61
+!OM is not standard AMBER atomic type, however gview assigns carboxyl oxygen as OM, while in standard AMBER naming it should be O
+integer,parameter :: nAMBERtype=62
 character*2 :: AMBERname(nAMBERtype)=(/ "H ","HO","HS","HC","H1","H2","H3","HP","HA",&
 "H4","H5","HW","HZ","O ","O2","OW","OH","OS","C*","CT","C ","N ","N3","S ","SH",&
 "P ","IM","Li","IP","Na","K ","Rb","Cs","MG","C0","Zn","F ","Cl","Br","I ","IB",&
 "NA","N2","N*","NC","NB","NT","NY",&  !7 types equivalent to "N "
-"CA","CB","CC","CD","CK","CM","CN","CQ","CR","CV","CW","CY","CZ" /)  !13 types equivalent to "C*"
+"CA","CB","CC","CD","CK","CM","CN","CQ","CR","CV","CW","CY","CZ",&  !13 types equivalent to "C*"
+"OM"/)  !Special atomic type assigned by gview. Use the same vdW parameter as "O"
+
 real*8 :: AMBER_A(nAMBERtype)=(/ & !AMBER well depth in kcal/mol
 0.0157D0,0.0000D0,0.0157D0,0.0157D0,0.0157D0,0.0157D0,0.0157D0,0.0157D0,0.0150D0,0.0150D0,0.0150D0,&
 0.0000D0,0.0150D0,0.2100D0,0.2100D0,0.1520D0,0.2104D0,0.1700D0,0.0860D0,0.1094D0,0.0860D0,0.1700D0,&
 0.1700D0,0.2500D0,0.2500D0,0.2000D0,0.1D0,0.0183D0,0.00277D0,0.00277D0,0.000328D0,0.00017D0,&
 0.0000806D0,0.8947D0,0.459789D0,0.0125D0,0.061D0,0.265D0,0.320D0,0.40D0,0.1D0,&
 0.1700D0,0.1700D0,0.1700D0,0.1700D0,0.1700D0,0.1700D0,0.1700D0,&
-0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0 /)
+0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,0.0860D0,&
+0.2100D0 /)
 real*8 :: AMBER_B(nAMBERtype)=(/ & !AMBER vdW radii in Angstrom
 0.6000D0,0.0000D0,0.6000D0,1.4870D0,1.3870D0,1.2870D0,1.1870D0,1.1000D0,1.4590D0,1.4090D0,1.3590D0,0.0000D0,1.4590D0,&
 1.6612D0,1.6612D0,1.7683D0,1.7210D0,1.6837D0,1.9080D0,1.9080D0,1.9080D0,1.8240D0,1.8240D0,2.0000D0,2.0000D0,2.1000D0,&
 2.47D0,1.1370D0,1.8680D0,1.8680D0,2.6580D0,2.9560D0,3.3950D0,0.7926D0,1.7131D0,1.10D0,1.75D0,1.948D0,2.22D0,2.35D0,5.0D0,&
 1.8240D0,1.8240D0,1.8240D0,1.8240D0,1.8240D0,1.8240D0,1.8240D0,&
-1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0 /)
+1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,1.9080D0,&
+1.6612D0 /)
 
 !GAFF atomic information is taken from gaff.dat of AMBERtools package
 integer,parameter :: nGAFFtype=83
@@ -592,11 +597,16 @@ if (ifound==0) then
 	read(*,*)
 	return
 end if
-read(10,"(4x,f12.6,4x,f12.6,4x,f12.6,4x,f12.6,6x,f12.6)") ET,EV,EJ,EK,ENuc
+
+read(10,"(4x,f12.6,4x,f12.6,4x,f12.6,4x,f12.6,6x,f12.6)",iostat=ierror) ET,EV,EJ,EK,ENuc !EK is useless
+!Frequently, the EV is quite large making the corresponding output is *****. Therefore, EV will be obtained as EV=ENTVJ-ET-EJ-ENuc
+
 call loclabel(10,"Ex=")
-read(10,"(34x,f12.6,4x,f12.6)") Ex,Ec
+read(10,"(18x,f12.6,4x,f12.6,4x,f12.6)") ENTVJ,Ex,Ec
+EV=ENTVJ-ET-EJ-ENuc
 close(10)
 write(*,*) "Data has been successfully loaded from this file"
+
 
 write(*,*)
 write(*,*) "Calculating E_steric (Weizsacker kinetic energy)"
@@ -613,7 +623,7 @@ write(*,"(a,f16.6,' Hartree')") " Weizsacker kinetic energy (TW):",TW
 write(*,"(a,f16.6,' Hartree')") " Interelectronic Coulomb repulsion energy (EJ):",EJ
 write(*,"(a,f16.6,' Hartree')") " Internuclear Coulomb repulsion energy (ENuc):",ENuc
 write(*,"(a,f16.6,' Hartree')") " Nuclear-electronic Coulomb attraction energy (EV):",EV
-write(*,"(a,f16.6,' Hartree')") " Energy without electronic correlation (ET+EV+EJ+ENuc):",ET+EV+EJ+ENuc
+write(*,"(a,f16.6,' Hartree')") " Energy without electronic correlation (ET+EV+EJ+ENuc):",ET+EV+EJ+ENuc !Corresponding to the "ENTVJ" term in output file
 write(*,"(a,f16.6,' Hartree')") " Exchange correlation energy (Ex):",Ex
 write(*,"(a,f16.6,' Hartree')") " Coulomb correlation energy (Ec):",Ec
 write(*,"(a,f16.6,' Hartree')") " Pauli kinetic energy (ET-TW):",ET-TW
@@ -629,7 +639,7 @@ write(*,"(/,a,f16.6,' Hartree')") " E_total:        ",E_tot
 !that the "Ec=" shown by G16 with M06-2X is incorrect
 diff=totenergy-E_tot
 if (abs(diff)>2D-5) then
-	write(*,"(a)") " Warning: The total energy shown above is detectably different to the total energy in fch/fchk file! &
+	write(*,"(/,a)") " Warning: The total energy shown above is detectably different to the total energy in fch/fchk file! &
 	This issue is known in some versions of Gaussian for certain DFT functionals, it is caused by the fact that the &
 	correlation energy printed by L608 is wrong. You should either change Gaussian version, or use other functional instead"
 	write(*,*) "Press ENTER button to exit"

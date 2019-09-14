@@ -2204,7 +2204,7 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 	""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 	write(*,"(a)") " Running: "//trim(c400tmp)
 	call system(c400tmp)
-	if (index(filename,".chk")/=0) call delfch(filename_tmp)
+	if (index(filename,".chk")/=0) call delfile(filename_tmp)
 	
 	!Load ESP data from cubegen resulting file
 	open(10,file="ESPresult.cub",status="old")

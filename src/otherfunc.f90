@@ -7,7 +7,7 @@ do while(.true.)
 	write(*,*) "              ============ Other functions (Part 1) ============ "
 	write(*,*) "0 Return"
 	write(*,*) "1 Draw scatter graph between two functions and generate their cube files"
-	write(*,*) "2 Export .pdb/.xyz/.wfn/.wfx/.molden/.fch/.47 files or input file of QC codes"
+	write(*,"(a)") " 2 Export various files (.pdb/.xyz/.wfn/.wfx/.molden/.fch/.47...) or generate input file of quantum chemistry programs"
 	write(*,*) "3 Calculate molecular van der Waals Volume"
 	write(*,*) "4 Integrate a function in whole space"
 	write(*,*) "5 Show overlap integral between alpha and beta orbitals"
@@ -20,7 +20,7 @@ do while(.true.)
 	write(*,*) "13 Calculate HOMA and Bird aromaticity index"
 	write(*,*) "14 Calculate LOLIPOP (LOL Integrated Pi Over Plane)"
 	write(*,*) "15 Calculate intermolecular orbital overlap"
-    write(*,*) "16 Calculate various quantities in conceptual density functional theory"
+    write(*,*) "16 Calculate various quantities in conceptual density functional theory (CDFT)"
 	write(*,*) "18 Yoshizawa's electron transport route analysis"
 	write(*,*) "19 Generate promolecular .wfn file from fragment wavefunctions"
 	write(*,*) "20 Calculate Hellmann-Feynman forces"
@@ -188,55 +188,57 @@ write(*,*) "6 Output current wavefunction as Molden input file (.molden)"
 write(*,*) "7 Output current wavefunction as .fch file"
 write(*,*) "8 Output current wavefunction as .47 file"
 if (allocated(CObasa)) then
-    write(*,*) "10 Output current structure and wavefunction to Gaussian input file"
+    write(*,*) "10 Output current system and wavefunction to Gaussian input file"
 else
-    write(*,*) "10 Output current structure to Gaussian input file"
+    write(*,*) "10 Output current system to Gaussian input file"
 end if
 if (allocated(CObasa)) then
-    write(*,*) "11 Output current structure and wavefunction to GAMESS-US input file"
+    write(*,*) "11 Output current system and wavefunction to GAMESS-US input file"
 else
-    write(*,*) "11 Output current structure to GAMESS-US input file"
+    write(*,*) "11 Output current system to GAMESS-US input file"
 end if
-write(*,*) "12 Output current structure to ORCA input file"
-write(*,*) "13 Output current structure to NWChem input file"
-write(*,*) "14 Output current structure to MOPAC input file"
-write(*,*) "15 Output current structure to PSI input file"
-write(*,*) "16 Output current structure to MRCC input file"
-write(*,*) "17 Output current structure to CFOUR input file"
-write(*,*) "18 Output current structure to Molpro input file"
-write(*,*) "19 Output current structure to Dalton input file"
-write(*,*) "20 Output current structure to Molcas input file"
+write(*,*) "12 Output current system to ORCA input file"
+write(*,*) "13 Output current system to NWChem input file"
+write(*,*) "14 Output current system to MOPAC input file"
+write(*,*) "15 Output current system to PSI input file"
+write(*,*) "16 Output current system to MRCC input file"
+write(*,*) "17 Output current system to CFOUR input file"
+write(*,*) "18 Output current system to Molpro input file"
+write(*,*) "19 Output current system to Dalton input file"
+write(*,*) "20 Output current system to Molcas input file"
+if (allocated(cubmat)) write(*,*) "30 Output current grid data to .vti file"
+write(*,*) "31 Output current structure to .cml file"
 read(*,*) isel
 
 if (isel==0) then
 	return
 else if (isel==1) then
 	if (ifiletype==4) then
-		write(*,*) "Input the path for pqr file, e.g. C:\ltwd.pqr"
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.pqr"
 		read(*,"(a)") c200tmp
 		call outpqr(c200tmp,10)
 	else
-		write(*,*) "Input the path for pdb file, e.g. C:\ltwd.pdb"
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.pdb"
 		read(*,"(a)") c200tmp
 		call outpdb(c200tmp,10)
 	end if
 else if (isel==-1.and.ifiletype==4) then
-	write(*,*) "Input the path for pdb file, e.g. C:\ltwd.pdb"
+	write(*,*) "Input path for exporting file, e.g. C:\ltwd.pdb"
 	read(*,"(a)") c200tmp
 	call outpdb(c200tmp,10)
 else if (isel==2) then
-	write(*,*) "Input the path for xyz file, e.g. C:\ltwd.xyz"
+	write(*,*) "Input path for exporting file, e.g. C:\ltwd.xyz"
 	read(*,"(a)") c200tmp
 	call outxyz(c200tmp,10)
 else if (isel==3) then
-	write(*,*) "Input the path for chg file, e.g. C:\ltwd.chg"
+	write(*,*) "Input path for exporting file, e.g. C:\ltwd.chg"
 	read(*,"(a)") c200tmp
 	call outchg(c200tmp,10)
 else if (isel==4) then
 	if (.not.allocated(b)) then
 		write(*,*) "Error: The input file you used does not contain GTF information!"
 	else
-		write(*,*) "Input the path, e.g. C:\ltwd.wfx"
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.wfx"
 		read(*,"(a)") c200tmp
 		call outwfx(c200tmp,1,10)
 		write(*,*) "Done!"
@@ -245,7 +247,7 @@ else if (isel==5) then
 	if (.not.allocated(b)) then
 		write(*,*) "Error: The input file you used does not contain GTF information!"
 	else
-		write(*,*) "Input the path, e.g. C:\ltwd.wfn"
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.wfn"
 		read(*,"(a)") c200tmp
 		call outwfn(c200tmp,1,1,10)
 		write(*,*) "Done!"
@@ -254,7 +256,7 @@ else if (isel==6) then
 	if (.not.allocated(CObasa)) then
 		write(*,*) "Error: This function works only when input file contains basis function information"
 	else
-		write(*,*) "Input the path, e.g. C:\ltwd.molden"
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.molden"
 		read(*,"(a)") c200tmp
 		write(*,*) "Exporting, please wait..."
 		call outmolden(c200tmp,10)
@@ -264,7 +266,7 @@ else if (isel==7) then
 	if (.not.allocated(CObasa)) then
 		write(*,*) "Error: This function works only when input file contains basis function information"
 	else
-		write(*,*) "Input the path, e.g. C:\ltwd.fch"
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.fch"
 		read(*,"(a)") c200tmp
 		write(*,*) "Exporting, please wait..."
 		call outfch(c200tmp,10,1)
@@ -273,33 +275,33 @@ else if (isel==8) then
 	if (.not.allocated(CObasa)) then
 		write(*,*) "Error: This function works only when input file contains basis function information"
 	else
-		write(*,*) "Input the path, e.g. C:\ltwd.47"
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.47"
 		read(*,"(a)") c200tmp
 		write(*,*) "Exporting, please wait..."
 		call out47(c200tmp,10)
 	end if
 else if (isel==10) then
-	write(*,*) "Input the path, e.g. C:\ltwd.gjf"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.gjf"
 	read(*,"(a)") c200tmp
 	call outgjf(c200tmp,10)
 else if (isel==11) then
-	write(*,*) "Input the path, e.g. C:\ltwd.inp"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
 	call outGAMESSinp(c200tmp,10)
 else if (isel==12) then
-	write(*,*) "Input the path, e.g. C:\ltwd.inp"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
 	call outORCAinp(c200tmp,10)
 else if (isel==13) then
-	write(*,*) "Input the path, e.g. C:\ltwd.nw"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.nw"
 	read(*,"(a)") c200tmp
 	call outNWCheminp(c200tmp,10)
 else if (isel==14) then
-	write(*,*) "Input the path, e.g. C:\ltwd.mop"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.mop"
 	read(*,"(a)") c200tmp
 	call outMOPACinp(c200tmp,10)
 else if (isel==15) then
-	write(*,*) "Input the path, e.g. C:\ltwd.inp"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
 	call outPSIinp(c200tmp,10)
 else if (isel==16) then
@@ -309,20 +311,28 @@ else if (isel==17) then
 	c200tmp="ZMAT"
 	call outCFOURinp(c200tmp,10)
 else if (isel==18) then
-	write(*,*) "Input the path, e.g. C:\ltwd.inp"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
 	call outmolproinp(c200tmp,10)
 else if (isel==19) then
 	c200tmp=" "
-	write(*,"(a)") " Input path of .dal file, e.g. C:\DFT.dal (directly press ENTER if you do not need it)"
+	write(*,"(a)") " Input path of .dal file, e.g. C:\DFT.dal (Directly pressing ENTER button if you do not need it)"
 	read(*,"(a)") c200tmp
 	write(*,*) "Input path of .mol file, e.g. C:\ltwd.mol"
 	read(*,"(a)") c200tmp2
 	call outDaltoninp(c200tmp,c200tmp2,10)
 else if (isel==20) then
-	write(*,*) "Input the path, e.g. C:\ltwd.inp"
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
 	call outmolcasinp(c200tmp,10)
+else if (isel==30) then
+	write(*,*) "Input path for exporting file, e.g. C:\ltwd.vti"
+	read(*,"(a)") c200tmp
+	call outvti(c200tmp,10)
+else if (isel==31) then
+	write(*,*) "Input path for exporting file, e.g. C:\ltwd.cml"
+	read(*,"(a)") c200tmp
+	call outcml(c200tmp,10,0)
 end if
 end subroutine
 
@@ -380,7 +390,7 @@ if (iselfunc1==0.and.iselfunc2==0) then !Directly load grid data
 	if (allocated(cubmattmp)) deallocate(cubmattmp)
 	write(*,*) "Input file path for cube file of function 2, e.g. C:\test.cub"
 	read(*,"(a)") c200tmp
-	call readcubetmp(c200tmp,inconsis)
+	call readcubetmp(c200tmp,1,inconsis)
 	if (inconsis==1) then
 		write(*,"(a)") " Error: The grid setting of this cube file is inconsistent with that of present grid data, exit..."
 		read(*,*)
@@ -2614,7 +2624,7 @@ real*8,allocatable :: tmparr(:)
 real*8 :: thresdens=0.02D0,thressingle=0.85D0
 integer :: ionlyocc=1,idebug=0,icompmethod=1
 integer,allocatable :: atmrange(:)
-character c2000tmp*2000,c200tmp*200
+character c2000tmp*2000,c200tmp*200,selectyn
 real*8 CObasa_LMO(nbasis,nbasis),CObasb_LMO(nbasis,nbasis),atmcomp(ncenter,nmo)
 
 if (.not.allocated(b)) then
@@ -2644,25 +2654,66 @@ if (iorbform==0) then !Delocalized case
 	else if ( all(abs(a(:)%z-avgz)<thres) ) then
 		iplane=1
 		write(*,*) "This system is expected to be in XY plane"
-	else
-		write(*,"(a)") " Error: Unable to detect the system plane! To use this mode, all atoms must be in XY or XZ or YZ plane!"
-		write(*,*) "Press ENTER button to return"
-		read(*,*)
-		return
+        
+	else !non-planar case
+		write(*,"(a)") " Warning: Unable to detect the plane of the system! If you really want to carry out the pi-orbital detection, &
+        you need to manually choose an expected plane:"
+        write(*,*) "0 Return"
+        write(*,*) "1 XY plane"
+        write(*,*) "2 YZ plane"
+        write(*,*) "3 XZ plane"
+        read(*,*) iplane
+        if (iplane==0) return
+        if (iplane==1) c200tmp="S, X and Y"
+        if (iplane==2) c200tmp="S, Y and Z"
+        if (iplane==3) c200tmp="S, X and Z"
+        write(*,*) "Input a tolerance of expansion coefficient for "//trim(c200tmp)//" GTFs, e.g. 0.01"
+        write(*,"(a)") " Note: If any above mentioned GTF has coefficient larger than this value, the orbital will not be identified as pi. &
+        Clearly, the larger the value, the higher the tendency that the orbitals will be determined as pi. &
+        If you press ENTER button directly, 0.1 will be employed, which is usually suitable"
+        read(*,"(a)") c200tmp
+        if (c200tmp==" ") then
+            tolerpara=0.1D0
+        else
+            read(c200tmp,*) tolerpara
+        end if
+        if (iplane==1) c200tmp="Z"
+        if (iplane==2) c200tmp="X"
+        if (iplane==3) c200tmp="Y"
+        write(*,*) "Input a tolerance of percentage total contribution of "//trim(c200tmp)//" GTFs, e.g. 60"
+        write(*,"(a)") " Note: If the contribution is lower than this value, the orbital will not be identified as pi. &
+        If you press ENTER button directly, 80% will be employed, which is usually suitable"
+        read(*,"(a)") c200tmp
+        if (c200tmp==" ") then
+            tolerperp=80
+        else
+            read(c200tmp,*) tolerperp
+        end if
+        
 	end if
 
+    !SCPA method is used for calculating total contribution of P type of GTF that perpendicular to the plane
 	write(*,*) "Expected pi orbitals, occupation numbers and orbital energies (eV):"
 	do imo=1,nmo
+        perpcontri=0
 		do iprim=1,nprims
 			GTFtype=b(iprim)%type
-			if (iplane==1) then
-				if ( (GTFtype==1.or.GTFtype==2.or.GTFtype==3).and.abs(co(imo,iprim))>0.001D0 ) exit !Orbital has S,X,Y component, so this is not pi-Z
-			else if (iplane==2) then
-				if ( (GTFtype==1.or.GTFtype==3.or.GTFtype==4).and.abs(co(imo,iprim))>0.001D0 ) exit !Orbital has S,Y,Z component, so this is not pi-X
-			else if (iplane==3) then
-				if ( (GTFtype==1.or.GTFtype==2.or.GTFtype==4).and.abs(co(imo,iprim))>0.001D0 ) exit !Orbital has S,X,Z component, so this is not pi-Y
+			if (iplane==1) then !XY
+				if ( (GTFtype==1.or.GTFtype==2.or.GTFtype==3).and.abs(CO(imo,iprim))>tolerpara ) exit !Orbital has S,X,Y component, so this is not pi-Z
+                if (GTFtype==4) perpcontri=perpcontri+CO(imo,iprim)**2
+			else if (iplane==2) then !YZ
+				if ( (GTFtype==1.or.GTFtype==3.or.GTFtype==4).and.abs(CO(imo,iprim))>tolerpara ) exit !Orbital has S,Y,Z component, so this is not pi-X
+                if (GTFtype==2) perpcontri=perpcontri+CO(imo,iprim)**2
+			else if (iplane==3) then !XZ
+				if ( (GTFtype==1.or.GTFtype==2.or.GTFtype==4).and.abs(CO(imo,iprim))>tolerpara ) exit !Orbital has S,X,Z component, so this is not pi-Y
+                if (GTFtype==3) perpcontri=perpcontri+CO(imo,iprim)**2
 			end if
 			if (iprim==nprims) then
+                testmag=sum(abs(CO(imo,:)))
+                if (testmag<0.2D0) exit !The orbital may be core orbital of an atom, but GTF of this atom have been discarded using main function 6, therefore vanished
+                perpcontri=perpcontri/sum(CO(imo,:)**2)*100
+                if (perpcontri<tolerperp) exit
+                !write(*,*) testmag,perpcontri
 				piorblist(imo)=1
 				pinelec=pinelec+MOocc(imo)
 				write(*,"(i6,2f14.6)") imo,MOocc(imo),MOene(imo)*au2ev
@@ -2938,27 +2989,45 @@ subroutine utilNICS_ZZ
 use util
 use defvar
 implicit real*8 (a-h,o-z)
-character c1000*1000,c200*200
+character c1000*1000,c2000tmp*2000,c200*200
+integer,allocatable :: tmparr(:)
 real*8 hesstmp(3,3)
 write(*,*) "Input center coordinate of the ring (in Angstrom), e.g. 2.0,2.4,1.1"
-write(*,*) "(If use Bohr as unit, the first letter should be ""b"", e.g. b3.0,3.8,2.2"
+write(*,*) "Note 1: If use Bohr as unit, the first letter should be ""b"", e.g. b3.0,3.8,2.2"
+write(*,"(a)") " Note 2: If press ENTER button directly, the geometric center of the atoms inputted in the next stage will be employed as the ring center"
 read(*,"(a)") c1000
 if (c1000(1:1)=='b') then
 	read(c1000(2:),*) tmpx,tmpy,tmpz
+else if (c1000==" ") then
+    continue
 else
 	read(c1000,*) tmpx,tmpy,tmpz
 	tmpx=tmpx/b2a
 	tmpy=tmpy/b2a
 	tmpz=tmpz/b2a
 end if
-write(*,*) "Input indices of three atoms to define a plane, e.g. 3,4,9"
-read(*,*) iatm1,iatm2,iatm3
-call pointABCD(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z,a(iatm3)%x,a(iatm3)%y,a(iatm3)%z,xnor,ynor,znor,rnouse) !Normal vector is (xnor,ynor,znor)
+
+write(*,*) "Input indices of at least three atoms in the ring to fit a plane"
+write(*,*) "For example: 2,3,7-10,15"
+read(*,"(a)") c2000tmp
+call str2arr(c2000tmp,ntmp)
+allocate(tmparr(ntmp))
+call str2arr(c2000tmp,ntmp,tmparr)
+call ptsfitplane(tmparr,ntmp,xnor,ynor,znor,rnouse,rmsfit)
+write(*,"(' RMS error of the plane fitting:',f12.6,' Angstrom')") rmsfit*b2a
 facnorm=sqrt(xnor**2+ynor**2+znor**2)
 xnor=xnor/facnorm !Normalize normal vector, then (xnor,ynor,znor) is the unit vector normal to the plane defined by iatm1,iatm2,iatm3
 ynor=ynor/facnorm
 znor=znor/facnorm
 write(*,"(' The unit normal vector is',3f14.8)") xnor,ynor,znor
+
+if (c1000==" ") then
+    tmpx=sum(a(tmparr)%x)/ntmp
+    tmpy=sum(a(tmparr)%y)/ntmp
+    tmpz=sum(a(tmparr)%z)/ntmp
+    write(*,"(' The ring center is',3f12.4,' Angstrom')") tmpx*b2a,tmpy*b2a,tmpz*b2a
+end if
+write(*,*)
 write(*,"(a)") " The X,Y,Z coordinate of the points below and above 1 Angstrom of the plane from the point you defined, respectively:"
 write(*,"(3f16.10,' Angstrom')") (tmpx-xnor/b2a)*b2a,(tmpy-ynor/b2a)*b2a,(tmpz-znor/b2a)*b2a
 write(*,"(3f16.10,' Angstrom')") (tmpx+xnor/b2a)*b2a,(tmpy+ynor/b2a)*b2a,(tmpz+znor/b2a)*b2a
@@ -3397,12 +3466,12 @@ do idx=1,natmarr
 		izmin=iatm
 	end if
 end do
-write(*,"(' Minimum X is',f14.8,' Angstrom, at atom',i6,'(',a,')')") xmin,ixmin,a(ixmin)%name
-write(*,"(' Minimum Y is',f14.8,' Angstrom, at atom',i6,'(',a,')')") ymin,iymin,a(iymin)%name
-write(*,"(' Minimum Z is',f14.8,' Angstrom, at atom',i6,'(',a,')')") zmin,izmin,a(izmin)%name
-write(*,"(' Maximum X is',f14.8,' Angstrom, at atom',i6,'(',a,')')") xmax,ixmax,a(ixmax)%name
-write(*,"(' Maximum Y is',f14.8,' Angstrom, at atom',i6,'(',a,')')") ymax,iymax,a(iymax)%name
-write(*,"(' Maximum Z is',f14.8,' Angstrom, at atom',i6,'(',a,')')") zmax,izmax,a(izmax)%name
+write(*,"(' Minimum X is',f14.8,' Angstrom, at atom',i6,'(',a,')')") xmin*b2a,ixmin,a(ixmin)%name
+write(*,"(' Minimum Y is',f14.8,' Angstrom, at atom',i6,'(',a,')')") ymin*b2a,iymin,a(iymin)%name
+write(*,"(' Minimum Z is',f14.8,' Angstrom, at atom',i6,'(',a,')')") zmin*b2a,izmin,a(izmin)%name
+write(*,"(' Maximum X is',f14.8,' Angstrom, at atom',i6,'(',a,')')") xmax*b2a,ixmax,a(ixmax)%name
+write(*,"(' Maximum Y is',f14.8,' Angstrom, at atom',i6,'(',a,')')") ymax*b2a,iymax,a(iymax)%name
+write(*,"(' Maximum Z is',f14.8,' Angstrom, at atom',i6,'(',a,')')") zmax*b2a,izmax,a(izmax)%name
 if (natmarr>=2) then
 	rmindist=1D50
 	rmaxdist=0
@@ -4022,17 +4091,19 @@ do while(.true.)
                 exit
             end if
         end if
-        keywords="#P "//trim(c200tmp)//" out=wfn"
+        !"nosymm" is not absolutely needed, however, because Gaussian may move the coordinate, the final coordinate in the resulting .wfn
+        !may be different to the coordinate in the firstly loaded file, therefore add nosymm to guarantee the coordinate consistency
+        keywords="#P "//trim(c200tmp)//" out=wfn nosymm"
         
         write(*,*) "Input the net charge and spin multiplicity for N electrons state, e.g. 0 1"
-        write(*,*) "If press ENTER button directly, 0 1 will be used"
+        write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2) and (1 2) will be employed for N, N+1 and N-1 states, respectively"
         read(*,"(a)") c200tmp
         if (c200tmp==" ") then
             charge(1)=0;spin(1)=1
             charge(2)=-1;spin(2)=2
             charge(3)=1;spin(3)=2
         else
-            read(*,*) charge(1),spin(1)
+            read(c200tmp,*) charge(1),spin(1)
             write(*,*) "Input the net charge and spin multiplicity for N+1 electrons state, e.g. -1 2"
             read(*,*) charge(2),spin(2)
             write(*,*) "Input the net charge and spin multiplicity for N-1 electrons state, e.g. 1 2"
@@ -4079,12 +4150,32 @@ do while(.true.)
         files, and then automatically delete the .gjf and .out files? (y/n)"
         read(*,*) selectyn
         if (selectyn=='y'.or.selectyn=='Y') then
-            call runGaussian("N.gjf")
-            call runGaussian("N+1.gjf")
-            call runGaussian("N-1.gjf")
-            call delfile("N.gjf N+1.gjf N-1.gjf")
-            call delfile("N.out N+1.out N-1.out")
-            write(*,*) "Now current folder should contain N.wfn, N+1.wfn and N-1.wfn"
+            call runGaussian("N.gjf",isuccess1)
+            if (isuccess1==1) then
+                call delfile("N.gjf N.out")
+                write(*,"(a,/)") " Now current folder should contain N.wfn"
+            else
+                write(*,"(a,/)") " The task has failed! Please manually check N.gjf and N.out"
+            end if
+            call runGaussian("N+1.gjf",isuccess2)
+            if (isuccess2==1) then
+                call delfile("N+1.gjf N+1.out")
+                write(*,"(a,/)") " Now current folder should contain N+1.wfn"
+            else
+                write(*,"(a,/)") " The task has failed! Please manually check N+1.gjf and N+1.out"
+            end if
+            call runGaussian("N-1.gjf",isuccess3)
+            if (isuccess3==1) then
+                call delfile("N-1.gjf N-1.out")
+                write(*,"(a,/)") " Now current folder should contain N-1.wfn"
+            else
+                write(*,"(a,/)") " The task has failed! Please manually check N-1.gjf and N-1.out"
+            end if
+            if (isuccess1*isuccess2*isuccess3==1) then
+                write(*,"(a)") " Since N.wfn, N+1.wfn and N-1.wfn have been successfully generated, now you can use option 2 or 3 to start the analysis"
+            else
+                write(*,"(a)") " Since one or more .wfn file was not successfully generated, the analysis cannot be conducted currently"
+            end if
         end if
     
     else if (isel==2) then

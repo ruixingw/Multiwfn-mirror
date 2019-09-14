@@ -1,12 +1,25 @@
 # About this repository
 
-This repository tracks the latest *Linux* version of Multiwfn and its manual (hereinafter referred to as *the Software*). I merely download *the Software* from official Multiwfn website and upload it to this repository without any change. I will try to update this repository as soon as possible when there is a new version published on Multiwfn website, usually within 5 days, however there is no guarantee. 
+This repository tracks the latest *Linux* version of Multiwfn and its manual (hereinafter referred to as *the Software*). I merely download *the Software* from official Multiwfn website and upload them to this repository without any change. I will try to update this repository as soon as possible when there is a new version published on Multiwfn website, however there is no guarantee.
 
 **Disclaimer:**
 
 The owner of this repository claims no right to *the Software*. All rights are reserved by the original developer Dr.Tian Lu. Also see below for license information. 
 
 Should any information in this repository be in conflict with the official Multiwfn website, the official Multiwfn website should be taken as valid and binding.
+
+**Install:**
+
+A detailed guide is in Section 2.1.2 of the Multiwfn manual. Here's a short version for Ubuntu 18.04 LTS.
+
+1. Clone this repository.
+2. Install *motif* by running *sudo apt-get install libmotif-dev*. 
+3. Add these lines to shell startup files: *export KMP_STACKSIZE=200M* and *ulimit -s unlimited*.
+4. Add $Multiwfnpath environmental variable to shell startup files: *export Multiwfnpath=/path/to/multiwfn-folder*.
+5. Add *Multiwfn* executable to $PATH. For example, *ln -s /path/to/Multiwfn-executable ~/.bin*.
+6. (Not required in Ubuntu 18.04 LTS.) Run */sbin/sysctl -a | grep shmmax* to check if the size of SysV is large enough. If not, add *kernel.shmmax=512000000* to */etc/sysctl.conf* and reboot.
+7. Configure *setting.ini* according to the specific functions your need. Check the manual for details.
+
 
 **How to Cite:**
 

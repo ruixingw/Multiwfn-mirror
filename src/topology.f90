@@ -42,7 +42,6 @@ ishowCPlab=0
 ishowatmlab=0
 ishowpathlab=0
 ishowsearchlevel=0
-ishowattlab=0 !Don't show the result of basin analysis
 
 write(*,*) "         !!! Note: All length units in this module are Bohr !!!"
 
@@ -50,7 +49,7 @@ do while(.true.)
 	write(*,*)
 	write(*,"(a)") "              ================ Topology analysis ==============="
 	write(*,"(a,i3)") " -11 Delete results and reselect real space function, current:",ifunctopo
-	write(*,*) "-10 Return"
+	write(*,*) "-10 Return to main menu"
 	write(*,*) "-9 Measure distances, angles and dihedral angles between CPs or atoms"
 	write(*,*) "-5 Modify or print detail or export paths, or plot property along a path"
 	write(*,*) "-4 Modify or export CPs (critical points)"
@@ -177,8 +176,10 @@ do while(.true.)
 					tmpy2=CPpos(2,icp)
 					tmpz2=CPpos(3,icp)
 				end if
-				if (imeasure==1) write(*,"(' The distance is',f12.6,' Bohr (',f12.6 ' Angstrom)')") &
-				dsqrt((tmpx1-tmpx2)**2+(tmpy1-tmpy2)**2+(tmpz1-tmpz2)**2),dsqrt((tmpx1-tmpx2)**2+(tmpy1-tmpy2)**2+(tmpz1-tmpz2)**2)*b2a
+				if (imeasure==1) then
+                    tmpdist=xyz2dist(tmpx1,tmpy1,tmpz1,tmpx2,tmpy2,tmpz2)
+                    write(*,"(' The distance is',f12.6,' Bohr (',f12.6 ' Angstrom)')") tmpdist,tmpdist*b2a
+                end if
 
 				if (imeasure==2.or.imeasure==3) then !Analyze one more term, then print angle
 					if (ctmp3(1:1)=='a') then

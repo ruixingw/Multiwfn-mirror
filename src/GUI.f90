@@ -1,6 +1,9 @@
 module GUI
 use plot
 implicit real*8(a-h,o-z)
+!Used for sharing dislin id between various GUI routines
+integer iatm1text,iatm2text,iatm3text,iatm4text,igeomresult
+integer idisisosurnumpt,idisisosurdef,idisisosurgood,idisisosurhigh,idisisosurveryhigh,idisisosurperfect
 
 contains
 
@@ -62,6 +65,11 @@ call wgapp(idisisosur2style,"Set color for mesh and points",idisisosur2meshptclr
 call wgapp(idisisosur2style,"Set opacity for transparent face",idisisosur2opa)
 CALL WGPOP(idiswindow," Isosur. quality",idisisosurquality)
 call wgapp(idisisosurquality,"Set number of grid points",idisisosurnumpt)
+call wgapp(idisisosurquality,"Default (fast, 120k points)",idisisosurdef)
+call wgapp(idisisosurquality,"good quality (300k points)",idisisosurgood)
+call wgapp(idisisosurquality,"High quality (500k points)",idisisosurhigh)
+call wgapp(idisisosurquality,"Very high quality (1000k points)",idisisosurveryhigh)
+call wgapp(idisisosurquality,"Perfect quality (1500k points)",idisisosurperfect)
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
@@ -74,6 +82,8 @@ CALL wgapp(idisotherset,"Set atomic label color",idisatmlabclr)
 CALL wgapp(idisotherset,"Use CPK style",idisuseCPK)
 CALL wgapp(idisotherset,"Use vdW style",idisusevdW)
 CALL wgapp(idisotherset,"Use line style",idisuseline)
+CALL WGPOP(idiswindow,"Measure geometry",idismeasuremenu)
+CALL wgapp(idismeasuremenu,"dist./angle/dih.",idismeasure)
 if (imodlayout==2) call swgdrw(0.9D0) !Set height of drawing widget 0.9*width to make it fully shown
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
@@ -163,6 +173,11 @@ call SWGCBK(idisisosur2solidclr,setisosur2solidclr)
 call SWGCBK(idisisosur2meshptclr,setisosur2meshptclr)
 call SWGCBK(idisisosur2opa,setisosur2opa)
 call SWGCBK(idisisosurnumpt,setisosurnumpt)
+call SWGCBK(idisisosurdef,setisosurnumpt)
+call SWGCBK(idisisosurgood,setisosurnumpt)
+call SWGCBK(idisisosurhigh,setisosurnumpt)
+call SWGCBK(idisisosurveryhigh,setisosurnumpt)
+call SWGCBK(idisisosurperfect,setisosurnumpt)
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
 call SWGCBK(idisextdist,setextdist)
@@ -173,6 +188,7 @@ call SWGCBK(idisatmlabclr,setatmlabclr)
 call SWGCBK(idisuseCPK,setCPKstyle)
 call SWGCBK(idisusevdW,setvdWstyle)
 call SWGCBK(idisuseline,setlinestyle)
+call SWGCBK(idismeasure,measuregeom)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -284,8 +300,6 @@ subroutine drawisosurgui(iallowsetstyle)
 integer iallowsetstyle
 character*20 temp
 idrawisosur=1
-ishowattlab=1 !Show attractors, so that one can compare attractors with isosurfaces
-ishowatt=1
 GUI_mode=3 !Use GUI_mode setting in dislin response routine
 isavepic=0
 CALL swgtit('Isosurface graph')
@@ -435,8 +449,6 @@ idrawisosur=0
 isosur1style=1
 isosur2style=1
 isosursec=0
-ishowattlab=0 !Don't show attractors in other GUIs
-ishowatt=0
 end subroutine
 
 
@@ -1269,7 +1281,6 @@ else if (GUI_mode==6) then
 	idrawmol=1
 	ishowaxis=1
 	ishowatmlab=0
-	ishowattlab=1
 	idrawinternalbasin=0
 	ratioatmsphere=1.0D0
 	bondradius=0.2D0
@@ -1294,9 +1305,15 @@ end subroutine
 
 subroutine savepic(id)
 integer,intent (in) :: id
+character c80tmp*80
 isavepic=1
 call drawmol
-call DWGMSG("The graph has been saved to a file with ""DISLIN"" prefix in current folder")
+if (iorbvis==0) then
+    call DWGMSG("The graph has been saved to a file with ""dislin"" prefix in current folder")
+else
+    write(c80tmp,"(i6.6)") iorbvis
+    call DWGMSG("The graph has been saved to a file with "//trim(c80tmp)//" prefix in current folder")
+end if
 isavepic=0
 end subroutine
 
@@ -1723,10 +1740,18 @@ subroutine setisosurnumpt(id)
 integer,intent (in) :: id
 character inpstring*30
 nprevorbgridold=nprevorbgrid
-CALL SWGWTH(40)
-write(inpstring,"(i15)") nprevorbgrid
-call dwgtxt("Input the number of grid points|Higher number leads to finer quality",inpstring)
-read(inpstring,*) nprevorbgrid
+if (id==idisisosurdef) nprevorbgrid=120000
+if (id==idisisosurgood) nprevorbgrid=300000
+if (id==idisisosurhigh) nprevorbgrid=500000
+if (id==idisisosurveryhigh) nprevorbgrid=1000000
+if (id==idisisosurperfect) nprevorbgrid=1500000
+if (id==idisisosurnumpt) then
+    CALL SWGWTH(40)
+    write(inpstring,"(i15)") nprevorbgrid
+    call dwgtxt("Input the number of grid points|Higher number leads to finer quality",inpstring)
+    read(inpstring,*) nprevorbgrid
+    CALL SWGWTH(20) !Recover default
+end if
 if (nprevorbgrid/=nprevorbgridold) then !Remove current isosurface and corresponding grid data, recover initial state when entering the GUI
 	if (allocated(cubmat)) deallocate(cubmat)
 	if (allocated(cubmattmp)) deallocate(cubmattmp)
@@ -1734,8 +1759,8 @@ if (nprevorbgrid/=nprevorbgridold) then !Remove current isosurface and correspon
 	call swgbut(idisisosursec,0)
 	if (iorbvis/=0) call showorbsel(id,iorbvis) !iorbvis==0 corresponds to "none"
 end if
-CALL SWGWTH(20) !Recover default
 end subroutine
+
 
 !Set rotation angle for 3D GUI
 subroutine setviewangle(id)
@@ -2062,6 +2087,7 @@ call SWGPOP("NOOK")  !Don't show OK&QUIT&HELP in upper menu
 call SWGPOP("NOQUIT")
 call SWGPOP("NOHELP")
 CALL swgtit("Set lightings")
+call swgwth(20)
 CALL WGINI('VERT',idiswindow)
 call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
 call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
@@ -2209,5 +2235,86 @@ write(ngridstr,"(i11)") ngrid
 call SWGTXT(idisnpt,ngridstr)
 call drawmol
 end subroutine
+
+
+
+!!----------- GUI for measuring geometry between 2/3/4 atoms
+subroutine measuregeom(id)
+integer,intent (in) :: id
+CALL swgtit("Measure geometry")
+if (isys==1) then
+    call swgwth(55)
+else
+    call swgwth(60)
+end if
+CALL WGINI('VERT',idiswindow)
+call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
+call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
+CALL SWGJUS("CENTER","LABEL") !Center the label text
+call WGLAB(idiswindow,"Input 2/3/4 atoms to measure distance/angle/dihedral",itext)
+call WGLAB(idiswindow,"Press ENTER button after inputting",itext)
+CALL WGBAS(idiswindow,"HORI",idishori)
+CALL SWGWTH(8)
+CALL SWGSPC(2D0,0.5D0) !Set space between widgets below
+call WGLAB(idishori,"Atoms:",itext2)
+call WGTXT(idishori," ",iatm1text)
+call WGTXT(idishori," ",iatm2text)
+call WGTXT(idishori," ",iatm3text)
+call WGTXT(idishori," ",iatm4text)
+call WGLAB(idiswindow," ",igeomresult)
+CALL WGBAS(idiswindow,"FORM",idisbottom)
+CALL SWGSIZ(100,35)
+!call SWGPOS(200,0) !Make RETURN button at middle point, however in other screen resolution case, this expectation cannot be met
+call wgpbut(idisbottom,"RETURN",idisreturn)
+call SWGCBK(idisreturn,GUIreturn)
+call SWGCBK(iatm1text,domeasure)
+call SWGCBK(iatm2text,domeasure)
+call SWGCBK(iatm3text,domeasure)
+call SWGCBK(iatm4text,domeasure)
+CALL WGFIN
+end subroutine
+!----- The routine actually used to display bond/angle/dihedral, invoked by measuregeom
+subroutine domeasure(id)
+use defvar
+use util
+integer,intent (in) :: id
+character atm1text*10,atm2text*10,atm3text*10,atm4text*10,resultstr*40
+iatm1=0;iatm2=0;iatm3=0;iatm4=0
+call GWGTXT(iatm1text,atm1text)
+call GWGTXT(iatm2text,atm2text)
+call GWGTXT(iatm3text,atm3text)
+call GWGTXT(iatm4text,atm4text)
+if (atm1text/=" ") read(atm1text,*) iatm1
+if (atm2text/=" ") read(atm2text,*) iatm2
+if (atm3text/=" ") read(atm3text,*) iatm3
+if (atm4text/=" ") read(atm4text,*) iatm4
+resultstr=" "
+if (atm1text/=" ".and.atm2text/=" ".and.atm3text/=" ".and.atm4text/=" ") then
+    if (iatm1<1.or.iatm1>ncenter.or.iatm2<1.or.iatm2>ncenter.or.iatm3<1.or.iatm3>ncenter.or.iatm4<1.or.iatm4>ncenter) then
+        resultstr="Error: Atom index exceeded valid range!"
+    else
+        tmpval=xyz2dih(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z,a(iatm3)%x,a(iatm3)%y,a(iatm3)%z,a(iatm4)%x,a(iatm4)%y,a(iatm4)%z)
+        write(resultstr,"('Dihedral:',f10.4,' degree')") tmpval
+    end if
+else if (atm1text/=" ".and.atm2text/=" ".and.atm3text/=" ") then
+    if (iatm1<1.or.iatm1>ncenter.or.iatm2<1.or.iatm2>ncenter.or.iatm3<1.or.iatm3>ncenter) then
+        resultstr="Error: Atom index exceeded valid range!"
+    else
+        tmpval=xyz2angle(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z,a(iatm3)%x,a(iatm3)%y,a(iatm3)%z)
+        write(resultstr,"('Angle:',f10.4,' degree')") tmpval
+    end if
+else if (atm1text/=" ".and.atm2text/=" ") then
+    if (iatm1<1.or.iatm1>ncenter.or.iatm2<1.or.iatm2>ncenter) then
+        resultstr="Error: Atom index exceeded valid range!"
+    else
+        tmpval=xyz2dist(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z)
+        write(resultstr,"('Distance:',f10.5,' Angstrom')") tmpval*b2a
+    end if
+else
+    resultstr="You should at least input two atoms!"
+end if
+call SWGTXT(igeomresult,resultstr)
+end subroutine
+
 
 end module

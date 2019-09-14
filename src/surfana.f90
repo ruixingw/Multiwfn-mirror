@@ -81,11 +81,11 @@ do while(.true.)
 		
 	else if (isel==1) then !Select the way to define surface
 		write(*,*) "How to define the surface?"
-		write(*,*) "1: The isosurface of electron density"
-		write(*,*) "2: The isosurface of a specific real space function "
-		write(*,*) "5: Hirshfeld surface (isosurface of Hirshfeld weight) of a fragment"
-		write(*,*) "6: Becke surface (isosurface of Becke weight) of a fragment"
-		write(*,*) "10: The isosurface of a grid data loaded from external file"
+		write(*,*) "1 Isosurface of electron density"
+		write(*,*) "2 Isosurface of a specific real space function "
+		write(*,*) "5 Hirshfeld surface (isosurface of Hirshfeld weight) of a fragment"
+		write(*,*) "6 Becke surface (isosurface of Becke weight) of a fragment"
+		write(*,*) "10 Isosurface of a grid data loaded from external file"
 		if (allocated(cubmat)) write(*,*) "11: The isosurface of the grid data in memory"
 		read(*,*) isurftypetmp
 		if (isurftypetmp==1) then
@@ -379,8 +379,8 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 			end do
 		else if (ihirshmode==2) then
 			call setpromol
-			do iatm=1,ncenter
-				call showprog(iatm,ncenter)
+			do iatm=1,ncenter_org
+				call showprog(iatm,ncenter_org)
 				call dealloall
 				call readwfn(custommapname(iatm),1)
 				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
@@ -583,10 +583,10 @@ totintvol=nintcub*volcub !Volume of internal cubes
 totvol=tetravol0+tetravol1+tetravol2+tetravol3+totintvol !Volume of boundary tetrahedra
 ! write(*,"('Vol. of type-0,1,2,3:',4f11.7,' Ang.^3')") tetravol0*b2a**3,tetravol1*b2a**3,tetravol2*b2a**3,tetravol3*b2a**3
 write(*,"(' Volume enclosed by the isosurface:',f12.5,' Bohr^3  (',f10.5,' Angstrom^3)')") totvol,totvol*b2a**3
-! write(*,*) "Among all surface vertices:"
-! write(*,"(' Min-X:',f12.4,'  Max-X:',f10.4,' Angstrom')") minval(survtx(1:nsurvtx)%x)*b2a,maxval(survtx(1:nsurvtx)%x)*b2a
-! write(*,"(' Min-Y:',f12.4,'  Max-Y:',f10.4,' Angstrom')") minval(survtx(1:nsurvtx)%y)*b2a,maxval(survtx(1:nsurvtx)%y)*b2a
-! write(*,"(' Min-Z:',f12.4,'  Max-Z:',f10.4,' Angstrom')") minval(survtx(1:nsurvtx)%z)*b2a,maxval(survtx(1:nsurvtx)%z)*b2a
+ write(*,*) "Among all surface vertices:"
+ write(*,"(' Min-X:',f12.4,'  Max-X:',f10.4,' Angstrom')") minval(survtx(1:nsurvtx)%x)*b2a,maxval(survtx(1:nsurvtx)%x)*b2a
+ write(*,"(' Min-Y:',f12.4,'  Max-Y:',f10.4,' Angstrom')") minval(survtx(1:nsurvtx)%y)*b2a,maxval(survtx(1:nsurvtx)%y)*b2a
+ write(*,"(' Min-Z:',f12.4,'  Max-Z:',f10.4,' Angstrom')") minval(survtx(1:nsurvtx)%z)*b2a,maxval(survtx(1:nsurvtx)%z)*b2a
 write(*,*)
 
 !Merge redundant vertices
@@ -838,7 +838,7 @@ if (ireadextmapval==0) then !Directly calculate
 		""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 		write(*,"(a)") " Running: "//trim(c400tmp)
 		call system(c400tmp)
-		if (index(filename,".chk")/=0) call delfch(filename_tmp)
+		if (index(filename,".chk")/=0) call delfile(filename_tmp)
 		
 		!Load ESP data from cubegen resulting file
 		open(10,file="ESPresult.cub",status="old")
@@ -956,7 +956,7 @@ else if (ireadextmapval==3) then !Will calculate mapped function by interpolatin
 		if (alive) exit
 		write(*,*) "File cannot be found, input again"
 	end do
-	call readcubetmp(c200tmp,inconsis)
+	call readcubetmp(c200tmp,1,inconsis)
 	write(*,*) "Loading data finished!"
 	if (inconsis==1) then
 		write(*,"(a)") " Warning: The grid setting in the cube file you inputted is not identical to the template cube file! The analysis result may be meaningless!"
@@ -997,19 +997,21 @@ end if
 write(*,*)
 
 !Find local minimum of mapped function on surface
+!To assign a minimum, not only vertices that directly contact to it must have smaller value, &
+!but also the secondary neighbouring vertices must be lower than it
 nsurlocmin=0
 cmin: do ivtx=1,nsurvtx
 	if (elimvtx(ivtx)==1) cycle
 	vali=survtx(ivtx)%value
-	do jtmp=1,vtxconnpos(ivtx)
+	do jtmp=1,vtxconnpos(ivtx) !Compare value with directly connected neighbours
 		jvtx=vtxconn(ivtx,jtmp)
 		if (elimvtx(jvtx)==1) cycle
 		if (vali>=survtx(jvtx)%value) cycle cmin
-		do ktmp=1,vtxconnpos(jvtx)
+		do ktmp=1,vtxconnpos(jvtx) !Compare value with secondary neighbours
 			kvtx=vtxconn(jvtx,ktmp)
 			if (elimvtx(kvtx)==1) cycle
 			if (kvtx==ivtx) cycle
-			if (vali>=survtx(kvtx)%value) cycle cmin
+			if (vali>=survtx(kvtx)%value) cycle cmin !If want to retain pseudo-minima, comment this line
 		end do
 	end do
 	nsurlocmin=nsurlocmin+1
@@ -1046,7 +1048,7 @@ cmax: do ivtx=1,nsurvtx
 			kvtx=vtxconn(jvtx,ktmp)
 			if (elimvtx(kvtx)==1) cycle
 			if (kvtx==ivtx) cycle
-			if (vali<=survtx(kvtx)%value) cycle cmax
+			if (vali<=survtx(kvtx)%value) cycle cmax !If want to retain pseudo-maxima, comment this line
 		end do
 	end do
 	nsurlocmax=nsurlocmax+1
@@ -1203,12 +1205,15 @@ do while(.true.)
 	write(*,*) "5 Export molecule as pdb format file"
 	write(*,*) "6 Export all surface vertices to vtx.pdb in current folder" !if 66, also output connectivity
 	write(*,*) "7 Export all surface vertices to vtx.txt in current folder"
-! 	write(*,*) "8 Export center of surface facets as pdb file" !Can also output to xyz file
+	write(*,*) "8 Export all surface vertices and surface extrema as vtx.pqr and extrema.pqr"
 	write(*,*) "9 Output surface area in specific value range of mapped function"
 	write(*,*) "10 Output the closest and farthest distance between the surface and a point"
 	write(*,*) "11 Output surface properties of each atom"
 	write(*,*) "12 Output surface properties of specific fragment" !if -12, can define additional geometry rule
 	write(*,*) "13 Calculate grid data of mapped function and export it to mapfunc.cub"
+    write(*,*) "14 Calculate area of the region around a specific surface extreme"
+    write(*,*) "15 Basin-like partition of surface and calculate areas"
+! 	write(*,*) "16 Export center of surface facets as pdb file" !Can also output to xyz file
 	if (imapfunc==22) write(*,*) "20 Fingerprint plot analysis"
 	read(*,*) isel
 	
@@ -1326,36 +1331,63 @@ do while(.true.)
 		write(*,"(a)",advance='no') " Carbons and oxygens correspond to local maximum and minimum points respectively. "
 		if (imapfunc==1.or.imapfunc==3) then
 			if (iESPev==0) then
-				write(*,"(a)") "Function values (kcal/mol) are recorded in B-factor field"
+				write(*,"(a)") " B-factor field records mapped function value in kcal/mol"
 			else if (iESPev==1) then
-				write(*,"(a)") "Note that since magnitude of ESP on the surface of this system is quite large, &
-				eV instead of kcal/mol is used to record ESP in the B-factor field of surfanalysis.pdb"
+				write(*,"(a)") " B-factor field records mapped function value in eV"
 			end if
 		else if (imapfunc==2.or.imapfunc==4) then
-			write(*,"(a)") "Function values (eV) are recorded in B-factor field"
+			write(*,"(a)") " B-factor field records mapped function value in eV"
 		else
-			write(*,"(a)") "Function values (in original unit) are recorded in B-factor field"
+			write(*,"(a)") " B-factor field records mapped function value in original unit"
 		end if
 		
 	else if (isel==3) then
-		write(*,*) "Input value range (in a.u.),  e.g. 0.2,999"
-		read(*,*) vallowlim,valhighlim
-		do i=1,nsurlocmin
-			idx=surlocminidx(i)
-			if (idx==0) cycle !This slot has been discarded before
-			if (survtx(idx)%value>vallowlim.and.survtx(idx)%value<valhighlim) surlocminidx(i)=0
-		end do
-		write(*,"(' Surface minima with value from',f10.5,' to',f10.5,' have been discarded')") vallowlim,valhighlim
+		write(*,*) "Input value range (in a.u.),  e.g. 0.8,90"
+        write(*,"(a)") " Hint: If you simply input letter ""d"", all surface minima with positive value will be removed"
+        read(*,"(a)") c200tmp
+        if (index(c200tmp,'d')/=0) then
+            ncount=0
+		    do i=1,nsurlocmin
+			    idx=surlocminidx(i)
+			    if (idx/=0.and.survtx(idx)%value>0) then
+                    surlocminidx(i)=0
+                    ncount=ncount+1
+                end if
+		    end do
+            write(*,"(i6,a)") ncount," surface minima have been removed"
+        else
+		    read(c200tmp,*) vallowlim,valhighlim
+		    do i=1,nsurlocmin
+			    idx=surlocminidx(i)
+			    if (idx==0) cycle !This slot has been discarded before
+			    if (survtx(idx)%value>vallowlim.and.survtx(idx)%value<valhighlim) surlocminidx(i)=0
+		    end do
+		    write(*,"(' Surface minima with value from',f10.5,' to',f10.5,' have been discarded')") vallowlim,valhighlim
+        end if
 		
 	else if (isel==4) then
-		write(*,*) "Input value range (in a.u.),  e.g. 0.2,999"
-		read(*,*) vallowlim,valhighlim
-		do i=1,nsurlocmax
-			idx=surlocmaxidx(i)
-			if (idx==0) cycle !This slot has been discarded before
-			if (survtx(idx)%value>vallowlim.and.survtx(idx)%value<valhighlim) surlocmaxidx(i)=0
-		end do
-		write(*,"(' Surface maxima with value from',f10.5,' to',f10.5,' have been discarded')") vallowlim,valhighlim
+		write(*,*) "Input value range (in a.u.),  e.g. -10,20.5"
+        write(*,"(a)") " Hint: If you simply input letter ""d"", all surface maxima with negative value will be removed"
+        read(*,"(a)") c200tmp
+        if (index(c200tmp,'d')/=0) then
+            ncount=0
+		    do i=1,nsurlocmax
+			    idx=surlocmaxidx(i)
+			    if (idx/=0.and.survtx(idx)%value<0) then
+                    surlocmaxidx(i)=0
+                    ncount=ncount+1
+                end if
+		    end do
+            write(*,"(i6,a)") ncount," surface maxima have been removed"
+        else
+		    read(c200tmp,*) vallowlim,valhighlim
+		    do i=1,nsurlocmax
+			    idx=surlocmaxidx(i)
+			    if (idx==0) cycle !This slot has been discarded before
+			    if (survtx(idx)%value>vallowlim.and.survtx(idx)%value<valhighlim) surlocmaxidx(i)=0
+		    end do
+		    write(*,"(' Surface maxima with value from',f10.5,' to',f10.5,' have been discarded')") vallowlim,valhighlim
+        end if
 		
 	else if (isel==5) then
 		write(*,*) "Input the filename you want to save to, e.g. C:\K-ON\Mio.pdb"
@@ -1423,8 +1455,7 @@ do while(.true.)
 		else if (imapfunc==2.or.imapfunc==4) then
 			write(*,"(a)") " B-factor field records mapped function value in eV"
 		else
-			write(*,"(a)") " Note: Since magnitude of ESP on the surface of this system is quite large, &
-			eV instead of kcal/mol is used to record ESP in the B-factor field of vtx.pdb"
+			write(*,"(a)") " B-factor field records mapped function value in original unit"
 		end if
 		if (isel==6) then
 ! 		    write(*,"(a)") " Note: The eliminated vertices and connectivity are not outputted. If you would like to output them you should select option 66 (a hidden option)"
@@ -1464,44 +1495,46 @@ do while(.true.)
 			write(*,"(a)") " The first line is the number of points. Column 1,2,3,4 respectively correspond to coordinate of X/Y/Z in Bohr and mapped function in original unit"
 		end if
 		close(10)
-		
-	else if (isel==8) then
-		!Output facets via xyz file for debugging
-! 		open(10,file="fac.xyz",status="replace")
-! 		write(10,*) count(elimtri==0)
-! 		write(10,*)
-! 		do i=1,nsurtri
-! 			if (elimtri(i)==1) cycle
-! 			write(10,"(a,3f14.8)") "O   ",surtriang(i)%cenx*b2a,surtriang(i)%ceny*b2a,surtriang(i)%cenz*b2a
-! 		end do
-! 		close(10)
-! 		write(*,*) "Center of surface facets have been outputted to fac.xyz in current folder"
-
-		open(10,file="tri.pdb",status="replace")
-		write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface triangles')") nsurtri
-		do itri=1,nsurtri
-			if (elimtri(itri)/=0) cycle
-			surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
-			surtriy=sum(survtx(surtriang(itri)%idx(1:3))%y)/3D0
-			surtriz=sum(survtx(surtriang(itri)%idx(1:3))%z)/3D0
-			if (imapfunc==-1.or.imapfunc==0) tmpfuncval=surtriang(itri)%value
-			if (imapfunc==1.or.imapfunc==3) tmpfuncval=surtriang(itri)%value*au2kcal
-			if (imapfunc==2.or.imapfunc==4) tmpfuncval=surtriang(itri)%value*au2eV
-			if (tmpfuncval>999.99D0) tmpfuncval=999.99D0 !Avoid excess limit then become, because B-factor field only have three integer position
-			if (tmpfuncval<-99.99D0) tmpfuncval=-99.99D0
-			write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
-			"HETATM",itri,' '//"C "//' ',"MOL",'A',1,surtrix*b2a,surtriy*b2a,surtriz*b2a,1.0,tmpfuncval,"C "
+        
+    else if (isel==8) then !Export all surface vertices and surface extrema as vtx.pqr and extrema.pqr
+    
+    	open(10,file="extrema.pqr",status="replace")
+		write(10,"(a)") "REMARK   The third last column is function values in a.u."
+		do i=1,nsurlocmax
+			idx=surlocmaxidx(i)
+			if (idx/=0) write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
+			"HETATM",i,' '//"C "//' ',"MOL",'A',1,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a,survtx(idx)%value,1.0," C"
 		end do
-		write(*,*) "Center of surface triangles have been outputted to tri.pdb in current folder"
+		do i=1,nsurlocmin
+			idx=surlocminidx(i)
+			if (idx/=0) write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
+			"HETATM",i,' '//"O "//' ',"MOL",'A',1,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a,survtx(idx)%value,1.0," O"
+		end do
+		write(10,"('END')")
 		close(10)
+		write(*,"(a)") " Surface extrema have been outputted to extrema.pqr in current folder. &
+        Carbons and oxygens correspond to local maximum and minimum points respectively. &
+        The atomic charge column (i.e. third last column) corresponds to function value in a.u."
+        
+		open(10,file="vtx.pqr",status="replace")
+		write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface vertices')") nsurvtx
+		write(10,"(a)") "REMARK   The third last column is function values in a.u."
+		do i=1,nsurvtx
+            if (elimvtx(i)==0) write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
+			"HETATM",i,' '//"C "//' ',"MOL",'A',1,survtx(i)%x*b2a,survtx(i)%y*b2a,survtx(i)%z*b2a,survtx(i)%value,1.0," C"
+		end do
+		write(10,"('END')")
+		close(10)
+		write(*,"(/,a)") " Surface vertices have been outputted to vtx.pqr in current folder. &
+        The atomic charge column (i.e. third last column) corresponds to function value in a.u."
 		
 	else if (isel==9) then
 		write(*,"(a)") " Input atomic indices to define the fragment. e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
-		write(*,*) "If input ""all"", then the whole system will be considered"
+		write(*,"(a)") " If input ""all"" or press ENTER button directly, then the whole system will be analyzed"
 		read(*,"(a)") c2000tmp
 	    if (allocated(surtrifrag)) deallocate(surtrifrag)
 	    allocate(surtrifrag(nsurtri))
-		if (index(c2000tmp,'all')/=0) then
+		if (index(c2000tmp,'all')/=0.or.c2000tmp==" ") then
 		    surtrifrag=1 !All vertices are taken into account
 		else
 		    call str2arr(c2000tmp,nsurfragatm,surfrag) !surfrag contains nsurfragatm elements, they are the member of the user-defined fragment
@@ -1737,19 +1770,19 @@ do while(.true.)
 				end do
 			else if (abs(isel)==12) then
 				balencechg=fragsurvar(1,2)*fragsurvar(1,3)/fragsurvar(1,1)**2
-				write(*,"('Minimal value:',f13.6,' kcal/mol   Maximal value:',f13.6,' kcal/mol')") fragsurmin(1)*au2kcal,fragsurmax(1)*au2kcal
-				write(*,"('Overall surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,1),fragsurarea(1,1)*b2a*b2a
-				write(*,"('Positive surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
-				write(*,"('Negative surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,3),fragsurarea(1,3)*b2a*b2a
-				write(*,"('Overall average value: ',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,1),fragsuravg(1,1)*au2kcal
-				write(*,"('Positive average value:',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,2),fragsuravg(1,2)*au2kcal
-				write(*,"('Negative average value:',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,3),fragsuravg(1,3)*au2kcal
-				write(*,"('Overall variance (sigma^2_tot):',f12.8,' a.u.^2 (',f13.7,' (kcal/mol)^2)')") fragsurvar(1,1),fragsurvar(1,1)*au2kcal**2
-				write(*,"('Positive variance:     ',f13.8,' a.u.^2 (',f14.8,' (kcal/mol)^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2kcal**2
-				write(*,"('Negative variance:     ',f13.8,' a.u.^2 (',f14.8,' (kcal/mol)^2)')") fragsurvar(1,3),fragsurvar(1,3)*au2kcal**2
-				write(*,"('Balance of charges (nu):',f13.8)") balencechg
-				write(*,"('Product of sigma^2_tot and nu: ',f12.8,' a.u.^2 (',f12.7,' (kcal/mol)^2)')") balencechg*fragsurvar(1,1),balencechg*fragsurvar(1,1)*au2kcal**2
-				write(*,"('Internal charge separation (Pi):',f13.8,' a.u. (',f13.8,' kcal/mol)')") fragsurchgsep(1),fragsurchgsep(1)*au2kcal
+				write(*,"(' Minimal value:',f13.6,' kcal/mol   Maximal value:',f13.6,' kcal/mol')") fragsurmin(1)*au2kcal,fragsurmax(1)*au2kcal
+				write(*,"(' Overall surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,1),fragsurarea(1,1)*b2a*b2a
+				write(*,"(' Positive surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
+				write(*,"(' Negative surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,3),fragsurarea(1,3)*b2a*b2a
+				write(*,"(' Overall average value: ',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,1),fragsuravg(1,1)*au2kcal
+				write(*,"(' Positive average value:',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,2),fragsuravg(1,2)*au2kcal
+				write(*,"(' Negative average value:',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,3),fragsuravg(1,3)*au2kcal
+				write(*,"(' Overall variance (sigma^2_tot):',f12.8,' a.u.^2 (',f13.7,' (kcal/mol)^2)')") fragsurvar(1,1),fragsurvar(1,1)*au2kcal**2
+				write(*,"(' Positive variance:     ',f13.8,' a.u.^2 (',f14.8,' (kcal/mol)^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2kcal**2
+				write(*,"(' Negative variance:     ',f13.8,' a.u.^2 (',f14.8,' (kcal/mol)^2)')") fragsurvar(1,3),fragsurvar(1,3)*au2kcal**2
+				write(*,"(' Balance of charges (nu):',f13.8)") balencechg
+				write(*,"(' Product of sigma^2_tot and nu: ',f12.8,' a.u.^2 (',f12.7,' (kcal/mol)^2)')") balencechg*fragsurvar(1,1),balencechg*fragsurvar(1,1)*au2kcal**2
+				write(*,"(' Internal charge separation (Pi):',f13.8,' a.u. (',f13.8,' kcal/mol)')") fragsurchgsep(1),fragsurchgsep(1)*au2kcal
 			end if
 		else if (imapfunc==2) then !ALIE
 			if (isel==11) then
@@ -1760,10 +1793,10 @@ do while(.true.)
 					write(*,"(i7,f16.5,2f12.6,2f15.6)") ifrag,fragsurarea(ifrag,2)*b2a*b2a,fragsurmin(ifrag)*au2eV,fragsurmax(ifrag)*au2eV,fragsuravg(ifrag,2)*au2eV,fragsurvar(ifrag,2)*au2eV**2
 				end do
 			else if (abs(isel)==12) then
-				write(*,"('Minimal value:',f13.6,' eV   Maximal value:',f13.6,' eV')") fragsurmin(1)*au2eV,fragsurmax(1)*au2eV
-				write(*,"('Surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
-				write(*,"('Average value: ',f13.8,' a.u. (',f13.8,' eV,',f14.8,' kcal/mol)')") fragsuravg(1,2),fragsuravg(1,2)*au2eV,fragsuravg(1,2)*au2kcal
-				write(*,"('Variance:  ',f13.8,' a.u.^2  (',f13.8,' eV^2,',E14.6,' kcal/mol^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2eV**2,fragsurvar(1,2)*au2kcal**2
+				write(*,"(' Minimal value:',f13.6,' eV   Maximal value:',f13.6,' eV')") fragsurmin(1)*au2eV,fragsurmax(1)*au2eV
+				write(*,"(' Surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
+				write(*,"(' Average value: ',f13.8,' a.u. (',f13.8,' eV,',f14.8,' kcal/mol)')") fragsuravg(1,2),fragsuravg(1,2)*au2eV,fragsuravg(1,2)*au2kcal
+				write(*,"(' Variance:  ',f13.8,' a.u.^2  (',f13.8,' eV^2,',E14.6,' kcal/mol^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2eV**2,fragsurvar(1,2)*au2kcal**2
 			end if
 		else if (imapfunc==4) then
 			if (isel==11) then
@@ -1782,16 +1815,16 @@ do while(.true.)
 				end do
 				write(*,*)
 			else if (abs(isel)==12) then
-				write(*,"('Minimal value:',f14.8,' eV,   Maximal value:',f14.8,' eV')") fragsurmin(1)*au2eV,fragsurmax(1)*au2eV
-				write(*,"('Overall surface area: ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,1),fragsurarea(1,1)*b2a*b2a
-				write(*,"('Positive surface area:',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
-				write(*,"('Negative surface area:',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,3),fragsurarea(1,3)*b2a*b2a
-				write(*,"('Overall average value: ',f13.8,' a.u. (',f14.8,' eV)')") fragsuravg(1,1),fragsuravg(1,1)*au2eV
-				write(*,"('Positive average value:',f13.8,' a.u. (',f14.8,' eV)')") fragsuravg(1,2),fragsuravg(1,2)*au2eV
-				write(*,"('Negative average value:',f13.8,' a.u. (',f14.8,' eV)')") fragsuravg(1,3),fragsuravg(1,3)*au2eV
-				write(*,"('Overall variance: ',f13.8,' a.u.^2 (',f14.8,' eV^2)')") fragsurvar(1,1),fragsurvar(1,1)*au2eV**2
-				write(*,"('Positive variance:',f13.8,' a.u.^2 (',f14.8,' eV^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2eV**2
-				write(*,"('Negative variance:',f13.8,' a.u.^2 (',f14.8,' eV^2)')") fragsurvar(1,3),fragsurvar(1,3)*au2eV**2
+				write(*,"(' Minimal value:',f14.8,' eV,   Maximal value:',f14.8,' eV')") fragsurmin(1)*au2eV,fragsurmax(1)*au2eV
+				write(*,"(' Overall surface area: ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,1),fragsurarea(1,1)*b2a*b2a
+				write(*,"(' Positive surface area:',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
+				write(*,"(' Negative surface area:',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,3),fragsurarea(1,3)*b2a*b2a
+				write(*,"(' Overall average value: ',f13.8,' a.u. (',f14.8,' eV)')") fragsuravg(1,1),fragsuravg(1,1)*au2eV
+				write(*,"(' Positive average value:',f13.8,' a.u. (',f14.8,' eV)')") fragsuravg(1,2),fragsuravg(1,2)*au2eV
+				write(*,"(' Negative average value:',f13.8,' a.u. (',f14.8,' eV)')") fragsuravg(1,3),fragsuravg(1,3)*au2eV
+				write(*,"(' Overall variance: ',f13.8,' a.u.^2 (',f14.8,' eV^2)')") fragsurvar(1,1),fragsurvar(1,1)*au2eV**2
+				write(*,"(' Positive variance:',f13.8,' a.u.^2 (',f14.8,' eV^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2eV**2
+				write(*,"(' Negative variance:',f13.8,' a.u.^2 (',f14.8,' eV^2)')") fragsurvar(1,3),fragsurvar(1,3)*au2eV**2
 			end if
 		else !Other or unknown real space function provided by user
 			if (isel==11) then
@@ -1807,16 +1840,16 @@ do while(.true.)
 					write(*,"(i7,3(1PE13.5),3(1PE11.4))") ifrag,fragsuravg(ifrag,:),fragsurvar(ifrag,:)
 				end do
 			else if (abs(isel)==12) then
-				write(*,"('Minimal value:',f16.8,'    Maximal value:',f16.8)") fragsurmin(1),fragsurmax(1)
-				write(*,"('Overall surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,1),fragsurarea(1,1)*b2a*b2a
-				write(*,"('Positive surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
-				write(*,"('Negative surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,3),fragsurarea(1,3)*b2a*b2a
-				write(*,"('Overall average value: ',f16.8)") fragsuravg(1,1)
-				write(*,"('Positive average value:',f16.8)") fragsuravg(1,2)
-				write(*,"('Negative average value:',f16.8)") fragsuravg(1,3)
-				write(*,"('Overall variance:  ',f16.8)") fragsurvar(1,1)
-				write(*,"('Positive variance: ',f16.8)") fragsurvar(1,2)
-				write(*,"('Negative variance: ',f16.8)") fragsurvar(1,3)
+				write(*,"(' Minimal value:',f16.8,'    Maximal value:',f16.8)") fragsurmin(1),fragsurmax(1)
+				write(*,"(' Overall surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,1),fragsurarea(1,1)*b2a*b2a
+				write(*,"(' Positive surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,2),fragsurarea(1,2)*b2a*b2a
+				write(*,"(' Negative surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") fragsurarea(1,3),fragsurarea(1,3)*b2a*b2a
+				write(*,"(' Overall average value: ',f16.8)") fragsuravg(1,1)
+				write(*,"(' Positive average value:',f16.8)") fragsuravg(1,2)
+				write(*,"(' Negative average value:',f16.8)") fragsuravg(1,3)
+				write(*,"(' Overall variance:  ',f16.8)") fragsurvar(1,1)
+				write(*,"(' Positive variance: ',f16.8)") fragsurvar(1,2)
+				write(*,"(' Negative variance: ',f16.8)") fragsurvar(1,3)
 			end if
 		end if
 		! write(*,"(' Sum of area of total/pos./neg.:',3f12.6,' Bohr^2')") sum(fragsurarea(:,1)),sum(fragsurarea(:,2)),sum(fragsurarea(:,3))
@@ -1860,6 +1893,42 @@ do while(.true.)
 		call outcube(cubmattmp,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done! grid data has been exported to mapfunc.cub in current folder"
+        
+	else if (isel==14) then !Calculate area of the region around a specific surface extreme
+        call extreme_area
+        
+    else if (isel==15) then !Basin-like partition of surface and calculate area
+        call surfbasin
+		
+	else if (isel==16) then
+		!Output facets via xyz file for debugging
+! 		open(10,file="fac.xyz",status="replace")
+! 		write(10,*) count(elimtri==0)
+! 		write(10,*)
+! 		do i=1,nsurtri
+! 			if (elimtri(i)==1) cycle
+! 			write(10,"(a,3f14.8)") "O   ",surtriang(i)%cenx*b2a,surtriang(i)%ceny*b2a,surtriang(i)%cenz*b2a
+! 		end do
+! 		close(10)
+! 		write(*,*) "Center of surface facets have been outputted to fac.xyz in current folder"
+
+		open(10,file="tri.pdb",status="replace")
+		write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface triangles')") nsurtri
+		do itri=1,nsurtri
+			if (elimtri(itri)/=0) cycle
+			surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
+			surtriy=sum(survtx(surtriang(itri)%idx(1:3))%y)/3D0
+			surtriz=sum(survtx(surtriang(itri)%idx(1:3))%z)/3D0
+			if (imapfunc==-1.or.imapfunc==0) tmpfuncval=surtriang(itri)%value
+			if (imapfunc==1.or.imapfunc==3) tmpfuncval=surtriang(itri)%value*au2kcal
+			if (imapfunc==2.or.imapfunc==4) tmpfuncval=surtriang(itri)%value*au2eV
+			if (tmpfuncval>999.99D0) tmpfuncval=999.99D0 !Avoid excess limit then become, because B-factor field only have three integer position
+			if (tmpfuncval<-99.99D0) tmpfuncval=-99.99D0
+			write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
+			"HETATM",itri,' '//"C "//' ',"MOL",'A',1,surtrix*b2a,surtriy*b2a,surtriz*b2a,1.0,tmpfuncval,"C "
+		end do
+		write(*,*) "Center of surface triangles have been outputted to tri.pdb in current folder"
+		close(10)
 	
 	else if (isel==20) then !Fingerprint plot
 		call fingerprt(HirBecatm,nHirBecatm)
@@ -1872,6 +1941,10 @@ end do surfanaloop
 end subroutine
 
 
+
+
+
+
 !!------ Fingerprint plot analysis
 subroutine fingerprt(HirBecatm,nHirBecatm)
 use plot
@@ -1881,7 +1954,7 @@ use function
 implicit real*8 (a-h,o-z)
 integer nHirBecatm,HirBecatm(nHirBecatm),tmparr(ncenter),ifcontactvtx(nsurvtx)
 integer,parameter :: nval=200
-real*8 :: mat(nval,nval),vtxdnorm(nsurvtx),rlow=0.6D0,rhigh=2.6D0 !Angstrom
+real*8 :: mat(nval,nval),mattmp(nval,nval),vtxdnorm(nsurvtx),rlow=0.6D0,rhigh=2.6D0 !Angstrom
 integer,allocatable :: inarr(:),outarr(:),notHirBecatm(:)
 real*8,allocatable :: surval1(:),surval2(:)
 character c2000tmp*2000,c2tmp*2
@@ -2038,12 +2111,12 @@ do while(.true.)
 ! 		rlow=(rlow-shift)*b2a !All length variables in this part are in Angstrom
 ! 		rhigh=(rhigh+shift)*b2a
 		write(*,*) "Calculating the distribution of surface vertices..."
-		write(*,*)
 		call xypt2densmat(surval1*b2a,surval2*b2a,ncontactvtx,mat,nval,nval,rlow,rhigh,rlow,rhigh)
 		spc=(rhigh-rlow)/(nval-1)
-		clrlow=1D-5
+		clrlow=1D-5 !This makes backgound black when default color transition method (rainbow) is used
 		clrhigh=maxval(mat)/2D0
 		do while(.true.)
+		    write(*,*)
 			write(*,*) "-1 Return"
 			write(*,*) "0 Show fingerprint plot on screen"
 			write(*,*) "1 Save fingerprint plot to current folder"
@@ -2051,20 +2124,21 @@ do while(.true.)
 			write(*,"(a,f10.3,a,f10.3)") " 3 Set color scale of fingerprint plot, current: from",clrlow," to",clrhigh
 			write(*,"(a,f10.3,a,f10.3)") " 4 Set the range of axes, current: from",rlow," to",rhigh
 			write(*,*) "5 Export the points in fingerprint plot to finger.pdb in current folder"
+            write(*,"(a,a)") " 6 Set color transition, current: ",trim(clrtransname(iclrtrans))
 			write(*,*) "10 Draw scatter map of surface points between d_i and d_e"
 			write(*,*) "11 Export d_i and d_e of surface points to di_de.txt in current folder"
 			read(*,*) isel3
 			if (isel3==-1) then
 				return
-			else if (isel3==0) then
+			else if (isel3==0.or.isel3==1) then
+                !Making grid with value higher than upper color limit will not be rendered as white when default color transition is used
+                mattmp=mat
+                where(iclrtrans==1.and.mattmp>clrhigh) mattmp=clrhigh-1D-10
+				if (isel3==1) isavepic=1
 				write(*,*) "Note: X and Y axes (in Angstrom) correspond to d_i and d_e, respectively"
-				call drawmatcolor(mat,nval,nval,rlow,rhigh,rlow,rhigh,clrlow,clrhigh,0.2D0,0.2D0,5,2)
-			else if (isel3==1) then
-				isavepic=1
-				call drawmatcolor(mat,nval,nval,rlow,rhigh,rlow,rhigh,clrlow,clrhigh,0.2D0,0.2D0,5,2)
+				call drawmatcolor(mattmp,nval,nval,rlow,rhigh,rlow,rhigh,clrlow,clrhigh,0.2D0,0.2D0,5,2)
 				isavepic=0
-				write(*,*) "The graph has been saved to current folder with DISLIN prefix"
-				write(*,*) "Note: X and Y axes (in Angstrom) correspond to d_i and d_e, respectively"
+				if (isel3==1) write(*,*) "The graph has been saved to current folder with DISLIN prefix"
 			else if (isel3==2) then
 				open(10,file="finger.txt",status="replace")
 				do i=1,nval
@@ -2078,9 +2152,9 @@ do while(.true.)
 				write(*,"(a)") " Done! The distribution has been exported to finger.txt in current folder. &
 				The first and second columns (in Angstrom) correspond to d_i and d_e, respectively"
 			else if (isel3==3) then
-				write(*,*) "Input lower and upper limit of color scale, e.g. 0.00001,6.5"
+				write(*,*) "Input lower and upper limit of color scale, e.g. 0.01,6.5"
 				read(*,*) clrlow,clrhigh
-				if (clrlow==0D0) clrlow=1D-5 !Ensure the vacant region is black
+                if (clrlow==0D0) clrlow=1D-5 !Ensure the vacant region is black
 			else if (isel3==4) then
 				write(*,*) "Input lower and upper limit of the axes (in Angstrom), e.g. 0.5,2.8"
 				read(*,*) rlow,rhigh
@@ -2096,6 +2170,9 @@ do while(.true.)
 				write(10,"('END')")
 				close(10)
 				write(*,"(a)") " The vertices in contact surface have been outputted to finger.pdb in current folder"
+			else if (isel3==6) then
+                call selcolortable
+                if (clrlow==1D-5) clrlow=0
 			else if (isel3==10) then !Scatter map between d_i and d_e
 				isavepic=1
 				call drawscatter(surval1*b2a,surval2*b2a,ncontactvtx,rlow,rhigh,rlow,rhigh,2)
@@ -2110,7 +2187,6 @@ do while(.true.)
 				write(*,"(a)") " Done! The data has been exported to di_de.txt in current folder. &
 				The first and second columns (in Angstrom) correspond to d_i and d_e, respectively"
 			end if
-			write(*,*)
 		end do
 	end if
 end do
@@ -2560,3 +2636,302 @@ else if (imapfunc==22) then
 	calcmapfunc=surfana_norm(x,y,z,nHirBecatm,HirBecatm)
 end if
 end function
+
+
+
+
+
+!!------ Calculate area of the region around a specific surface extreme
+subroutine extreme_area
+use defvar
+use surfvertex
+implicit real*8 (a-h,o-z)
+integer iselvtx(nsurvtx) !=1 means this vertex belongs to selected region, =0 means not
+
+write(*,*) "Select type of surface extreme, 1=minimum  2=maximum"
+read(*,*) iexttype
+write(*,*) "Input index of the surface extreme, e.g. 3"
+read(*,*) iext
+
+if (iexttype==1) then
+    idx=surlocminidx(iext)
+    valext=survtx(idx)%value
+    write(*,"(' Value of this surface minimum:',f12.6,' a.u.',/)") valext
+    write(*,*) "Input criterion of determining the region, e.g. 0.05"
+    write(*,"(a)") " Note: If a vertex is directly or indirectly connected to the selected surface minimum and &
+    its value is lower than this criterion, then this vertex will belong to the region"
+else
+    idx=surlocmaxidx(iext)
+    valext=survtx(idx)%value
+    write(*,"(' Value of this surface maximum:',f12.6,' a.u.',/)") valext
+    write(*,*) "Input criterion of determining the region, e.g. 0.05"
+    write(*,"(a)") " Note: If a vertex is directly or indirectly connected to the selected surface maximum and &
+    its value is higher than this criterion, then this vertex will belong to the region"
+end if
+read(*,*) critval
+
+nselvtx=1 !The number of selected vertices
+iselvtx(:)=0
+iselvtx(idx)=1 !Initially, only the vertex corresponding to extreme is selected
+do while(.true.)
+    nselvtx_old=nselvtx
+    !Cycle all surface vertex, if it is connected to a vertex that direct/indirect contact with &
+    !the selected extreme and satisfies criterion, then this vertex will also be labelled as "contact"
+    !The loop is infinite, until no further update can be realized
+    do ivtx=1,nsurvtx
+		if (elimvtx(ivtx)==1) cycle
+        vtxval=survtx(ivtx)%value
+        if ( (iexttype==1.and.vtxval>critval).or.((iexttype==2.and.vtxval<critval)) ) cycle
+        do jtmp=1,vtxconnpos(ivtx) !Cycle neighbouring vertices
+            jvtx=vtxconn(ivtx,jtmp)
+            if (elimvtx(jvtx)==1) cycle
+            if (iselvtx(jvtx)==1) then
+                iselvtx(ivtx)=1
+                exit
+            end if
+        end do
+    end do
+    nselvtx=count(iselvtx==1)
+    if (nselvtx==nselvtx_old) exit
+end do
+
+write(*,"(' Number of surface vertices in selected surface region:',i10)") nselvtx
+
+areasel=0
+avgvalsel=0
+do icyc=1,nsurtri !If a triangle is composed of three selected vertices, the triangle should be taken into account
+	if (elimtri(icyc)==1) cycle
+	idx1=surtriang(icyc)%idx(1)
+	idx2=surtriang(icyc)%idx(2)
+	idx3=surtriang(icyc)%idx(3)
+    if (iselvtx(idx1)==1.and.iselvtx(idx2)==1.and.iselvtx(idx3)==1) then
+	    areasel=areasel+surtriang(icyc)%area
+        avgvalsel=avgvalsel+surtriang(icyc)%value*surtriang(icyc)%area
+    end if
+end do
+avgvalsel=avgvalsel/areasel
+write(*,"(' Area of selected surface region:',f10.3,' Angstrom^2')") areasel*b2a**2
+write(*,"(' Average value of selected surface region:',f12.5,' a.u.')") avgvalsel
+write(*,"(' Product of above two values:',f16.5,' a.u.*Angstrom^2')") avgvalsel* areasel*b2a**2
+
+open(10,file="selsurf.pdb",status="replace")
+write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface vertices')") nselvtx
+do i=1,nsurvtx
+	if (elimvtx(i)==0.and.iselvtx(i)==1) then !Output as carbon atoms
+        tmpfuncval=survtx(i)%value
+		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
+		"HETATM",i,' '//"C "//' ',"MOL",'A',1,survtx(i)%x*b2a,survtx(i)%y*b2a,survtx(i)%z*b2a,1.0,tmpfuncval,"C "
+	end if
+end do
+write(10,"('END')")
+close(10)
+write(*,"(a)") " Vertices of selected surface region have been exported to selsurf.pdb in current folder so that you can visualize them"
+
+end subroutine
+
+
+
+
+
+!!------ Perform basin-like partition on molecular surface
+subroutine surfbasin
+use defvar
+use surfvertex
+use util
+implicit real*8 (a-h,o-z)
+integer vtxatt(nsurvtx) !Attribution of a vertex to extreme index. =0 means not attributed
+integer,allocatable :: extidx(:)
+integer :: pseudoext(-10000:10000) !List of pseudo-extrema
+integer :: mappseudo(-10000:10000) !Mapping pseudo-extreme indices to actual extreme indices
+real*8,allocatable :: basinarea(:),basinavgval(:)
+
+!Construct vertex index list of all surface extrema. Positive/Negative position index records maxima/minima vertex index
+allocate(extidx(-nsurlocmin:nsurlocmax))
+extidx(0)=0
+do imax=1,nsurlocmax
+    extidx(imax)=surlocmaxidx(imax)
+end do
+do imin=1,nsurlocmin
+    extidx(-imin)=surlocminidx(imin)
+end do
+
+!do i=-nsurlocmin,nsurlocmax
+!    write(*,*) i,extidx(i)
+!end do
+
+!The pseudo-minimum means the value at this point is smaller than directly connected vertices, but it is not
+!smaller than the secondary neighbouring vertices, therefore it is not regarded as actual minimum
+!However, vertex may finally move to these pseudo-minima, therefore we construct a list to map the pseudo-minima
+!to actual minima, the rule is their distance is smaller than a threshold
+npseudomin=0
+npseudomax=0
+pmin: do ivtx=1,nsurvtx
+	if (elimvtx(ivtx)==1) cycle
+    if (any(extidx==ivtx)) cycle
+    vali=survtx(ivtx)%value
+    do jtmp=1,vtxconnpos(ivtx) !Compare value with secondary neighbours
+		jvtx=vtxconn(ivtx,jtmp)
+		if (elimvtx(jvtx)==1) cycle
+		if (vali>survtx(jvtx)%value) cycle pmin
+	end do
+    npseudomin=npseudomin+1
+    pseudoext(-npseudomin)=ivtx
+    !Calculate distance between this pseudo-minimum with real minimum, it will be mapped to the closest one
+    dist2min=1D10
+    do imin=1,nsurlocmin
+        iminvtx=surlocminidx(imin)
+        xext=survtx(iminvtx)%x;yext=survtx(iminvtx)%y;zext=survtx(iminvtx)%z
+        xvtx=survtx(ivtx)%x;yvtx=survtx(ivtx)%y;zvtx=survtx(ivtx)%z
+        dist2=(xext-xvtx)**2+(yext-yvtx)**2+(zext-zvtx)**2
+        if (dist2<dist2min) then
+            iclose=imin
+            dist2min=dist2
+        end if
+    end do
+    mappseudo(-npseudomin)=-iclose
+end do pmin
+!Similarly, process pseudo-maxima
+pmax: do ivtx=1,nsurvtx
+	if (elimvtx(ivtx)==1) cycle
+    if (any(extidx==ivtx)) cycle
+    vali=survtx(ivtx)%value
+    do jtmp=1,vtxconnpos(ivtx) !Compare value with secondary neighbours
+		jvtx=vtxconn(ivtx,jtmp)
+		if (elimvtx(jvtx)==1) cycle
+		if (vali<survtx(jvtx)%value) cycle pmax
+	end do
+    npseudomax=npseudomax+1
+    pseudoext(npseudomax)=ivtx
+    !Calculate distance between this pseudo-maximum with real maximum, it will be mapped to the closest one
+    dist2min=1D10
+    do imax=1,nsurlocmax
+        imaxvtx=surlocmaxidx(imax)
+        xext=survtx(imaxvtx)%x;yext=survtx(imaxvtx)%y;zext=survtx(imaxvtx)%z
+        xvtx=survtx(ivtx)%x;yvtx=survtx(ivtx)%y;zvtx=survtx(ivtx)%z
+        dist2=(xext-xvtx)**2+(yext-yvtx)**2+(zext-zvtx)**2
+        if (dist2<dist2min) then
+            iclose=imax
+            dist2min=dist2
+        end if
+    end do
+    mappseudo(npseudomax)=iclose
+end do pmax
+write(*,"(' Number of pseudo-maxima:',i6,'    Number of pseudo-minima:',i6)") npseudomin,npseudomax
+!do i=-npseudomin,npseudomax
+!    write(*,*) i,pseudoext(i),mappseudo(i)
+!end do
+
+!Determining attribution of each vertex
+vtxatt=0
+maxcyc=500
+notelim=count(elimvtx==0)
+iprog=0
+nfailed=0
+do ivtxcyc=1,nsurvtx
+	if (elimvtx(ivtxcyc)==1) cycle
+    ivtx=ivtxcyc !ivtx is a temporary variable recording current index of ivtxcyc
+    icyc=0
+    
+movei:   do while(.true.) !Update position of ivtx until find an extrema
+        idxmax=ivtx
+        absmax=abs(survtx(ivtx)%value)
+        !Cycle neighbouring vertices and update index
+        do jtmp=1,vtxconnpos(ivtx)
+		    jvtx=vtxconn(ivtx,jtmp)
+            if (elimvtx(jvtx)==1) cycle 
+            absjval=abs(survtx(jvtx)%value)
+            if (absjval>absmax) then !Finding vertex carrying largest abs value around current vertex
+                absmax=absjval
+                idxmax=jvtx
+            end if
+        end do
+        ivtx=idxmax
+        icyc=icyc+1
+        !Check if attribution of current vertex has already been determined, if yes, directly use its attribution
+        if (vtxatt(ivtx)/=0) then
+            vtxatt(ivtxcyc)=vtxatt(ivtx)
+            exit movei
+        end if
+        !Check if current index is an actual extrema
+        do icheck=-nsurlocmin,nsurlocmax
+            if (icheck==0) cycle
+            if (idxmax==extidx(icheck)) then
+                vtxatt(ivtxcyc)=icheck !Attribution of ivtxcyc now is determined
+                exit movei
+            end if
+        end do
+        !Check if current index is a pseudo-extrema
+        do icheck=-npseudomin,npseudomax
+            if (icheck==0) cycle
+            if (idxmax==pseudoext(icheck)) then
+                vtxatt(ivtxcyc)=mappseudo(icheck) !Attribution of ivtxcyc now is determined
+                exit movei
+            end if
+        end do
+        if (icyc==maxcyc) then
+            nfailed=nfailed+1
+            exit
+        end if
+    end do movei
+    
+    iprog=iprog+1
+    call showprog(iprog,notelim)
+end do
+
+!open(10,file="failed.txt",status="replace")
+!do ivtx=1,nsurvtx
+!	if (elimvtx(ivtx)==1) cycle
+!    if (vtxatt(ivtx)==0) write(10,*) ivtx
+!end do
+!close(10)
+if (nfailed/=0) write(*,"(' Determination of',i6,' vertices is failed')") nfailed
+write(*,*)
+
+allocate(basinarea(-nsurlocmin:nsurlocmax),basinavgval(-nsurlocmin:nsurlocmax))
+basinarea=0
+basinavgval=0
+!!If the three vertices of a triangle share the same extrema index, then value of this triangle will be &
+!attributed to corresponding basin. Clearly boundary triangle is not attributed to any basin
+do itri=1,nsurtri
+	if (elimtri(itri)==1) cycle
+	idx1=surtriang(itri)%idx(1)
+	idx2=surtriang(itri)%idx(2)
+	idx3=surtriang(itri)%idx(3)
+    iext=vtxatt(idx1)
+    if (vtxatt(idx2)==iext.and.vtxatt(idx3)==iext) then
+	    basinarea(iext)=basinarea(iext)+surtriang(itri)%area
+        basinavgval(iext)=basinavgval(iext)+surtriang(itri)%value*surtriang(itri)%area
+    end if
+end do
+basinavgval=basinavgval/basinarea
+basinarea=basinarea*b2a*b2a
+
+do imin=1,nsurlocmin
+    Nvert=count(vtxatt==-imin)
+    if (Nvert==0) cycle
+    write(*,"(' Minimum',i4,'  N_vert:',i6,',',f8.3,' Angstrom^2  Avg. value:',f12.6,' a.u.')") &
+    imin,Nvert,basinarea(-imin),basinavgval(-imin)
+end do
+write(*,*)
+do imax=1,nsurlocmax
+    Nvert=count(vtxatt==imax)
+    if (Nvert==0) cycle
+    write(*,"(' Maximum',i4,'  N_vert:',i6,',',f8.3,' Angstrom^2  Avg. value:',f12.6,' a.u.')") &
+    imax,Nvert,basinarea(imax),basinavgval(imax)
+end do
+
+open(10,file="surfbasin.pdb",status="replace")
+write(10,"('REMARK   Generated by Multiwfn')")
+do i=1,nsurvtx
+	if (elimvtx(i)==0) then !Output as carbon atoms
+        betaval=vtxatt(i)
+		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
+		"HETATM",i,' '//"C "//' ',"MOL",'A',1,survtx(i)%x*b2a,survtx(i)%y*b2a,survtx(i)%z*b2a,1.0,betaval,"C "
+	end if
+end do
+write(10,"('END')")
+close(10)
+write(*,"(/,a)") " Surface basins have been exported to surfbasin.pdb in current folder, &
+beta values correspond to indices of extrema, negative/positive index corresponds to minima/maxima"
+
+end subroutine

@@ -10,6 +10,7 @@ module excitinfo
 character :: excitfilename*200=" " !"D:\CM\my_program\Multiwfn\x\excittrans\4-Nitroaniline\4-Nitroaniline.out"
 integer :: ifiletypeexc !1=Gaussian output; 2=ORCA output; 3=Plain text file; 4=Firefly output file
 integer nstates !The total number of excited states (for ORCA, if triplet keyword is used, only one set of spin multiplicity states is loaded)
+integer numexcgeom !The number of geometries in excited state optimization task of Gaussian/ORCA (1 corresponds to only one structure)
 real*8,allocatable :: allexcene(:) !Excitation energies
 integer,allocatable :: allexcmulti(:) !Multiplicity of the states. 0 means the multiplicity is undefined (i.e. unrestricted reference state)
 integer,allocatable :: allexcnorb(:) !The number of MO pairs in the states
@@ -136,7 +137,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 	end if
 
 	open(10,file=excitfilename,status="old")
-	call loclabel(10,"Gaussian",igauout,maxline=50)
+	call loclabel(10,"Gaussian, Inc",igauout,maxline=100)
 	if (igauout==1) then
 		ifiletypeexc=1
 		write(*,*) "This file is recognized as a Gaussian output file"
@@ -163,25 +164,38 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 
 	!Determine the number of excited states, so that proper size of arrays can be allocated
 	nstates=0
-	if (ifiletypeexc==1.or.ifiletypeexc==3) then !Gaussian output file and plain text file
-		if (ifiletypeexc==1) then
-			call loclabel(10,"GradGradGradGradGradGradGradGradGrad",ifound,maxline=2000)
-			if (ifound==1) then
-				write(*,"(a)") " Error: This file is seemingly an optimization or frequency task of excited state, &
-				however only output file of electronic excitation task for a single geometry is supported by this function!"
-				write(*,*) "Press ENTER button to return"
-				read(*,*)
-				return
-			end if
+	if (ifiletypeexc==1.or.ifiletypeexc==3) then !Gaussian output file or plain text file
+		if (ifiletypeexc==1) then !Gaussian output file
 			call loclabel(10,"Excitation energies and oscillator strengths:",ifound)
 			if (ifound==0) then
 				write(*,"(a)") "Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT task, &
-				therefore cannot be used for present analysis. Please read Multiwfn manual carefully"
+				therefore cannot be used for present analysis. Please read Multiwfn manual Section 3.21 carefully"
 				write(*,*) "Press ENTER button to return"
 				read(*,*)
 				return
 			end if
-		else if (ifiletypeexc==3) then
+			call loclabel(10,"GradGradGradGradGradGradGradGradGrad",ifound,maxline=2000)
+			if (ifound==1) then
+				write(*,"(a)") " Note: This file is seemingly an optimization or frequency task of excited state, &
+                for the former case, only the electron excitation information at the final step will be loaded"
+                !Determine how many steps are there, the data at final step will be loaded
+                numexcgeom=0 !The number of geometries
+		        do while(.true.)
+			        call loclabel(10,"Excitation energies and oscillator strengths",ifound,0)
+			        if (ifound==0) exit
+			        numexcgeom=numexcgeom+1
+                    read(10,*)
+		        end do
+                write(*,"(' The number of geometries is',i6)") numexcgeom
+            else
+                numexcgeom=1
+			end if
+            rewind(10)
+            do igeom=1,numexcgeom
+                call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
+                read(10,*)
+            end do
+		else if (ifiletypeexc==3) then !Plain text file
 			call loclabel(10,"Excited State",ifound)
 			if (ifound==0) then
 				write(*,"(a)") " Error: Unable to locate ""Excited State"" label"
@@ -201,7 +215,31 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		end do
 	else if (ifiletypeexc==2) then !ORCA output file
 		call loclabel(10,"Number of roots to be determined",ifound)
-		read(10,"(50x,i7)") nstates
+		if (ifound==0) then
+			write(*,"(a)") "Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT task, &
+			therefore cannot be used for present analysis. Please read Multiwfn manual Section 3.21 carefully"
+			write(*,*) "Press ENTER button to return"
+			read(*,*)
+			return
+        else
+            read(10,"(50x,i7)") nstates
+		end if
+        call loclabel(10,"* Geometry Optimization Run *",ifound,maxline=10000)
+		if (ifound==1) then
+			write(*,"(a)") " Note: This file is seemingly an optimization task of excited state, &
+            only the electron excitation information at the final step will be loaded"
+            !Determine how many steps are there, the data at final step will be loaded
+            numexcgeom=0 !The number of geometries
+		    do while(.true.)
+			    call loclabel(10,"Number of roots to be determined",ifound,0)
+			    if (ifound==0) exit
+			    numexcgeom=numexcgeom+1
+                read(10,*)
+		    end do
+            write(*,"(' The number of geometries is',i6)") numexcgeom
+        else
+            numexcgeom=1
+		end if
 	else if (ifiletypeexc==4) then !Firefly output file
 		call loclabel(10,"NUMBER OF STATES REQUESTED =",ifound)
 		if (ifound==0) then
@@ -221,13 +259,26 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		end if
 		read(10,"(14x,i22)") nstates
 	end if
-	if (nstates>1) write(*,"(' There are',i5,' excited states, loading basic information...')") nstates
+	if (nstates>1) then
+        if (maxloadexc==0) then
+            write(*,"(' There are',i5,' excited states, loading basic information...')") nstates
+        else if (maxloadexc<nstates) then
+            write(*,"(' There are',i5,' excited states, however as ""maxloadexc"" in settings.ini has been set to',i5,', &
+            only the first these excited states are recognized')") nstates,maxloadexc
+            nstates=maxloadexc
+        end if
+    end if
+    write(*,*) 
 	allocate(allexcene(nstates),allexcmulti(nstates),allexcnorb(nstates))
 	allexcnorb=0
 	
 	!Load excitation energy, multiplicity, the number of MO pairs of each excited state
 	if (ifiletypeexc==1) then !Gaussian output file
-		call loclabel(10,"Excitation energies and oscillator strengths:")
+        rewind(10)
+        do igeom=1,numexcgeom
+		    call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
+            read(10,*)
+        end do
 		do iexc=1,nstates
 			call loclabel(10,"Excited State",ifound,0)
 			read(10,"(a)") transmodestr
@@ -267,7 +318,12 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 				allexcmulti=imultisel
 			end if
 		end if
-		call loclabel(10,"the weight of the individual excitations are printed")
+        rewind(10)
+        do igeom=1,numexcgeom
+            call loclabel(10,"Number of roots to be determined",ifound,0)
+            read(10,*)
+        end do
+		call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
 		if (imultisel==3) then
 			read(10,*)
 			call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
@@ -404,7 +460,12 @@ else
 
 	!Notice that for unrestricted case, A and B are combined as single index, namely if orbital index is larger than nbasis, then it is B, else A
 	if (ifiletypeexc==1.or.ifiletypeexc==3) then
-		if (ifiletypeexc==1) call loclabel(10,"Excitation energies and oscillator strengths:")
+		if (ifiletypeexc==1) then !Gaussian output file
+            do igeom=1,numexcgeom
+		        call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
+                read(10,*)
+            end do
+        end if
 		do iexc=1,nstates
 			call loclabel(10,"Excited State",ifound,0)
 			read(10,*)
@@ -449,7 +510,11 @@ else
 	else if (ifiletypeexc==2) then !ORCA output file
 		!Worthnotingly, in at least ORCA 4.0, de-excitation is not separately outputted as <-, but combined into ->
 		!Here we still check <-, because hopefully Neese may change the convention of ORCA output in the future...
-		call loclabel(10,"the weight of the individual excitations are printed")
+        do igeom=1,numexcgeom
+            call loclabel(10,"Number of roots to be determined",ifound,0)
+            read(10,*)
+        end do
+		call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
 		if (allexcmulti(1)==3) then !When triplets=on, ORCA calculates both singlet and triplet excited states, now move to the latter
 			read(10,*)
 			call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
@@ -478,9 +543,9 @@ else
 				allorbright(itmp,iexc)=allorbright(itmp,iexc)+1
 				if (index(rightstr,'b')/=0) allorbright(itmp,iexc)=allorbright(itmp,iexc)+nbasis
 				iTDA=index(c80tmp,'c=')
-				if (iTDA/=0) then !CIS, TDA task, configuration coefficients are presented
+				if (iTDA/=0) then !CIS, TDA task, both configuration contribution and coefficients are presented, e.g. 2a ->   5a  :     0.985689 (c=  0.99281847)
 					read(c80tmp(iTDA+2:iTDA+13),*) allexccoeff(itmp,iexc)
-				else !TD task, configuration coefficients are not presented. Contribution of i->a and i<-a are summed up and outputted as i->a
+				else !TD task. Positive contribution of i->a and negative contribution a<-i are summed up and printed, e.g. 2a ->   6a  :     0.968777
 					if (iexc==1.and.itmp==1) then
 						write(*,"(a)") " Warning: For TD task, ORCA does not print configuration coefficients but only print corresponding contributions of each orbital pair, &
 						in this case Multiwfn determines configuration coefficients simply as square root of contribution values. However, this treatment is &
@@ -489,7 +554,7 @@ else
 						read(*,*)
 					end if
 					read(c80tmp(23:32),*) tmpval
-					if (tmpval<0) allexcdir(itmp,iexc)=2 !Negative contribution is assumed to be de-excitation (of course this is not strict since -> and <- have been combined together)
+					if (tmpval<0) allexcdir(itmp,iexc)=2 !Negative contribution is assumed to be significant de-excitation (of course this is not strict since -> and <- have been combined together)
 					allexccoeff(itmp,iexc)=dsqrt(abs(tmpval))
 				end if
 				!Although for closed-shell reference state, ORCA still outputs coefficients as normalization to 1.0, &
@@ -628,7 +693,10 @@ if (ioutinfo==1) write(*,"(' Loading configuration coefficients of excited state
 !Notice that for unrestricted case, A and B are combined as single index, namely if orbital index is larger than nbasis, then it is B, else A
 if (ifiletypeexc==1.or.ifiletypeexc==3) then
 	if (ifiletypeexc==1) then
-		call loclabel(10,"Excitation energies and oscillator strengths:")
+        do igeom=1,numexcgeom
+		    call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
+            read(10,*)
+        end do
 	else
 		rewind(10)
 	end if
@@ -3130,7 +3198,8 @@ implicit real*8(a-h,o-z)
 real*8,allocatable :: Cpos(:,:,:),Cneg(:,:,:),tmpmat(:,:,:)
 
 if (.not.allocated(cubmat)) then
-	write(*,"(a)") " Error: No grid data is presented, grid data of electron density difference must be firstly calculated by main function 5 or loaded from external file"
+	write(*,"(a)") " Error: No grid data is presented, grid data of electron density difference must be &
+    firstly calculated by main function 5 or loaded from external file when Multiwfn boots up"
 	write(*,*) "Press ENTER button to return"
 	read(*,*)
 	return
@@ -3498,13 +3567,14 @@ do while(.true.)
 		if (ifhydrogen==0) write(*,*) "4 Toggle if taking hydrogens into account, current: No"
 		if (ifhydrogen==1) write(*,*) "4 Toggle if taking hydrogens into account, current: Yes"
 	end if
-	write(*,"(a,f7.4,a,f7.4)") " 5 Change lower and upper limit of color scale, current:",clrlimlow/facnorm," to",clrlimhigh/facnorm
+	write(*,"(a,f10.4,a,f10.4)") " 5 Change lower and upper limit of color scale, current:",clrlimlow/facnorm," to",clrlimhigh/facnorm
 	if (.not.allocated(frag)) then
 		write(*,"(a,i3)") " 6 Set the number of interpolation steps between grids, current:",ninterpo
 		write(*,"(a,i3)") " 7 Set stepsize between labels, current:",nstepsize
 		if (ifnormsum==0) write(*,*) "8 Switch if normalizing the sum of all elements to unity, current: No"
 		if (ifnormsum==1) write(*,*) "8 Switch if normalizing the sum of all elements to unity, current: Yes"
 	end if
+    write(*,"(a,a)") " 9 Set color transition, current: ",trim(clrtransname(iclrtrans))
 	read(*,*) isel
 
 	if (isel==0) then
@@ -3657,6 +3727,8 @@ do while(.true.)
 			ifnormsum=0
 			facnorm=1D0
 		end if
+	else if (isel==9) then
+        call selcolortable
 	end if
 end do
 end subroutine

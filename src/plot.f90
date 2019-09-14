@@ -20,6 +20,7 @@ real*8 plot2abs,xplotcoor,yplotcoor,absx,absy,absz,dist,textheighmod,extsiz,augp
 real*8 trianglex(3),triangley(3),trianglez(3)
 real*8 arrayx(nx),arrayy(ny),arrayz(nz)
 character*5 ctemp
+character c80tmp*80
 !Set viewpoint
 !Note that due to limitation of DISLIN, it is not possible to view molecule in all viewpoints. The YVU should be limited to between -90 and 90, else the viewpoint will suddently flip
 XVUold=XVU
@@ -28,26 +29,49 @@ if (YVU==90) YVU=89.999D0 !Temporarily modify YVU, otherwise when YVU equals to 
 if (YVU==-90) YVU=-89.999D0
 
 !Determine axis range
-augplotlen=8D0 !Total augment of plotting axis length (the sum of both direction)
+augplotlen=8D0 !Common augmentation of plotting axis length (the sum of both direction)
 if (GUI_mode==5) augplotlen=12D0 !Because surface extreme points laying on vdW surface, the scatter region is large, so use larger value
 if (GUI_mode==7) augplotlen=12D0 !Using GUI to set box, the case is complicated, so use larger value
 if ((idrawisosur==1.and.aug3D>4).or.GUI_mode==6) augplotlen=aug3D*2.2D0 !Shouldn't be 2.0 as expected, otherwise sometimes there will be a band occuring at boundary
-!For grd file or cube file (with no or 1 atom, which may be added by Multiwfn), determine displayed spatial scope purely by grid data scope
-if ( (ifiletype==7.and.(ncenter==0.or.ncenter==1)) .or.ifiletype==8) then
+
+!Commonly, augment distance in each side is idential. However, for very long chain system, the molecule cannot be displayed unless ZVU is first set to
+!fairly large value, namely extremely zooming out. To circumvent this problem, we first calculate geometric average in X,Y,Z (Davg)
+!if ratio between molecular size in any direction and Davg is by far lower than a threshold, then we make all axis lengths identical to the longest one,
+!in this case the molecule must be able to be shown
+xmolsize=maxval(a%x)-minval(a%x)
+ymolsize=maxval(a%y)-minval(a%y)
+zmolsize=maxval(a%z)-minval(a%z)
+avgD=(xmolsize*ymolsize*zmolsize)**(1D0/3D0)
+ratiox=xmolsize/avgD
+ratioy=ymolsize/avgD
+ratioz=zmolsize/avgD
+thresratio=0.2D0
+if (xmolsize<thresratio .or. ymolsize<thresratio .or. zmolsize<thresratio) then
+    rlong=max(max(xmolsize,ymolsize),zmolsize)
+    augplotlenx=augplotlen+(rlong-xmolsize)/2
+    augplotleny=augplotlen+(rlong-ymolsize)/2
+    augplotlenz=augplotlen+(rlong-zmolsize)/2
+else
+    augplotlenx=augplotlen
+    augplotleny=augplotlen
+    augplotlenz=augplotlen
+end if
+
+!For grd/cube/vti file (with no or 1 atom, which may be added by Multiwfn), determine displayed spatial scope purely by grid data scope
+if ( (ifiletype==7.and.(ncenter==0.or.ncenter==1)) .or.ifiletype==8.or.ifiletype==14) then
 	xlow=orgx
 	ylow=orgy
 	zlow=orgz
 	plotlenx=(nx-1)*dx
 	plotleny=(ny-1)*dy
 	plotlenz=(nz-1)*dz
-else
-	extsiz=augplotlen/2D0 !Extension length of axis in each side
-	xlow=minval(a%x)-extsiz
-	ylow=minval(a%y)-extsiz
-	zlow=minval(a%z)-extsiz
-	plotlenx=(maxval(a%x)-minval(a%x)+augplotlen) !Length of plotted molecular space
-	plotleny=(maxval(a%y)-minval(a%y)+augplotlen)
-	plotlenz=(maxval(a%z)-minval(a%z)+augplotlen)
+else !Other cases, determine displayed spatial scope by molecular geometry
+	xlow=minval(a%x)-augplotlenx/2
+	ylow=minval(a%y)-augplotleny/2
+	zlow=minval(a%z)-augplotlenz/2
+	plotlenx=xmolsize+augplotlenx !Final axis lengths
+	plotleny=ymolsize+augplotleny
+	plotlenz=zmolsize+augplotlenz
 end if
 xhigh=xlow+plotlenx
 yhigh=ylow+plotleny
@@ -63,6 +87,12 @@ if (isavepic==0) then
 	if (GUI_mode==6) call METAFL('CONS') !Namely showing basin, using opengl by default to accelerate displaying, however when savepic, if still use opengl, things cannot be properly shown
 	CALL setxid(idisgraph, 'WIDGET')
 else if (isavepic==1) then
+    if (iorbvis==0) then
+        call setfil("dislin."//trim(graphformat))
+    else
+        write(c80tmp,"(i6.6,'.',a)") iorbvis,trim(graphformat)
+        call setfil(trim(c80tmp))
+    end if
 	CALL setxid(0,'NONE')
 	call METAFL(graphformat)
 	call winsiz(graph3Dwidth,graph3Dheight) !Actual image size is set by this routine, namely 770*770
@@ -132,16 +162,25 @@ if (idrawmol==1) then
 			CALL SPHE3D(a(i)%x,a(i)%y,a(i)%z,vdwr(a(i)%index)/4,50,50)
 		end if
 	end do
-	!Draw bonds
+	!Draw bonds. If connectivity is available, then do not automatically determine bonding
 	CALL MATOP3(bondclrR,bondclrG,bondclrB,'diffuse')
-	do i=1,ncenter
-		do j=i+1,ncenter
-			if (a(i)%index==0.or.a(j)%index==0) cycle !Don't link Bq
-			dist=dsqrt( (a(i)%x-a(j)%x)**2+(a(i)%y-a(j)%y)**2+(a(i)%z-a(j)%z)**2 )
-			!if the distance between to atoms exceed 15% of summing of their covalent radius, seems they didn't bond
-			if (dist<( covr(a(i)%index)+covr(a(j)%index) )*bondcrit) CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,30,30)
-		end do
-	end do
+    if (allocated(connmat)) then
+	    do i=1,ncenter
+		    do j=i+1,ncenter
+			    if (a(i)%index==0.or.a(j)%index==0) cycle !Never make Bq bonding
+			    if (connmat(i,j)/=0) CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,30,30)
+		    end do
+	    end do
+    else
+	    do i=1,ncenter
+		    do j=i+1,ncenter
+			    if (a(i)%index==0.or.a(j)%index==0) cycle !Never make bonding
+			    dist=dsqrt( (a(i)%x-a(j)%x)**2+(a(i)%y-a(j)%y)**2+(a(i)%z-a(j)%z)**2 )
+			    !if the distance between to atoms exceed 15% of summing of their covalent radius, seems they didn't bond
+			    if (dist<( covr(a(i)%index)+covr(a(j)%index) )*bondcrit) CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,30,30)
+		    end do
+	    end do
+    end if
 end if
 
 !Draw critical points
@@ -729,6 +768,11 @@ integer numx,numy,ninterpo,nlabdig
 real*8 mat(numx,numy),xmin,xmax,ymin,ymax,zmin,zmax,stepx,stepy
 integer :: lengthx=2300
 integer,optional :: textheight,nlabdigz
+!Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
+if (iclrtrans/=0) then
+	where (mat>zmax) mat=zmax-1D-10   !Augment by a minimal value to avoid numerical noise
+	where (mat<zmin) mat=zmin+1D-10
+end if
 call SCRMOD('REVERSE')
 CALL setxid(0,'NONE')
 CALL PAGE(3200,2700)
@@ -760,6 +804,7 @@ call WINTIT("Colored matrix")
 call center
 call AUTRES(numx,numy)
 call AX3LEN(lengthx,nint(lengthx*dfloat(numy)/numx),nint(lengthx*dfloat(numy)/numx))
+call setcolortable(iclrtrans)
 if (ninterpo==1) then !Don't interpolate
 	call sursze(1D0,dfloat(numx),1D0,dfloat(numx)) !Manually set center position of starting and ending grids to ensure boundary grids have the same size as internal grids
 	call GRAF3(xmin-0.5D0,xmax+0.5D0,xmin,stepx,ymin-0.5D0,ymax+0.5D0,ymin,stepy,zmin,zmax,zmin,(zmax-zmin)/10D0)
@@ -874,10 +919,11 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 	lengthy=int(lengthx*(end2-init2)/(end1-init1))
 
 	if (idrawtype==1) then
+        call setcolortable(iclrtrans) !This routine must be invoked prior to GRAF
 		call AUTRES(ngridnum1,ngridnum2)
 		call AX3LEN(lengthx,lengthy,lengthy) !The length of color bar is identical to Y axis
 		call GRAF3(init1,end1,init1-shiftx,planestpx, init2,end2,init2-shifty,planestpy, init3,end3,init3-shiftz,planestpz)
-		if (inowhiteblack==1) then !Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
+		if (iclrtrans/=0) then !Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
 			planetrunc=planemat
 			where (planetrunc>end3) planetrunc=end3-1D-10   !Augment by a minimal value to avoid numerical noise
 			where (planetrunc<init3) planetrunc=init3+1D-10
@@ -936,10 +982,11 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 		call setcolor(iclrindgradline)
 		if (igrad_arrow==1) call stmmod('on','arrow')
 		if (igrad_arrow==0) call stmmod('off','arrow')
+        call stmmod(stream_intmethod,'integration') !Integration method of stream line
 		call stmval(gradplotstep,'step')
-		call stmval(gradplotdis,'distance') !controls number of line, smaller value means more lines
+		call stmval(gradplotdis,'distance') !Controls number of lines, smaller value means more lines
 		call stmval(gradplottest,'test')
-		call stmval(0.3D0,'arrows') !set interval distance of arrows in the same line
+		call stmval(0.3D0,'arrows') !Set interval distance of arrows in the same line
 		call LINWID(iwidthgradline)
 		call stream(gradd1,gradd2,ngridnum1,ngridnum2,xcoord,ycoord,(/ 0.0D0 /),(/ 0.0D0 /),0)
 		CALL LINWID(1) !Restore to default
@@ -1342,6 +1389,7 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 
 !Relief map & shaded surface map with/without projection
 else if (idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
+    call setcolortable(iclrtrans) !This routine must be invoked prior to GRAF
 	CALL AXSPOS(100,2800) !Make position of coordinate proper
 	planetrunc=planemat
 	!Now truncate the value in planemat to uplimit of Z-scale of relief map and save to planetrunc, else the color scale will range from
@@ -1515,4 +1563,201 @@ if (itmp==6) graphformat="eps"
 if (itmp==7) graphformat="pdf"
 if (itmp==8) graphformat="wmf"
 if (itmp==9) graphformat="svg"
+end subroutine
+
+
+!!----------- Select color table
+subroutine selcolortable
+use defvar
+write(*,*) "Select a color transition method"
+write(*,*) "0  Rainbow with black/white for values exceeding lower/higher color limit"
+write(*,*) "1  Rainbow               2 Reversed rainbow"
+write(*,*) "3  Rainbow started from white"
+write(*,*) "4  Spectrum (Pink-Blue-Green-Red)  5 Reversed Spectrum"
+write(*,*) "6  Grey (Black-White)    7  Reversed Grey"
+write(*,*) "8  Blue-White-Red        9  Red-White-Blue"
+write(*,*) "10 Blue-Green-Red        11 Red-Green-Blue"
+write(*,*) "12 White-Dark red        13 Black-Orange-Yellow"
+write(*,*) "14 White-Dark green      15 Black-Green"
+write(*,*) "16 White-Dark blue       17 Black-Blue-Cyan"
+read(*,*) iclrtrans
+end subroutine
+
+!!----------- Set color table of dislin, will affect color transition of color-filled map and heat map
+subroutine setcolortable(isel)
+use dislin_d
+implicit real*8 (a-h,o-z)
+integer isel
+integer,parameter :: nlevel=255
+real*8 Rarr(0:nlevel),Garr(0:nlevel),Barr(0:nlevel)
+Rarr=0
+Garr=0
+Barr=0
+if (isel==0.or.isel==1) then !Rainbow
+    CALL SETVLT("RAIN")
+else if (isel==2) then !Reversed rainbow
+    CALL SETVLT("RRAIN")
+else if (isel==4) then !Spectrum
+    CALL SETVLT("SPEC")
+else if (isel==5) then !Reversed spectrum
+    CALL SETVLT("RSPEC")
+else if (isel==6) then !Black-White
+    CALL SETVLT("GREY")
+else if (isel==7) then !White-Black
+    CALL SETVLT("RGREY")
+    
+else if (isel==3) then !White-Rainbow
+    !0: White
+    !51: Blue(0,0,1)
+    !102: Cyan(0,1,1)
+    !153: Green(0,1,0)
+    !204: Yellow(1,1,0)
+    !255: Red(1,0,0)
+    Rarr(0)=1
+    Garr(0)=1
+    Barr(0)=1
+    do i=1,51 !White(1,1,1)-Blue(0,0,1)
+        Rarr(i)=dfloat(51-i)/51
+        Garr(i)=dfloat(51-i)/51
+        Barr(i)=1
+    end do
+    j=0
+    do i=52,102 !Blue(0,0,1)-Cyan(0,1,1)
+        j=j+1
+        Rarr(i)=0
+        Garr(i)=dfloat(j)/51
+        Barr(i)=1
+    end do
+    j=0
+    do i=103,153 !Cyan(0,1,1)-Green(0,1,0)
+        j=j+1
+        Rarr(i)=0
+        Garr(i)=1
+        Barr(i)=dfloat(51-j)/51
+    end do
+    j=0
+    do i=154,204 !Green(0,1,0)-Yellow(1,1,0)
+        j=j+1
+        Rarr(i)=dfloat(j)/51
+        Garr(i)=1
+        Barr(i)=0
+    end do
+    j=0
+    do i=205,255 !Yellow(1,1,0)-Red(1,0,0)
+        j=j+1
+        Rarr(i)=1
+        Garr(i)=dfloat(51-j)/51
+        Barr(i)=0
+    end do
+else if (isel==8) then !Blue-White-Red
+    !First half, Blue-White
+    j=0
+    do i=0,127
+        j=j+1
+        Rarr(i)=dfloat(2*j)/256
+        Garr(i)=dfloat(2*j)/256
+        Barr(i)=1
+    end do
+    !Second half, White-Red
+    j=0
+    do i=128,255
+        j=j+1
+        Rarr(i)=1
+        Garr(i)=dfloat(256-2*j)/256
+        Barr(i)=dfloat(256-2*j)/256
+    end do
+else if (isel==9) then !Red-White-Blue
+    !First half, Red-White
+    j=0
+    do i=0,127
+        j=j+1
+        Rarr(i)=1
+        Garr(i)=dfloat(2*j)/256
+        Barr(i)=dfloat(2*j)/256
+    end do
+    !Second half, White-Blue
+    j=0
+    do i=128,255
+        j=j+1
+        Rarr(i)=dfloat(256-2*j)/256
+        Garr(i)=dfloat(256-2*j)/256
+        Barr(i)=1
+    end do
+else if (isel==10) then !Blue-Green-Red
+    !Blue(0,0,1)-Green(0,1,0)
+    j=0
+    do i=0,127
+        j=j+1
+        Rarr(i)=0
+        Garr(i)=dfloat(2*j)/256
+        Barr(i)=dfloat(256-2*j)/256
+    end do
+    !Green(0,1,0)-Red(1,0,0)
+    j=0
+    do i=128,255
+        j=j+1
+        Rarr(i)=dfloat(2*j)/256
+        Garr(i)=dfloat(256-2*j)/256
+        Barr(i)=0
+    end do
+else if (isel==11) then !Red-Green-Blue
+    !Red(1,0,0)-Green(0,1,0)
+    j=0
+    do i=0,127
+        j=j+1
+        Rarr(i)=dfloat(256-2*j)/256
+        Garr(i)=dfloat(2*j)/256
+        Barr(i)=0
+    end do
+    !Green(0,1,0)-Blue(0,0,1)
+    j=0
+    do i=128,255
+        j=j+1
+        Rarr(i)=0
+        Garr(i)=dfloat(256-2*j)/256
+        Barr(i)=dfloat(2*j)/256
+    end do
+else if (isel==12) then !White-Dark red
+    do i=0,nlevel
+        Rarr(i)=1-dfloat(i)/nlevel*0.3
+        Garr(i)=dfloat(nlevel-i)/nlevel
+        Barr(i)=dfloat(nlevel-i)/nlevel
+    end do
+else if (isel==13) then !Black-Orange-Yellow (mimic black-hole map)
+    do i=0,170
+        Rarr(i)=dfloat(i)/170
+    end do
+    Rarr(171:255)=1
+    do i=70,nlevel
+        Garr(i)=dfloat(i-70)/185
+    end do
+    do i=155,nlevel
+        Barr(i)=dfloat(i-155)/100*0.6D0
+    end do
+else if (isel==14) then !White-Dark green
+    do i=0,nlevel
+        Rarr(i)=dfloat(nlevel-i)/nlevel
+        Garr(i)=1-dfloat(i)/nlevel*0.3
+        Barr(i)=dfloat(nlevel-i)/nlevel
+    end do
+else if (isel==15) then !Black-Green
+    do i=0,nlevel
+        Garr(i)=dfloat(i)/nlevel
+    end do
+else if (isel==16) then !White-Dark blue
+    do i=0,nlevel
+        Rarr(i)=dfloat(nlevel-i)/nlevel
+        Garr(i)=dfloat(nlevel-i)/nlevel
+        Barr(i)=1-dfloat(i)/nlevel*0.2
+    end do
+else if (isel==17) then !Black-Blue-Cyan
+    do i=0,200
+        Barr(i)=dfloat(i)/200
+    end do
+    Barr(201:255)=1
+    do i=100,nlevel
+        Garr(i)=dfloat(i-100)/155
+    end do
+end if
+if ((isel>=8.and.isel<=17).or.isel==3) CALL MYVLT(Rarr,Garr,Barr,nlevel)
 end subroutine

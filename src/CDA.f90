@@ -27,7 +27,7 @@ real*8,allocatable :: coFO(:,:),coFOb(:,:) !(i,j) denotes coefficient of FO i in
 real*8,allocatable :: FOcomp(:,:),FOcompb(:,:) !(i,j) denotes composition of FO i in complex orbitals j. Calculated by Mulliken method. FO index is sorted as 1~nmo1~nmo2~nmo3...
 real*8,allocatable :: FOovlpmat(:,:),FOovlpmatb(:,:) !Overlap matrix between all FOs. FO index is sorted as 1~nmo1~nmo2~nmo3...
 real*8,allocatable :: dterm(:),bterm(:),rterm(:), dtermb(:),btermb(:),rtermb(:) !d,b,r defined in original paper
-real*8 :: conncritleft=0.1D0,conncritright=0.1D0,degencrit=0.2D0,eneshiftA=0D0,eneshiftB=0D0,eneshiftcomp=0D0,eneintv=2D0
+real*8 :: conncritleft=0.1D0,conncritright=0.1D0,degencrit=0.1D0,eneshiftA=0D0,eneshiftB=0D0,eneshiftcomp=0D0,eneintv=2D0
 integer :: idrawMObar=1,iconnlogi=1,iout=6
 
 character c80tmp*80,c80tmp2*80,selectyn
@@ -214,7 +214,20 @@ if (sum(natmCDA(1:))/=natmCDA(0)) then
 	return
 end if
 !Check atom consistence between complex and fragments
-do iatm=1,ncenter
+!write(*,*) "total"
+!do iatm=1,ncenter_org
+!    write(*,*) elemidx(iatm,0),ind2name(elemidx(iatm,0))
+!end do
+!do ifrag=1,nCDAfrag
+!    ntmp=0
+!    if (ifrag>1) ntmp=sum(natmCDA(1:ifrag-1))
+!    write(*,*) "Frag",ifrag,"natom",natmCDA(ifrag)
+!    do iatm=1,natmCDA(ifrag)
+!	    jatm=ntmp+iatm
+!        write(*,*) elemidx(jatm,ifrag),ind2name(elemidx(jatm,ifrag))
+!    end do
+!end do
+do iatm=1,ncenter_org
 	if (sum(elemidx(iatm,1:))/=elemidx(iatm,0)) then
 		write(*,"(/,a)") " Error: The sequence of the atoms in the fragments is not consistent with that in complex, the result will be meaningless! Possible reasons:"
 		write(*,"(a)") " 1 The fragment coordinates were not directly extracted from complex coordinate"
@@ -883,7 +896,7 @@ do while(.true.)
 				if (isel2==2) write(*,*) "Done! The graph has been saved to current folder with ""DISLIN"" prefix"
 			else if (isel2==3) then
 				write(*,*) "Input the lower and upper limits of the MO energy to be plotted (in eV)"
-				write(*,*) "e.g. -70.6,8.5 (0,0 means the whole energy range)"
+				write(*,*) "e.g. -70.6,8.5 (0,0 corresponds to the full energy range)"
 				read(*,*) eneplotlowtmp,eneplothightmp
 				if (eneplotlowtmp==0.and.eneplothightmp==0) then
 					tmpval=maxval(eneCDA(:,0))-minval(eneCDA(:,0))
@@ -894,7 +907,11 @@ do while(.true.)
 					eneplotlow=eneplotlowtmp
 				else
 					write(*,*) "Error: Invalid input"
+                    cycle
 				end if
+                eneintv=(eneplothigh-eneplotlow)/10
+                degentmp=(eneplothigh-eneplotlow)/20
+                if (degentmp<0.1D0) degencrit=degentmp
 			else if (isel2==4) then
 				write(*,*) "Input the criterion and rule for connecting orbital bars"
 				write(*,"(a)") " Example 1: ""15,or,20"" means the criterion for connecting FO of fragment A (B) and complex MO is >=15% (>=20%)."

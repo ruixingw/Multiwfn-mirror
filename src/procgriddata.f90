@@ -411,7 +411,7 @@ do while(.true.)
 			end do
 			inamelen=len_trim(gridfile2)
 			if (gridfile2(inamelen-2:inamelen)=="cub".or.gridfile2(inamelen-3:inamelen)=="cube") then
-				call readcubetmp(gridfile2,inconsis)
+				call readcubetmp(gridfile2,1,inconsis)
 			else if (gridfile2(inamelen-2:inamelen)=="grd") then
 				call readgrdtmp(gridfile2,inconsis)
 			end if
@@ -479,7 +479,7 @@ do while(.true.)
 			write(*,*) "File not found, input again"
 			write(*,*)
 		end do
-		call readcubetmp(gridfile2,inconsis)
+		call readcubetmp(gridfile2,1,inconsis)
 		open(10,file="output.txt",status="replace")
 		do i=1,nx
 			do j=1,ny

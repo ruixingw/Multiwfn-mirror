@@ -214,6 +214,13 @@ potlinedis=dsqrt((x0-prjx)**2+(y0-prjy)**2+(z0-prjz)**2)
 end function
 
 
+!!--------- Input two points, return their distance in Bohr
+real*8 function xyz2dist(x1,y1,z1,x2,y2,z2)
+real*8 :: x1,y1,z1,x2,y2,z2
+xyz2dist=dsqrt((x1-x2)**2+(y1-y2)**2+(z1-z2)**2)
+end function
+
+
 !!--------- Input three points, return angle between 1-2 and 2-3 (in degree)
 real*8 function xyz2angle(x1,y1,z1,x2,y2,z2,x3,y3,z3)
 real*8 :: x1,y1,z1,x2,y2,z2,x3,y3,z3,pi=3.141592653589793D0
@@ -295,6 +302,53 @@ gettetravol=abs(vec1x*vec2x3x+vec1y*vec2x3y+vec1z*vec2x3z)/6D0
 end function
 
 
+!!---------- Input a set of atoms to fit a best plane. Return A, B, C, D of plane equation Ax+By+Cz+D=0
+!Based on Ben's answer: https://math.stackexchange.com/questions/99299/best-fitting-plane-given-a-set-of-points
+!"atmarr" with size of "natm" is the array containing atom indices in the ring. rmsfit measures RMS fitting error in Bohr
+subroutine ptsfitplane(atmarr,natm,planeA,planeB,planeC,planeD,rmsfit)
+use defvar
+implicit real*8 (a-h,o-z)
+integer atmarr(natm)
+real*8 planeA,planeB,planeC,planeD,rmsfit
+real*8 matA(natm,3),matB(natm,1),ple(3,1),tmpmat(3,3)
+
+!The algorithm doesn't work when all atoms are exactly in a Cartesian plane, therefore special treatment is employed
+planeA=0;planeB=0;planeC=0;planeD=0;rmsfit=0
+if (maxval(a(atmarr)%x)==minval(a(atmarr)%x)) then
+    planeA=1
+    return
+else if (maxval(a(atmarr)%y)==minval(a(atmarr)%y)) then
+    planeB=1
+    return
+else if (maxval(a(atmarr)%z)==minval(a(atmarr)%z)) then
+    planeC=1
+    return
+end if
+
+matA(:,1)=a(atmarr)%x
+matA(:,2)=a(atmarr)%y
+matA(:,3)=1
+matB(:,1)=a(atmarr)%z
+
+tmpmat=invmat(matmul(transpose(matA),matA),3)
+ple=matmul(matmul(tmpmat,transpose(matA)),matB)
+!Check fitting quality
+accum=0
+do iatm=1,natm
+    tmp1=a(atmarr(iatm))%x*ple(1,1)+a(atmarr(iatm))%y*ple(2,1)+ple(3,1)
+    tmp2=a(atmarr(iatm))%z
+    !write(*,"(i5,2f12.6)") iatm,tmp1,tmp2
+    accum=accum+(tmp1-tmp2)**2
+end do
+rmsfit=dsqrt(accum/natm)
+
+!Now we have ple(1,1)*x + ple(2,1)*y + ple(3,1) = z
+!However we expect Ax+By+Cz+D=0, clearly
+planeA=ple(1,1)
+planeB=ple(2,1)
+planeC=-1D0
+planeD=ple(3,1)
+end subroutine
 
 
 
@@ -547,7 +601,7 @@ end subroutine
 !===============================================================!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!! String process !!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!! String process !!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !===============================================================!
@@ -650,7 +704,22 @@ end do
 end subroutine
 
 
-
+!!--------- Return the position of a given character in a string, itime is the number of times that it occurs
+!e.g. strcharpos(sfisi1123,'i',1) returns 3, strcharpos(sfisi1123,'i',2) returns 5. If not found, return 0
+function strcharpos(str,char,itime)
+character(len=*) str
+character char
+integer itime
+strcharpos=0
+icount=0
+do i=1,len_trim(str)
+    if (str(i:i)==char) icount=icount+1
+    if (icount==itime) then
+        strcharpos=i
+        return
+    end if
+end do
+end function
 
 
 
@@ -1302,9 +1371,9 @@ do i=1,nt !Number of frames
 		read(fileid,*) !!!!!!!!!!!! Skip number line when reading each new frame
 	end do
 	do k=1,i1 !Scan rows in each frame
-! 		read(fileid,"(a)") c80tmp
-! 		write(15,"(a)") c80tmp
-! 		backspace(fileid)
+ 		!read(fileid,"(a)") c80tmp
+ 		!write(15,"(a)") c80tmp
+ 		!backspace(fileid)
 		
 		if (k<ns.and.present(semi).and.semi==1) cycle
 		do iii=1,skipcol !Skip marker columns in each row
@@ -1313,7 +1382,7 @@ do i=1,nt !Number of frames
 		do j=ns,ne !Scan elements in each row
 			if (present(semi).and.semi==1.and.k<j) cycle
 			read(fileid,form,advance='no') mat(k,j)
-! 			write(*,*) i,k,j,mat(k,j)
+ 			!write(*,*) i,k,j,mat(k,j)
 		end do
 		read(fileid,*)
 	end do
@@ -1324,6 +1393,7 @@ if (present(semi).and.semi==1) then !When read is lower trigonal matrix, we assu
 		mat(i,i)=mat(i,i)/2D0
 	end do
 end if
+
 end subroutine
 
 

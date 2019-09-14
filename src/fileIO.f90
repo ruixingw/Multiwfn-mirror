@@ -3,7 +3,7 @@ subroutine readinfile(thisfilename,infomode)
 use defvar
 implicit real*8 (a-h,o-z)
 character(len=*) thisfilename
-character fchname*200
+character fchname*200,moldenname*200,c80tmp*20
 integer infomode,inamelen
 inamelen=len_trim(thisfilename)
 if (infomode==0) write(*,*) "Please wait..."
@@ -27,6 +27,10 @@ else if (thisfilename(inamelen-1:inamelen)=="31") then
 	call read31(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="grd") then
 	call readgrd(thisfilename,infomode,0)
+else if (thisfilename(inamelen-2:inamelen)=="vti") then
+	call readvti(thisfilename,infomode,0)
+else if (thisfilename(inamelen-2:inamelen)=="gro") then
+	call readgro(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="cub".or.thisfilename(inamelen-3:inamelen)=="cube") then
 	call readcube(thisfilename,infomode,0)
 else if (thisfilename(inamelen-2:inamelen)=="gms") then
@@ -59,10 +63,48 @@ else if (thisfilename(inamelen-2:inamelen)=="chk") then
 		call chk2fch(fchname)
 		inquire(file=fchname,exist=alive)
 		if (alive) then
+            !Check file content, conversion failure may also result in file, but the content is empty
+            open(10,file=fchname,status="old")
+            read(10,"(a)",iostat=ierror) c80tmp
+            close(10)
+            if (c80tmp==" ".or.ierror/=0) then
+			    write(*,*) "Error: formchk conversion failed!"
+			    write(*,*) "Press ENTER button to exit"
+			    read(*,*)
+			    stop
+            end if
 			call readfch(fchname,infomode)
-			call delfch(fchname)
+			call delfile(fchname)
 		else
 			write(*,*) "Error: formchk conversion failed!"
+			write(*,*) "Press ENTER button to exit"
+			read(*,*)
+			stop
+		end if
+	end if
+else if (thisfilename(inamelen-2:inamelen)=="gbw") then
+	if (orca_2mklpath==" ") then
+		write(*,"(a)") " Error: .gbw file is not directly supported. You should use orca_2mkl to convert it to .molden before loading. &
+		Alternatively, you can set ""orca_2mklpath"" parameter in settings.ini to actual path, so that Multiwfn can directly open .gbw file"
+		write(*,*) "Press ENTER button to exit"
+		read(*,*)
+		stop
+	end if
+	inquire(file=orca_2mklpath,exist=alive)
+	if (alive==.false.) then
+		write(*,"(a)") " Note: Albeit ""orca_2mklpath"" parameter in settings.ini has been defined, &
+		the orca_2mkl executable file cannot be located, therefore the .gbw file cannot be directly opened by Multiwfn"
+		write(*,*) "Press ENTER button to exit"
+		read(*,*)
+		stop
+	else
+		call gbw2molden(moldenname)
+		inquire(file=moldenname,exist=alive)
+		if (alive) then
+			call readmolden(moldenname,infomode)
+			call delfile(moldenname)
+		else
+			write(*,*) "Error: orca_2mkl conversion failed!"
 			write(*,*) "Press ENTER button to exit"
 			read(*,*)
 			stop
@@ -87,7 +129,7 @@ end if
 end subroutine
 
 
-!!-------- Convert chk to fch/fchk via formchk
+!!-------- Convert chk to fch/fchk via formchk, return the path of generated (may be failed) .fch/fchk file
 subroutine chk2fch(fchname)
 use defvar
 implicit real*8 (a-h,o-z)
@@ -108,21 +150,23 @@ else
 end if
 end subroutine
 
-!!-------- Delete the automatically generated fch/fchk file due to formchk
-subroutine delfch(fchname)
+
+!!-------- Convert gbw to molden via orca_2mkl, return the path of generated (may be failed) .molden file
+subroutine gbw2molden(gbwname)
 use defvar
 implicit real*8 (a-h,o-z)
-character*200 fchname,c200tmp
+character*200 gbwname,c200tmp
+inamelen=len_trim(filename)
+ico=index(filename,'.',back=.true.)
 if (isys==1) then
-	c200tmp='del /Q "'//trim(fchname)//'"'
+	c200tmp=trim(orca_2mklpath)//' "'//trim(filename(:ico-1))//'" -molden > NUL'
 else
-	c200tmp='rm -f "'//trim(fchname)//'"'
+	c200tmp=trim(orca_2mklpath)//' "'//trim(filename(:ico-1))//'" -molden > /dev/null'
 end if
 write(*,"(a)") " Running: "//trim(c200tmp)
 call system(trim(c200tmp))
+gbwname=trim(filename(:ico))//"molden.input"
 end subroutine
-
-
 
 
 !!-----------------------------------------------------------------
@@ -1074,6 +1118,64 @@ end subroutine
 
 
 
+
+!!---------------------------------------------------
+!!-------------------- Read .gro --------------------
+! infomode=0: Output summary, =1: do not
+subroutine readgro(name,infomode)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer infomode
+character(len=*) name
+character resname*5,resname_up*5,tmpname*5,tmpname_up*5
+ifiletype=15
+open(10,file=name,status="old")
+read(10,*)
+read(10,*) ncenter
+allocate(a(ncenter))
+do iatm=1,ncenter
+    read(10,"(i5,2a5,i5,3f8.3)") inouse,resname,tmpname,inouse,a(iatm)%x,a(iatm)%y,a(iatm)%z
+	tmpname_up=adjustl(tmpname)
+    resname_up=adjustl(resname)
+	call strlc2uc(tmpname_up)
+	call strlc2uc(resname_up)
+    ifound=0
+    if (tmpname_up==resname_up) then !If resname and atomname are identical, for example NA, CL, CA, then they should be ion, directly recognize
+        do i=1,nelesupp
+            if (ind2name_up(i)==tmpname_up) then
+			    a(iatm)%index=i
+			    ifound=1
+			    exit
+		    end if
+        end do
+    end if
+    if (ifound==0) then !Guess element according to atomname
+	    do i=1,nelesupp
+		    if (ind2name_up(i)==tmpname_up(1:1)//' ' .or. ind2name_up(i)==tmpname_up(1:2) .or. & !Recognize e.g. C, N11, Li
+		    ((ichar(tmpname_up(1:1))<=57).and.ind2name_up(i)==tmpname_up(2:2)//' ')) then !Recognize such as 1H5*
+			    a(iatm)%index=i
+			    ifound=1
+			    exit
+		    end if
+	    end do
+    end if
+    if (ifound==0) then
+	    write(*,"(a)") " Warning: Element of """//trim(tmpname)//""" cannot be recognized, assume it is carbon"
+	    a(iatm)%index=12
+    end if
+    a(iatm)%name=ind2name(a(iatm)%index)
+end do
+close(10)
+a%x=a%x*10/b2a
+a%y=a%y*10/b2a
+a%z=a%z*10/b2a
+if (infomode==0) write(*,"(' Totally',i8,' atoms')") ncenter
+end subroutine
+
+
+
+
 !!--------------------------------------------------------
 !!-------------------- Read .gjf file --------------------
 ! Only support Cartesian coordinate currently
@@ -1126,6 +1228,10 @@ do i=1,ncenter
 	else
 		call lc2uc(a(i)%name(1:1)) !Convert to upper case
 		call uc2lc(a(i)%name(2:2)) !Convert to lower case
+        if (a(i)%name(1:1)=='X') then !Dummy atom will be finally recognized as Bq
+            a(i)%index=0
+            cycle
+        end if
 		do j=1,nelesupp
 			if ( a(i)%name==ind2name(j) ) then
 				a(i)%index=j
@@ -1715,8 +1821,8 @@ end subroutine
 
 !!-----------------------------------------------------------------
 !!---------------- Read Gaussian cube file and store in cubmat
-!infomode=0 means output cube details, =1 not
-!ionlygrid=1 means only read grid data, but do not perturb any other variables, =0 means do all
+!infomode=0 means output cube details, =1 do not, =2 also do not print loading process
+!ionlygrid=1 means only read grid data, but do not perturb atom information, =0 means do all
 subroutine readcube(cubname,infomode,ionlygrid)
 use defvar
 implicit real*8 (a-h,o-z)
@@ -1741,7 +1847,7 @@ dz=gridvec3(3)
 endx=orgx+dx*(nx-1) !endx,y,z are global array in defvar
 endy=orgy+dy*(ny-1)
 endz=orgz+dz*(nz-1)
-write(*,*) 
+if (infomode==0) write(*,*) 
 
 mo_number=0
 if (ncenter<0) then
@@ -1782,7 +1888,7 @@ else if (ionlygrid==1) then
 		read(10,*) !Do not read atomic information, simply skip
 	end do
 end if
-write(*,*)
+if (infomode<2) write(*,*)
 
 if (mo_number==1) then
 	read(10,"(i5)",advance="no") mo_number !Get actual number of MO
@@ -1805,7 +1911,7 @@ if (mo_number==1) then
 	end if
 end if
 
-write(*,*) "Loading grid data, please wait..."
+if (infomode<2) write(*,*) "Loading grid data, please wait..."
 if (mo_number==0.or.mo_number==1) then !Commonly case, below code has the best compatibility
 	allocate(tmpreadcub(nz,ny,nx))
 	read(10,*) tmpreadcub(:,:,:)
@@ -1825,12 +1931,12 @@ else !Load specified of many orbitals
 			cubmat(i,j,:)=temp_readdata(mo_select:size(temp_readdata):mo_number)
 		end do
 		progress=dfloat(i)/nx*100
-		if (progress>ii) then
+		if (progress>ii.and.infomode<2) then
 			ii=ii+10
 			write(*,"(f6.1,'%')") progress
 		end if
 	end do
-	write(*,"(f6.1,'%')") 100D0
+	if (infomode<2) write(*,"(f6.1,'%')") 100D0
 end if
 close(10)
 
@@ -1897,8 +2003,9 @@ end subroutine
 !!---- Read Gaussian cube file and save to cubmattmp, this is a simple version of readcube, can only be invoked after cubmat has been loaded
 !don't read atomic information, don't modify loaded grid infomation such as nx/y/z,orgx/y/z...
 !and don't output statistic information, don't specify coordinate for grid points...
-!If inconsis==1, that means the grid setting of this cube file is inconsistent with that of cubmat
-subroutine readcubetmp(cubname,inconsis)
+!infomode=1: Print loading information, =2: do not print anything
+!inconsis is returned value, 1 means the grid setting of this cube file is inconsistent with that of cubmat
+subroutine readcubetmp(cubname,infomode,inconsis)
 use defvar
 implicit real*8 (a-h,o-z)
 character(len=*) cubname
@@ -1957,8 +2064,8 @@ if (mo_number==1) then
 	end if
 end if
 
-write(*,*)
-write(*,*) "Loading grid data, please wait..."
+if (infomode<2) write(*,*)
+if (infomode<2) write(*,*) "Loading grid data, please wait..."
 !Load data
 ii=0
 do i=1,nx !a(x,y,z)
@@ -1971,12 +2078,12 @@ do i=1,nx !a(x,y,z)
 		end if
 	end do
 	progress=dfloat(i)/nx*100
-	if (progress>ii) then
+	if (progress>ii.and.infomode<2) then
 		ii=ii+10
 		write(*,"(f6.1,'%')") progress
 	end if
 end do
-write(*,*) "Done!"
+if (infomode<2) write(*,*) "Done!"
 close(10)
 end subroutine
 
@@ -2133,6 +2240,134 @@ end do
 write(*,*) "Grid data loading completed!"
 close(10)
 end subroutine
+
+
+
+
+!!------------------------------------------------
+!!----------- Load vti file, which can be yielded by ParaView and GIMIC. The code was adapted from readgrd
+!infomode=0 means output grd details, =1 not
+!ionlygrid=1 means only read grid data, but do not perturb any other variables, =0 means do all
+subroutine readvti(vtiname,infomode,ionlygrid)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character(len=*) vtiname
+character c1000tmp*1000
+integer infomode,ionlygrid
+type(content) maxv,minv
+if (ionlygrid==0) ifiletype=14
+open(10,file=vtiname,status="old")
+
+call loclabel(10,"<ImageData")
+call readxmlline(10,c1000tmp)
+i=strcharpos(c1000tmp,'"',1)
+j=strcharpos(c1000tmp,'"',2)
+read(c1000tmp(i+1:j-1),*) ibeg,iend,jbeg,jend,kbeg,kend
+nx=iend-ibeg+1
+ny=jend-jbeg+1
+nz=kend-kbeg+1
+i=strcharpos(c1000tmp,'"',3)
+j=strcharpos(c1000tmp,'"',4)
+read(c1000tmp(i+1:j-1),*) orgx,orgy,orgz
+i=strcharpos(c1000tmp,'"',5)
+j=strcharpos(c1000tmp,'"',6)
+read(c1000tmp(i+1:j-1),*) dx,dy,dz
+gridvec1=0;gridvec2=0;gridvec3=0
+gridvec1(1)=dx;gridvec2(2)=dy;gridvec3(3)=dz
+
+allocate(cubmat(nx,ny,nz))
+endx=orgx+dx*(nx-1) !endx,y,z are global array in defvar
+endy=orgy+dy*(ny-1)
+endz=orgz+dz*(nz-1)
+
+if (infomode==0) then
+	write(*,"(' Translation vectors in X/Y/Z (Bohr):',3f12.6)") dx,dy,dz
+	write(*,"(' The range of x is from ',f12.6,' to ',f12.6,' Bohr,' i5,' points')") ,orgx,endx,nx
+	write(*,"(' The range of y is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgy,endy,ny
+	write(*,"(' The range of z is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgz,endz,nz
+	write(*,"(' Total number of grid points:',i10)") nx*ny*nz
+	write(*,"(' This grid data will take up at least',i6,' MB memory')") nx*ny*nz*8*4/1024/1024
+end if
+write(*,*)
+write(*,*) "Loading grid data, please wait..."
+call loclabel(10,"<DataArray")
+call readxmlline(10,c1000tmp)
+if (index(c1000tmp,"scalars")==0) then
+    write(*,*) "Error: Only vti file recording scalar data is supported!"
+    write(*,*) "Press ENTER button to exit program"
+    read(*,*)
+    stop
+end if
+read(10,*) (((cubmat(i,j,k),i=1,nx),j=1,ny),k=1,nz)
+write(*,*) "Done!"
+write(*,*)
+close(10)
+
+!Perform statistic
+maxv%value=cubmat(1,1,1)
+maxv%x=orgx
+maxv%y=orgy
+maxv%z=orgz
+minv%value=cubmat(1,1,1)
+minv%x=orgx
+minv%y=orgy
+minv%z=orgz
+sumuppos=0.0D0
+sumupneg=0.0D0
+do k=1,nz
+	do j=1,ny
+		do i=1,nx
+			if (cubmat(i,j,k)>0) sumuppos=sumuppos+cubmat(i,j,k)
+			if (cubmat(i,j,k)<0) sumupneg=sumupneg+cubmat(i,j,k)
+			if (cubmat(i,j,k)>maxv%value) then
+				maxv%value=cubmat(i,j,k)
+				maxv%x=orgx+(i-1)*dx
+				maxv%y=orgy+(j-1)*dy
+				maxv%z=orgz+(k-1)*dz
+			end if
+			if (cubmat(i,j,k)<minv%value) then
+				minv%value=cubmat(i,j,k)
+				minv%x=orgx+(i-1)*dx
+				minv%y=orgy+(j-1)*dy
+				minv%z=orgz+(k-1)*dz
+			end if
+		end do
+	end do
+end do
+
+if (infomode==0) then
+	fminivol=dx*dy*dz
+	write(*,"(' The minimum value:',E16.8,' at',3f12.6,' Bohr')") minv%value,minv%x,minv%y,minv%z
+	write(*,"(' The maximum value:',E16.8,' at',3f12.6,' Bohr')") maxv%value,maxv%x,maxv%y,maxv%z
+	write(*,"(' Differential element:',f15.10,' Bohr^3')") fminivol
+	write(*,"(' Summing up positive value in grid file:  ',f30.10)") sumuppos
+	write(*,"(' After multiplied by differential element:',f30.10)") sumuppos*fminivol
+	write(*,"(' Summing up negative value in grid file:  ',f30.10)") sumupneg
+	write(*,"(' After multiplied by differential element:',f30.10)") sumupneg*fminivol
+	write(*,"(' Summing up all value in grid file:       ',f30.10)") sumuppos+sumupneg
+	write(*,"(' After multiplied by differential element:',f30.10)") (sumuppos+sumupneg)*fminivol
+end if
+end subroutine
+
+!Return content enclosed by "<" in current line and the next ">" in a file of XML format. At most read 1000 characters
+!Before invoking this routine, current position must be the line containing <
+subroutine readxmlline(fileid,str)
+character str*1000,c1000tmp2*1000
+integer fileid,itmp,jtmp
+read(fileid,"(a)") str
+if (index(str,'>')==0) then
+    do while(.true.)
+        read(10,"(a)") c1000tmp2
+        str=trim(str)//trim(c1000tmp2)
+        if (index(c1000tmp2,'>')/=0) exit
+    end do
+end if
+itmp=index(str,'<')
+jtmp=index(str,'>')
+str=str(itmp+1:jtmp-1)
+end subroutine
+
 
 
 
@@ -3587,12 +3822,8 @@ call loclabel(10,"Firefly Project",ifirefly,maxline=100)
 if (ifirefly==1) write(*,*) "Note: This file will be recognized as Firefly output"
 if (infomode==0) write(*,*) "Loading various information of the wavefunction"
 
-!!!!! Load atom information
-call loclabel(10,"TOTAL NUMBER OF ATOMS",ifound)
-if (ifirefly==0) read(10,"(47x,i5)") ncenter
-if (ifirefly==1) read(10,"(38x,i5)") ncenter
-allocate(a(ncenter))
-call loclabel(10,"RUNTYP=OPTIMIZE",iopt)
+!!!!! Sanity check
+call loclabel(10,"RUNTYP=OPTIMIZE",iopt,maxline=10000)
 if (iopt==1) then
 	!Although GAMESS-US output final geometry and corresponding wavefunction (labelled by "MOLECULAR ORBITALS"), 
 	!the number of orbitals is much smaller than expected, therefore unable to provide enough information
@@ -3600,6 +3831,20 @@ if (iopt==1) then
 	write(*,*) "Press ENTER button to continue"
 	read(*,*)
 end if
+!If point group is not C1, only basis set definition of symmetry unique atoms is printed
+call loclabel(10,"THE POINT GROUP OF THE MOLECULE IS C1",iC1,maxline=1000)
+if (iC1==0) then
+    write(*,"(a)") " Error: The point group is not C1, Multiwfn does not support this case"
+	write(*,*) "Press ENTER button to exit"
+	read(*,*)
+    stop
+end if
+
+!!!!! Load atom information
+call loclabel(10,"TOTAL NUMBER OF ATOMS",ifound)
+if (ifirefly==0) read(10,"(47x,i5)") ncenter
+if (ifirefly==1) read(10,"(38x,i5)") ncenter
+allocate(a(ncenter))
 call loclabel(10,"ATOM      ATOMIC",ifound)
 read(10,*)
 read(10,*)
@@ -3748,6 +3993,12 @@ if (ibeta==0) then !Only one set of orbitals
 	MOene=100
 	MOsym="?"
 	call loclabel(10,"          EIGENVECTORS",ifound)
+    if (ifound==0) then
+        write(*,"(a)") " Error: Unable to find orbital coefficients field! The NPRINT parameter must be set to default value"
+        write(*,*) "Press ENTER button to exit"
+        read(*,*)
+        stop
+    end if
 	call readgmsLCAO(10,ifirefly,nbasis,nmoactual,amocoeff,MOene(1:nmoactual),MOsym(1:nmoactual))
 else
 	nmo=2*nbasis
@@ -3756,6 +4007,12 @@ else
 	MOene=100
 	MOsym="?"
 	call loclabel(10,"          EIGENVECTORS",ifound)
+    if (ifound==0) then
+        write(*,"(a)") " Error: Unable to find orbital coefficients field! The NPRINT parameter must be set to default value"
+        write(*,*) "Press ENTER button to exit"
+        read(*,*)
+        stop
+    end if
 	call readgmsLCAO(10,ifirefly,nbasis,nmoactual,amocoeff,MOene(1:nmoactual),MOsym(1:nmoactual))
 	call loclabel(10,"          EIGENVECTORS",ifound,0) !Don't rewind
 	call readgmsLCAO(10,ifirefly,nbasis,nmoactual,bmocoeff,MOene(nbasis+1:nbasis+nmoactual),MOsym(nbasis+1:nbasis+nmoactual))
@@ -4058,6 +4315,51 @@ write(*,*) "Exporting xyz file finished!"
 end subroutine
 
 
+!!---------- Output current coordinate to cml file
+!iunit=0: In Angstrom, iunit=1: In Bohr
+subroutine outcml(outcmlname,ifileid,iunit)
+use defvar
+character(len=*) outcmlname
+character tmpstr1*80,tmpstr2*80,tmpstr3*80,tmpstr4*80
+integer i,ifileid,iunit
+if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
+
+open(ifileid,file=outcmlname,status="replace")
+write(ifileid,"(a)") '<molecule>'
+write(ifileid,"(a)") ' <atomArray>'
+fac=1
+if (iunit==0) fac=b2a !Convert to Angstrom
+
+do i=1,ncenter
+    write(tmpstr1,*) i
+    write(tmpstr2,"(f12.6)") a(i)%x*fac
+    write(tmpstr3,"(f12.6)") a(i)%y*fac
+    write(tmpstr4,"(f12.6)") a(i)%z*fac
+    write(ifileid,"(a)") &
+    '  <atom id="a'//trim(adjustl(tmpstr1))//'" elementType="'//trim(adjustl(a(i)%name))//'" x3="'//trim(adjustl(tmpstr2))&
+    //'" y3="'//trim(adjustl(tmpstr3))//'" z3="'//trim(adjustl(tmpstr4))//'"/>'
+end do
+write(ifileid,"(a)") ' </atomArray>'
+write(ifileid,"(a)") ' <bondArray>'
+do i=1,ncenter
+    do j=i+1,ncenter
+        if (connmat(i,j)>0) then
+            write(tmpstr1,*) i
+            write(tmpstr2,*) j
+            write(tmpstr3,*) connmat(i,j)
+            write(ifileid,"(a)") '  <bond atomRefs2="a'//trim(adjustl(tmpstr1))//' a'//&
+            trim(adjustl(tmpstr2))//'" order="'//trim(adjustl(tmpstr3))//'"/>'
+        end if
+    end do
+end do
+write(ifileid,"(a)") ' </bondArray>'
+write(ifileid,"(a)") '</molecule>'
+
+close(ifileid)
+write(*,*) "Exporting cml file finished!"
+end subroutine
+
+
 !!---------- Output current coordinate to chg file
 subroutine outchg(outchgname,ifileid)
 use defvar
@@ -4119,6 +4421,7 @@ end subroutine
 
 
 !!---------- Output current coordinate to GAMESS-US input file
+!The level exactly corresponds to the B3LYP-D3(BJ)/6-31G* of Gaussian
 subroutine outGAMESSinp(outname,ifileid)
 use defvar
 character(len=*) outname
@@ -4138,12 +4441,12 @@ SCFTYPE="RHF"
 if (iopsh==1) SCFTYPE="UHF"
 open(ifileid,file=outname,status="replace")
 write(ifileid,"(a,i1,a,i1,a)") " $CONTRL SCFTYP="//SCFTYPE//" MULT=",mult," ICHARG=",netcharge," RUNTYP=ENERGY"
-write(ifileid,"(a)") " DFTTYP=B3LYPV3 ISPHER=0 MAXIT=60 NPRINT=-5 $END"
+write(ifileid,"(a)") " DFTTYP=B3LYPV1R ISPHER=0 MAXIT=60 NPRINT=-5 $END"
 write(ifileid,"(a)") " $BASIS GBASIS=N31 NGAUSS=6 NDFUNC=1 NPFUNC=0 DIFFSP=.F. DIFFS=.F. $END"
-write(ifileid,"(a)") " $SYSTEM MWORDS=800 $END"
+write(ifileid,"(a)") " $SYSTEM MWORDS=200 $END"
 !  $lmoeda matom(1)=3,4 mcharg(1)=0,0 mmult(1)=1,1 $end
 write(ifileid,"(a)") " $SCF DIRSCF=.T. $END"
-write(ifileid,"(a)") " $DFT DC=.F. $END"
+write(ifileid,"(a)") " $DFT IDCVER=4 $END"
 if (ioutguess==1) write(ifileid,"(a,i5,a)") " $GUESS GUESS=MOREAD NORB=",nbasis," $END"
 write(ifileid,"(a)") " $DATA"
 write(ifileid,"(a)") "Generated by Multiwfn"
@@ -4186,7 +4489,7 @@ if (ioutguess==1) then
 	write(ifileid,"(a)") " $END"
 end if
 close(ifileid)
-write(*,"(a)") " Exporting GAMESS-US input file finished! It corresponds to single point task at B3LYP-D3/6-31G* level"
+write(*,"(a)") " Exporting GAMESS-US input file finished! It corresponds to single point task at B3LYP-D3(BJ)/6-31G* level"
 end subroutine
 
 
@@ -4194,11 +4497,14 @@ end subroutine
 subroutine outORCAinp(outname,ifileid)
 use defvar
 character(len=*) outname
-character solvname*30,keyword*200,c200tmp*200
-integer :: isolv=0,itask=1
-write(*,"(a)") " Note: The keywords will be at least compatible with ORCA 4.1.2"
+character keyword*200,c200tmp*200,solvname*30
+integer :: itask=1,idiffuse=0
+isolv=0
+write(*,"(a)") " Note: The generated keywords are at least compatible with ORCA 4.2"
 do while(.true.)
     write(*,*)
+    if (idiffuse==1) write(*,*) "-2 Toggle adding diffuse functions, current: Yes"
+    if (idiffuse==0) write(*,*) "-2 Toggle adding diffuse functions, current: No"
     if (isolv==1) write(*,*) "-1 Toggle employing SMD solvation model, current: Yes, "//trim(solvname)
     if (isolv==0) write(*,*) "-1 Toggle employing SMD solvation model, current: No"
     if (itask==1) write(*,*) "0 Select task, current: Single point"
@@ -4212,69 +4518,127 @@ do while(.true.)
     write(*,*) "5 RI-wB97M-V/def2-TZVP"
     write(*,*) "6 RI-PWPB95-D3(BJ)/def2-TZVPP"
     write(*,*) "7 RI-PWPB95-D3(BJ)/def2-QZVPP"
-    write(*,*) "8 DLPNO-CCSD(T)/cc-pVTZ with tightPNO"
-    write(*,*) "9 CCSD(T)/cc-pVTZ"
-    write(*,*) "10 CCSD(T)-F12/cc-pVDZ with RI"
-    write(*,*) "11 CCSD(T)/CBS (cc-pVTZ->cc-pVQZ extrapolation)"
-    write(*,*) "20 TDA-DFT RI-PBE0/def2-SV(P) with riints_disk (much faster than 21)"
-    write(*,*) "21 TDDFT RI-PBE0/def2-SV(P)"
-    write(*,*) "22 TDDFT RI-B2GP-PLYP/def2-TZVP"
-    write(*,*) "23 EOM-CCSD/cc-pVTZ"
+    write(*,*) "8 DLPNO-CCSD(T)/cc-pVTZ with normalPNO and RIJK"
+    write(*,*) "9 DLPNO-CCSD(T)/cc-pVTZ with tightPNO"
+    write(*,*) "10 CCSD(T)/cc-pVTZ"
+    write(*,*) "11 CCSD(T)-F12/cc-pVDZ-F12 with RI"
+    write(*,*) "12 CCSD(T)/CBS with help of MP2 (cc-pVTZ->QZ extrapolation)"
+    write(*,*) "13 CCSD(T)/CBS (cc-pVTZ->QZ extrapolation)"
+    write(*,*) "20 sTD-DFT based on RI-wB97X-D3/def2-SV(P) orbitals"
+    write(*,*) "21 TDA-DFT RI-PBE0/def2-SV(P) with riints_disk (much faster than 22)"
+    write(*,*) "22 TDDFT RI-PBE0/def2-SV(P)"
+    write(*,*) "23 TDDFT RI-wB2GP-PLYP/def2-TZVP"
+    write(*,*) "24 EOM-CCSD/cc-pVTZ"
     read(*,*) ilevel
     if (ilevel==0) then
         write(*,*) "1 Single point"
         write(*,*) "2 Optimization"
         write(*,*) "3 Frequency"
         write(*,*) "4 Optimization + Frequency"
+        write(*,*) "5 Optimization for transition state + Frequency"
         read(*,*) itask
     else if (ilevel==-1) then
         if (isolv==1) then
             isolv=0
         else
             isolv=1
-            write(*,*) "Input name of solvent, e.g. water"
+            write(*,*) "Input name of solvent, e.g. ethanol"
             write(*,*) "If press ENTER button directly, water will be employed as solvent"
+            write(*,*) "To customize a solvent for CPCM model, input ""c"""
             read(*,"(a)") solvname
-            if (solvname==" ") solvname="water"
+            if (solvname==" ") then
+                solvname="water"
+            else if (solvname=='c') then
+                write(*,*) "Input dielectic constant, e.g. 80"
+                read(*,*) diecons
+                write(*,*) "Input refractive index, e.g. 1.33"
+                write(*,*) "If actual value is known, usually 1.33 is a good approximation"
+                read(*,*) refrac
+            end if
+        end if
+    else if (ilevel==-2) then
+        if (idiffuse==1) then
+            idiffuse=0
+        else
+            idiffuse=1
         end if
     else
         exit
     end if
 end do
 
-if (ilevel==1) c200tmp="! B97-3c"
-if (ilevel==2) c200tmp="! BLYP D3 def2-TZVP def2/J"
-if (ilevel==3) c200tmp="! B3LYP D3 def2-TZVP(-f) def2/J RIJCOSX"
-if (ilevel==4) c200tmp="! B3LYP D3 def2-TZVP def2/J RIJCOSX"
-if (ilevel==5) c200tmp="! wB97M-V def2-TZVP def2/J RIJCOSX tightSCF grid4 gridx4"
-if (ilevel==6) c200tmp="! PWPB95 D3 def2-TZVPP def2/J def2-TZVPP/C RIJCOSX grid4 gridx4 tightSCF" !When RIJCOSX or RIJK is used, the MP2 will also use RI by default
-if (ilevel==7) c200tmp="! PWPB95 D3 def2-QZVPP def2/J def2-QZVPP/C RIJCOSX grid4 gridx4 tightSCF"
-if (ilevel==8) c200tmp="! DLPNO-CCSD(T) tightPNO cc-pVTZ cc-pVTZ/C tightSCF"
-if (ilevel==9) c200tmp="! CCSD(T) cc-pVTZ tightSCF"
-if (ilevel==10) c200tmp="! CCSD(T)-F12/RI cc-pVDZ-F12 cc-pVDZ-F12-CABS cc-pVTZ/C"
-if (ilevel==11) c200tmp="! CCSD(T) Extrapolate(3/4,cc) tightSCF"
-if (ilevel==20) c200tmp="! PBE0 def2-SV(P) def2/J def2-SVP/C RIJCOSX grid4 gridx4 tightSCF"
-if (ilevel==21) c200tmp="! PBE0 def2-SV(P) def2/J RIJCOSX grid4 gridx4 tightSCF"
-!TD-B2GP-PLYP is slightly better than TD-B2PLYP according to DYE12 test. ORCA 4.1.2 doesn't support TD-PWPB95
-if (ilevel==22) c200tmp="! B2GP-PLYP def2-TZVP def2/J def2-TZVP/C RIJCOSX grid4 gridx4 tightSCF"
-if (ilevel==23) c200tmp="! EOM-CCSD cc-pVTZ tightSCF"
+if (idiffuse==0) then
+    if (ilevel==1) c200tmp="! B97-3c"
+    if (ilevel==2) c200tmp="! BLYP D3 def2-TZVP def2/J" !For pure functional, RIJ is used by default even without def2/J
+    if (ilevel==3) c200tmp="! B3LYP D3 def2-TZVP(-f) def2/J RIJCOSX"
+    if (ilevel==4) c200tmp="! B3LYP D3 def2-TZVP def2/J RIJCOSX"
+    if (ilevel==5) c200tmp="! wB97M-V def2-TZVP def2/J RIJCOSX grid4 gridx4"
+    if (ilevel==6) c200tmp="! PWPB95 D3 def2-TZVPP def2/J def2-TZVPP/C RIJCOSX grid4 gridx4 tightSCF" !When RIJCOSX or RIJK is used, the MP2 will also use RI by default
+    if (ilevel==7) c200tmp="! PWPB95 D3 def2-QZVPP def2/J def2-QZVPP/C RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==8) c200tmp="! DLPNO-CCSD(T) normalPNO RIJK cc-pVTZ cc-pVTZ/JK cc-pVTZ/C tightSCF"
+    if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO cc-pVTZ cc-pVTZ/C tightSCF"
+    if (ilevel==10) c200tmp="! CCSD(T) cc-pVTZ tightSCF"
+    if (ilevel==11) c200tmp="! CCSD(T)-F12/RI cc-pVDZ-F12 cc-pVDZ-F12-CABS cc-pVTZ/C"
+    if (ilevel==12) c200tmp="! ExtrapolateEP2(3/4,cc,MP2) tightSCF"
+    if (ilevel==13) c200tmp="! CCSD(T) Extrapolate(3/4,cc) tightSCF"
+    if (ilevel==20) c200tmp="! wB97X-D3 def2-SV(P) def2/J RIJCOSX"
+    if (ilevel==21) c200tmp="! PBE0 def2-SV(P) def2/J def2-SVP/C RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==22) c200tmp="! PBE0 def2-SV(P) def2/J RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==23) c200tmp="! wB2GP-PLYP def2-TZVP def2/J def2-TZVP/C RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==24) c200tmp="! EOM-CCSD cc-pVTZ tightSCF"
+else
+    if (ilevel==1) c200tmp="! B97-3c"
+    if (ilevel==2) c200tmp="! BLYP D3 ma-def2-TZVP autoaux"
+    if (ilevel==3) c200tmp="! B3LYP D3 ma-def2-TZVP(-f) autoaux RIJCOSX"
+    if (ilevel==4) c200tmp="! B3LYP D3 ma-def2-TZVP autoaux RIJCOSX"
+    if (ilevel==5) c200tmp="! wB97M-V ma-def2-TZVP autoaux RIJCOSX grid4 gridx4"
+    if (ilevel==6) c200tmp="! PWPB95 D3 ma-def2-TZVPP autoaux RIJCOSX grid4 gridx4 tightSCF" !When RIJCOSX or RIJK is used, the MP2 will also use RI by default
+    if (ilevel==7) c200tmp="! PWPB95 D3 ma-def2-QZVPP autoaux RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==8) c200tmp="! DLPNO-CCSD(T) normalPNO RIJK aug-cc-pVTZ aug-cc-pVTZ/JK aug-cc-pVTZ/C tightSCF"
+    if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO aug-cc-pVTZ aug-cc-pVTZ/C tightSCF"
+    if (ilevel==10) c200tmp="! CCSD(T) aug-cc-pVTZ tightSCF"
+    if (ilevel==11) c200tmp="! CCSD(T)-F12/RI cc-pVDZ-F12 cc-pVDZ-F12-CABS cc-pVTZ/C"
+    if (ilevel==12) c200tmp="! ExtrapolateEP2(3/4,aug-cc,MP2) tightSCF"
+    if (ilevel==13) c200tmp="! CCSD(T) Extrapolate(3/4,aug-cc) tightSCF"
+    if (ilevel==20) c200tmp="! wB97X-D3 ma-def2-SV(P) autoaux RIJCOSX"
+    if (ilevel==21) c200tmp="! PBE0 ma-def2-SV(P) autoaux RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==22) c200tmp="! PBE0 ma-def2-SV(P) autoaux RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==23) c200tmp="! wB2GP-PLYP ma-def2-TZVP autoaux RIJCOSX grid4 gridx4 tightSCF"
+    if (ilevel==24) c200tmp="! EOM-CCSD aug-cc-pVTZ tightSCF"
+    
+    if (ilevel==1.or.ilevel==11) then
+        write(*,*) "Warning: Diffuse functions cannot be added to this level!"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+        return
+    end if
+end if
 
-if (itask==1) then
+if (itask==1) then !SP
     keyword=trim(c200tmp)//" noautostart miniprint nopop"
 else if (itask==2) then !opt task uses tightSCF by default
     keyword=trim(c200tmp)//" opt noautostart miniprint nopop"
-else if (itask==3) then
+    if (ilevel==22.and.idiffuse==0) keyword=trim(keyword)//" def2-SVP/C" !RI-TDDFT opt must use /C
+else if (itask==3) then !freq
     if (index(c200tmp,"tightSCF")==0) then
         keyword=trim(c200tmp)//" freq tightSCF noautostart miniprint nopop"
     else
         keyword=trim(c200tmp)//" freq noautostart miniprint nopop"
     end if
-else if (itask==4) then
+else if (itask==4) then !opt freq
     if (index(c200tmp,"tightSCF")==0) then
         keyword=trim(c200tmp)//" opt freq tightSCF noautostart miniprint nopop"
     else
         keyword=trim(c200tmp)//" opt freq noautostart miniprint nopop"
     end if
+    if (ilevel==22.and.idiffuse==0) keyword=trim(keyword)//" def2-SVP/C" !RI-TDDFT opt must use /C
+else if (itask==5) then !optTS
+    if (index(c200tmp,"tightSCF")==0) then
+        keyword=trim(c200tmp)//" optTS freq tightSCF noautostart miniprint nopop"
+    else
+        keyword=trim(c200tmp)//" optTS freq noautostart miniprint nopop"
+    end if
+    if (ilevel==22.and.idiffuse==0) keyword=trim(keyword)//" def2-SVP/C" !RI-TDDFT opt must use /C
 end if
 
 open(ifileid,file=outname,status="replace")
@@ -4285,21 +4649,37 @@ write(ifileid,"(a)") "%maxcore 1000"
 write(ifileid,"('%pal nprocs',i3,' end')") nthreads
 if (isolv==1) then
     write(ifileid,"(a)") "%cpcm"
-    write(ifileid,"(a)") "smd true"
-    write(ifileid,"(a)") 'SMDsolvent "'//trim(solvname)//'"'
+    if (solvname=='c') then
+        write(ifileid,"(a,f8.2)") "epsilon",diecons
+        write(ifileid,"(a,f8.2)") "refrac",refrac
+    else
+        write(ifileid,"(a)") "smd true"
+        write(ifileid,"(a)") 'SMDsolvent "'//trim(solvname)//'"'
+    end if
     write(ifileid,"(a)") "end"
 end if
+if (itask==5) then !Calculate Hessian for optTS
+    write(ifileid,"(a)") "%geom Calc_Hess true end"
+end if
 if (ilevel==20) then
+    write(ifileid,"(a)") "%tddft"
+    write(ifileid,"(a)") "Mode sTDDFT"
+    write(ifileid,"(a)") "Ethresh 7.0"
+    write(ifileid,"(a)") "PThresh 1e-4"
+    write(ifileid,"(a)") "PTLimit 30"
+    write(ifileid,"(a)") "maxcore 6000" !sTDDFT only support serial mode, therefore more memory could be assigned
+    write(ifileid,"(a)") "end"
+else if (ilevel==21) then
     write(ifileid,"(a)") "%tddft"
     write(ifileid,"(a)") "nroots 10"
     write(ifileid,"(a)") "mode riints_disk"
     write(ifileid,"(a)") "end"
-else if (ilevel==21.or.ilevel==22) then
+else if (ilevel==22.or.ilevel==23) then
     write(ifileid,"(a)") "%tddft"
     write(ifileid,"(a)") "nroots 10"
     write(ifileid,"(a)") "TDA false"
     write(ifileid,"(a)") "end"
-else if (ilevel==23) then
+else if (ilevel==24) then
     write(ifileid,"(a)") "%mdci"
     write(ifileid,"(a)") "nroots 3"
     write(ifileid,"(a)") "end"
@@ -4578,7 +4958,7 @@ else
 	write(fileid,"(i5,4f12.6)") 1,1D0,0D0,0D0,0D0
 end if
 where (abs(matrix)<=1D-99) matrix=0D0 !Diminish too small value, otherwise the symbol "E" cannot be shown by 1PE13.5 format e.g. 9.39376-116, 
-write(*,*) "Exporting cube file, please wait..."
+!write(*,*) "Exporting cube file, please wait..."
 do i=1,numx
 	do j=1,numy
 		write(fileid,"(6(1PE13.5))",advance="no") matrix(i,j,1:numz)
@@ -4588,7 +4968,40 @@ end do
 end subroutine
 
 
-!!!------------------------- Output current wavefunction to a .wfn
+!!!------------- Output grid data to .vti file, which can be visualized by ParaView
+subroutine outvti(outvtiname,ifileid)
+use defvar
+implicit real*8 (a-h,o-z)
+character(len=*) outvtiname
+character outcmlname*200,selectyn
+open(ifileid,file=outvtiname,status="replace")
+write(ifileid,"(a)") '<?xml version="1.0"?>'
+write(ifileid,"(a)") ' <VTKFile type="ImageData" version="0.1" byte_order="LittleEndian">'
+write(ifileid,"(a,6i5,a,3f12.6,a,3f12.6,a)") '  <ImageData WholeExtent="',0,nx-1,0,ny-1,0,nz-1,' " Origin="',orgx,orgy,orgz,' " Spacing="',dx,dy,dz,' ">'
+write(ifileid,"(a,6i5,a)") '  <Piece Extent="',0,nx-1,0,ny-1,0,nz-1,' ">'
+write(ifileid,"(a)") '  <PointData Scalars="scalars">'
+write(ifileid,"(a)") '  <DataArray Name="scalars" type="Float64" NumberOfComponents="1" Format="ascii">'
+write(ifileid,"(4E14.6)") (((cubmat(i,j,k),i=1,nx),j=1,ny),k=1,nz)
+write(ifileid,"(a)") '    </DataArray>'
+write(ifileid,"(a)") '    </PointData>'
+write(ifileid,"(a)") '    </Piece>'
+write(ifileid,"(a)") '    </ImageData>'
+write(ifileid,"(a)") ' </VTKFile>'
+close(ifileid)
+write(*,*) "Exporting vti file finished!"
+write(*,*)
+write(*,"(a)") " Do you also want to export .cml file in Bohr, so that you can visualize grid data as well as molecular structure in ParaView? (y/n)"
+read(*,*) selectyn
+if (selectyn=='y') then
+    write(*,*) "Input path of .cml file, e.g. C:\aqours.cml"
+    read(*,"(a)") outcmlname
+    call outcml(outcmlname,ifileid,1)
+end if
+end subroutine
+
+
+
+!!!--------------------- Output current wavefunction to a .wfn
 !If isortatmind==1, then any atom without GTF posited on it will not be output, and the index is filled to assure contiguous
 !Orbitals with zero occupiation will not be outputted
 !If ioutinfo==1, output information
@@ -5356,6 +5769,9 @@ call loclabel(20,'igenMagbas=',ifound)
 if (ifound==1) read(20,*) c80tmp,igenMagbas
 call loclabel(20,'iloadasCart=',ifound)
 if (ifound==1) read(20,*) c80tmp,iloadasCart
+call loclabel(20,'maxloadexc=',ifound)
+if (ifound==1) read(20,*) c80tmp,maxloadexc
+
 !Below are the parameters involved in plotting
 call loclabel(20,'plotwinsize3D=',ifound)
 if (ifound==1) read(20,*) c80tmp,plotwinsize3D
@@ -5389,8 +5805,8 @@ call loclabel(20,'numdigctr=',ifound)
 if (ifound==1) read(20,*) c80tmp,numdigctr
 call loclabel(20,'fillcoloritpxy=',ifound)
 if (ifound==1) read(20,*) c80tmp,fillcoloritpx,fillcoloritpy
-call loclabel(20,'inowhiteblack=',ifound)
-if (ifound==1) read(20,*) c80tmp,inowhiteblack
+call loclabel(20,'itransparent=',ifound)
+if (ifound==1) read(20,*) c80tmp,itransparent
 call loclabel(20,'isurfstyle=',ifound)
 if (ifound==1) read(20,*) c80tmp,isurfstyle
 call loclabel(20,'bondRGB=',ifound)
@@ -5425,6 +5841,8 @@ call loclabel(20,'cubegendenstype=',ifound)
 if (ifound==1) read(20,*) c200tmp,cubegendenstype
 call loclabel(20,'formchkpath=',ifound)
 if (ifound==1) read(20,*) c200tmp,formchkpath
+call loclabel(20,'orca_2mklpath=',ifound)
+if (ifound==1) read(20,*) c200tmp,orca_2mklpath
 call loclabel(20,'isilent=',ifound)
 if (ifound==1) read(20,*) c80tmp,isilent
 call loclabel(20,'outmedinfo=',ifound)

@@ -212,13 +212,13 @@ integer :: shtype2nbas(-5:5)=(/ 11,9,7,5,4,1,3,6,10,15,21 /)
 integer :: ibasmode=0 !0/1 = GTO/STO is used in current wavefunction
 integer :: nmo=0,nprims=0,ncenter=0,ncenter_org=0,nmo_org=0,nprims_org=0 !Number of orbitals, primitive functions, nuclei
 integer :: idxHOMO=0 !For fch and molden, record the index of original HOMO, this will be used to calculate linear response kernel for pi-electrons
-integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13
+integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13, vti=14, gro=15
 integer :: wfntype=0 !0/1/2/3/4 means R/U/ROHF /R/U-Post-HF wavefunction
 real*8 :: totenergy=0,virialratio=2,nelec=0,naelec=0,nbelec=0
 !-------- Variables for nuclei & GTF & Orbitals
 type(atomtype),allocatable :: a(:),a_org(:),a_tmp(:)
 type(primtype),allocatable :: b(:),b_org(:),b_tmp(:)
-integer,allocatable :: connmat(:,:) !Connectivity matrix. Could be loaded from .mol/mol2 file using readmol/readmol2 or readmolconn routine
+integer,allocatable :: connmat(:,:) !Connectivity matrix. Could be loaded from .mol/mol2 file using readmol/readmol2 or readmolconn routine, can also be generated via genconnmat
 real*8,allocatable :: MOocc(:),MOocc_org(:),MOene(:),MOene_org(:) !Occupation number & energy of orbital
 integer,allocatable :: MOtype(:) !The type of orbitals, (alpha&beta)=0/alpha=1/beta=2, not read from .wfn directly
 character*4,allocatable :: MOsym(:) !The symmetry of orbitals, meaningful when .molden/.gms is used since it sometimes records irreducible representation
@@ -273,7 +273,7 @@ integer :: istrtype=0 !Strength type. Avoid selecting the type every time when l
 !For passing Dislin main parent GUI and draw widget identifier
 integer idissetlight1,idissetlight2,idissetlight3,idissetlight4,idissetlight5,idissetlightall0,idissetlightall1,idissetangle,idissetzoom,idissetplaneXVU,idissetplaneYVU
 integer idisgraph,idiszoomin,idiszoomout,idisisosurscl,idisscrval,idisshowbothsign,idisshowisosur,idisshowdatarange,idisshowmol,idisisosursec,iorbseltext,iorbtxt,iorblis
-integer idisisosurquality,idisisosurnumpt,idisorbinfo2,idisorbinfo3
+integer idisorbinfo2,idisorbinfo3
 integer idisshowatmlab,idisshowaxis,idisbondradius,idislabelsize,idisbondcrit,idisatmsize,idisshowpathlab !In draw mol GUI
 integer idisshowattlab,idisdrawinternalbasin,idisattsize !Draw basin GUI
 integer idisshow3n3,idisshow3n1,idisshow3p1,idisshow3p3,idisshowCPlab,idisshowpath,idisshowbassurf
@@ -291,7 +291,7 @@ integer GUI_mode
 !Plotting external parameter, can be set in settings.ini
 character :: graphformat*4="png ",graphformatname(9)=(/"png","gif","tiff","bmp","ps","eps","pdf","wmf","svg"/)
 integer :: graph1Dwidth=1280,graph1Dheight=800,graph2Dwidth=1280,graph2Dheight=1200,graph3Dwidth=1400,graph3Dheight=1400
-integer :: itickreverse=0,iticks=2,symbolsize=8,ilenunit1D=1,ilenunit2D=1,iatmlabtype=1,iatmlabtype3D=3,iplaneextdata=0
+integer :: itickreverse=0,iticks=2,symbolsize=8,ilenunit1D=1,ilenunit2D=1,iatmlabtype=1,iatmlabtype3D=3,iplaneextdata=0,itransparent=0
 integer :: numdigx=2,numdigy=2,numdigz=3,numdiglinex=3,numdigliney=3,numdigctr=3
 real*8 :: planestpx=1.5D0,planestpy=1.5D0,planestpz=0.1D0
 integer :: fillcoloritpx=5,fillcoloritpy=3,pleatmlabsize=50
@@ -308,9 +308,11 @@ integer :: ifixorbsign=0 !if 1, during generating orbital isosurface by drawmolg
 integer :: iatom_on_plane=0,iatom_on_plane_far=0,ibond_on_plane=0,plesel,IGRAD_ARROW=0,ILABEL_ON_CONTOUR,ncontour
 integer :: ictrlabsize=20,ivdwctrlabsize=0,iwidthvdwctr=10,iwidthposctr=1,iwidthnegctr=1,iwidthgradline=1,iclrindbndlab
 integer :: iclrindctrpos=5,iclrindctrneg=5,ivdwclrindctr=3,iclrindgradline=6,vdwctrstyle(2)=(/ 1,0 /),ctrposstyle(2)=(/ 1,0 /),ctrnegstyle(2)=(/ 10,15 /)
-integer :: isavepic=0,icurve_vertlinex=0,iclrindatmlab=1,imarkrefpos=0,ilog10y=0,iclrcurve=1,inowhiteblack=0
+integer :: isavepic=0,icurve_vertlinex=0,iclrindatmlab=1,imarkrefpos=0,ilog10y=0,iclrcurve=1
 integer :: inucespplot=0,idrawmol=1,idrawisosur=0,isosursec=0,idrawtype=1,idrawcontour=1
-integer :: iinvgradvec=0,icolorvecfield=0,vecclrind=30,idrawplanevdwctr=0,iplaneoutall=0,icurvethick=5
+integer :: iinvgradvec=0,icolorvecfield=0,vecclrind=30,idrawplanevdwctr=0,iplaneoutall=0,icurvethick=5,iclrtrans=0
+character :: stream_intmethod*5="RK2",clrtransname(0:17)*50=(/ "Rainbow & white/black for out-of-limit data","Rainbow","Reversed rainbow","Rainbow started from white","Spectrum","Reversed Spectrum","Grey","Reversed Grey","Blue-White-Red",&
+"Red-White-Blue","Blue-Green-Red","Red-Green-Blue","White-Dark red","Black-Orange-Yellow","White-Dark green","Black-Green","White-Dark blue","Black-Blue-Cyan" /)
 real*8 :: surcolorzmin,surcolorzmax !fillctr is the contour value will be draw on fillcolor map
 real*8 :: curve_vertlinex=0D0,curvexyratio=0.618D0 !Gold partition
 real*8 :: gradplotstep=0.002D0,gradplotdis=0.01D0,gradplottest=0.2D0,cutgradvec=0.3D0
@@ -350,12 +352,13 @@ integer :: isys=1 !Windows
 #else
 integer :: isys=2 !Linux/MacOS
 #endif
-integer :: igenDbas=0,igenMagbas=0,igenP=1,iwfntmptype=1,outmedinfo=0,intmolcust=0,isilent=0,idelvirorb=1,ifchprog=1,iloadascart=0
+integer :: igenDbas=0,igenMagbas=0,igenP=1,iwfntmptype=1,outmedinfo=0,intmolcust=0,isilent=0,idelvirorb=1,ifchprog=1,iloadascart=0,maxloadexc=0
 integer :: iuserfunc=0,iDFTxcsel=84,iKEDsel=0,ispheratm=1,ishowchgtrans=0,SpherIVgroup=0,MCvolmethod=2,readEDF=1,isupplyEDF=2,ishowptESP=1,imolsurparmode=1
 integer :: NICSnptlim=8000
 real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0,espprecutoff=0D0
-integer :: nthreads=4,ompstacksize=100000000
-character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="",cubegendenstype*80="SCF"
+integer :: nthreads=4
+integer*8 :: ompstacksize=200000000
+character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="",orca_2mklpath*200="",cubegendenstype*80="SCF"
 !About function calculation, external or internal parameters
 integer :: RDG_addminimal=1,ELF_addminimal=1,num1Dpoints=3000,atomdenscut=1,nprevorbgrid=120000,paircorrtype=3,pairfunctype=1,srcfuncmode=1
 integer :: ELFLOL_type=0,ipolarpara=0,iALIEdecomp=0,iskipnuc=0
@@ -443,7 +446,7 @@ type(triangtype),allocatable :: surtriang(:) !Record center of generated surface
 integer nsurtri !Temporary accummlated index of triangles in generating process
 type(content),allocatable :: survtx(:) !Record x,y,z coordinate of surface vertex, with interpolated function value
 integer,allocatable :: abs2suridx(:,:,:) ! Convert absolute indices of corners to surface vertex indices
-integer,allocatable :: vtxconn(:,:) !(i,j)=k means the two surface vertices with index of i and j are connected, j is storage slot
+integer,allocatable :: vtxconn(:,:) !(i,j)=k means the two surface vertices with index of i and k are connected, j is storage slot
 integer,allocatable :: vtxconnpos(:) !records current slot range of vtxconn
 real*8 surfisoval,tetravol0,tetravol1,tetravol2,tetravol3 !volume of interpolated tetradrons of type 1,2,3
 integer nsurvtx,nsurlocmin,nsurlocmax

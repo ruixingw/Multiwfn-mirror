@@ -89,7 +89,7 @@ if (ifiletype==0) then
 	!in there, the second number in first row if equals to 1, means below data are only energies, if equals to 2,
 	!means both strength and FWHM also present.
 	open(10,file=filename,status="old")
-	call loclabel(10,"Gaussian",igauout)
+	call loclabel(10,"Gaussian, Inc",igauout,maxline=100)
 	rewind(10)
 	if (igauout==1) then
 		write(*,*) "This is Gaussian output file"
@@ -802,7 +802,7 @@ else if (isel==0.or.isel==10) then
 						if (ispin==2) irealmo=imo+nbasis
 						if (MOocc_dos(irealmo)>0.and.MOene_dos(irealmo)>enetmp) then
 							enetmp=MOene_dos(irealmo)
-							iFermi=imo
+							iFermi=irealmo
 						end if
 					end do
 					HOMOlevx=MOene_dos(iFermi)

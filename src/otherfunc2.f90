@@ -12,14 +12,17 @@ do while(.true.)
 	write(*,*) "5 Plot radial distribution function for a real space function"
 	write(*,*) "6 Analyze correspondence between orbitals in two wavefunctions"
 	write(*,*) "7 Parse output of (hyper)polarizability task of Gaussian"
-	write(*,*) "8 Calculate (hyper)polarizability by sum-over-states (SOS) method"
+	write(*,*) "8 Study (hyper)polarizability by sum-over-states (SOS) method"
 	write(*,*) "9 Calculate average bond length and average coordinate number"
 	write(*,*) "10 Output various kinds of integral between orbitals"
 	write(*,*) "11 Calculate center, the first and second moments of a real space function"
 	write(*,*) "12 Calculate energy index (EI) or bond polarity index (BPI)"
+    write(*,*) "13 Evaluate orbital contributions to density difference or other grid data"
 	write(*,*) "14 Domain analysis (Obtaining properties within isosurfaces of a function)"
 	write(*,*) "15 Calculate electron correlation index (PCCP, 18, 24015)"
 	write(*,*) "16 Generate natural orbitals based on the density matrix in .fch/.fchk file"
+    write(*,*) "17 Calculate Coulomb and exchange integrals between two orbitals"
+    write(*,*) "18 Calculate bond length/order alternation (BLA/BOA)"
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -47,12 +50,18 @@ do while(.true.)
 		call funcmoment
 	else if (isel==12) then
 		call calcEIBPI
+    else if (isel==13) then
+        call orbfitEDD
 	else if (isel==14) then
 		call domainana
 	else if (isel==15) then
 		call elecorridx
 	else if (isel==16) then
 		call fch_gennatorb
+    else if (isel==17) then
+        call orb_coulexcint
+    else if (isel==18) then
+        call bondalter
 	end if
 end do
 end subroutine
@@ -773,6 +782,7 @@ use function
 use util
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: convmat(:,:) !(i,j) is the coefficient of j MO of the second wavefunction in i MO of current wavefunction
+real*8,allocatable :: Snormmat(:,:) !(i,j) is the overlap integral between norm of i MO of current wavefunction and norm of j MO of the second wavefunction
 real*8,allocatable :: MOvalgrd(:,:),MOvalgrd2(:,:) !MOvalgrd(j,n),MOvalgrd2(j,n) means the the value of the nth MO of the first/second wavefunction at the jth grid
 real*8,allocatable :: comparr(:),beckeweigrid(:)
 integer,allocatable :: comparridx(:)
@@ -831,8 +841,9 @@ end if
 
 call dealloall
 call readinfile(firstfilename,1)
-allocate(MOvalgrd(radpot*sphpot,nmo),MOvalgrd2(radpot*sphpot,nmo2),convmat(nmo,nmo2))
+allocate(MOvalgrd(radpot*sphpot,nmo),MOvalgrd2(radpot*sphpot,nmo2),convmat(nmo,nmo2),Snormmat(nmo,nmo2))
 convmat=0D0
+Snormmat=0D0
 
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 write(*,*) "Calculating, please wait..."
@@ -866,14 +877,17 @@ do iatm=1,ncenter
 	!Calculate Becke weight at all grids
 	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
 	
-	!$OMP parallel do shared(convmat) private(imo,jmo,tmpval,ipt) num_threads(nthreads) schedule(dynamic)
+	!$OMP parallel do shared(convmat,Snormmat) private(imo,jmo,tmpval,tmpval2,ipt) num_threads(nthreads) schedule(dynamic)
 	do imo=istart1,iend1
 		do jmo=istart2,iend2
 			tmpval=0D0
+			tmpval2=0D0
 			do ipt=1+iradcut*sphpot,radpot*sphpot
 				tmpval=tmpval+beckeweigrid(ipt)*gridatmorg(ipt)%value*MOvalgrd(ipt,imo)*MOvalgrd2(ipt,jmo)
+				tmpval2=tmpval2+beckeweigrid(ipt)*gridatmorg(ipt)%value*abs(MOvalgrd(ipt,imo)*MOvalgrd2(ipt,jmo))
 			end do
 			convmat(imo,jmo)=convmat(imo,jmo)+tmpval
+            Snormmat(imo,jmo)=Snormmat(imo,jmo)+tmpval2
 		end do
 	end do
 	!$OMP end parallel do
@@ -890,7 +904,6 @@ idevmax=1
 if ((wfntype==0.or.wfntype==2).and.(iwfntype2==0.or.iwfntype2==2)) then !Both of the two wavefunctions are R or RO types
 	do imo=istart1,iend1 !Check normalization
 		totcomp=sum(convmat(imo,:)**2)*100D0
-	! 	write(*,"(i6,':',f12.5,' %')") imo,totcomp
 		if (abs(totcomp-100D0)>devmax) then
 			devmax=abs(totcomp-100D0)
 			idevmax=imo
@@ -903,7 +916,7 @@ the orbitals in the second wavefunction are shown at right side. If the dominati
 write(*,*)
 allocate(comparr(nmo2),comparridx(nmo2))
 do imo=istart1,iend1
-	!Sort the composition array from small to large
+	!Sort the composition array from small to large based on magnitude of coefficients
 	comparr(:)=convmat(imo,:)
 	do itmp=1,nmo2
 		comparridx(itmp)=itmp
@@ -934,7 +947,8 @@ end do
 write(*,*)
 do while(.true.)
 	write(*,*) "Input the orbital index to print detail compositions and coefficients, e.g. 5"
-	write(*,*) "input -1 can output all overlap integrals between the chosen orbitals"
+	write(*,*) "Input -1 can output all overlap integrals between the chosen orbitals"
+	write(*,"(a)") " Input -2 can output all overlap integrals of wavefunction norm between the chosen orbitals"
 	write(*,*) "Input 0 can exit"
 	read(*,*) imo
 	if (imo==0) then
@@ -947,8 +961,18 @@ do while(.true.)
 			end do
 		end do
 		close(10)
-		write(*,*) "The overlap integrals have been outputted to convmat.txt in current folder"
-		write(*,"(a,/)") " The first and second columns correspond to the orbital indices in present and in the second wavefunctions"
+		write(*,"(a,/)") " The overlap integrals have been outputted to convmat.txt in current folder, &
+        the first and second columns correspond to the orbital indices in present and in the second wavefunctions, respectively"
+	else if (imo==-2) then
+		open(10,file="Snormmat.txt",status="replace")
+		do i=istart1,iend1
+			do j=istart2,iend2
+				write(10,"(2i7,f12.6)") i,j,Snormmat(i,j)
+			end do
+		end do
+		close(10)
+		write(*,"(a,/)") " The overlap integrals of wavefunction norms have been outputted to Snormmat.txt in current folder, &
+        the first and second columns correspond to the orbital indices in present and in the second wavefunctions, respectively"
 	else if (imo<istart1.or.imo>iend1) then
 		write(*,"(a,i6,a,i6)") "Error: Exceed valid range! The value should within",istart1," and",iend1
 	else
@@ -978,24 +1002,29 @@ subroutine parseGauPolar
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-real*8 dipole(3),poltens(3,3),hypoltens(3,3,3) !hypoltens2(3,3,3,3)
+real*8 dipole(3),alpha(3,3),beta(3,3,3),gamma(3,3,3,3)
 real*8 eigvecmat(3,3),eigval(3),freqval(100000)
-character c200tmp*200,sepchar,c210tmp*210
+character :: c200tmp*200,sepchar,c210tmp*210,selectyn,lb(3)=(/"X","Y","Z"/)
 character*20 :: form,formau="(a,f16.6)",formother="(a,1PE16.6)"
 integer :: irdfreq=0,ides=6,iunit=1
-poltens=0D0
-hypoltens=0D0
-write(*,*) "Note: This function only works for ""polar"" tasks of Gaussian 09 with #P"
+write(*,*) "Note: This function only works for ""polar"" tasks of Gaussian with #P"
+10 continue
+alpha=0D0
+beta=0D0
+gamma=0D0
 do while(.true.)
-	write(*,"(a,/)") " Select the type of your Gaussian task by option 1~6. 2,4,6 only give polarizability (alpha), &
-	the others also give hyperpolarizability (beta). -1 can be chosen only if CPHF=RdFreq or polar=DCSHG is used"
-	if (iunit==1) write(*,*) "-3 Set the unit in the output, current: a.u."
-	if (iunit==2) write(*,*) "-3 Set the unit in the output, current: SI"
-	if (iunit==3) write(*,*) "-3 Set the unit in the output, current: esu"
-	if (ides==6) write(*,*) "-2 Set the output destination, current: Output to screen"
-	if (ides==11) write(*,*) "-2 Set the output destination, current: polar.txt in current folder"
-	if (irdfreq==1) write(*,*) "-1 Toggle if load frequency-dependent result for option 1, current: Yes"
-	if (irdfreq==0) write(*,*) "-1 Toggle if load frequency-dependent result for option 1, current: No"
+    write(*,*)
+    write(*,*) "------------ Parsing (hyper)polarizability calculated by Gaussian ------------"
+	write(*,"(a,/)") " Select actual case of your Gaussian task. Option 2,4,6 print alpha, &
+    option 1,3,5 print both alpha and beta, option 7 prints both alpha and gamma. -1 can be chosen &
+    only if CPHF=RdFreq or polar=DCSHG was used in calculation"
+	if (iunit==1) write(*,*) "-3 Set unit in the output, current: a.u."
+	if (iunit==2) write(*,*) "-3 Set unit in the output, current: SI"
+	if (iunit==3) write(*,*) "-3 Set unit in the output, current: esu"
+	if (ides==6) write(*,*) "-2 Set output destination, current: Output to screen"
+	if (ides==11) write(*,*) "-2 Set output destination, current: polar.txt in current folder"
+	if (irdfreq==1) write(*,*) "-1 Toggle loading frequency-dependent result for options 1 and 7, current: Yes"
+	if (irdfreq==0) write(*,*) "-1 Toggle loading frequency-dependent result for options 1 and 7, current: No"
 	write(*,*) "0 Return"
 	write(*,*) "1 ""Polar"" + analytic 3-order deriv. (HF/DFT/Semi-empirical)"
 	write(*,*) "2 ""Polar"" + analytic 2-order deriv. (MP2...)"
@@ -1003,6 +1032,7 @@ do while(.true.)
 	write(*,*) "4 ""Polar"" + analytic 1-order deriv. (CISD,QCISD,CCSD,MP3,MP4(SDQ)...)"
 	write(*,*) "5 ""Polar=DoubleNumer"" or ""Polar=EnOnly"" + analytic 1-order deriv."
 	write(*,*) "6 ""Polar"" + energy only (CCSD(T),QCISD(T),MP4(SDTQ),MP5...)"
+	write(*,*) "7 ""Polar=gamma"" + analytic 3-order deriv. (HF/DFT/Semi-empirical)"
 	read(*,*) isel
 	if (isel==-1) then
 		if (irdfreq==1) then
@@ -1025,7 +1055,8 @@ do while(.true.)
 		exit
 	end if
 end do
-if (irdfreq==1.and.isel>=2) then
+
+if (irdfreq==1.and.(isel/=1.and.isel/=7)) then
 	write(*,*) "ERROR: Frequency-dependent values are only available for HF/DFT/semi-empirical!"
 	return
 end if
@@ -1037,14 +1068,13 @@ if (iunit==1) then
 	write(ides,*) "Note: All units shown below are in a.u."
 	form=formau
 else if (iunit==2) then
-	write(ides,*) "Note: All units shown below are in SI unit (C^2*m^2/J for alpha, C^3*m^3/J for beta)"
+	write(ides,"(a)") " Note: All units shown below are in SI unit (C^2*m^2/J for alpha, C^3*m^3/J for beta)"
 	form=formother
 else if (iunit==3) then
 	write(ides,*) "Note: All units shown below are in esu unit"
 	form=formother
 end if
 write(ides,*)
-
 
 ! Dipole moment part (miu)
 call loclabel(10,"Dipole moment (field-independent basis, Debye)",ifound)
@@ -1081,21 +1111,21 @@ if (irdfreq==1) then
 			exit
 		end if
 	end do
-	write(*,*) "Load which one? Input the index"
+	write(*,*) "Load which one? Input the index, e.g. 2"
 	do i=1,nfreqval
 		if (freqval(i)>0) write(*,"(i8,'   w=',f12.6,' (',f12.2,'nm )')") i,freqval(i),1240.7011D0/(freqval(i)*au2eV)
-		if (freqval(i)==0) write(*,"(i8,'   w=',f12.6,' (     Static    )')") i,freqval(i)
+		!if (freqval(i)==0) write(*,"(i8,'   w=',f12.6,' (     Static    )')") i,freqval(i)
 	end do
 	read(*,*) ifreq
-	if (freqval(ifreq)>0) write(*,"(' Note: All Alpha and Beta below correspond to w=',f12.6,' (',f12.2,'nm )',/)") freqval(ifreq),1240.7011D0/(freqval(ifreq)*au2eV)
-	if (freqval(ifreq)==0) write(*,"(' Note: All Alpha and Beta below correspond to w=',f12.6,' ( Static )',/)") freqval(ifreq)
+	if (freqval(ifreq)>0) write(*,"(' Note: Printed (hyper)polarizability will correspond to w=',f12.6,' (',f12.2,'nm )',/)") freqval(ifreq),1240.7011D0/(freqval(ifreq)*au2eV)
+	if (freqval(ifreq)==0) write(*,"(' Note: Printed (hyper)polarizability will correspond to w=',f12.6,' ( Static )',/)") freqval(ifreq)
 	rewind(10) !Move to the beginning
 end if
 
 
-!!!! Polarizability part (Alpha)
-if (isel==1.or.isel==4.or.isel==5) then
-	if (isel==1) then
+!!!! Print polarizability part (Alpha)
+if (isel==1.or.isel==4.or.isel==5.or.isel==7) then
+	if (isel==1.or.isel==7) then
 		if (irdfreq==0) then 
 			call loclabel(10,"SCF Polarizability",ifound)
 		else if (irdfreq==1) then
@@ -1109,12 +1139,12 @@ if (isel==1.or.isel==4.or.isel==5) then
 		call loclabel(10,"Isotropic polarizability",ifound)
 	end if
 	call skiplines(10,2)
-	read(10,*) rnouse,poltens(1,1)
-	read(10,*) rnouse,poltens(2,1),poltens(2,2)
-	read(10,*) rnouse,poltens(3,1),poltens(3,2),poltens(3,3)
+	read(10,*) rnouse,alpha(1,1)
+	read(10,*) rnouse,alpha(2,1),alpha(2,2)
+	read(10,*) rnouse,alpha(3,1),alpha(3,2),alpha(3,3)
 else if (isel==2.or.isel==3) then
 	call loclabel(10,"Exact polarizability")
-	read(10,"(23x,6f8.3)") poltens(1,1),poltens(2,1),poltens(2,2),poltens(3,1),poltens(3,2),poltens(3,3)
+	read(10,"(23x,6f8.3)") alpha(1,1),alpha(2,1),alpha(2,2),alpha(3,1),alpha(3,2),alpha(3,3)
 else if (isel==6) then !Find result from archive part
 	sepchar="\"
 	if (isys==1) sepchar="|"
@@ -1134,32 +1164,32 @@ else if (isel==6) then !Find result from archive part
 	end do
 	c210tmp(1:istart+6)=" " !Clean other information so that the data can be read in free format
 	c210tmp(iend:)=" "
-	read(c210tmp,*) poltens(1,1),poltens(2,1),poltens(2,2),poltens(3,1),poltens(3,2),poltens(3,3)
+	read(c210tmp,*) alpha(1,1),alpha(2,1),alpha(2,2),alpha(3,1),alpha(3,2),alpha(3,3)
 end if
-poltens(1,2)=poltens(2,1)
-poltens(1,3)=poltens(3,1)
-poltens(2,3)=poltens(3,2)
+alpha(1,2)=alpha(2,1)
+alpha(1,3)=alpha(3,1)
+alpha(2,3)=alpha(3,2)
 !Convert to other unit
-if (iunit==2) poltens=poltens*1.6488D-41
-if (iunit==3) poltens=poltens*1.4819D-25
+if (iunit==2) alpha=alpha*1.6488D-41
+if (iunit==3) alpha=alpha*1.4819D-25
 if (irdfreq==0) write(ides,*) "Static polarizability:"
 if (irdfreq==1) write(ides,*) "Frequency-dependent polarizability:"
-write(ides,form) " XX=",poltens(1,1)
-write(ides,form) " XY=",poltens(1,2)
-write(ides,form) " YY=",poltens(2,2)
-write(ides,form) " XZ=",poltens(1,3)
-write(ides,form) " YZ=",poltens(2,3)
-write(ides,form) " ZZ=",poltens(3,3)
-alphaiso=(poltens(1,1)+poltens(2,2)+poltens(3,3))/3D0
+write(ides,form) " XX=",alpha(1,1)
+write(ides,form) " XY=",alpha(1,2)
+write(ides,form) " YY=",alpha(2,2)
+write(ides,form) " XZ=",alpha(1,3)
+write(ides,form) " YZ=",alpha(2,3)
+write(ides,form) " ZZ=",alpha(3,3)
+alphaiso=(alpha(1,1)+alpha(2,2)+alpha(3,3))/3D0
 write(ides,form) ' Isotropic average polarizability:',alphaiso
 write(ides,"(' Isotropic average polarizability volume:',f15.6,' Angstrom^3')") alphaiso*0.14818470D0
-term1=(poltens(1,1)-poltens(2,2))**2 + (poltens(1,1)-poltens(3,3))**2 + (poltens(2,2)-poltens(3,3))**2
-term2=6*(poltens(1,2)**2+poltens(1,3)**2+poltens(2,3)**2)
+term1=(alpha(1,1)-alpha(2,2))**2 + (alpha(1,1)-alpha(3,3))**2 + (alpha(2,2)-alpha(3,3))**2
+term2=6*(alpha(1,2)**2+alpha(1,3)**2+alpha(2,3)**2)
 alphaani1=dsqrt((term1+term2)/2D0)
 write(ides,form) ' Polarizability anisotropy (definition 1):',alphaani1
 alphaani2=dsqrt(term1/2D0)
 write(ides,form) ' Polarizability anisotropy (definition 2):',alphaani2
-call diagmat(poltens,eigvecmat,eigval,300,1D-10)
+call diagmat(alpha,eigvecmat,eigval,300,1D-10)
 call sort(eigval)
 if (iunit==1) then
 	write(ides,"(a,3f13.5)") ' Eigenvalues of polarizability tensor:',eigval
@@ -1171,7 +1201,7 @@ write(ides,form) ' Polarizability anisotropy (definition 3):',alphaani3
 write(ides,*)
 
 
-!!!! First hyperpolarizability part (Beta)
+!!!! Print first hyperpolarizability part (Beta)
 if (isel==1.or.isel==3.or.isel==5) then
 	if (irdfreq==0) then
 		if (isel==1) then
@@ -1182,58 +1212,58 @@ if (isel==1.or.isel==3.or.isel==5) then
 			call loclabel(10,"Static Hyperpolarizability",ifound)
 		end if
 		call skiplines(10,3)
-		read(10,*) rnouse,hypoltens(1,1,1) !XXX
+		read(10,*) rnouse,beta(1,1,1) !XXX
 		call skiplines(10,2)
-		read(10,*) rnouse,hypoltens(1,1,2) !XXY
-		read(10,*) rnouse,hypoltens(1,2,2),hypoltens(2,2,2) !XYY,YYY
+		read(10,*) rnouse,beta(1,1,2) !XXY
+		read(10,*) rnouse,beta(1,2,2),beta(2,2,2) !XYY,YYY
 		call skiplines(10,2)
-		read(10,*) rnouse,hypoltens(1,1,3) !XXZ
-		read(10,*) rnouse,hypoltens(1,2,3),hypoltens(2,2,3) !XYZ,YYZ
-		read(10,*) rnouse,hypoltens(1,3,3),hypoltens(2,3,3),hypoltens(3,3,3) !XZZ,YZZ,ZZZ
+		read(10,*) rnouse,beta(1,1,3) !XXZ
+		read(10,*) rnouse,beta(1,2,3),beta(2,2,3) !XYZ,YYZ
+		read(10,*) rnouse,beta(1,3,3),beta(2,3,3),beta(3,3,3) !XZZ,YZZ,ZZZ
 		!XYX=YXX    =XXY
-		hypoltens(1,2,1)=hypoltens(1,1,2)
-		hypoltens(2,1,1)=hypoltens(1,1,2)
+		beta(1,2,1)=beta(1,1,2)
+		beta(2,1,1)=beta(1,1,2)
 		!YXY=YYX    =XYY
-		hypoltens(2,1,2)=hypoltens(1,2,2)
-		hypoltens(2,2,1)=hypoltens(1,2,2)
+		beta(2,1,2)=beta(1,2,2)
+		beta(2,2,1)=beta(1,2,2)
 		!ZXX=XZX    =XXZ
-		hypoltens(3,1,1)=hypoltens(1,1,3)
-		hypoltens(1,3,1)=hypoltens(1,1,3)
+		beta(3,1,1)=beta(1,1,3)
+		beta(1,3,1)=beta(1,1,3)
 		!XZY=YXZ=ZYX=YXZ=YZX   =XYZ
-		hypoltens(1,3,2)=hypoltens(1,2,3)
-		hypoltens(2,1,3)=hypoltens(1,2,3)
-		hypoltens(3,2,1)=hypoltens(1,2,3)
-		hypoltens(2,1,3)=hypoltens(1,2,3)
-		hypoltens(2,3,1)=hypoltens(1,2,3)
+		beta(1,3,2)=beta(1,2,3)
+		beta(2,1,3)=beta(1,2,3)
+		beta(3,2,1)=beta(1,2,3)
+		beta(2,1,3)=beta(1,2,3)
+		beta(2,3,1)=beta(1,2,3)
 		!ZYY=YZY    =YYZ
-		hypoltens(3,2,2)=hypoltens(2,2,3)
-		hypoltens(2,3,2)=hypoltens(2,2,3)
+		beta(3,2,2)=beta(2,2,3)
+		beta(2,3,2)=beta(2,2,3)
 		!ZXZ,ZZX    =XZZ
-		hypoltens(3,1,3)=hypoltens(1,3,3)
-		hypoltens(3,3,1)=hypoltens(1,3,3)
+		beta(3,1,3)=beta(1,3,3)
+		beta(3,3,1)=beta(1,3,3)
 		!ZYZ=ZZY    =YZZ
-		hypoltens(3,2,3)=hypoltens(2,3,3)
-		hypoltens(3,3,2)=hypoltens(2,3,3)
-		write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian 09/16 should be inverted, the outputs shown below have already been corrected"
-		hypoltens=-hypoltens
+		beta(3,2,3)=beta(2,3,3)
+		beta(3,3,2)=beta(2,3,3)
+		write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian should be inverted, the outputs shown below have already been corrected"
+		beta=-beta
 		!Convert to other unit
-		if (iunit==2) hypoltens=hypoltens*3.20636D-53
-		if (iunit==3) hypoltens=hypoltens*8.63922D-33
+		if (iunit==2) beta=beta*3.20636D-53
+		if (iunit==3) beta=beta*8.63922D-33
 		write(ides,*) "Static first hyperpolarizability:"
-		write(ides,form) " XXX=",hypoltens(1,1,1)
-		write(ides,form) " XXY=",hypoltens(1,1,2)
-		write(ides,form) " XYY=",hypoltens(1,2,2)
-		write(ides,form) " YYY=",hypoltens(2,2,2)
-		write(ides,form) " XXZ=",hypoltens(1,1,3)
-		write(ides,form) " XYZ=",hypoltens(1,2,3)
-		write(ides,form) " YYZ=",hypoltens(2,2,3)
-		write(ides,form) " XZZ=",hypoltens(1,3,3)
-		write(ides,form) " YZZ=",hypoltens(2,3,3)
-		write(ides,form) " ZZZ=",hypoltens(3,3,3)
+		write(ides,form) " XXX=",beta(1,1,1)
+		write(ides,form) " XXY=",beta(1,1,2)
+		write(ides,form) " XYY=",beta(1,2,2)
+		write(ides,form) " YYY=",beta(2,2,2)
+		write(ides,form) " XXZ=",beta(1,1,3)
+		write(ides,form) " XYZ=",beta(1,2,3)
+		write(ides,form) " YYZ=",beta(2,2,3)
+		write(ides,form) " XZZ=",beta(1,3,3)
+		write(ides,form) " YZZ=",beta(2,3,3)
+		write(ides,form) " ZZZ=",beta(3,3,3)
 		write(ides,*)
-		betaX=hypoltens(1,1,1)+hypoltens(1,2,2)+hypoltens(1,3,3)
-		betaY=hypoltens(2,2,2)+hypoltens(2,1,1)+hypoltens(2,3,3)
-		betaZ=hypoltens(3,3,3)+hypoltens(3,2,2)+hypoltens(3,1,1)
+		betaX=beta(1,1,1)+beta(1,2,2)+beta(1,3,3)
+		betaY=beta(2,2,2)+beta(2,1,1)+beta(2,3,3)
+		betaZ=beta(3,3,3)+beta(3,2,2)+beta(3,1,1)
 		if (iunit==1) then
 			write(ides,"(' Beta_X=',f15.5,'  Beta_Y=',f15.5,'  Beta_Z=',f15.5)") betaX,betaY,betaZ
 		else
@@ -1245,15 +1275,6 @@ if (isel==1.or.isel==3.or.isel==5) then
 		write(ides,form) " Beta ||     :",betaprj/5D0*3D0
 		write(ides,form) " Beta ||(z)  :",betaZ/5D0*3D0
 		write(ides,form) " Beta _|_(z) :",betaZ/5D0
-		
-		!---For easier inspection in special use
-! 		write(*,*)
-! 		write(*,*) "============="
-! 		write(ides,form) ' Isotropic average polarizability:',alphaiso
-! 		write(ides,form) ' Polarizability anisotropy (definition 2):',alphaani2
-! 		write(ides,form) " Magnitude of first hyperpolarizability:",dsqrt(betaX**2+betaY**2+betaZ**2)
-! 		write(ides,form) " Beta ||     :",betaprj/5D0*3D0
-! 		read(*,*)
 		
 	else if (irdfreq==1) then !Frequency-dependent hyperpolarizability, only available for HF/DFT/semi-empirical
 		write(*,*) "Loading which type of hyperpolarizability?"
@@ -1269,117 +1290,123 @@ if (isel==1.or.isel==3.or.isel==5) then
 				read(10,*)
 			end do
 			read(10,*)
-			read(10,*) c200tmp,hypoltens(1,1,1)
-			read(10,*) c200tmp,hypoltens(2,1,1)
-			read(10,*) c200tmp,hypoltens(2,2,1)
-			read(10,*) c200tmp,hypoltens(3,1,1)
-			read(10,*) c200tmp,hypoltens(3,2,1)
-			read(10,*) c200tmp,hypoltens(3,3,1)
-			hypoltens(1,2,1)=hypoltens(2,1,1)
-			hypoltens(1,3,1)=hypoltens(3,1,1)
-			hypoltens(2,3,1)=hypoltens(3,2,1)
-			read(10,*) c200tmp,hypoltens(1,1,2)
-			read(10,*) c200tmp,hypoltens(2,1,2)
-			read(10,*) c200tmp,hypoltens(2,2,2)
-			read(10,*) c200tmp,hypoltens(3,1,2)
-			read(10,*) c200tmp,hypoltens(3,2,2)
-			read(10,*) c200tmp,hypoltens(3,3,2)
-			hypoltens(1,2,2)=hypoltens(2,1,2)
-			hypoltens(1,3,2)=hypoltens(3,1,2)
-			hypoltens(2,3,2)=hypoltens(3,2,2)
-			read(10,*) c200tmp,hypoltens(1,1,3)
-			read(10,*) c200tmp,hypoltens(2,1,3)
-			read(10,*) c200tmp,hypoltens(2,2,3)
-			read(10,*) c200tmp,hypoltens(3,1,3)
-			read(10,*) c200tmp,hypoltens(3,2,3)
-			read(10,*) c200tmp,hypoltens(3,3,3)
-			hypoltens(1,2,3)=hypoltens(2,1,3)
-			hypoltens(1,3,3)=hypoltens(3,1,3)
-			hypoltens(2,3,3)=hypoltens(3,2,3)
-			write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian 09 should be multiplied by -1, the outputs below have already been corrected"
-			hypoltens=-hypoltens
+			read(10,*) c200tmp,beta(1,1,1)
+			read(10,*) c200tmp,beta(2,1,1)
+			read(10,*) c200tmp,beta(2,2,1)
+			read(10,*) c200tmp,beta(3,1,1)
+			read(10,*) c200tmp,beta(3,2,1)
+			read(10,*) c200tmp,beta(3,3,1)
+			beta(1,2,1)=beta(2,1,1)
+			beta(1,3,1)=beta(3,1,1)
+			beta(2,3,1)=beta(3,2,1)
+			read(10,*) c200tmp,beta(1,1,2)
+			read(10,*) c200tmp,beta(2,1,2)
+			read(10,*) c200tmp,beta(2,2,2)
+			read(10,*) c200tmp,beta(3,1,2)
+			read(10,*) c200tmp,beta(3,2,2)
+			read(10,*) c200tmp,beta(3,3,2)
+			beta(1,2,2)=beta(2,1,2)
+			beta(1,3,2)=beta(3,1,2)
+			beta(2,3,2)=beta(3,2,2)
+			read(10,*) c200tmp,beta(1,1,3)
+			read(10,*) c200tmp,beta(2,1,3)
+			read(10,*) c200tmp,beta(2,2,3)
+			read(10,*) c200tmp,beta(3,1,3)
+			read(10,*) c200tmp,beta(3,2,3)
+			read(10,*) c200tmp,beta(3,3,3)
+			beta(1,2,3)=beta(2,1,3)
+			beta(1,3,3)=beta(3,1,3)
+			beta(2,3,3)=beta(3,2,3)
+			write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian should be multiplied by -1, the outputs below have already been corrected"
+			beta=-beta
 			!Convert to other unit
-			if (iunit==2) hypoltens=hypoltens*3.20636D-53
-			if (iunit==3) hypoltens=hypoltens*8.63922D-33
+			if (iunit==2) beta=beta*3.20636D-53
+			if (iunit==3) beta=beta*8.63922D-33
 			write(ides,*) "Frequency-dependent first hyperpolarizability Beta(-w;w,0)"
-			write(ides,form) " XXX=     ",hypoltens(1,1,1)
-			write(ides,form) " XYX= YXX=",hypoltens(1,2,1)
-			write(ides,form) " YYX=     ",hypoltens(2,2,1)
-			write(ides,form) " XZX= ZXX=",hypoltens(1,3,1)
-			write(ides,form) " YZX= ZYX=",hypoltens(2,3,1)
-			write(ides,form) " ZZX=     ",hypoltens(3,3,1)
-			write(ides,form) " XXY=     ",hypoltens(1,1,2)
-			write(ides,form) " XYY= YXY=",hypoltens(1,2,2)
-			write(ides,form) " YYY=     ",hypoltens(2,2,2)
-			write(ides,form) " XZY= ZXY=",hypoltens(1,3,2)
-			write(ides,form) " YZY= ZYY=",hypoltens(2,3,2)
-			write(ides,form) " ZZY=     ",hypoltens(3,3,2)
-			write(ides,form) " XXZ=     ",hypoltens(1,1,3)
-			write(ides,form) " XYZ= YXZ=",hypoltens(1,2,3)
-			write(ides,form) " YYZ=     ",hypoltens(2,2,3)
-			write(ides,form) " XZZ= ZXZ=",hypoltens(1,3,3)
-			write(ides,form) " YZZ= ZYZ=",hypoltens(2,3,3)
-			write(ides,form) " ZZZ=     ",hypoltens(3,3,3)
+			write(ides,form) " XXX=     ",beta(1,1,1)
+			write(ides,form) " XYX= YXX=",beta(1,2,1)
+			write(ides,form) " YYX=     ",beta(2,2,1)
+			write(ides,form) " XZX= ZXX=",beta(1,3,1)
+			write(ides,form) " YZX= ZYX=",beta(2,3,1)
+			write(ides,form) " ZZX=     ",beta(3,3,1)
+			write(ides,form) " XXY=     ",beta(1,1,2)
+			write(ides,form) " XYY= YXY=",beta(1,2,2)
+			write(ides,form) " YYY=     ",beta(2,2,2)
+			write(ides,form) " XZY= ZXY=",beta(1,3,2)
+			write(ides,form) " YZY= ZYY=",beta(2,3,2)
+			write(ides,form) " ZZY=     ",beta(3,3,2)
+			write(ides,form) " XXZ=     ",beta(1,1,3)
+			write(ides,form) " XYZ= YXZ=",beta(1,2,3)
+			write(ides,form) " YYZ=     ",beta(2,2,3)
+			write(ides,form) " XZZ= ZXZ=",beta(1,3,3)
+			write(ides,form) " YZZ= ZYZ=",beta(2,3,3)
+			write(ides,form) " ZZZ=     ",beta(3,3,3)
 			write(ides,*)
 			
 		else if (ibeta==2) then !used DCSHG, parsing Beta(-2w;w,w)
 			call loclabel(10,"-- Beta(w,w,-2w) frequency",ifound)
+            if (ifound==0) then
+                write(*,"(a)") " Error: Unable to locate Beta(-2w;w,w) information. Please make sure that you have used polar=DCSHG keyword!"
+                write(*,*) "Press ENTER button to exit"
+                read(*,*)
+                return
+            end if
 			do i=1,ifreq
 				call loclabel(10,"-- Beta(w,w,-2w) frequency",ifound,0)
 				read(10,*)
 			end do
 			read(10,*)
-			read(10,*) c200tmp,hypoltens(1,1,1)
-			read(10,*) c200tmp,hypoltens(1,1,2)
-			hypoltens(1,2,1)=hypoltens(1,1,2)
-			read(10,*) c200tmp,hypoltens(1,2,2)
-			read(10,*) c200tmp,hypoltens(1,1,3)
-			hypoltens(1,3,1)=hypoltens(1,1,3)
-			read(10,*) c200tmp,hypoltens(1,2,3)
-			hypoltens(1,3,2)=hypoltens(1,2,3)
-			read(10,*) c200tmp,hypoltens(1,3,3)
-			read(10,*) c200tmp,hypoltens(2,1,1)
-			read(10,*) c200tmp,hypoltens(2,2,1)
-			hypoltens(2,1,2)=hypoltens(2,2,1)
-			read(10,*) c200tmp,hypoltens(2,2,2)
-			read(10,*) c200tmp,hypoltens(2,1,3)
-			hypoltens(2,3,1)=hypoltens(2,1,3)
-			read(10,*) c200tmp,hypoltens(2,2,3)
-			hypoltens(2,3,2)=hypoltens(2,2,3)
-			read(10,*) c200tmp,hypoltens(2,3,3)
-			read(10,*) c200tmp,hypoltens(3,1,1)
-			read(10,*) c200tmp,hypoltens(3,1,2)
-			hypoltens(3,2,1)=hypoltens(3,1,2)
-			read(10,*) c200tmp,hypoltens(3,2,2)
-			read(10,*) c200tmp,hypoltens(3,1,3)
-			hypoltens(3,3,1)=hypoltens(3,1,3)
-			read(10,*) c200tmp,hypoltens(3,2,3)
-			hypoltens(3,3,2)=hypoltens(3,2,3)
-			read(10,*) c200tmp,hypoltens(3,3,3)
-			write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian 09 should be multiplied by -1, the outputs below have already been corrected"
-			hypoltens=-hypoltens
+			read(10,*) c200tmp,beta(1,1,1)
+			read(10,*) c200tmp,beta(1,1,2)
+			beta(1,2,1)=beta(1,1,2)
+			read(10,*) c200tmp,beta(1,2,2)
+			read(10,*) c200tmp,beta(1,1,3)
+			beta(1,3,1)=beta(1,1,3)
+			read(10,*) c200tmp,beta(1,2,3)
+			beta(1,3,2)=beta(1,2,3)
+			read(10,*) c200tmp,beta(1,3,3)
+			read(10,*) c200tmp,beta(2,1,1)
+			read(10,*) c200tmp,beta(2,2,1)
+			beta(2,1,2)=beta(2,2,1)
+			read(10,*) c200tmp,beta(2,2,2)
+			read(10,*) c200tmp,beta(2,1,3)
+			beta(2,3,1)=beta(2,1,3)
+			read(10,*) c200tmp,beta(2,2,3)
+			beta(2,3,2)=beta(2,2,3)
+			read(10,*) c200tmp,beta(2,3,3)
+			read(10,*) c200tmp,beta(3,1,1)
+			read(10,*) c200tmp,beta(3,1,2)
+			beta(3,2,1)=beta(3,1,2)
+			read(10,*) c200tmp,beta(3,2,2)
+			read(10,*) c200tmp,beta(3,1,3)
+			beta(3,3,1)=beta(3,1,3)
+			read(10,*) c200tmp,beta(3,2,3)
+			beta(3,3,2)=beta(3,2,3)
+			read(10,*) c200tmp,beta(3,3,3)
+			write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian should be multiplied by -1, the outputs below have already been corrected"
+			beta=-beta
 			!Convert to other unit
-			if (iunit==2) hypoltens=hypoltens*3.20636D-53
-			if (iunit==3) hypoltens=hypoltens*8.63922D-33
+			if (iunit==2) beta=beta*3.20636D-53
+			if (iunit==3) beta=beta*8.63922D-33
 			if (ibeta==2) write(ides,*) "Frequency-dependent first hyperpolarizability Beta(-2w;w,w)"
-			write(ides,form) " XXX=     ",hypoltens(1,1,1)
-			write(ides,form) " YXX=     ",hypoltens(2,1,1)
-			write(ides,form) " ZXX=     ",hypoltens(3,1,1)
-			write(ides,form) " XYX= XXY=",hypoltens(1,2,1)
-			write(ides,form) " YYX= YXY=",hypoltens(2,2,1)
-			write(ides,form) " ZYX= ZXY=",hypoltens(3,2,1)
-			write(ides,form) " XYY=     ",hypoltens(1,2,2)
-			write(ides,form) " YYY=     ",hypoltens(2,2,2)
-			write(ides,form) " ZYY=     ",hypoltens(3,2,2)
-			write(ides,form) " XZX= XXZ=",hypoltens(1,3,1)
-			write(ides,form) " YZX= YXZ=",hypoltens(2,3,1)
-			write(ides,form) " ZZX= ZXZ=",hypoltens(3,3,1)
-			write(ides,form) " XZY= XYZ=",hypoltens(1,3,2)
-			write(ides,form) " YZY= YYZ=",hypoltens(2,3,2)
-			write(ides,form) " ZZY= ZYZ=",hypoltens(3,3,2)
-			write(ides,form) " XZZ=     ",hypoltens(1,3,3)
-			write(ides,form) " YZZ=     ",hypoltens(2,3,3)
-			write(ides,form) " ZZZ=     ",hypoltens(3,3,3)
+			write(ides,form) " XXX=     ",beta(1,1,1)
+			write(ides,form) " YXX=     ",beta(2,1,1)
+			write(ides,form) " ZXX=     ",beta(3,1,1)
+			write(ides,form) " XYX= XXY=",beta(1,2,1)
+			write(ides,form) " YYX= YXY=",beta(2,2,1)
+			write(ides,form) " ZYX= ZXY=",beta(3,2,1)
+			write(ides,form) " XYY=     ",beta(1,2,2)
+			write(ides,form) " YYY=     ",beta(2,2,2)
+			write(ides,form) " ZYY=     ",beta(3,2,2)
+			write(ides,form) " XZX= XXZ=",beta(1,3,1)
+			write(ides,form) " YZX= YXZ=",beta(2,3,1)
+			write(ides,form) " ZZX= ZXZ=",beta(3,3,1)
+			write(ides,form) " XZY= XYZ=",beta(1,3,2)
+			write(ides,form) " YZY= YYZ=",beta(2,3,2)
+			write(ides,form) " ZZY= ZYZ=",beta(3,3,2)
+			write(ides,form) " XZZ=     ",beta(1,3,3)
+			write(ides,form) " YZZ=     ",beta(2,3,3)
+			write(ides,form) " ZZZ=     ",beta(3,3,3)
 			write(ides,*)
 		end if
 		
@@ -1387,9 +1414,9 @@ if (isel==1.or.isel==3.or.isel==5) then
 		betaY=0
 		betaZ=0
 		do j=1,3
-			betaX=betaX+(hypoltens(1,j,j)+hypoltens(j,j,1)+hypoltens(j,1,j))/3
-			betaY=betaY+(hypoltens(2,j,j)+hypoltens(j,j,2)+hypoltens(j,2,j))/3
-			betaZ=betaZ+(hypoltens(3,j,j)+hypoltens(j,j,3)+hypoltens(j,3,j))/3
+			betaX=betaX+(beta(1,j,j)+beta(j,j,1)+beta(j,1,j))/3
+			betaY=betaY+(beta(2,j,j)+beta(j,j,2)+beta(j,2,j))/3
+			betaZ=betaZ+(beta(3,j,j)+beta(j,j,3)+beta(j,3,j))/3
 		end do
 		if (iunit==1) then
 			write(ides,"(' Beta_X=',f15.5,'  Beta_Y=',f15.5,'  Beta_Z=',f15.5)") betaX,betaY,betaZ
@@ -1403,20 +1430,492 @@ if (isel==1.or.isel==3.or.isel==5) then
 		write(ides,form) " Beta ||(z)  :",betaZ*3D0/5D0
 		beta_per=0
 		do j=1,3
-			beta_per=beta_per+(2*hypoltens(3,j,j)+2*hypoltens(j,j,3)-3*hypoltens(j,3,j))/5
+			beta_per=beta_per+(2*beta(3,j,j)+2*beta(j,j,3)-3*beta(j,3,j))/5
 		end do
 		write(ides,form) " Beta _|_(z) :",beta_per
 		write(*,*)
+        
+        if (ibeta==2) then !Parsing Beta(-2w;w,w)
+            !Calculate <beta_ZZZ^2> and <beta_XZZ^2>, without Kleinman condition approximation
+            !Below, the Eqs. 4 and 5 in Phys. Chem. Chem. Phys., 10, 6223¨C6232 (2008) are employed
+            !Note that <beta_xzz^2> is equivalent to the <beta_zxx^2> occured in many literatures
+            u1=0;u2=0;u3=0;u4=0;u5=0;u6=0;u7=0;u8=0;u9=0;u10=0;u11=0
+            t1=0;t2=0;t3=0;t4=0;t5=0;t6=0;t7=0;t8=0;t9=0;t10=0;t11=0
+            do i=1,3
+                t1=t1+beta(i,i,i)**2
+                u1=u1+beta(i,i,i)**2
+            end do
+            do i=1,3
+                do j=1,3
+                    if (j/=i) then
+                        t2=t2+beta(i,i,j)**2
+                        t3=t3+beta(i,i,i)*beta(i,j,j)
+                        t4=t4+beta(j,i,i)*beta(i,i,j)
+                        t5=t5+beta(i,i,i)*beta(j,j,i)
+                        t6=t6+beta(j,i,i)**2
+                        u2=u2+beta(i,i,i)*beta(i,j,j)
+                        u3=u3+beta(i,i,i)*beta(j,j,i)
+                        u4=u4+beta(i,i,j)**2
+                        u5=u5+beta(i,j,j)**2
+                        u6=u6+beta(i,i,j)*beta(j,i,i)
+                    end if
+                    do k=1,3
+                        if (k/=j.and.j/=i.and.k/=i) then
+                            t7=t7+beta(i,i,j)*beta(j,k,k)
+                            t8=t8+beta(j,i,i)*beta(j,k,k)
+                            t9=t9+beta(i,i,j)*beta(k,k,j)
+                            t10=t10+beta(i,j,k)**2
+                            t11=t11+beta(i,j,k)*beta(j,i,k)
+                            u7=u7+beta(i,j,j)*beta(i,k,k)
+                            u8=u8+beta(i,i,k)*beta(j,j,k)
+                            u9=u9+beta(i,i,j)*beta(j,k,k)
+                            u10=u10+beta(i,j,k)**2
+                            u11=u11+beta(i,j,k)*beta(j,i,k)
+                        end if
+                    end do
+                end do
+            end do
+            betazzz2_avg = t1*(1D0/7) + t2*(4D0/35) + t3*(2D0/35) + t4*(4D0/35) + t5*(4D0/35) + &
+            t6*(1D0/35) + t7*(4D0/105) + t8*(1D0/105) + t9*(4D0/105) + t10*(2D0/105) + t11*(4D0/105)
+            betaxzz2_avg = u1*(1D0/35) + u2*(4D0/105) - u3*(2D0/35) + u4*(8D0/105) + u5*(3D0/35) &
+            - u6*(2D0/35) + u7*(1D0/35) - u8*(2D0/105) - u9*(2D0/105) + u10*(2D0/35) - u11*(2D0/105)
+        
+            write(ides,*) "Note: Kleinman's symmetry condition is not employed for below quantities:"
+            write(ides,"(' <beta_ZZZ^2>:',1PE16.8)") betazzz2_avg
+            write(ides,"(' <beta_XZZ^2>:',1PE16.8)") betaxzz2_avg
+            write(ides,"(' Hyper-Rayleigh scattering (beta_HRS):',f14.3)") dsqrt(betazzz2_avg+betaxzz2_avg)
+            write(ides,"(' Depolarization ratio (DR):',f8.3)") betazzz2_avg/betaxzz2_avg
+        
+            betaJ1norm=dsqrt(6*betazzz2_avg-9*betaxzz2_avg)
+            betaJ3norm=dsqrt((-7*betazzz2_avg+63*betaxzz2_avg)/2)
+            write(ides,"(' |<beta J=1>|:',f14.3)") betaJ1norm
+            write(ides,"(' |<beta J=3>|:',f14.3)") betaJ3norm
+            rho=betaJ3norm/betaJ1norm
+            write(ides,"(' Nonlinear anisotropy parameter (rho):',f8.3)") rho
+            write(ides,"(' Dipolar contribution to beta, phi_beta(J=1):  ',f8.3)") 1D0/(1D0+rho)
+            write(ides,"(' Octupolar contribution to beta, phi_beta(J=3):',f8.3)") rho/(1D0+rho)
+            write(ides,"(' < (beta_ZXZ+beta_ZZX)^2 - 2*betaZZZ*betaZXX >:',1PE16.8)") 7*betaxzz2_avg-betazzz2_avg
+            !When DR<1.5: Please check whether the half of the incident light freqency (lambda/2)
+            !is near to the absorption band, which is the direct reason of the resonance for SFG. (text from NLO calculator)
+        
+            write(*,"(/,a)") " Do you want to calculate variation of scattering intensities with respect to polarization angle of incident light? (y/n)"
+            read(*,*) selectyn
+            if (selectyn=='y'.or.selectyn=='Y') then
+                write(*,*) "Input initial angle in degree, e.g. -180"
+                read(*,*) omegaval
+                open(12,file="HRS_angle.txt",status="replace")
+                do iang=1,360
+                    rad=omegaval/180*pi
+                    rinten=betaxzz2_avg*cos(rad)**4+betazzz2_avg*sin(rad)**4+sin(rad)**2*cos(rad)**2*(7*betaxzz2_avg-betazzz2_avg)
+                    write(12,"(f6.1,f20.6)") omegaval,rinten
+                    omegaval=omegaval+1
+                end do
+                close(12)
+                write(*,"(a)") " Scattering intensities corresponding to different polarization angles (degree) have been exported to HRS_angle.txt in current folder"
+            end if
+        end if
 	end if
+    
 end if
+
+
+!!!! Print second polarizability part (gamma)
+if (isel==7) then
+    if (irdfreq==0) then
+        call loclabel(10,"Gamma(0;0,0,0)",ifound)
+        if (ifound==0) then
+            write(*,*) "Error: Unable to locate ""Gamma(0;0,0,0)""!"
+            return
+        end if
+        read(10,*);read(10,*);read(10,*);read(10,*)
+        read(10,*) c200tmp,gamma(1,1,1,1)
+        read(10,*) c200tmp,gamma(1,1,2,1)
+        read(10,*) c200tmp,gamma(1,1,2,2)
+        read(10,*) c200tmp,gamma(2,1,2,2)
+        read(10,*) c200tmp,gamma(2,2,2,2)
+        read(10,*) c200tmp,gamma(1,1,3,1)
+        read(10,*) c200tmp,gamma(1,1,3,2)
+        read(10,*) c200tmp,gamma(2,1,3,2)
+        read(10,*) c200tmp,gamma(2,2,3,2)
+        read(10,*) c200tmp,gamma(1,1,3,3)
+        read(10,*) c200tmp,gamma(2,1,3,3)
+        read(10,*) c200tmp,gamma(2,2,3,3)
+        read(10,*) c200tmp,gamma(3,1,3,3)
+        read(10,*) c200tmp,gamma(3,2,3,3)
+        read(10,*) c200tmp,gamma(3,3,3,3)
+        do ia=1,3
+            do ib=1,3
+                do ic=1,3
+                    do id=1,3
+                        nxt=0;nyt=0;nzt=0
+                        if (ia==1) nxt=nxt+1
+                        if (ib==1) nxt=nxt+1
+                        if (ic==1) nxt=nxt+1
+                        if (id==1) nxt=nxt+1
+                        if (ia==2) nyt=nyt+1
+                        if (ib==2) nyt=nyt+1
+                        if (ic==2) nyt=nyt+1
+                        if (id==2) nyt=nyt+1
+                        if (ia==3) nzt=nzt+1
+                        if (ib==3) nzt=nzt+1
+                        if (ic==3) nzt=nzt+1
+                        if (id==3) nzt=nzt+1
+                        if (nxt==3.and.nyt==1.and.nzt==0) gamma(ia,ib,ic,id)=gamma(1,1,2,1)
+                        if (nxt==2.and.nyt==2.and.nzt==0) gamma(ia,ib,ic,id)=gamma(1,1,2,2)
+                        if (nxt==1.and.nyt==3.and.nzt==0) gamma(ia,ib,ic,id)=gamma(2,1,2,2)
+                        if (nxt==3.and.nyt==0.and.nzt==1) gamma(ia,ib,ic,id)=gamma(1,1,3,1)
+                        if (nxt==2.and.nyt==1.and.nzt==1) gamma(ia,ib,ic,id)=gamma(1,1,3,2)
+                        if (nxt==1.and.nyt==2.and.nzt==1) gamma(ia,ib,ic,id)=gamma(2,1,3,2)
+                        if (nxt==0.and.nyt==3.and.nzt==1) gamma(ia,ib,ic,id)=gamma(2,2,3,2)
+                        if (nxt==2.and.nyt==0.and.nzt==2) gamma(ia,ib,ic,id)=gamma(1,1,3,3)
+                        if (nxt==1.and.nyt==1.and.nzt==2) gamma(ia,ib,ic,id)=gamma(2,1,3,3)
+                        if (nxt==0.and.nyt==2.and.nzt==2) gamma(ia,ib,ic,id)=gamma(2,2,3,3)
+                        if (nxt==1.and.nyt==0.and.nzt==3) gamma(ia,ib,ic,id)=gamma(3,1,3,3)
+                        if (nxt==0.and.nyt==1.and.nzt==3) gamma(ia,ib,ic,id)=gamma(3,2,3,3)
+                    end do
+                end do
+            end do
+        end do
+		!Convert to other unit
+		if (iunit==2) gamma=gamma*6.23538D-65
+		if (iunit==3) gamma=gamma*5.03670D-40
+        write(ides,form) " XXXX=",gamma(1,1,1,1)
+        write(ides,form) " YYYY=",gamma(2,2,2,2)
+        write(ides,form) " ZZZZ=",gamma(3,3,3,3)
+        write(ides,form) " XXXY=XXYX=XYXX=YXXX=",gamma(1,1,2,1)
+        write(ides,form) " XXYY=XYXY=XYYX=YXXY=YXYX=YYXX=",gamma(1,1,2,2)
+        write(ides,form) " XYYY=YXYY=YYXY=YYYX=",gamma(2,1,2,2)
+        write(ides,form) " XXXZ=XXZX=XZXX=ZXXX=",gamma(1,1,3,1)
+        write(ides,form) " XXYZ=XXZY=XYXZ=XYZX=XZXY=XZYX=YXXZ=YXZX=YZXX=ZXXY=ZXYX=ZYXX=",gamma(1,1,3,2)
+        write(ides,form) " XYYZ=XYZY=XZYY=YXYZ=YXZY=YYXZ=YYZX=YZXY=YZYX=ZXYY=ZYXY=ZYYX=",gamma(2,1,3,2)
+        write(ides,form) " YYYZ=YYZY=YZYY=ZYYY=",gamma(2,2,3,2)
+        write(ides,form) " XXZZ=XZXZ=XZZX=ZXXZ=ZXZX=ZZXX=",gamma(1,1,3,3)
+        write(ides,form) " XYZZ=XZYZ=XZZY=YXZZ=YZXZ=YZZX=ZXYZ=ZXZY=ZYXZ=ZYZX=ZZXY=ZZYX=",gamma(2,1,3,3)
+        write(ides,form) " YYZZ=YZYZ=YZZY=ZYYZ=ZYZY=ZZYY=",gamma(2,2,3,3)
+        write(ides,form) " XZZZ=ZXZZ=ZZXZ=ZZZX=",gamma(3,1,3,3)
+        write(ides,form) " YZZZ=ZYZZ=ZZYZ=ZZZY=",gamma(3,2,3,3)
+        
+    else if (irdfreq==1) then
+        write(*,*) "Loading which type of second hyperpolarizability?"
+		write(*,*) "1: Gamma(-w;w,0,0)   2: Gamma(-2w;w,w,0)"
+		read(*,*) igamma
+		rewind(10)
+        if (igamma==1) then
+			do i=1,ifreq-1
+				call loclabel(10,"Gamma(-w;w,0,0)",ifound,0)
+				read(10,*)
+			end do
+            if (ifound==0) then
+                write(*,*) "Error: Unable to locate ""Gamma(-w;w,0,0)""!"
+                return
+            end if
+            read(10,*);read(10,*);read(10,*)
+            read(10,*) c200tmp,gamma(1,1,1,1)
+            read(10,*) c200tmp,gamma(2,1,1,1)
+            read(10,*) c200tmp,gamma(2,2,1,1)
+            read(10,*) c200tmp,gamma(3,1,1,1)
+            read(10,*) c200tmp,gamma(3,2,1,1)
+            read(10,*) c200tmp,gamma(3,3,1,1)
+            read(10,*) c200tmp,gamma(1,1,2,1)
+            read(10,*) c200tmp,gamma(2,1,2,1)
+            read(10,*) c200tmp,gamma(2,2,2,1)
+            read(10,*) c200tmp,gamma(3,1,2,1)
+            read(10,*) c200tmp,gamma(3,2,2,1)
+            read(10,*) c200tmp,gamma(3,3,2,1)
+            read(10,*) c200tmp,gamma(1,1,2,2)
+            read(10,*) c200tmp,gamma(2,1,2,2)
+            read(10,*) c200tmp,gamma(2,2,2,2)
+            read(10,*) c200tmp,gamma(3,1,2,2)
+            read(10,*) c200tmp,gamma(3,2,2,2)
+            read(10,*) c200tmp,gamma(3,3,2,2)
+            read(10,*) c200tmp,gamma(1,1,3,1)
+            read(10,*) c200tmp,gamma(2,1,3,1)
+            read(10,*) c200tmp,gamma(2,2,3,1)
+            read(10,*) c200tmp,gamma(3,1,3,1)
+            read(10,*) c200tmp,gamma(3,2,3,1)
+            read(10,*) c200tmp,gamma(3,3,3,1)
+            read(10,*) c200tmp,gamma(1,1,3,2)
+            read(10,*) c200tmp,gamma(2,1,3,2)
+            read(10,*) c200tmp,gamma(2,2,3,2)
+            read(10,*) c200tmp,gamma(3,1,3,2)
+            read(10,*) c200tmp,gamma(3,2,3,2)
+            read(10,*) c200tmp,gamma(3,3,3,2)
+            read(10,*) c200tmp,gamma(1,1,3,3)
+            read(10,*) c200tmp,gamma(2,1,3,3)
+            read(10,*) c200tmp,gamma(2,2,3,3)
+            read(10,*) c200tmp,gamma(3,1,3,3)
+            read(10,*) c200tmp,gamma(3,2,3,3)
+            read(10,*) c200tmp,gamma(3,3,3,3)
+            gamma(1,2,1,1)=gamma(2,1,1,1)
+            gamma(1,3,1,1)=gamma(3,1,1,1)
+            gamma(2,3,1,1)=gamma(3,2,1,1)
+            gamma(1,1,1,2)=gamma(1,1,2,1)
+            gamma(2,2,1,2)=gamma(2,2,2,1)
+            gamma(3,3,1,2)=gamma(3,3,2,1)
+            gamma(1,2,2,2)=gamma(2,1,2,2)
+            gamma(1,3,2,2)=gamma(3,1,2,2)
+            gamma(2,3,2,2)=gamma(3,2,2,2)
+            gamma(1,1,1,3)=gamma(1,1,3,1)
+            gamma(2,2,1,3)=gamma(2,2,3,1)
+            gamma(3,3,1,3)=gamma(3,3,3,1)
+            gamma(1,1,2,3)=gamma(1,1,3,2)
+            gamma(2,2,2,3)=gamma(2,2,3,2)
+            gamma(3,3,2,3)=gamma(3,3,3,2)
+            gamma(1,2,3,3)=gamma(2,1,3,3)
+            gamma(1,3,3,3)=gamma(3,1,3,3)
+            gamma(2,3,3,3)=gamma(3,2,3,3)
+            tmp=gamma(2,1,2,1);gamma(1,2,2,1)=tmp;gamma(2,1,1,2)=tmp;gamma(1,2,1,2)=tmp
+            tmp=gamma(3,1,2,1);gamma(1,3,2,1)=tmp;gamma(3,1,1,2)=tmp;gamma(1,3,1,2)=tmp
+            tmp=gamma(3,2,2,1);gamma(2,3,2,1)=tmp;gamma(3,2,1,2)=tmp;gamma(2,3,1,2)=tmp
+            tmp=gamma(2,1,3,2);gamma(1,2,3,2)=tmp;gamma(2,1,2,3)=tmp;gamma(1,2,2,3)=tmp
+            tmp=gamma(3,1,3,2);gamma(1,3,3,2)=tmp;gamma(3,1,2,3)=tmp;gamma(1,3,2,3)=tmp
+            tmp=gamma(3,2,3,2);gamma(2,3,3,2)=tmp;gamma(3,2,2,3)=tmp;gamma(2,3,2,3)=tmp
+            tmp=gamma(2,1,3,1);gamma(1,2,3,1)=tmp;gamma(2,1,1,3)=tmp;gamma(1,2,1,3)=tmp
+            tmp=gamma(3,1,3,1);gamma(1,3,3,1)=tmp;gamma(3,1,1,3)=tmp;gamma(1,3,1,3)=tmp
+            tmp=gamma(3,2,3,1);gamma(2,3,3,1)=tmp;gamma(3,2,1,3)=tmp;gamma(2,3,1,3)=tmp
+		    !Convert to other unit
+		    if (iunit==2) gamma=gamma*6.23538D-65
+		    if (iunit==3) gamma=gamma*5.03670D-40
+            write(ides,form) " XXXX=",gamma(1,1,1,1)
+            write(ides,form) " YXXX=XYXX=",gamma(2,1,1,1)
+            write(ides,form) " YYXX=",gamma(2,2,1,1)
+            write(ides,form) " ZXXX=XZXX=",gamma(3,1,1,1)
+            write(ides,form) " ZYXX=YZXX=",gamma(3,2,1,1)
+            write(ides,form) " ZZXX=",gamma(3,3,1,1)
+            write(ides,form) " XXYX=XXXY=",gamma(1,1,2,1)
+            write(ides,form) " YXYX=XYYX=YXXY=XYXY=",gamma(2,1,2,1)
+            write(ides,form) " YYYX=YYXY=",gamma(2,2,2,1)
+            write(ides,form) " ZXYX=XZYX=ZXXY=XZXY=",gamma(3,1,2,1)
+            write(ides,form) " ZYYX=YZYX=ZYXY=YZXY=",gamma(3,2,2,1)
+            write(ides,form) " ZZYX=ZZXY=",gamma(3,3,2,1)
+            write(ides,form) " XXYY=",gamma(1,1,2,2)
+            write(ides,form) " YXYY=XYYY=",gamma(2,1,2,2)
+            write(ides,form) " YYYY=",gamma(2,2,2,2)
+            write(ides,form) " ZXYY=XZYY=",gamma(3,1,2,2)
+            write(ides,form) " ZYYY=YZYY=",gamma(3,2,2,2)
+            write(ides,form) " ZZYY=",gamma(3,3,2,2)
+            write(ides,form) " XXZX=XXXZ=",gamma(1,1,3,1)
+            write(ides,form) " YXZX=XYZX=YXXZ=XYXZ=",gamma(2,1,3,1)
+            write(ides,form) " YYZX=YYXZ=",gamma(2,2,3,1)
+            write(ides,form) " ZXZX=XZZX=ZXXZ=XZXZ=",gamma(3,1,3,1)
+            write(ides,form) " ZYZX=YZZX=ZYXZ=YZXZ=",gamma(3,2,3,1)
+            write(ides,form) " ZZZX=ZZXZ=",gamma(3,3,3,1)
+            write(ides,form) " XXZY=XXYZ=",gamma(1,1,3,2)
+            write(ides,form) " YXZY=XYZY=YXYZ=XYYZ=",gamma(2,1,3,2)
+            write(ides,form) " YYZY=YYYZ=",gamma(2,2,3,2)
+            write(ides,form) " ZXZY=XZZY=ZXYZ=XZYZ=",gamma(3,1,3,2)
+            write(ides,form) " ZYZY=YZZY=ZYYZ=YZYZ=",gamma(3,2,3,2)
+            write(ides,form) " ZZZY=ZZYZ=",gamma(3,3,3,2)
+            write(ides,form) " XXZZ=",gamma(1,1,3,3)
+            write(ides,form) " YXZZ=XYZZ=",gamma(2,1,3,3)
+            write(ides,form) " YYZZ=",gamma(2,2,3,3)
+            write(ides,form) " ZXZZ=XZZZ=",gamma(3,1,3,3)
+            write(ides,form) " ZYZZ=YZZZ=",gamma(3,2,3,3)
+            write(ides,form) " ZZZZ=",gamma(3,3,3,3)
+
+        else if (igamma==2) then
+			do i=1,ifreq-1
+				call loclabel(10,"Gamma(-2w;w,w,0)",ifound,0)
+				read(10,*)
+			end do
+            if (ifound==0) then
+                write(*,*) "Error: Unable to locate ""Gamma(-2w;w,w,0)""!"
+                return
+            end if
+            read(10,*);read(10,*);read(10,*)
+            read(10,*) c200tmp,gamma(1,1,1,1)
+            read(10,*) c200tmp,gamma(2,1,1,1)
+            read(10,*) c200tmp,gamma(3,1,1,1)
+            read(10,*) c200tmp,gamma(1,2,1,1)
+            read(10,*) c200tmp,gamma(2,2,1,1)
+            read(10,*) c200tmp,gamma(3,2,1,1)
+            read(10,*) c200tmp,gamma(1,2,2,1)
+            read(10,*) c200tmp,gamma(2,2,2,1)
+            read(10,*) c200tmp,gamma(3,2,2,1)
+            read(10,*) c200tmp,gamma(1,3,1,1)
+            read(10,*) c200tmp,gamma(2,3,1,1)
+            read(10,*) c200tmp,gamma(3,3,1,1)
+            read(10,*) c200tmp,gamma(1,3,2,1)
+            read(10,*) c200tmp,gamma(2,3,2,1)
+            read(10,*) c200tmp,gamma(3,3,2,1)
+            read(10,*) c200tmp,gamma(1,3,3,1)
+            read(10,*) c200tmp,gamma(2,3,3,1)
+            read(10,*) c200tmp,gamma(3,3,3,1)
+            read(10,*) c200tmp,gamma(1,1,1,2)
+            read(10,*) c200tmp,gamma(2,1,1,2)
+            read(10,*) c200tmp,gamma(3,1,1,2)
+            read(10,*) c200tmp,gamma(1,2,1,2)
+            read(10,*) c200tmp,gamma(2,2,1,2)
+            read(10,*) c200tmp,gamma(3,2,1,2)
+            read(10,*) c200tmp,gamma(1,2,2,2)
+            read(10,*) c200tmp,gamma(2,2,2,2)
+            read(10,*) c200tmp,gamma(3,2,2,2)
+            read(10,*) c200tmp,gamma(1,3,1,2)
+            read(10,*) c200tmp,gamma(2,3,1,2)
+            read(10,*) c200tmp,gamma(3,3,1,2)
+            read(10,*) c200tmp,gamma(1,3,2,2)
+            read(10,*) c200tmp,gamma(2,3,2,2)
+            read(10,*) c200tmp,gamma(3,3,2,2)
+            read(10,*) c200tmp,gamma(1,3,3,2)
+            read(10,*) c200tmp,gamma(2,3,3,2)
+            read(10,*) c200tmp,gamma(3,3,3,2)
+            read(10,*) c200tmp,gamma(1,1,1,3)
+            read(10,*) c200tmp,gamma(2,1,1,3)
+            read(10,*) c200tmp,gamma(3,1,1,3)
+            read(10,*) c200tmp,gamma(1,2,1,3)
+            read(10,*) c200tmp,gamma(2,2,1,3)
+            read(10,*) c200tmp,gamma(3,2,1,3)
+            read(10,*) c200tmp,gamma(1,2,2,3)
+            read(10,*) c200tmp,gamma(2,2,2,3)
+            read(10,*) c200tmp,gamma(3,2,2,3)
+            read(10,*) c200tmp,gamma(1,3,1,3)
+            read(10,*) c200tmp,gamma(2,3,1,3)
+            read(10,*) c200tmp,gamma(3,3,1,3)
+            read(10,*) c200tmp,gamma(1,3,2,3)
+            read(10,*) c200tmp,gamma(2,3,2,3)
+            read(10,*) c200tmp,gamma(3,3,2,3)
+            read(10,*) c200tmp,gamma(1,3,3,3)
+            read(10,*) c200tmp,gamma(2,3,3,3)
+            read(10,*) c200tmp,gamma(3,3,3,3)
+            gamma(1,1,2,1)=gamma(1,2,1,1)
+            gamma(2,1,2,1)=gamma(2,2,1,1)
+            gamma(3,1,2,1)=gamma(3,2,1,1)
+            gamma(1,1,3,1)=gamma(1,3,1,1)
+            gamma(2,1,3,1)=gamma(2,3,1,1)
+            gamma(3,1,3,1)=gamma(3,3,1,1)
+            gamma(1,2,3,1)=gamma(1,3,2,1)
+            gamma(2,2,3,1)=gamma(2,3,2,1)
+            gamma(3,2,3,1)=gamma(3,3,2,1)
+            gamma(1,1,2,2)=gamma(1,2,1,2)
+            gamma(2,1,2,2)=gamma(2,2,1,2)
+            gamma(3,1,2,2)=gamma(3,2,1,2)
+            gamma(1,1,3,2)=gamma(1,3,1,2)
+            gamma(2,1,3,2)=gamma(2,3,1,2)
+            gamma(3,1,3,2)=gamma(3,3,1,2)
+            gamma(1,2,3,2)=gamma(1,3,2,2)
+            gamma(2,2,3,2)=gamma(2,3,2,2)
+            gamma(3,2,3,2)=gamma(3,3,2,2)
+            gamma(1,1,2,3)=gamma(1,2,1,3)
+            gamma(2,1,2,3)=gamma(2,2,1,3)
+            gamma(3,1,2,3)=gamma(3,2,1,3)
+            gamma(1,1,3,3)=gamma(1,3,1,3)
+            gamma(2,1,3,3)=gamma(2,3,1,3)
+            gamma(3,1,3,3)=gamma(3,3,1,3)
+            gamma(1,2,3,3)=gamma(1,3,2,3)
+            gamma(2,2,3,3)=gamma(2,3,2,3)
+            gamma(3,2,3,3)=gamma(3,3,2,3)
+		    !Convert to other unit
+		    if (iunit==2) gamma=gamma*6.23538D-65
+		    if (iunit==3) gamma=gamma*5.03670D-40
+            write(ides,form) " XXXX=",     gamma(1,1,1,1)
+            write(ides,form) " YXXX=",     gamma(2,1,1,1)
+            write(ides,form) " ZXXX=",     gamma(3,1,1,1)
+            write(ides,form) " XYXX=XXYX=",gamma(1,2,1,1)
+            write(ides,form) " YYXX=YXYX=",gamma(2,2,1,1)
+            write(ides,form) " ZYXX=ZXYX=",gamma(3,2,1,1)
+            write(ides,form) " XYYX=",     gamma(1,2,2,1)
+            write(ides,form) " YYYX=",     gamma(2,2,2,1)
+            write(ides,form) " ZYYX=",     gamma(3,2,2,1)
+            write(ides,form) " XZXX=XXZX=",gamma(1,3,1,1)
+            write(ides,form) " YZXX=YXZX=",gamma(2,3,1,1)
+            write(ides,form) " ZZXX=ZXZX=",gamma(3,3,1,1)
+            write(ides,form) " XZYX=XYZX=",gamma(1,3,2,1)
+            write(ides,form) " YZYX=YYZX=",gamma(2,3,2,1)
+            write(ides,form) " ZZYX=ZYZX=",gamma(3,3,2,1)
+            write(ides,form) " XZZX=",     gamma(1,3,3,1)
+            write(ides,form) " YZZX=",     gamma(2,3,3,1)
+            write(ides,form) " ZZZX=",     gamma(3,3,3,1)
+            write(ides,form) " XXXY=",     gamma(1,1,1,2)
+            write(ides,form) " YXXY=",     gamma(2,1,1,2)
+            write(ides,form) " ZXXY=",     gamma(3,1,1,2)
+            write(ides,form) " XYXY=XXYY=",gamma(1,2,1,2)
+            write(ides,form) " YYXY=YXYY=",gamma(2,2,1,2)
+            write(ides,form) " ZYXY=ZXYY=",gamma(3,2,1,2)
+            write(ides,form) " XYYY=",     gamma(1,2,2,2)
+            write(ides,form) " YYYY=",     gamma(2,2,2,2)
+            write(ides,form) " ZYYY=",     gamma(3,2,2,2)
+            write(ides,form) " XZXY=XXZY=",gamma(1,3,1,2)
+            write(ides,form) " YZXY=YXZY=",gamma(2,3,1,2)
+            write(ides,form) " ZZXY=ZXZY=",gamma(3,3,1,2)
+            write(ides,form) " XZYY=XYZY=",gamma(1,3,2,2)
+            write(ides,form) " YZYY=YYZY=",gamma(2,3,2,2)
+            write(ides,form) " ZZYY=ZYZY=",gamma(3,3,2,2)
+            write(ides,form) " XZZY=",     gamma(1,3,3,2)
+            write(ides,form) " YZZY=",     gamma(2,3,3,2)
+            write(ides,form) " ZZZY=",     gamma(3,3,3,2)
+            write(ides,form) " XXXZ=",     gamma(1,1,1,3)
+            write(ides,form) " YXXZ=",     gamma(2,1,1,3)
+            write(ides,form) " ZXXZ=",     gamma(3,1,1,3)
+            write(ides,form) " XYXZ=XXYZ=",gamma(1,2,1,3)
+            write(ides,form) " YYXZ=YXYZ=",gamma(2,2,1,3)
+            write(ides,form) " ZYXZ=ZXYZ=",gamma(3,2,1,3)
+            write(ides,form) " XYYZ=",     gamma(1,2,2,3)
+            write(ides,form) " YYYZ=",     gamma(2,2,2,3)
+            write(ides,form) " ZYYZ=",     gamma(3,2,2,3)
+            write(ides,form) " XZXZ=XXZZ=",gamma(1,3,1,3)
+            write(ides,form) " YZXZ=YXZZ=",gamma(2,3,1,3)
+            write(ides,form) " ZZXZ=ZXZZ=",gamma(3,3,1,3)
+            write(ides,form) " XZYZ=XYZZ=",gamma(1,3,2,3)
+            write(ides,form) " YZYZ=YYZZ=",gamma(2,3,2,3)
+            write(ides,form) " ZZYZ=ZYZZ=",gamma(3,3,2,3)
+            write(ides,form) " XZZZ=",     gamma(1,3,3,3)
+            write(ides,form) " YZZZ=",     gamma(2,3,3,3)
+            write(ides,form) " ZZZZ=",     gamma(3,3,3,3)
+        end if
+    end if
+    !Print all gamma components one by one
+    !write(*,*) "Debug"
+    !do ia=1,3
+    !    do ib=1,3
+    !        do ic=1,3
+    !            do id=1,3
+    !                write(ides,form) ' '//lb(ia)//lb(ib)//lb(ic)//lb(id)//'=',gamma(ia,ib,ic,id)
+    !            end do
+    !        end do
+    !    end do
+    !end do
+	gammaX=0;gammaY=0;gammaZ=0
+	do i=1,3
+		gammaX=gammaX+gamma(1,i,i,1)+gamma(1,i,1,i)+gamma(1,1,i,i)
+		gammaY=gammaY+gamma(2,i,i,2)+gamma(2,i,2,i)+gamma(2,2,i,i)
+		gammaZ=gammaZ+gamma(3,i,i,3)+gamma(3,i,3,i)+gamma(3,3,i,i)
+	end do
+	gammaX=gammaX/15;gammaY=gammaY/15;gammaZ=gammaZ/15
+	gammatot=dsqrt(gammaX**2+gammaY**2+gammaZ**2)
+	gammaavg1=gammaX+gammaY+gammaZ
+	gammaavg2=( gamma(1,1,1,1)+gamma(2,2,2,2)+gamma(3,3,3,3) + gamma(1,1,2,2)+gamma(1,1,3,3)+gamma(2,2,3,3) &
+    + gamma(2,2,1,1)+gamma(3,3,1,1)+gamma(3,3,2,2) )/5
+    gamma_nor=0
+    do i=1,3
+        do j=1,3
+            gamma_nor=gamma_nor+ 2*gamma(i,j,j,i)-gamma(i,i,j,j)
+        end do
+    end do
+    gamma_nor=gamma_nor/15
+    write(ides,*)
+    write(ides,form) " Magnitude of gamma:  ",gammatot
+    write(ides,form) " X component of gamma:",gammaX
+    write(ides,form) " Y component of gamma:",gammaY
+    write(ides,form) " Z component of gamma:",gammaZ
+    write(ides,form) " Average of gamma (definition 1), gamma ||:",gammaavg1
+    write(ides,form) " Average of gamma (definition 2):",gammaavg2
+    write(ides,form) " gamma _|_:",gamma_nor
+    write(ides,"(/,a)") " Note: Gamma (in input orientation) has been given above. If you want to obtain beta information, please use option 1"
+    
+end if !End gamma
 
 close(10)
 if (ides==11) close(ides)
+goto 10
 end subroutine
 
 
 
-!!--------- Sum-over-states (SOS) calculation for (hyper)polarizability
+
+
+!!-----------------------------------------------------------------------------------------------------------
+!!--------- Sum-over-states (SOS) calculation for (hyper)polarizability and two/three-level analyses --------
+!!-----------------------------------------------------------------------------------------------------------
 !Programmed based on the formulae in Sasagane et al. J. Chem. Phys., 99, 3738 (1993)
 subroutine SOS
 use defvar
@@ -1426,14 +1925,14 @@ character transmodestr*80,c80tmp*80,c200tmp*80
 character :: dirlab(3)=(/ "X","Y","Z" /)
 real*8,allocatable :: trandip(:,:,:) !Transition dipole moment between i and j in X,Y,Z. 0 corresponds to ground state
 real*8,allocatable :: excene(:) !Excitation energy
-real*8 :: alpha(3,3),beta(3,3,3),gamma(3,3,3,3),delta(3,3,3,3,3)
+real*8 :: alpha(3,3),beta(3,3,3),gamma(3,3,3,3),gamma1(3,3,3,3),gamma2(3,3,3,3),delta(3,3,3,3,3)
 real*8 eigval(3),eigvecmat(3,3),tmpw(5)
 real*8,allocatable :: freqlist(:,:) !Store the frequency to be calculated for beta and gamma
 integer tmpdir(5),arrb(6,3),arrg(24,4),arrd(120,5),dir1,dir2,dir3,dir4,dir5
 
 write(*,*) "Loading data..."
 open(10,file=filename,status="old")
-call loclabel(10,"Gaussian",igauout)
+call loclabel(10,"Gaussian, Inc",igauout,maxline=100)
 rewind(10)
 if (igauout==1) then !Load excitation energies and <0|r|n>
 	write(*,*) "This is a Gaussian output file"
@@ -1497,7 +1996,7 @@ if (igauout==1) then !Load excitation energies and <0|r|n>
 else !Load excitation energies and all <m|r|n> from plain text file
 	ionlyalpha=0
 	read(10,*) nstates
-	if (nstates<0) ionlyalpha=1 !Only calculate polarizability, not hyperpolarizability, so will not read transition dipole moments among excited states
+	if (nstates<0) ionlyalpha=1 !Only calculate polarizability, not hyperpolarizability, so will not read transition dipole moments between excited states
 	nstates=abs(nstates)
 	allocate(trandip(0:nstates,0:nstates,3),excene(0:nstates))
 	do i=1,nstates !Read as eV
@@ -1534,6 +2033,7 @@ write(*,*) "NOTE: All units used in this function is a.u."
 !Gaussian output file is impossible to provide <m|r|n>, even if alltransitiondensities is used for CIS, it doesn't output <m|r|m>
 do while(.true.)
 write(*,*)
+write(*,*) "  ------- Sum-over-states (SOS) calculation for (hyper)polarizability -------"
 write(*,*) "0 Return"
 write(*,*) "1 Calculate polarizability (alpha)"
 if (ionlyalpha==0) write(*,*) "2 Calculate first hyperpolarizability (beta)"
@@ -1545,11 +2045,13 @@ if (ionlyalpha==0) write(*,*) "7 Show the variation of gamma w.r.t. the number o
 write(*,*) "15 Calculate alpha in a range of frequencies"
 if (ionlyalpha==0) write(*,*) "16 Calculate beta in a range of frequencies"
 if (ionlyalpha==0) write(*,*) "17 Calculate gamma in a range of frequencies"
+if (ionlyalpha==0) write(*,*) "20 Two or three-level model analysis of beta"
 read(*,*) isel
 
 if (isel==0) then
 	return
-else if (isel==1.or.isel==5.or.isel==15) then ! Calculate polarizability
+    
+else if (isel==1.or.isel==5.or.isel==15) then !Calculate polarizability
 	if (isel==1.or.isel==5) then
 		write(*,*) "Input frequency of external field w for alpha(-w;w)"
 		write(*,*) "e.g. 0.25"
@@ -1582,9 +2084,8 @@ else if (isel==1.or.isel==5.or.isel==15) then ! Calculate polarizability
 	end if
 	
 	write(*,*) "Please wait..."
-	do numstat=istart,iend
-		freq=freqbeg
-		do while(.true.)
+	do numstat=istart,iend !Cycle number of states
+		do while(.true.) !Cycle frequencies from beginning until ending
 			do idir=1,3
 				do jdir=1,3
 					tmpval=0
@@ -1644,6 +2145,7 @@ else if (isel==1.or.isel==5.or.isel==15) then ! Calculate polarizability
 
 ! Calculate first hyperpolarizability
 else if (isel==2.or.isel==6.or.isel==16) then
+    !Load frequency setting
 	if (allocated(freqlist)) deallocate(freqlist)
 	if (isel==2.or.isel==6) then
 		nfreq=1
@@ -1685,7 +2187,8 @@ else if (isel==2.or.isel==6.or.isel==16) then
 		end do
 		write(*,*)
 	end if
-
+    
+    !Initialize variables
 	if (isel==2) then
 		istart=nstates
 		iend=nstates
@@ -1693,10 +2196,32 @@ else if (isel==2.or.isel==6.or.isel==16) then
 		istart=1
 		iend=nstates
 		open(10,file="beta_n.txt",status="replace")
+		open(11,file="beta_n_comp.txt",status="replace")
+        !Write first line of beta_n_comp.txt, namely meaning of each column
+        write(11,"(a)",advance="no") "  N_states "
+		do idir=1,3
+			do jdir=1,3
+				do kdir=1,3
+                    write(11,"(5x,a,6x)",advance="no") dirlab(idir)//dirlab(jdir)//dirlab(kdir)
+                end do
+            end do
+        end do
+        write(11,*)
 	else if (isel==16) then
 		istart=nstates
 		iend=nstates
 		open(10,file="beta_w.txt",status="replace")
+		open(11,file="beta_w_comp.txt",status="replace")
+        !Write first line of beta_w_comp.txt, namely meaning of each column
+        write(11,"(a)",advance="no") "    Freq. 1     Freq. 2  "
+		do idir=1,3
+			do jdir=1,3
+				do kdir=1,3
+                    write(11,"(5x,a,6x)",advance="no") dirlab(idir)//dirlab(jdir)//dirlab(kdir)
+                end do
+            end do
+        end do
+        write(11,*)
 	end if
 	
 	write(*,*) "Please wait..."
@@ -1806,14 +2331,21 @@ else if (isel==2.or.isel==6.or.isel==16) then
 			write(*,"(a,f17.5)") " Beta _|_(z) :",beta_per
 		else if (isel==6) then
 			write(10,"(i6,8(1PE14.5))") numstat,betaX,betaY,betaZ,betatot,betaprj,betaprj*3D0/5D0,betaZ*3D0/5D0,beta_per
+            write(11,"(i10)",advance="no") numstat
+            write(11,"(27(1PE14.5))",advance="no") (((beta(idir,jdir,kdir),kdir=1,3),jdir=1,3),idir=1,3)
+			write(11,*)
 		else if (isel==16) then
 			write(10,"(2f12.6,8(1PE14.5))") freq1,freq2,betaX,betaY,betaZ,betatot,betaprj,betaprj*3D0/5D0,betaZ*3D0/5D0,beta_per
+            write(11,"(2f12.6)",advance="no") freq1,freq2
+            write(11,"(27(1PE14.5))",advance="no") (((beta(idir,jdir,kdir),kdir=1,3),jdir=1,3),idir=1,3)
+			write(11,*)
 		end if
 	end do
 	end do
 	
 	if (isel==6.or.isel==16) then
 		close(10)
+        close(11)
 		if (isel==6) then
 			write(*,*) "Done! The result has been outputted to beta_n.txt in current folder"
 			write(*,*) "The correspondence between columns and information in this file is as follows"
@@ -1826,6 +2358,8 @@ else if (isel==2.or.isel==6.or.isel==16) then
 			write(*,*) "Column 7:  Beta ||"
 			write(*,*) "Column 8:  Beta ||(z)"
 			write(*,*) "Column 9:  Beta _|_(z)"
+            write(*,"(a)") " In addition, all components of beta with respect to the number of considered states &
+            have been exported to beta_n_comp.txt in current folder"
 		else if (isel==16) then
 			write(*,*) "Done! The result has been outputted to beta_w.txt in current folder"
 			write(*,*) "The correspondence between columns and information in this file is as follows"
@@ -1839,11 +2373,14 @@ else if (isel==2.or.isel==6.or.isel==16) then
 			write(*,*) "Column 8:  Beta ||"
 			write(*,*) "Column 9:  Beta ||(z)"
 			write(*,*) "Column 10: Beta _|_(z)"
+            write(*,"(a)") " In addition, all components of beta with respect to frequencies &
+            have been exported to beta_w_comp.txt in current folder"
 		end if 
 	end if
 	
 ! Calculate second hyperpolarizability (gamma)
 else if (isel==3.or.isel==7.or.isel==17) then
+    !Load frequency setting
 	if (allocated(freqlist)) deallocate(freqlist)
 	if (isel==3.or.isel==7) then
 		nfreq=1
@@ -1889,14 +2426,50 @@ else if (isel==3.or.isel==7.or.isel==17) then
 		iend=istart
 		nstatstep=1
 	else if (isel==7) then
-		write(*,*) "Input upper limit and stepsize of the number of states"
-		write(*,*) "e.g. 150,2"
+		write(*,*) "Input upper limit and stepsize of the number of considered states, e.g. 150,2"
 		read(*,*) iend,nstatstep
 		istart=1
 		if (iend>nstates) iend=nstates
 	end if
-	if (isel==7) open(10,file="gamma_n.txt",status="replace")
-	if (isel==17) open(10,file="gamma_w.txt",status="replace")
+	if (isel==7) then
+        open(10,file="gamma_n.txt",status="replace")
+        open(11,file="gamma_n_comp.txt",status="replace")
+        open(12,file="gamma_I_n_comp.txt",status="replace")
+        open(13,file="gamma_II_n_comp.txt",status="replace")
+        !Write first line of gamma_n_comp.txt, namely meaning of each column
+        do ifile=11,13
+            write(ifile,"(a)",advance="no") "  N_states "
+		    do idir=1,3
+			    do jdir=1,3
+				    do kdir=1,3
+				        do ldir=1,3
+                            write(ifile,"(5x,a,5x)",advance="no") dirlab(idir)//dirlab(jdir)//dirlab(kdir)//dirlab(ldir)
+                        end do
+                    end do
+                end do
+            end do
+            write(ifile,*)
+        end do
+	else if (isel==17) then
+        open(10,file="gamma_w.txt",status="replace")
+        open(11,file="gamma_w_comp.txt",status="replace")
+        open(12,file="gamma_I_w_comp.txt",status="replace")
+        open(13,file="gamma_II_w_comp.txt",status="replace")
+        !Write first line of gamma_w_comp.txt, namely meaning of each column
+        do ifile=11,13
+            write(ifile,"(a)",advance="no") "     Freq. 1     Freq. 2     Freq. 3 "
+		    do idir=1,3
+			    do jdir=1,3
+				    do kdir=1,3
+				        do ldir=1,3
+                            write(ifile,"(5x,a,5x)",advance="no") dirlab(idir)//dirlab(jdir)//dirlab(kdir)//dirlab(ldir)
+                        end do
+                    end do
+                end do
+            end do
+            write(ifile,*)
+        end do
+    end if
 	
 	write(*,*) "Please wait..."
 	call walltime(iwalltime1)
@@ -1906,7 +2479,7 @@ else if (isel==3.or.isel==7.or.isel==17) then
 ! 	end do
 	do numstat=istart,iend,nstatstep
 	if (isel==7) call showprog(numstat,int(dfloat(iend-1)/nstatstep)*nstatstep+1)
-	do ifreq=1,nfreq
+	do ifreq=1,nfreq !Cycle frequencies
 		freq1=freqlist(ifreq,1)
 		freq2=freqlist(ifreq,2)
 		freq3=freqlist(ifreq,3)
@@ -1918,8 +2491,8 @@ else if (isel==3.or.isel==7.or.isel==17) then
 				do kdir=1,3
 					do ldir=1,3
 					
-						gamma1=0
-						gamma2=0
+						gamma1val=0
+						gamma2val=0
 						tmpdir(1:4)=(/ idir,jdir,kdir,ldir /)
 						do iper=1,24 !Do permutation, arrg(1,:)=1,2,3,4
 							dir1=tmpdir(arrg(iper,1))
@@ -1930,13 +2503,13 @@ else if (isel==3.or.isel==7.or.isel==17) then
 							w1=tmpw(arrg(iper,2))
 							w2=tmpw(arrg(iper,3))
 							w3=tmpw(arrg(iper,4))
-							!$OMP PARALLEL SHARED(gamma1,gamma2) PRIVATE(istat,jstat,kstat,t1c,t2c,p1,p2,g1t,g2t) NUM_THREADS(nthreads)
+							!$OMP PARALLEL SHARED(gamma1val,gamma2val) PRIVATE(istat,jstat,kstat,t1c,t2c,p1,p2,g1t,g2t) NUM_THREADS(nthreads)
 							g1t=0
 							g2t=0
 							!$OMP DO schedule(dynamic)
 							do istat=1,numstat
 								do jstat=1,numstat
-									!Gamma 1
+									!Gamma I
 									do kstat=1,numstat
 										t1c=trandip(istat,jstat,dir2)
 										if (istat==jstat) t1c=t1c-trandip(0,0,dir2)
@@ -1946,7 +2519,7 @@ else if (isel==3.or.isel==7.or.isel==17) then
 										p2=(excene(istat)+w0)*(excene(jstat)-w2-w3)*(excene(kstat)-w3)
 										g1t=g1t+p1/p2
 									end do
-									!Gamma 2
+									!Gamma II
 									p1=trandip(0,istat,dir1)*trandip(istat,0,dir2)*trandip(0,jstat,dir3)*trandip(jstat,0,dir4)
 									p2=(excene(istat)+w0)*(excene(istat)-w1)*(excene(jstat)-w3) !(excene(jstat)-w3) can also be (excene(jstat)+w2), they are equivalent
 									g2t=g2t+p1/p2
@@ -1954,32 +2527,38 @@ else if (isel==3.or.isel==7.or.isel==17) then
 							end do
 							!$OMP END DO
 							!$OMP CRITICAL
-							gamma1=gamma1+g1t
-							gamma2=gamma2+g2t
+							gamma1val=gamma1val+g1t
+							gamma2val=gamma2val+g2t
 							!$OMP END CRITICAL
 							!$OMP END PARALLEL
 						end do
-						gamma(idir,jdir,kdir,ldir)=gamma1-gamma2
+						gamma(idir,jdir,kdir,ldir)=gamma1val-gamma2val
+						gamma1(idir,jdir,kdir,ldir)=gamma1val
+                        gamma2(idir,jdir,kdir,ldir)=-gamma2val
 						
 					end do
 				end do
 			end do
 		end do
-		
-		gammaX=0
-		gammaY=0
-		gammaZ=0
+		!Total Gamma
+		gammaX=0;gammaY=0;gammaZ=0
 		do i=1,3
 			gammaX=gammaX+gamma(1,i,i,1)+gamma(1,i,1,i)+gamma(1,1,i,i)
 			gammaY=gammaY+gamma(2,i,i,2)+gamma(2,i,2,i)+gamma(2,2,i,i)
 			gammaZ=gammaZ+gamma(3,i,i,3)+gamma(3,i,3,i)+gamma(3,3,i,i)
 		end do
-		gammaX=gammaX/15
-		gammaY=gammaY/15
-		gammaZ=gammaZ/15
+		gammaX=gammaX/15;gammaY=gammaY/15;gammaZ=gammaZ/15
 		gammatot=dsqrt(gammaX**2+gammaY**2+gammaZ**2)
 		gammaavg1=gammaX+gammaY+gammaZ
-		gammaavg2=( gamma(1,1,1,1)+gamma(2,2,2,2)+gamma(3,3,3,3) + gamma(1,1,2,2)+gamma(1,1,3,3)+gamma(2,2,3,3) + gamma(2,2,1,1)+gamma(3,3,1,1)+gamma(3,3,2,2) )/5
+		gammaavg2=( gamma(1,1,1,1)+gamma(2,2,2,2)+gamma(3,3,3,3) + gamma(1,1,2,2)+gamma(1,1,3,3)+gamma(2,2,3,3) &
+        + gamma(2,2,1,1)+gamma(3,3,1,1)+gamma(3,3,2,2) )/5
+        gamma_nor=0
+        do i=1,3
+            do j=1,3
+                gamma_nor=gamma_nor+ 2*gamma(i,j,j,i)-gamma(i,i,j,j)
+            end do
+        end do
+        gamma_nor=gamma_nor/15
 		
 		if (isel==3) then
 			write(*,*) "Second hyperpolarizability tensor:"
@@ -1995,13 +2574,32 @@ else if (isel==3.or.isel==7.or.isel==17) then
 			end do
 			write(*,"(/,' Gamma_X:',1PE14.5,'  Gamma_Y:',1PE14.5,'  Gamma_Z:',1PE14.5)") gammaX,gammaY,gammaZ
 			write(*,"(a,1PE14.5)") " Magnitude of gamma:",gammatot
-			write(*,"(a,1PE14.5)") " Average of gamma (definition 1):",gammaavg1
+			write(*,"(a,1PE14.5)") " Average of gamma (definition 1), gamma ||:",gammaavg1
 			write(*,"(a,1PE14.5)") " Average of gamma (definition 2):",gammaavg2
+			write(*,"(a,1PE14.5)") " gamma _|_:",gamma_nor
 			write(*,*)
 		else if (isel==7) then
 			write(10,"(i6,6(1PE14.5))") numstat,gammaX,gammaY,gammaZ,gammatot,gammaavg1,gammaavg2
+            write(11,"(i10)",advance="no") numstat
+            write(11,"(81(1PE14.5))",advance="no") ((((gamma(idir,jdir,kdir,ldir),ldir=1,3),kdir=1,3),jdir=1,3),idir=1,3)
+            write(11,*)
+            write(12,"(i10)",advance="no") numstat
+            write(12,"(81(1PE14.5))",advance="no") ((((gamma1(idir,jdir,kdir,ldir),ldir=1,3),kdir=1,3),jdir=1,3),idir=1,3)
+            write(12,*)
+            write(13,"(i10)",advance="no") numstat
+            write(13,"(81(1PE14.5))",advance="no") ((((gamma2(idir,jdir,kdir,ldir),ldir=1,3),kdir=1,3),jdir=1,3),idir=1,3)
+            write(13,*)
 		else if (isel==17) then
 			write(10,"(3f12.6,6(1PE14.5))") freq1,freq2,freq3,gammaX,gammaY,gammaZ,gammatot,gammaavg1,gammaavg2
+            write(11,"(3f12.6)",advance="no") freq1,freq2,freq3
+            write(11,"(81(1PE14.5))",advance="no") ((((gamma(idir,jdir,kdir,ldir),ldir=1,3),kdir=1,3),jdir=1,3),idir=1,3)
+            write(11,*)
+            write(12,"(3f12.6)",advance="no") freq1,freq2,freq3
+            write(12,"(81(1PE14.5))",advance="no") ((((gamma1(idir,jdir,kdir,ldir),ldir=1,3),kdir=1,3),jdir=1,3),idir=1,3)
+            write(12,*)
+            write(13,"(3f12.6)",advance="no") freq1,freq2,freq3
+            write(13,"(81(1PE14.5))",advance="no") ((((gamma2(idir,jdir,kdir,ldir),ldir=1,3),kdir=1,3),jdir=1,3),idir=1,3)
+            write(13,*)
 		end if
 	end do !end cycle freqlist
 	end do !end cycle the number of states
@@ -2010,6 +2608,9 @@ else if (isel==3.or.isel==7.or.isel==17) then
 	write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 	if (isel==7.or.isel==17) then
 		close(10)
+        close(11)
+        close(12)
+        close(13)
 		if (isel==7) then
 			write(*,*) "Done! The result has been outputted to gamma_n.txt in current folder"
 			write(*,*) "The correspondence between columns and information in this file is as follows"
@@ -2020,6 +2621,9 @@ else if (isel==3.or.isel==7.or.isel==17) then
 			write(*,*) "Column 5:  Magnitude of gamma"
 			write(*,*) "Column 6:  Average of gamma (definition 1)"
 			write(*,*) "Column 7:  Average of gamma (definition 2)"
+            write(*,"(a)") " In addition, all components of gamma with respect to the number of considered states &
+            have been exported to gamma_n_comp.txt in current folder, while its parts I and II (see gamma expression in &
+            Section 3.200.8 of manual) have been respectively exported to gamma_I_n_comp.txt and gamma_II_n_comp.txt."
 		else if (isel==17) then
 			write(*,*) "Done! The result has been outputted to gamma_w.txt in current folder"
 			write(*,*) "The correspondence between columns and information in this file is as follows"
@@ -2032,6 +2636,9 @@ else if (isel==3.or.isel==7.or.isel==17) then
 			write(*,*) "Column 7:  Magnitude of gamma"
 			write(*,*) "Column 8:  Average of gamma (definition 1)"
 			write(*,*) "Column 9:  Average of gamma (definition 2)"
+            write(*,"(a)") " In addition, all components of gamma with respect to frequencies &
+            have been exported to gamma_w_comp.txt in current folder, while its parts I and II (see gamma expression in &
+            Section 3.200.8 of manual) have been respectively exported to gamma_I_w_comp.txt and gamma_II_w_comp.txt."
 		end if 
 	end if
 
@@ -2164,9 +2771,58 @@ else if (isel==4) then
 	call walltime(iwalltime2)
 	write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 	
+else if (isel==20) then !Two or three-level analysis of beta
+    write(*,"(a)") " Excitation energy (E,eV) and transition dipole moment (X,Y,Z,total) between ground state to excited states (a.u.)"
+    do istat=1,nstates
+        write(*,"(' State',i5,'  E=',f9.4,'  X=',f10.5,' Y=',f10.5,' Z=',f10.5,' Tot=',f10.5)") &
+        istat,excene(istat)*au2eV,trandip(0,istat,:),dsqrt(sum(trandip(0,istat,:)**2))
+    end do
+    write(*,*)
+    write(*,*) "Select the component of first hyperpolarizability to carry out the analysis"
+    write(*,*) "1: X   2: Y   3: Z"
+    read(*,*) idir
+    write(*,"(a)") " Input index of states. If only inputting one index, then two-level model analysis will be carried out. &
+    If inputting two indices (e.g. 3,6), three-level model will be used"
+    read(*,"(a)") c80tmp
+    if (index(c80tmp,',')/=0) then
+        nexc=2
+        read(c80tmp,*) istat,jstat
+    else
+        nexc=1
+        read(c80tmp,*) istat
+    end if
+    do i=1,nexc
+        if (i==1) iexc=istat
+        if (i==2) iexc=jstat
+        write(*,*)
+        write(*,"(' Excited state',i6)") iexc
+        write(*,"(' Excitation energy',f10.4,' eV')") excene(iexc)*au2eV
+        write(*,"(' Transition dipole moment component:  ',f12.4,' a.u.')") trandip(0,iexc,idir)
+        write(*,"(' Oscillator strength component:       ',f12.6,' a.u.')") (2D0/3D0)*excene(iexc)*trandip(0,iexc,idir)**2
+        write(*,"(' Variation of dipole moment component:',f12.4,' a.u.')") trandip(iexc,iexc,idir)-trandip(0,0,idir)
+    end do
+    if (nexc==1) then
+        term=6* (trandip(istat,istat,idir)-trandip(0,0,idir))*trandip(0,istat,idir)**2  / excene(istat)**2
+        write(*,"(/,' beta evaluated by the two-level model: ',f16.6,' a.u.')") term
+    else if (nexc==2) then
+        write(*,"(/,' Transition dipole moment between states',i6,' to',i6,':',f12.6,' a.u.')") istat,jstat,trandip(istat,jstat,idir)
+        term1=6* (trandip(istat,istat,idir)-trandip(0,0,idir))*trandip(0,istat,idir)**2  / excene(istat)**2
+        term2=12* trandip(istat,jstat,idir)*trandip(0,istat,idir)*trandip(0,jstat,idir) / (excene(istat)*excene(jstat))
+        term3=6* (trandip(jstat,jstat,idir)-trandip(0,0,idir))*trandip(0,jstat,idir)**2  / excene(jstat)**2
+        write(*,*)
+        write(*,"(' Contribution of excited state',i6,':',f16.6,' a.u.')") istat,term1
+        write(*,"(' Contribution of excited state',i6,':',f16.6,' a.u.')") jstat,term3
+        write(*,"(' Contribution of cross term:         ',f16.6,' a.u.')") term2
+        write(*,"(' beta evaluated by the three-level model:',f16.6,' a.u.')") term1+term2+term3
+    end if
 end if
+
 end do
+
 end subroutine
+
+
+
 
 
 !!---------- Calculate average bond length between two elements and average coordinate number
@@ -2249,7 +2905,9 @@ end if
 end subroutine
 
 
-		
+
+
+
 !!!------- Calculate electric/magnetic/velocity... integral between orbitals
 subroutine outorbint
 use defvar
@@ -2390,6 +3048,8 @@ else
 	end if
 end if
 end subroutine
+
+
 
 
 
@@ -2541,6 +3201,8 @@ do while(.true.)
 	end if
 end do
 end subroutine
+
+
 
 
 
@@ -3298,4 +3960,564 @@ end do
 !write(*,*)
 !write(*,"(' CVB index:',f12.6)") ELF_CV-ELF_DHA
 write(*,"(' The CVB index, namely ELF(C-V,D) - ELF(DH-A):',f12.6)") ELF_CV_D - ELF_DHA
+end subroutine
+
+
+
+
+
+
+
+!!------------------------------------------------------------------------------------------
+!!---- Fit Fukui function or other kind of density difference to orbital representation ----
+!!------------------------------------------------------------------------------------------
+!Note: Other kind of grid data is also acceptable
+subroutine orbfitEDD
+use defvar
+use util
+use GUI
+use function
+implicit real*8 (a-h,o-z)
+character c200tmp*200,c2000tmp*2000,selectyn
+integer,allocatable :: orbidx(:)
+real*8,allocatable :: Amat(:,:),Amatinv(:,:),Bvec(:),fvec(:),fval(:),EDD(:,:,:),orbgrid(:,:,:,:)
+real*8 orbval(nmo)
+integer,allocatable :: idxlist(:)
+integer :: isetcons=1,imode=1,ioutfitcub=1
+real*8 :: consval=1
+
+write(*,*)
+write(*,"(a)") " Input path of a cube file containing density difference (or other kind of grid data), e.g. C:\rize\f+.cub"
+do while(.true.)
+    c200tmp="C:\Users\Sobereva\Desktop\NBO_Fukui\H2CO\f-.cub" !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	read(*,"(a)") c200tmp
+	inquire(file=c200tmp,exist=alive)
+	if (alive) exit
+	write(*,*) "Cannot find the file, input again!"
+end do
+call readcube(c200tmp,1,1)
+write(*,*) "Loading finished"
+
+!Store EDD
+allocate(EDD(nx,ny,nz))
+EDD=cubmat
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "  ----------- Calculation of orbital contributions to grid data -----------"
+    write(*,*) "-1 Return"
+    write(*,*) " 0 Choose orbital range and start analysis!"
+    if (isetcons==1) write(*,"(a,f12.3)") "  1 Set constraint on the sum of contributions, current:",consval
+    if (isetcons==0) write(*,*) " 1 Set constraint on the sum of contributions, current: No constraint"
+    if (imode==1) write(*,*) " 2 Switch calculation mode, current: fast (memory based)"
+    if (imode==2) write(*,*) " 2 Switch calculation mode, current: slow (cube file based)"
+    read(*,*) isel
+    
+    if (isel==-1) then
+        exit
+        
+    else if (isel==1) then
+        write(*,*) "1 Do not set constraint on the sum of contributions"
+        write(*,*) "2 Set constraint on the sum of contributions to a specific value"
+        read(*,*) isel2
+        if (isel2==1) then
+            isetcons=0
+        else if (isel2==2) then
+            isetcons=1
+            write(*,*) "Input the value of constraint, e.g. 1.5"
+            read(*,*) consval
+        end if
+        
+    else if (isel==2) then
+        if (imode==1) then
+            imode=2
+        else
+            imode=1
+        end if
+        
+    else if (isel==0) then !Start analysis!
+        write(*,*)
+        write(*,*) "Input index of the orbitals to be taken into account, e.g. 2,3,7-10"
+        write(*,*) "If pressing ENTER directly, all orbitals will be taken into account"
+        write(*,"(a)") " If inputting ""o"", all orbitals with non-zero occupation will be taken into account"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            norb=nmo
+            allocate(orbidx(nmo))
+            forall(i=1:nmo) orbidx(i)=i
+        else if (c2000tmp=="o") then
+            norb=count(MOocc/=0)
+            allocate(orbidx(norb))
+            itmp=0
+            do imo=1,nmo
+                if (MOocc(imo)/=0) then
+                    itmp=itmp+1
+                    orbidx(itmp)=imo
+                end if
+            end do
+        else
+            call str2arr(c2000tmp,norb)
+            allocate(orbidx(norb))
+            call str2arr(c2000tmp,norb,orbidx)
+        end if
+
+        if (imode==1) then !Calculate grid data of |psi|^2 for all selected orbitals and store to memory
+            if (allocated(orbgrid)) deallocate(orbgrid)
+            allocate(orbgrid(nx,ny,nz,norb))
+            ilow=minval(orbidx)
+            ihigh=maxval(orbidx)
+            write(*,*) "Calculating orbital density..."
+            !$OMP PARALLEL DO SHARED(orbgrid) PRIVATE(i,j,k,tmpx,tmpy,tmpz,idx,iorb,orbval) schedule(dynamic) NUM_THREADS(nthreads)
+            do k=1,nz
+	            tmpz=orgz+(k-1)*dz
+	            do j=1,ny
+		            tmpy=orgy+(j-1)*dy
+		            do i=1,nx
+			            tmpx=orgx+(i-1)*dx
+                        call orbderv(1,ilow,ihigh,tmpx,tmpy,tmpz,orbval)
+                        do idx=1,norb
+                            iorb=orbidx(idx)
+			                orbgrid(i,j,k,idx)=orbval(iorb)**2
+                        end do
+		            end do
+	            end do
+            end do
+            !$OMP END PARALLEL DO
+        
+        else if (imode==2) then !Calculate and export cube file of |psi|^2 for all selected orbitals
+            do idx=1,norb
+                iorb=orbidx(idx)
+                write(c200tmp,"('rho_',i5.5,'.cub')") iorb
+                inquire(file=c200tmp,exist=alive)
+	            if (alive) then
+                    write(*,"(1x,a)") trim(c200tmp)//" has already existed and thus will not be calculated"
+                else
+                    write(*,"(' Calculating orbital density for orbital',i6)") iorb
+                    call savecubmat(4,1,iorb)
+                    cubmat=cubmat**2
+                    open(10,file=c200tmp,status="replace")
+                    call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+                    close(10)
+                end if
+            end do
+        end if
+
+        !Construct A matrix and B vector
+        if (isetcons==0) then
+            ndim=norb
+        else if (isetcons==1) then
+            ndim=norb+1
+        end if
+        allocate(Amat(ndim,ndim),Amatinv(ndim,ndim),Bvec(ndim),fvec(ndim),fval(norb),idxlist(norb))
+        write(*,*) "Calculating fitted coefficients..."
+        call showprog(0,norb)
+        do idx=1,norb
+            iorb=orbidx(idx)
+            
+            if (imode==1) then !Memory based
+                !Construct A matrix. Since it is symmetric, only construct upper-right part
+                do jdx=idx,norb
+                    tmpA=sum(orbgrid(:,:,:,idx)*orbgrid(:,:,:,jdx))
+                    Amat(idx,jdx)=tmpA
+                    Amat(jdx,idx)=tmpA
+                end do
+                !Construct B vector
+                Bvec(idx)=sum(orbgrid(:,:,:,idx)*EDD)
+                
+            else if (imode==2) then !cube file based
+                write(c200tmp,"('rho_',i5.5,'.cub')") iorb
+                call readcube(c200tmp,2,1)
+                !Construct A matrix. Since it is symmetric, only construct upper-right part
+                do jdx=idx,norb
+                    jorb=orbidx(jdx)
+                    write(c200tmp,"('rho_',i5.5,'.cub')") jorb
+                    call readcubetmp(c200tmp,2,itmp)
+                    tmpA=sum(cubmat*cubmattmp)
+                    Amat(idx,jdx)=tmpA
+                    Amat(jdx,idx)=tmpA
+                end do
+                !Construct B vector
+                Bvec(idx)=sum(cubmat*EDD)
+            end if
+    
+            call showprog(idx,norb)
+        end do
+
+        !Finalize matrix and solve linear equation
+        if (isetcons==1) then
+            Amat(ndim,1:norb)=1
+            Amat(1:norb,ndim)=1
+            Amat(ndim,ndim)=0
+            Bvec(ndim)=consval
+        end if
+        Amatinv=invmat(Amat,ndim)
+        fvec=matmul(Amatinv,Bvec)
+
+        !Show result
+        forall(i=1:norb) idxlist(i)=i
+        fval=fvec(1:norb)
+        call sortr8(fval,list=idxlist)
+        write(*,*)
+        do idx=1,norb
+            idxold=idxlist(idx)
+            write(*,"(' Orbital',i6,'   Value:',f10.3)") orbidx(idxold),fval(idx)
+        end do
+        write(*,"(' Sum of all values:',f12.3)") sum(fval)
+
+        !Show fitting error
+        cubmat=0
+        do idx=1,norb
+            if (imode==1) then
+                cubmat=cubmat+fvec(idx)*orbgrid(:,:,:,idx)
+            else if (imode==2) then
+                iorb=orbidx(idx)
+                write(c200tmp,"('rho_',i5.5,'.cub')") iorb
+                call readcubetmp(c200tmp,2,itmp)
+                cubmat=cubmat+fvec(idx)*cubmattmp
+            end if
+        end do
+        write(*,"(' Fitting error (definition 1):',f12.4)") sum(abs(EDD-cubmat))*dx*dy*dz
+        write(*,"(' Fitting error (definition 2):',f12.6)") sum(abs(EDD-cubmat)**2)*dx*dy*dz
+
+        do while(.true.)
+            write(*,*)
+            write(*,*) "0 Exit"
+            write(*,*) "1 Output fitted grid data to fitted.cub in current folder"
+            write(*,*) "2 Visualize isosurface of provided grid data"
+            write(*,*) "3 Visualize isosurface of fitted grid data"
+            write(*,"(a)") " 4 Visualize isosurface of difference between the provided grid data and the fitted grid data"
+            read(*,*) isel2
+            if (isel2==0) then
+                exit
+            else if (isel2==1) then
+                open(10,file="fitted.cub",status="replace")
+                call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+                close(10)
+                write(*,*) "Outputting finished!"
+            else if (isel2==2) then
+                if (.not.allocated(cubmattmp)) allocate(cubmattmp(nx,ny,nz))
+                cubmattmp=cubmat
+                cubmat=EDD
+                sur_value=0.01D0
+                call drawisosurgui(1)
+                cubmat=cubmattmp
+            else if (isel2==3) then
+                sur_value=0.01D0
+                call drawisosurgui(1)
+            else if (isel2==4) then
+                if (.not.allocated(cubmattmp)) allocate(cubmattmp(nx,ny,nz))
+                cubmattmp=cubmat
+                cubmat=EDD-cubmat
+                sur_value=0.005D0
+                call drawisosurgui(1)
+                cubmat=cubmattmp
+            end if
+        end do
+
+        if (imode==2) then
+            write(*,*) "Do you want to clean all .cub files involved in this run? (y/n)"
+            read(*,*) selectyn
+            if (selectyn=='y') then
+                do idx=1,norb
+                    iorb=orbidx(idx)
+                    write(c200tmp,"('rho_',i5.5,'.cub')") iorb
+                    inquire(file=c200tmp,exist=alive)
+	                if (alive) then
+                        open(10,file=c200tmp,status="old")
+                        close(10,status="delete")
+                    end if
+                end do
+                write(*,*) "Done! All rho_xxxxx.cub files in current folder have been deleted"
+            end if
+        end if
+        
+        deallocate(orbidx,Amat,Amatinv,Bvec,fvec,fval,idxlist)
+ 
+   end if
+    
+end do
+
+end subroutine
+
+
+
+
+!!--------------------------------------------------------------------------------
+!!--------- Calculate Coulomb and exchange integral between two orbitals ---------
+!!--------------------------------------------------------------------------------
+subroutine orb_coulexcint
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c200tmp*200
+real*8,allocatable :: cubx(:),cuby(:),cubz(:),rhoii(:,:,:),rhojj(:,:,:),rhoij(:,:,:)
+real*8 :: Coulcrit=1D-6,exccrit=1D-5 !Only leads to marginal error, speed may increase several times
+
+if (allocated(b)) then !cubmat and cubmattmp will record orbital wavefunction grid data of j and i orbitals
+    write(*,*) "Input index of two orbitals, e.g. 4,10"
+    read(*,*) iorb,jorb
+    call setgridfixspc
+    write(*,*) "Calculating grid data of orbital wavefunction..."
+	if (allocated(cubmat)) deallocate(cubmat)
+	if (allocated(cubmattmp)) deallocate(cubmattmp)
+	allocate(cubmat(nx,ny,nz),cubmattmp(nx,ny,nz))
+	call savecubmat(4,1,iorb)
+    cubmattmp=cubmat
+	call savecubmat(4,1,jorb)
+else
+    write(*,*) "Input path of another cube file recording wavefunction of an orbital"
+    write(*,*) "e.g. C:\otoboku\MO10.cub"
+    do while(.true.)
+	    read(*,"(a)") c200tmp
+	    inquire(file=c200tmp,exist=alive)
+	    if (alive) exit
+	    write(*,*) "Cannot find the file, input again!"
+    end do
+    call readcubetmp(c200tmp,1,itmp)
+end if
+dvol=dx*dy*dz
+
+allocate(rhoii(nx,ny,nz),rhojj(nx,ny,nz),rhoij(nx,ny,nz))
+rhoii=cubmattmp**2
+rhojj=cubmat**2
+rhoij=cubmattmp*cubmat
+
+allocate(cubx(nx),cuby(ny),cubz(nz))
+do i=1,nx
+	cubx(i)=orgx+(i-1)*dx
+end do
+do i=1,ny
+	cuby(i)=orgy+(i-1)*dy
+end do
+do i=1,nz
+	cubz(i)=orgz+(i-1)*dz
+end do
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "------- Calculate Coulomb and exchange integrals based on uniform grid -------"
+    write(*,*) "0 Return"
+    write(*,*) "1 Calculate Coulomb integral"
+    write(*,"(a,f12.8)") " 2 Set truncation value of Coulomb integral, current:",Coulcrit
+    write(*,*) "3 Calculate exchange integral"
+    write(*,"(a,f12.8)") " 4 Set truncation value of exchange integral, current:",exccrit
+    read(*,*) isel
+    if (isel==0) then
+        exit
+    else if (isel==2) then
+        write(*,*) "Input a value, e.g. 1E-6"
+        read(*,*) Coulcrit
+    else if (isel==4) then
+        write(*,*) "Input a value, e.g. 1E-5"
+        read(*,*) exccrit
+    end if
+
+    if (isel==1.or.isel==3) then
+        write(*,*) "Calculating integrals, please wait..."
+        call walltime(iwalltime1)
+        coulene=0
+        excene=0
+        do i=1,nx
+	        do j=1,ny
+		        do k=1,nz
+                    if (isel==1) then !Coulomb integral
+			            if (rhoii(i,j,k)>Coulcrit) then
+			                !$OMP parallel shared(coulene) private(ii,jj,kk,distx2,disty2,distz2,dist,coulenetmp) num_threads(nthreads)
+			                coulenetmp=0
+			                !$OMP do schedule(DYNAMIC)
+					        do kk=1,nz
+						        distz2=(cubz(k)-cubz(kk))**2
+				                do jj=1,ny
+					                disty2=(cuby(j)-cuby(jj))**2
+			                        do ii=1,nx
+				                        distx2=(cubx(i)-cubx(ii))**2
+                                        dist=dsqrt(distx2+disty2+distz2)
+                                        if (dist==0) cycle
+						                coulenetmp=coulenetmp + rhojj(ii,jj,kk) /dist
+					                end do
+				                end do
+			                end do
+			                !$OMP END DO
+			                !$OMP CRITICAL
+			                coulene=coulene+rhoii(i,j,k)*coulenetmp
+			                !$OMP END CRITICAL
+			                !$OMP END PARALLEL
+                        end if
+                    else if (isel==3) then !Exchange integral
+			            if (abs(rhoij(i,j,k))>exccrit) then
+			                !$OMP parallel shared(excene) private(ii,jj,kk,distx2,disty2,distz2,dist,excenetmp) num_threads(nthreads)
+                            excenetmp=0
+			                !$OMP do schedule(DYNAMIC)
+					        do kk=1,nz
+						        distz2=(cubz(k)-cubz(kk))**2
+				                do jj=1,ny
+					                disty2=(cuby(j)-cuby(jj))**2
+			                        do ii=1,nx
+				                        distx2=(cubx(i)-cubx(ii))**2
+						                dist=dsqrt(distx2+disty2+distz2)
+                                        if (dist==0) cycle
+						                excenetmp=excenetmp + rhoij(ii,jj,kk) /dist
+					                end do
+				                end do
+			                end do
+			                !$OMP END DO
+			                !$OMP CRITICAL
+                            excene=excene+rhoij(i,j,k)*excenetmp
+			                !$OMP END CRITICAL
+			                !$OMP END PARALLEL
+                        end if
+                    end if
+                    
+		        end do
+	        end do
+	        call showprog(i,nx)
+        end do
+        
+        coulene=coulene*dvol*dvol
+        excene=excene*dvol*dvol
+        call walltime(iwalltime2)
+        write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+        write(*,*)
+        if (isel==1) write(*,"(' Coulomb integral (ii|jj): ',f12.6,' a.u.')") coulene
+        if (isel==3) write(*,"(' Exchange integral (ij|ji):',f12.6,' a.u.')") excene
+    end if
+    
+end do
+end subroutine
+
+
+
+
+
+!!---------------------------------------------------------------
+!!------------- Calculate bond length/order alternation (BLA/BOA)
+!!---------------------------------------------------------------
+subroutine bondalter
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer,allocatable :: chainatm(:),atmseq(:),atmtmp(:)
+real*8,allocatable :: PSmat(:,:),PSmata(:,:),PSmatb(:,:)
+integer :: cenind(12)
+
+write(*,*) "Input atom indices in the chain (the sequence is arbitrary)"
+write(*,*) "e.g. 2,14,16-17,19,21,23-24"
+read(*,"(a)") c2000tmp
+!c2000tmp="1-4,9-10,12,14,16-17,19,21,23-24,26,28,30-31,33,35,37-38,40,42,44-45,47,49,51-52,54,56,58-59,61,63"
+call str2arr(c2000tmp,nchainatm)
+allocate(chainatm(nchainatm),atmseq(nchainatm),atmtmp(ncenter))
+call str2arr(c2000tmp,nchainatm,chainatm)
+
+write(*,*) "Input index of the two atoms at the two ends, e.g. 13,24"
+read(*,*) ibeg,iend
+!ibeg=1;iend=63
+
+if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
+
+!Identify the atom sequence in the chain. From ibeg, gradually add adjacent atom to the sequence, until the iend is encountered
+atmtmp=0 !If atmtmp(i)=1, that means the atom i has already added to the sequence
+atmtmp(ibeg)=1
+atmseq(1)=ibeg
+inow=ibeg
+idx=1
+do while(.true.)
+    do itmp=1,nchainatm
+        iatm=chainatm(itmp)
+        if (atmtmp(iatm)==1) cycle
+        if (connmat(inow,iatm)/=0) then
+            inow=iatm
+            atmtmp(iatm)=1
+            idx=idx+1
+            atmseq(idx)=inow
+            exit
+        end if
+    end do
+    if (inow==iend) exit
+end do
+
+write(*,*)
+write(*,*) "Sequence of the atoms in the chain from the beginning side to the ending side"
+write(*,"(9i8)") atmseq
+
+open(10,file="bondalter.txt",status="replace")
+
+write(*,*)
+if (allocated(CObasa)) then
+    iBO=1
+    if (wfntype==0.or.wfntype==3) then !Closed-shell
+        allocate(PSmat(nbasis,nbasis))
+        PSmat=matmul(Ptot,Sbas)
+    else !Open-shell
+        allocate(PSmata(nbasis,nbasis),PSmatb(nbasis,nbasis))
+	    PSmata=matmul(Palpha,Sbas)
+	    PSmatb=matmul(Pbeta,Sbas)
+    end if
+    write(*,*) " Bond     Atom1     Atom2   Length (Angstrom)   Mayer bond order"
+else
+    iBO=0
+    write(*,*) " Bond     Atom1     Atom2   Length (Angstrom)"
+end if
+
+avglen_even=0
+avglen_odd=0
+avgBO_even=0
+avgBO_odd=0
+n_even=0
+n_odd=0
+do idx=1,nchainatm-1
+    iatm=atmseq(idx)
+    jatm=atmseq(idx+1)
+    dist=distmat(iatm,jatm)*b2a
+    if (mod(idx,2)==1) then !odd
+        avglen_odd=avglen_odd+dist
+        n_odd=n_odd+1
+    else
+        avglen_even=avglen_even+dist
+        n_even=n_even+1
+    end if
+    
+    if (iBO==0) then
+        write(*,"(i5,2i10,f14.3)") idx,iatm,jatm,dist
+        write(10,"(i5,2i10,f14.3)") idx,iatm,jatm,dist
+    else !Also calculate bond order
+        cenind(1)=iatm
+        cenind(2)=jatm
+        if (wfntype==0.or.wfntype==3) then !Closed-shell
+            call calcmultibndord(2,cenind,PSmat,nbasis,bondorder)
+        else !Open-shell
+            call calcmultibndord(2,cenind,PSmata,nbasis,resulta)
+            call calcmultibndord(2,cenind,PSmatb,nbasis,resultb)
+            bondorder=2*(resulta+resultb)
+        end if
+        write(*,"(i5,2i10,f14.4,f20.4)") idx,iatm,jatm,dist,bondorder
+        write(10,"(i5,2i10,f14.4,f20.4)") idx,iatm,jatm,dist,bondorder
+        if (mod(idx,2)==1) then !odd
+            avgBO_odd=avgBO_odd+bondorder
+        else
+            avgBO_even=avgBO_even+bondorder
+        end if
+    end if
+    
+end do
+
+write(*,*)
+write(*,*) "The data shown above have also been exported to bondalter.txt in current folder"
+write(*,"(a,i6)") " The number of even bonds:",n_even
+write(*,"(a,i6)") " The number of odd bonds: ",n_odd
+avglen_even=avglen_even/n_even
+avglen_odd=avglen_odd/n_odd
+write(*,"(a,f12.4,' Angstrom')") " Average length of even bonds: ",avglen_even
+write(*,"(a,f12.4,' Angstrom')") " Average length of odd bonds:  ",avglen_odd
+BLA=avglen_even-avglen_odd
+write(*,"(a,f12.4,' Angstrom')") " Bond length alternation (BLA):",BLA
+if (iBO==1) then
+    avgBO_even=avgBO_even/n_even
+    avgBO_odd=avgBO_odd/n_odd
+    write(*,"(a,f12.4)") " Average bond order of even bonds:",avgBO_even
+    write(*,"(a,f12.4)") " Average bond order of odd bonds: ",avgBO_odd
+    BOA=avgBO_even-avgBO_odd
+    write(*,"(a,f12.4)") " Bond order alternation (BOA):    ",BOA
+end if
+
 end subroutine

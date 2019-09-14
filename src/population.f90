@@ -143,7 +143,7 @@ else
 		else if (ipopsel==10) then
 			call spacecharge(5)
 		else if (ipopsel==11) then
-			write(*,"(a)") " Citation of ADCH: Tian Lu, Feiwu Chen, Atomic dipole moment corrected Hirshfeld population method, J. Theor. Comput. Chem., 11, 163 (2011)"
+			write(*,"(a)") " Citation of ADCH: Tian Lu, Feiwu Chen, Atomic dipole moment corrected Hirshfeld population method, J. Theor. Comput. Chem., 11, 163 (2012)"
 			write(*,*)
 			call spacecharge(6)
 		else if (ipopsel==12) then
@@ -2913,7 +2913,7 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 	""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 	write(*,"(a)") " Running: "//trim(c400tmp)
 	call system(c400tmp)
-	if (index(filename,".chk")/=0) call delfch(filename_tmp)
+	if (index(filename,".chk")/=0) call delfile(filename_tmp)
 	
 	!Load ESP data from cubegen resulting file
 	open(10,file="ESPresult.cub",status="old")
@@ -3038,22 +3038,25 @@ real*8 :: crit=0.0002D0
 real*8,external :: fdens_rad
 !Used for mode 2. e.g. atmstatgrid(iatm,igrid,jatm,-1) means density of jatm with -1 charge state at igrid around iatm
 real*8,allocatable :: atmstatgrid(:,:,:,:)
-ntotpot=radpot*sphpot
+
+!Ignore jatm contribution to iatm centered grids if distance between iatm and jatm is larger than 1.5 times of sum of their vdwr
+!This can reduce lots of time for large system, the lose of accuracy can be ignored (error is ~0.0001 per atom)
+integer :: ignorefar=1
+real*8 :: vdwsumcut=2D0
 
 !Mode 1 use very low memory but expensive, because most data is computed every iteration
 !Mode 2 use large memory but fast, because most data is only computed once at initial stage
 !The result of the two modes differ with each other marginally, probably because in mode 1 radial density is related to max(npthigh,nptlow), which is not involved in mode 2
 !In principle, result of mode 2 is slightly better
-imode=2
+integer :: imode=2
 
-!Ignore jatm contribution to iatm centered grids if distance between iatm and jatm is larger than 1.5 times of sum of their vdwr
-!This can decrease lots of time for large system, the lose of accuracy can be ignored (error is ~0.0001 per atom)
-ignorefar=1
-
+ntotpot=radpot*sphpot
 write(*,*)
-if (itype==1) write(*,*) "     =============== Iterative Hirshfeld (Hirshfeld-I) ==============="
-if (itype==2) write(*,*) "     ============== Generate Hirshfeld-I atomic weights =============="
 do while(.true.)
+    if (itype==1) write(*,*) "     =============== Iterative Hirshfeld (Hirshfeld-I) ==============="
+    if (itype==2) write(*,*) "     ============== Generate Hirshfeld-I atomic weights =============="
+	if (ignorefar==1) write(*,"(a,f6.3)") " -3 Switch if speeding up calculation using distance cutoff, current: Yes, ratio factor is",vdwsumcut
+	if (ignorefar==0) write(*,*) "-3 Switch if speeding up calculation using distance cutoff, current: No"
 	if (imode==1) write(*,*) "-2 Switch algorithm, current: Slow & low memory requirement"
 	if (imode==2) write(*,*) "-2 Switch algorithm, current: Fast & large memory requirement"
 	if (itype==1) then
@@ -3065,7 +3068,17 @@ do while(.true.)
 	write(*,"(a,i4)") " 2 Set the maximum number of iterations, current:",maxcyc
 	write(*,"(a,f10.6)") " 3 Set convergence criterion of atomic charges, current:",crit
 	read(*,*) isel
-	if (isel==-2) then
+	if (isel==-3) then
+        if (ignorefar==1) then
+            ignorefar=0
+        else
+            ignorefar=1
+            write(*,*) "Input ratio factor of cutoff, e.g. 2.5"
+            write(*,*) "Note: The higher the value, the more accurate the result and the more robust &
+            the calculation will be, however the computational cost will be correspondingly higher. The default value is 2.0"
+            read(*,*) vdwsumcut
+        end if
+	else if (isel==-2) then
 		if (imode==1) then
 			imode=2
 		else
@@ -3144,8 +3157,7 @@ if (imode==2) then
 		do istat=-2,2 !Charge state
 			do jatm=1,ncenter
 				if (ignorefar==1) then
-					atmdist=dsqrt( (a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2 )
-					if (atmdist>(vdwr(iatm)+vdwr(jatm))*1.5D0) cycle
+					if (distmat(iatm,jatm)>(vdwr(a(iatm)%index)+vdwr(a(jatm)%index))*vdwsumcut) cycle
 				end if
 				if (a(jatm)%index==1.and.istat==1) cycle !H+ doesn't contains electron and cannot compute density
 				c80tmp="atmrad"//sep//trim(a(jatm)%name)//statname(istat)//".rad"
@@ -3157,6 +3169,8 @@ if (imode==2) then
 					read(10,*) rnouse,atmradrho(jatm,ipt)
 				end do
 				close(10)
+                !I have made great effort to try to parallelize this part, however after doing this, the speed is even significantly lower
+                !So I decided not to parallelize it
 				do ipt=1+iradcut*sphpot,ntotpot
 					atmstatgrid(iatm,ipt,jatm,istat)=fdens_rad(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
 				end do
@@ -3202,11 +3216,10 @@ do icyc=1,maxcyc
 		promol=0D0
 		do jatm=1,ncenter
 			if (ignorefar==1) then
-				atmdist=dsqrt( (a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2 )
-				if (atmdist>(vdwr(iatm)+vdwr(jatm))*1.5D0) cycle
+				if (distmat(iatm,jatm)>(vdwr(a(iatm)%index)+vdwr(a(jatm)%index))*vdwsumcut) cycle
 			end if
 			if (imode==1) then
-				!$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
+				!$OMP parallel do shared(tmpdens) private(ipt) schedule(dynamic) num_threads(nthreads)
 				do ipt=1+iradcut*sphpot,ntotpot
 					tmpdens(ipt)=fdens_rad(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
 				end do
@@ -3677,8 +3690,8 @@ real*8 EEMmat(ncenter+1,ncenter+1),EEMarr(ncenter+1),qarr(ncenter+1)
 real*8 kappa,Aparm(nelesupp,maxBO),Bparm(nelesupp,maxBO) !If parameter is -1, means undefined parameter
 real*8 :: chgnet=0
 
-if (ifiletype/=11) then
-	write(*,"(a)") " Error: MDL Molfile (.mol) file must be used as input file, since it contains atomic connectivity information!"
+if (ifiletype/=11.and.ifiletype/=13) then
+	write(*,"(a)") " Error: MDL Molfile (.mol) or .mol2 file must be used as input file, since it contains atomic connectivity information!"
 	write(*,*) "Press Enter button to return"
 	read(*,*)
 	return

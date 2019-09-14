@@ -67,8 +67,6 @@ do while(.true.)
 
 	if (isel==-10) then
 		idrawbasinidx=-10 !Don't display interbasin in any other GUI
-		ishowattlab=0 !Don't show attractors in other GUIs
-		ishowatt=1
 		return
 		
 	else if (isel==-6) then
@@ -1754,7 +1752,7 @@ write(*,*) "0 The values of the grid data stored in memory"
 call selfunc_interface(1,ifuncint)
 if (ifuncint==-1) then
 	do while(.true.)
-		write(*,*) "Input another .cub or .grd file name"
+		write(*,*) "Input another .cub or .grd file name, e.g. C:\CODE_GEASS\CC.cub"
 		read(*,"(a)") grdfilename
 		inquire(file=grdfilename,exist=alive)
 		if (alive) exit
@@ -1763,7 +1761,7 @@ if (ifuncint==-1) then
 	end do
 	inamelen=len_trim(grdfilename)
 	if (grdfilename(inamelen-2:inamelen)=="cub".or.grdfilename(inamelen-3:inamelen)=="cube") then
-		call readcubetmp(grdfilename,inconsis)
+		call readcubetmp(grdfilename,1,inconsis)
 	else if (grdfilename(inamelen-2:inamelen)=="grd") then
 		call readgrdtmp(grdfilename,inconsis)
 	end if
@@ -1839,7 +1837,7 @@ if (alive==.false.) then
 	return
 else
 	if (allocated(cubmattmp)) deallocate(cubmattmp)
-	call readcubetmp("basin.cub",inconsis)
+	call readcubetmp("basin.cub",1,inconsis)
 	if (inconsis==1) then
 		write(*,*) "Error: The grid setting of basin.cub is inconsistent with present grid data"
 		return

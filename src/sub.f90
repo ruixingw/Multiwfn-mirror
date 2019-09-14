@@ -1046,12 +1046,15 @@ implicit real*8 (a-h,o-z)
 if (allocated(distmat)) deallocate(distmat)
 allocate(distmat(ncenter,ncenter))
 distmat=0.0D0
+!$OMP PARALLEL DO SHARED(distmat) PRIVATE(i,j,tmp) schedule(dynamic) NUM_THREADS(nthreads)
 do i=1,ncenter
 	do j=i+1,ncenter
-		distmat(i,j)=dsqrt((a(i)%x-a(j)%x)**2+(a(i)%y-a(j)%y)**2+(a(i)%z-a(j)%z)**2)
+        tmp=dsqrt((a(i)%x-a(j)%x)**2+(a(i)%y-a(j)%y)**2+(a(i)%z-a(j)%z)**2)
+		distmat(i,j)=tmp
+        distmat(j,i)=tmp
 	end do
 end do
-distmat=distmat+transpose(distmat)
+!$OMP END PARALLEL DO
 end subroutine
 
 
@@ -1194,7 +1197,7 @@ if (alive.and.ifiletype==1.and.functype==12) then !Use cubegen to calculate ESP
 	""""//trim(filename_tmp)//""""//" ESPresult.cub -1 h ESPgridtmp.cub > nouseout"
 	write(*,"(a)") " Running: "//trim(c400tmp)
 	call system(c400tmp)
-	if (index(filename,".chk")/=0) call delfch(filename_tmp)
+	if (index(filename,".chk")/=0) call delfile(filename_tmp)
 	!Load ESP data from cubegen resulting file
 	call readcube("ESPresult.cub",1,1)
 	!Delete intermediate files
@@ -1330,6 +1333,7 @@ character*2 typename(100),nametmp
 character*80 basisset,tmpdir,c80tmp
 character*80 outwfnname
 logical alivegauout,alivewfntmp,aliveatomwfn
+if (isys==1) call cleangauscr !Clean Gaussian scratch files in current folder
 
 !The only difference between c80tmp and tmpdir is that the latter has \ or / separator at the end
 if (iwfntmptype==1) then
@@ -2327,6 +2331,7 @@ if (allocated(b_EDF)) then
 	nEDFprims=0
 	nEDFelec=0
 end if
+if (allocated(connmat)) deallocate(connmat)
 !Related to basis functions
 if (allocated(shtype)) deallocate(shtype,shcen,shcon,primshexp,primshcoeff,&
 basshell,bascen,bastype,basstart,basend,primstart,primend,primconnorm)
@@ -3216,15 +3221,28 @@ end subroutine
 
 
 !!------- Invoke Gaussian to run a .gjf
-subroutine runGaussian(gjfname)
+!If returned istate=1, means normally termination, =0 means other case or failed
+subroutine runGaussian(gjfname,istate)
 use defvar
+use util
 character(len=*) gjfname
 character command*200,outname*200
 outname=gjfname(:len(gjfname)-3)//"out"
 command=trim(gaupath)//' "'//gjfname//'" "'//trim(outname)//'"'
 write(*,*) "Running: "//trim(command)
 call system(command)
-write(*,*) "Done!"
+open(100,file=outname,status="old")
+call loclabel(100,"Normal termination",istate)
+close(100)
+end subroutine
+
+
+!!------- Gaussian scratch file in current folder (only meaningful for Windows version)
+subroutine cleangauscr
+character command*200
+command="del gxx.* fort.6 Gau*.inp"
+write(*,*) "Running: "//trim(command)
+call system(command)
 end subroutine
 
 
@@ -3234,10 +3252,30 @@ use defvar
 character(len=*) delname
 character command*200
 if (isys==1) then
-    command="del "//delname
+    command="del /Q "//trim(delname)
 else if (isys==2) then
-    command="rm -f "//delname
+    command="rm -f "//trim(delname)
 end if
-write(*,*) "Deleting "//delname
-call system(command)
+write(*,*) "Deleting "//trim(delname)
+call system(trim(command))
+end subroutine
+
+
+
+!!----- Generate connectivity matrix, invoked by such as subroutine outcml
+subroutine genconnmat
+use defvar
+implicit real*8 (a-h,o-z)
+if (allocated(connmat)) deallocate(connmat)
+allocate(connmat(ncenter,ncenter))
+write(*,*) "Generating bonding relationship..."
+write(*,"(a,f6.3,a)") " Note: If distance between two atoms is smaller than sum of their &
+covalent radii multiplied by ",bondcrit,", then they are regarded as bonded"
+connmat=0
+do iatm=1,ncenter
+    do jatm=iatm+1,ncenter
+        if ( distmat(iatm,jatm) < bondcrit*(covr(a(iatm)%index)+covr(a(jatm)%index)) ) connmat(iatm,jatm)=1
+        connmat(jatm,iatm)=connmat(iatm,jatm)
+    end do
+end do
 end subroutine

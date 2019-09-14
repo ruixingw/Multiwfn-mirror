@@ -248,7 +248,7 @@ do while(.true.)
 			""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
 			write(*,"(a)") " Running: "//trim(c400tmp)
 			call system(c400tmp)
-			if (index(filename,".chk")/=0) call delfch(filename_tmp)
+			if (index(filename,".chk")/=0) call delfile(filename_tmp)
 			
 			!Load ESP data from cubegen resulting file
 			open(10,file="ESPresult.cub",status="old")
@@ -500,7 +500,7 @@ end subroutine
 
 !======================================================================================
 !======================================================================================
-!---------- Study various real space functions on a plane (i.e. 0 dimension) ----------
+!---------- Study various real space functions on a plane (i.e. 2 dimension) ----------
 !======================================================================================
 !======================================================================================
 subroutine study2dim
@@ -730,7 +730,7 @@ do while(.true.)
 		read(*,*) rotplane
 		write(*,*) "Done!"
 	else if (plesel==1) then
-		write(*,*) "Input Z value in Bohr"
+		write(*,*) "Input Z value in Bohr, e.g. 0.2"
 		write(*,*) "Note: If the unit is in Angstrom, add ""a"" suffix, e.g. -1.6a"
 		read(*,*) c200tmp
 		if (index(c200tmp,'a')/=0) then
@@ -758,7 +758,7 @@ do while(.true.)
 			v2y=(maxval(a%y)+aug2D2-orgy2D)/ngridnum2
 		end if
 	else if (plesel==2) then
-		write(*,*) "Input Y value in Bohr"
+		write(*,*) "Input Y value in Bohr, e.g. 0.2"
 		write(*,*) "Note: If the unit is in Angstrom, add ""a"" suffix, e.g. -1.6a"
 		read(*,*) c200tmp
 		if (index(c200tmp,'a')/=0) then
@@ -784,7 +784,7 @@ do while(.true.)
 			v2z=(maxval(a%z)+aug2D2-orgz2D)/ngridnum2
 		end if
 	else if (plesel==3) then
-		write(*,*) "Input X value in Bohr"
+		write(*,*) "Input X value in Bohr, e.g. 0.2"
 		write(*,*) "Note: If the unit is in Angstrom, add ""a"" suffix, e.g. -1.6a"
 		read(*,*) c200tmp
 		if (index(c200tmp,'a')/=0) then
@@ -1347,6 +1347,7 @@ do while(.true.)
 		if (iatmlabtype==1) write(*,*) "18 Change style of atomic labels: Only plot element symbol"
 		if (iatmlabtype==2) write(*,*) "18 Change style of atomic labels: Only plot atomic index"
 		if (iatmlabtype==3) write(*,*) "18 Change style of atomic labels: Plot both element symbol and atomic index"
+        write(*,"(a,a)") " 19 Set color transition, current: ",trim(clrtransname(iclrtrans))
 	else if (idrawtype==2.or.idrawtype==6.or.idrawtype==7) then !Contour map, gradient line, vector field with/without contour
 		if (iatom_on_plane==0) write(*,*) "1 Enable showing atom labels and reference point"
 		if (iatom_on_plane==1) write(*,*) "1 Disable showing atom labels and reference point"
@@ -1365,12 +1366,9 @@ do while(.true.)
 		if (idrawtype==6) then
 			if (igrad_arrow==0) write(*,*) "10 Show arrow on the gradient lines"
 			if (igrad_arrow==1) write(*,*) "10 Do not show arrow on the gradient lines"
-			write(*,"(a,f8.4)") " 11 Set integration step for gradient line, current:",gradplotstep
-			write(*,"(a,f8.4)") " 12 Set interstice between gradient line, current:",gradplotdis
-			write(*,"(a,f8.4)") " 13 Set test value for drawing a new gradient line, current:",gradplottest
-			write(*,*) "14 Set color and line width for gradient lines"
+            write(*,*) "11 Set detailed parameters of plotting gradient line"
 		else if (idrawtype==7) then
-			write(*,"(a,f8.4)") " 10 Set upper limit of absolute value for scaling, current:",cutgradvec
+			write(*,"(a,f8.4)") " 10 Set upper limit of absolute value for scaling arrows, current:",cutgradvec
 			if (icolorvecfield==0) write(*,*) "11 Map color to arrows"
 			if (icolorvecfield==1) write(*,*) "11 Do not map color to arrows"
 			if (icolorvecfield==0) write(*,*) "12 Set color for arrow heads" !If color map was set, the color set by user themselves is nulified
@@ -1393,6 +1391,7 @@ do while(.true.)
 	else if (idrawtype==4.or.idrawtype==5) then !Colored relief map with/without projected color-filled map
 		write(*,*) "1 Set color scale range for filling color"
 		write(*,"(a,a)") " 2 Toggle drawing mesh on the surface, current: ",drawsurmesh
+        write(*,"(a,a)") " 3 Set color transition, current: ",trim(clrtransname(iclrtrans))
 	else if (idrawtype==3) then
 		continue
 	end if
@@ -1627,6 +1626,8 @@ do while(.true.)
 				end if
 			else if (i==5) then
 				call settopomark
+			else if (i==19) then
+                CALL selcolortable
 			end if
 		!Options only for idrawtype 2,6,7 ========================
 		else if (idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
@@ -1644,7 +1645,7 @@ do while(.true.)
 					ilabel_on_contour=0
 				else if (ilabel_on_contour==0) then
 					ilabel_on_contour=1
-					write(*,*) "Input label size   e.g. 30"
+					write(*,*) "Input label size, e.g. 30"
 					read(*,*) ictrlabsize
 					write(*,"(a)") " Hint: The number of digits after the decimal point of label on contour lines can be set by ""numdigctr"" in settings.ini"
 				end if
@@ -1707,6 +1708,7 @@ do while(.true.)
 			
 			!Option only for idrawtype 6 ===========
 			if (idrawtype==6) then
+            
 				if (i==10) then
 					if (igrad_arrow==1) then
 						igrad_arrow=0
@@ -1714,27 +1716,52 @@ do while(.true.)
 						igrad_arrow=1
 					end if
 				else if (i==11) then
-					write(*,*) "Input a value, the default value is 0.002"
-					write(*,"(a)") " Note: The smaller the value, the smoother the gradient lines, but higher the cost"
-					read(*,*) gradplotstep
-				else if (i==12) then
-					write(*,*) "Input a value, the default value is 0.01"
-					write(*,*) "Note: The larger the value, the sparser the gradient lines"
-					read(*,*) gradplotdis
-				else if (i==13) then
-					write(*,*) "Input a value, default value is 0.2"
-					write(*,"(a)") " Note: The smaller the value, the more gradient lines will be emitted for maxima"
-					read(*,*) gradplottest
-				else if (i==14) then
-					write(*,*) "Use which color?"
-					call selcolor(iclrindgradline)
-					write(*,*) "Input line width, e.g. 5  (default value is 1)"
-					read(*,*) iwidthgradline
+                    do while(.true.)
+                        write(*,*)
+                        write(*,*) "   ------------- Set parameters for plotting gradient lines -------------"
+                        write(*,*) "0 Return"
+			            write(*,"(a,f8.4)") " 1 Set integration step of gradient lines, current:",gradplotstep
+			            write(*,"(a,f8.4)") " 2 Set interstice between gradient lines, current:",gradplotdis
+			            write(*,"(a,f8.4)") " 3 Set test value of drawing a new gradient line, current:",gradplottest
+                        write(*,*) "4 Set integration method, current: "//stream_intmethod
+			            write(*,*) "5 Set color width of gradient lines, current: "//colorname(iclrindgradline)
+			            write(*,"(a,i3)") " 6 Set line width of gradient lines, current:",iwidthgradline
+                        read(*,*) itmp
+                        if (itmp==0) then
+                            exit
+                        else if (itmp==1) then
+					        write(*,*) "Input a value, the default value is 0.002"
+					        write(*,"(a)") " Note: The smaller the value, the smoother the gradient lines, but higher the cost"
+					        read(*,*) gradplotstep
+				        else if (itmp==2) then
+					        write(*,*) "Input a value, the default value is 0.01"
+					        write(*,*) "Note: The larger the value, the sparser the gradient lines"
+					        read(*,*) gradplotdis
+				        else if (itmp==3) then
+					        write(*,*) "Input a value, default value is 0.2"
+					        write(*,"(a)") " Note: The smaller the value, the more gradient lines will be emitted for maxima"
+					        read(*,*) gradplottest
+				        else if (itmp==4) then
+                            write(*,*) "1 Euler"
+                            write(*,*) "2 RK2 (default)"
+                            write(*,*) "3 RK4 (most robust)"
+                            read(*,*) iint
+                            if (iint==1) stream_intmethod="EULER"
+                            if (iint==2) stream_intmethod="RK2"
+                            if (iint==3) stream_intmethod="RK4"
+				        else if (itmp==5) then
+					        write(*,*) "Use which color?"
+					        call selcolor(iclrindgradline)
+				        else if (itmp==6) then
+					        write(*,*) "Input line width, e.g. 5  (default value is 1)"
+					        read(*,*) iwidthgradline
+                        end if
+                    end do
 				end if
 			!Option only for idrawtype 7 ============
 			else if (idrawtype==7) then
 				if (i==10) then
-					write(*,*) "Input a value"
+					write(*,*) "Input a value, e.g. 0.3"
 					read(*,*) cutgradvec
 				else if (i==11) then
 					if (icolorvecfield==1) then
@@ -1743,7 +1770,7 @@ do while(.true.)
 						icolorvecfield=1
 					end if
 				else if (i==12) then
-					write(*,*) "Input color index, e.g. 1 =black, 50 =blue, 150 =green, 250 =red"
+					write(*,*) "Input color index, e.g. 1=black, 50=blue, 150=green, 250=red"
 					read(*,*) vecclrind
 				else if (i==13) then
 					if (iinvgradvec==1) then
@@ -1772,6 +1799,8 @@ do while(.true.)
 			else
 				drawsurmesh="ON"
 			end if
+		else if (i==3) then
+            CALL selcolortable
 		end if
 	else if (idrawtype==3) then !No options for map type 3 currently
 		continue
@@ -2121,7 +2150,7 @@ else !Calculate grid data
 		write(*,*) "-1 Show isosurface graph"
 		write(*,*) "0 Return to main menu"
 		write(*,*) "1 Save graph of isosurface to file in current folder"
-		write(*,*) "2 Export data to Gaussian cube file in current folder"
+		write(*,*) "2 Export data to Gaussian-type cube file in current folder"
 		write(*,*) "3 Export data to formatted text file in current folder"
 		write(*,"(a,f10.5)") " 4 Set the value of isosurface to be shown, current:",sur_value
 		write(*,*) "5 Multiply all grid data by a factor"
@@ -2139,15 +2168,15 @@ else !Calculate grid data
 			isavepic=1
 			call drawmol
 			isavepic=0
-			write(*,*) "Graph has been saved to current folder with ""DISLIN"" prefix"
+			write(*,*) "Graphical file has been saved to current folder with ""DISLIN"" prefix"
 		else if (i==2) then
 			open(10,file=outcubfile,status="replace")
 			call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 			close(10)
-			write(*,"(' New grid file has been outputted to: ',a35)") adjustl(outcubfile)
+			write(*,"(' Done! Grid data has been exported to ',a,' in current folder')") trim(outcubfile)
 		else if (i==3) then
 			open(10,file="output.txt",status="replace")
-			write(*,*) "Outputting output.txt in current directory..."
+			write(*,*) "Outputting output.txt in current folder..."
 			do i=1,nx
 				do j=1,ny
 					do k=1,nz

@@ -1561,7 +1561,7 @@ close(10)
 return
 end if
 
-!Check if is ORCA output file
+!Check if is xtb output file
 call loclabel(10,"GFN-xTB",ixtb,maxline=200)
 if (ixtb==0) call loclabel(10,"x T B",ixtb,maxline=200)
 if (ixtb==1) then
