@@ -466,6 +466,8 @@ if (icompmethod>0) then
 			call invarr(orbcomp(:,iorb),iatmarr(:,iorb)) !Then become from large to small
 		end do
 		
+        write(*,"(/,a)") " Hint: If you hope to print the LMOs in the order of atoms and atom pairs, &
+        set ""iprintLMOorder"" in settings.ini to 1 prior to the analysis"
 		if (wfntype==0) then
 			if (itime==1) write(*,"(/,a)") " **** Major character of occupied LMOs:"
 			if (itime==2) write(*,"(/,a)") " **** Major character of unoccupied LMOs:"
@@ -478,21 +480,41 @@ if (icompmethod>0) then
 		istatarr=0 !If =1, then the character of the LMO has been identified and printed
 		write(*,"(' Almost single center LMOs: (An atom has contribution >',f5.1,'%)')") crit1c*100
 		itmp=0
-		do iorb=ibeg,iend
-			if (orbcomp(1,iorb)>crit1c) then
-				write(*,"(i5,':',i4,'(',a,')',f5.1,'%    ')",advance='no') iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100
-				itmp=itmp+1
-				if (mod(itmp,3)==0) write(*,*)
-				istatarr(iorb)=1
-				if (itime<=2) then
-					orbtype(iorb)=1
-					orbatm(1,iorb)=iatmarr(1,iorb)
-				else
-					orbtype(iorb+nbasis)=1
-					orbatm(1,iorb+nbasis)=iatmarr(1,iorb)
-				end if
-			end if
-		end do
+        if (iprintLMOorder==0) then !Print LMO in original order
+		    do iorb=ibeg,iend
+			    if (orbcomp(1,iorb)>crit1c) then
+				    write(*,"(i5,':',i4,'(',a,')',f5.1,'%    ')",advance='no') iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100
+				    itmp=itmp+1
+				    if (mod(itmp,3)==0) write(*,*)
+				    istatarr(iorb)=1
+				    if (itime<=2) then
+					    orbtype(iorb)=1
+					    orbatm(1,iorb)=iatmarr(1,iorb)
+				    else
+					    orbtype(iorb+nbasis)=1
+					    orbatm(1,iorb+nbasis)=iatmarr(1,iorb)
+				    end if
+			    end if
+		    end do
+        else if (iprintLMOorder==1) then !Print LMO in the sequence of major contribution atom
+            do iatm=1,ncenter
+		        do iorb=ibeg,iend
+			        if (orbcomp(1,iorb)>crit1c.and.iatmarr(1,iorb)==iatm) then
+				        write(*,"(i5,':',i4,'(',a,')',f5.1,'%    ')",advance='no') iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100
+				        itmp=itmp+1
+				        if (mod(itmp,3)==0) write(*,*)
+				        istatarr(iorb)=1
+				        if (itime<=2) then
+					        orbtype(iorb)=1
+					        orbatm(1,iorb)=iatmarr(1,iorb)
+				        else
+					        orbtype(iorb+nbasis)=1
+					        orbatm(1,iorb+nbasis)=iatmarr(1,iorb)
+				        end if
+			        end if
+		        end do
+            end do
+        end if
 		if (mod(itmp,3)/=0) write(*,*)
 		if (itmp==0) write(*,*) "None!"
 		write(*,*)
@@ -500,24 +522,57 @@ if (icompmethod>0) then
 		if (all(istatarr(ibeg:iend)==1)) cycle
 		write(*,"(' Almost two-center LMOs: (Sum of two largest contributions >',f5.1,'%)')") crit2c*100
 		itmp=0
-		do iorb=ibeg,iend
-			if (istatarr(iorb)==1) cycle
-			if (orbcomp(1,iorb)+orbcomp(2,iorb)>crit2c) then
-				write(*,"(i5,':',i4,'(',a,')',f5.1,'%',i4,'(',a,')',f5.1,'%     ')",advance='no') &
-				iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100,&
-				iatmarr(2,iorb),a(iatmarr(2,iorb))%name,orbcomp(2,iorb)*100
-				itmp=itmp+1
-				if (mod(itmp,2)==0) write(*,*)
-				istatarr(iorb)=1
-				if (itime<=2) then
-					orbtype(iorb)=2
-					orbatm(:,iorb)=iatmarr(1:2,iorb)
-				else
-					orbtype(iorb+nbasis)=2
-					orbatm(:,iorb+nbasis)=iatmarr(1:2,iorb)
-				end if
-			end if
-		end do
+        if (iprintLMOorder==0) then !Print LMO in original order
+		    do iorb=ibeg,iend
+			    if (istatarr(iorb)==1) cycle
+			    if (orbcomp(1,iorb)+orbcomp(2,iorb)>crit2c) then
+				    write(*,"(i5,':',i4,'(',a,')',f5.1,'%',i4,'(',a,')',f5.1,'%     ')",advance='no') &
+				    iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100,&
+				    iatmarr(2,iorb),a(iatmarr(2,iorb))%name,orbcomp(2,iorb)*100
+				    itmp=itmp+1
+				    if (mod(itmp,2)==0) write(*,*)
+				    istatarr(iorb)=1
+				    if (itime<=2) then
+					    orbtype(iorb)=2
+					    orbatm(:,iorb)=iatmarr(1:2,iorb)
+				    else
+					    orbtype(iorb+nbasis)=2
+					    orbatm(:,iorb+nbasis)=iatmarr(1:2,iorb)
+				    end if
+			    end if
+		    end do
+        else if (iprintLMOorder==1) then !Print LMO in the sequence of major contribution atom pair
+            do iatm=1,ncenter
+                do jatm=iatm+1,ncenter
+		            do iorb=ibeg,iend
+			            if (istatarr(iorb)==1) cycle
+			            if (orbcomp(1,iorb)+orbcomp(2,iorb)>crit2c) then
+                            if (iatmarr(1,iorb)==iatm.and.iatmarr(2,iorb)==jatm) then
+				                write(*,"(i5,':',i4,'(',a,')',f5.1,'%',i4,'(',a,')',f5.1,'%     ')",advance='no') &
+				                iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100,&
+				                iatmarr(2,iorb),a(iatmarr(2,iorb))%name,orbcomp(2,iorb)*100
+                            else if (iatmarr(1,iorb)==jatm.and.iatmarr(2,iorb)==iatm) then
+				                write(*,"(i5,':',i4,'(',a,')',f5.1,'%',i4,'(',a,')',f5.1,'%     ')",advance='no') &
+				                iorb,iatmarr(2,iorb),a(iatmarr(2,iorb))%name,orbcomp(2,iorb)*100,&
+				                iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100
+                            else
+                                cycle
+                            end if
+				            itmp=itmp+1
+				            if (mod(itmp,2)==0) write(*,*)
+				            istatarr(iorb)=1
+				            if (itime<=2) then
+					            orbtype(iorb)=2
+					            orbatm(:,iorb)=iatmarr(1:2,iorb)
+				            else
+					            orbtype(iorb+nbasis)=2
+					            orbatm(:,iorb+nbasis)=iatmarr(1:2,iorb)
+				            end if
+			            end if
+		            end do
+                end do
+            end do
+        end if
 		if (mod(itmp,2)/=0) write(*,*)
 		if (itmp==0) write(*,*) "None!"
 		write(*,*)

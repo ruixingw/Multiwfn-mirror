@@ -31,6 +31,7 @@ if (ifound==0) then
 	write(*,*) "Error: Cannot find NATURAL POPULATIONS field in the input file!"
 	write(*,*) "Press ENTER button to return"
 	read(*,*)
+    close(10)
 	return
 end if
 write(*,*) "Loading NAO information and density matrix in NAO basis..."
@@ -58,7 +59,7 @@ write(*,"(' Number of atoms:',i5)") ncenter
 if (.not.allocated(a)) allocate(a(ncenter))
 allocate(NAOinit(ncenter),NAOend(ncenter))
 allocate(NAOcen(numNAO),NAOtype(numNAO),nNAOatm(ncenter))
-call loclabel(10,"NATURAL POPULATIONS",ifound,1)
+call loclabel(10,"NATURAL POPULATIONS",ifound)
 read(10,*)
 read(10,*)
 read(10,*)
@@ -110,15 +111,18 @@ end if
 allocate(DMNAO(numNAO,numNAO))
 call loclabel(10,"NAO density matrix:",ifound)
 if (ifound==0) then
-	write(*,*) "Error: Cannot found NAO density matrix field in the input file"
+	write(*,"(a)") " Error: Cannot found NAO density matrix field in the input file! You should use ""DMNAO"" keyword in NBO module"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    close(10)
 	return
 end if
-!Check format before reading, NBO6 use different format to NBO3
 !For open-shell case, DMNAO doesn't print for total, so the first time loaded DMNAO is alpha(open-shell) or total(closed-shell)
+!Check columns should be skipped during matrix reading, then return to title line
+read(10,*);read(10,*);read(10,*)
 read(10,"(a)") c80tmp
-backspace(10)
-nskipcol=16 !NBO3
-if (c80tmp(2:2)==" ") nskipcol=17 !NBO6
+nskipcol=index(c80tmp,"- -")
+backspace(10);backspace(10);backspace(10);backspace(10)
 write(*,*) "Loading DMNAO matrix ..."
 call readmatgau(10,DMNAO,0,"f8.4 ",nskipcol,8,3)
 iusespin=0
@@ -933,18 +937,20 @@ integer ifound
 !Now load transformation matrix between NAOs and AOs
 !Note that even for open-shell case, AONAO only be printed once, namely for density
 open(10,file=filename,status="old")
-call loclabel(10,"NAOs in the AO basis:",ifound,1)
-read(10,"(a)") c80tmp
-backspace(10)
-nskipcol=16 !NBO3
-if (c80tmp(2:2)==" ") nskipcol=17 !NBO6
+call loclabel(10,"NAOs in the AO basis:",ifound)
 if (ifound==0) then
-	write(*,"(a)") " Error: Cannot found NAOs in the AO basis field in the Gaussian output file!"
-	write(*,*)
+	write(*,"(a)") " Error: Cannot found NAOs in the AO basis field in the Gaussian output file! You should use ""AONAO"" keyword in NBO module!"
+    write(*,*) "Press ENTER button to return"
+	read(*,*)
 	close(10)
 	return
 end if
 write(*,"(a)") " Loading transformation matrix between original basis and NAO from Gaussian output file..." 
+!Check columns should be skipped during matrix reading, then return to title line
+read(10,*);read(10,*);read(10,*)
+read(10,"(a)") c80tmp
+nskipcol=index(c80tmp,"- -")
+backspace(10);backspace(10);backspace(10);backspace(10)
 !Note: AONAO matrix in NBO output may be any number of columns (so that to ensure long data can be fully recorded), 
 !so we must try to determine the actual number of rows and then use correct format to load it
 !I assume that at least 5 columns and at most 8 columns

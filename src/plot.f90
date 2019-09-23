@@ -347,7 +347,7 @@ if (GUI_mode==5) then
 		CALL MATOP3(0D0, 0D0, 1D0, 'diffuse') !Blue
 		do i=1,nsurlocmin
 			idxtmp=surlocminidx(i)
-			if (idxtmp==0) cycle !Has been discarded by user
+			if (idxtmp==0) cycle !The extreme has already been discarded
 			CALL SPHE3D(survtx(idxtmp)%x,survtx(idxtmp)%y,survtx(idxtmp)%z,0.15D0,20,20)
 		end do
 	end if
@@ -355,7 +355,7 @@ if (GUI_mode==5) then
 		CALL MATOP3(1D0, 0.0D0, 0.0D0, 'diffuse') !Red
 		do i=1,nsurlocmax
 			idxtmp=surlocmaxidx(i)
-			if (idxtmp==0) cycle
+			if (idxtmp==0) cycle !The extreme has already been discarded
 			CALL SPHE3D(survtx(idxtmp)%x,survtx(idxtmp)%y,survtx(idxtmp)%z,0.15D0,20,20)
 		end do
 	end if
@@ -540,7 +540,7 @@ if (ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.i
 		call color("MAGENTA")
 		do i=1,nsurlocmin
 			idxtmp=surlocminidx(i)
-			if (idxtmp==0) cycle
+			if (idxtmp==0) cycle !The extreme has already been discarded
 			write(ctemp,"(i5)") i
 			absx=(survtx(idxtmp)%x-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find absolute coordinate
 			absy=(survtx(idxtmp)%y-(maxval(a%y)+minval(a%y))/2) * plot2abs
@@ -555,7 +555,7 @@ if (ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.i
 		call color("GREEN")
 		do i=1,nsurlocmax
 			idxtmp=surlocmaxidx(i)
-			if (idxtmp==0) cycle
+			if (idxtmp==0) cycle !The extreme has already been discarded
 			write(ctemp,"(i5)") i
 			absx=(survtx(idxtmp)%x-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find absolute coordinate
 			absy=(survtx(idxtmp)%y-(maxval(a%y)+minval(a%y))/2) * plot2abs
@@ -827,7 +827,7 @@ implicit real*8 (a-h,o-z)
 real*8 init1inp,end1inp,init2inp,end2inp,init1,end1,init2,end2,init3,end3
 real*8 xcoord(ngridnum1),ycoord(ngridnum2),gradd1tmp(ngridnum1,ngridnum2),gradd2tmp(ngridnum1,ngridnum2)
 real*8 dx,dy,pix2usr,n1,n2
-real*8 planetrunc(ngridnum1,ngridnum2) !Store truncated planemat
+real*8 planetrunc(ngridnum1,ngridnum2),planetrunc2(ngridnum1,ngridnum2) !Store truncated planemat
 integer lengthx !length of x axis
 integer idrawtype,i,j
 integer :: inplane(ncenter+1) !If =1, then the label is close enough to the plotting plane 
@@ -1392,6 +1392,7 @@ else if (idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
     call setcolortable(iclrtrans) !This routine must be invoked prior to GRAF
 	CALL AXSPOS(100,2800) !Make position of coordinate proper
 	planetrunc=planemat
+	planetrunc2=planemat
 	!Now truncate the value in planemat to uplimit of Z-scale of relief map and save to planetrunc, else the color scale will range from
 	!minimal to maximum, so the color transition is not completely between lower and upper limit of relief map, and effect is not good
 	if (inucespplot==1) then !Now cut value, nuclear attraction potential is too big so treat it separately
@@ -1428,20 +1429,25 @@ else if (idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
 ! 		call surmat(planetrunc,ngridnum1,ngridnum2,1,1) !Works well for most functions, however not good for Laplacian
 		call surmsh("only") !Draw grids on shaded surface
 		CALL SHDMOD('SMOOTH','SURFACE')
-		call surshd(xcoord,ngridnum1,ycoord,ngridnum2,planetrunc)
+		call surshd(xcoord,ngridnum1,ycoord,ngridnum2,planetrunc) !Draw shaded relief map
 		call surmsh("OFF") !Recover to default, otherwise when drawing molecule structure later, black lines will present on object surfaces
 	else if (idrawtype==4.or.idrawtype==5) then
 		if (idrawtype==5) then !Draw projection
+            planetrunc2=planemat
+            if (iclrtrans/=0) then !Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
+			    where (planetrunc2>end3) planetrunc2=end3-1D-10   !Augment by a minimal value to avoid numerical noise
+			    where (planetrunc2<init3) planetrunc2=init3+1D-10
+		    end if
 			CALL GRFINI(-1.0D0,-(end2-init2)/(end1-init1),-1.0D0, 1.0D0,-(end2-init2)/(end1-init1),-1.0D0, 1.0D0,(end2-init2)/(end1-init1),-1D0)
 			call SETGRF('none','none','none','none')
 			call AUTRES(ngridnum1,ngridnum2)
 			call VKXBAR(170)
 			call GRAF3(init1,end1,init1-shiftx,planestpx, init2,end2,init2-shifty,planestpy, init3,end3,init3-shiftz,planestpz)
-			call CRVMAT(planetrunc,ngridnum1,ngridnum2,fillcoloritpx,fillcoloritpy)
+			call CRVMAT(planetrunc2,ngridnum1,ngridnum2,fillcoloritpx,fillcoloritpy)
 			CALL GRFFIN
 		end if
-		call litmod(3,'on')
 		call litmod(1,'on')
+		call litmod(3,'on')
 		call litpos(1,XVU,YVU,ZVU,'ANGLE')
 		call surmsh(drawsurmesh) !Draw grids on shaded surface
 		CALL SHDMOD('SMOOTH','SURFACE')
@@ -1572,7 +1578,7 @@ use defvar
 write(*,*) "Select a color transition method"
 write(*,*) "0  Rainbow with black/white for values exceeding lower/higher color limit"
 write(*,*) "1  Rainbow               2 Reversed rainbow"
-write(*,*) "3  Rainbow started from white"
+write(*,*) "3  Rainbow starting from white"
 write(*,*) "4  Spectrum (Pink-Blue-Green-Red)  5 Reversed Spectrum"
 write(*,*) "6  Grey (Black-White)    7  Reversed Grey"
 write(*,*) "8  Blue-White-Red        9  Red-White-Blue"
@@ -1602,51 +1608,103 @@ else if (isel==4) then !Spectrum
 else if (isel==5) then !Reversed spectrum
     CALL SETVLT("RSPEC")
 else if (isel==6) then !Black-White
-    CALL SETVLT("GREY")
+    !CALL SETVLT("GREY") !This will also make label color become grey
+    do i=0,nlevel
+        Rarr(i)=dfloat(i)/nlevel
+        Garr(i)=dfloat(i)/nlevel
+        Barr(i)=dfloat(i)/nlevel
+    end do
 else if (isel==7) then !White-Black
-    CALL SETVLT("RGREY")
-    
+    !CALL SETVLT("RGREY")
+    do i=0,nlevel
+        Rarr(i)=dfloat(nlevel-i)/nlevel
+        Garr(i)=dfloat(nlevel-i)/nlevel
+        Barr(i)=dfloat(nlevel-i)/nlevel
+    end do
 else if (isel==3) then !White-Rainbow
+    !Below setting makes appear of blue to early, leading to visually detectable color levels during white-blue transition
+    !!0: White
+    !!51: Blue(0,0,1)
+    !!102: Cyan(0,1,1)
+    !!153: Green(0,1,0)
+    !!204: Yellow(1,1,0)
+    !!255: Red(1,0,0)
+    !Rarr(0)=1
+    !Garr(0)=1
+    !Barr(0)=1
+    !do i=1,51 !White(1,1,1)-Blue(0,0,1)
+    !    Rarr(i)=dfloat(51-i)/51
+    !    Garr(i)=dfloat(51-i)/51
+    !    Barr(i)=1
+    !end do
+    !j=0
+    !do i=52,102 !Blue(0,0,1)-Cyan(0,1,1)
+    !    j=j+1
+    !    Rarr(i)=0
+    !    Garr(i)=dfloat(j)/51
+    !    Barr(i)=1
+    !end do
+    !j=0
+    !do i=103,153 !Cyan(0,1,1)-Green(0,1,0)
+    !    j=j+1
+    !    Rarr(i)=0
+    !    Garr(i)=1
+    !    Barr(i)=dfloat(51-j)/51
+    !end do
+    !j=0
+    !do i=154,204 !Green(0,1,0)-Yellow(1,1,0)
+    !    j=j+1
+    !    Rarr(i)=dfloat(j)/51
+    !    Garr(i)=1
+    !    Barr(i)=0
+    !end do
+    !j=0
+    !do i=205,255 !Yellow(1,1,0)-Red(1,0,0)
+    !    j=j+1
+    !    Rarr(i)=1
+    !    Garr(i)=dfloat(51-j)/51
+    !    Barr(i)=0
+    !end do
     !0: White
-    !51: Blue(0,0,1)
-    !102: Cyan(0,1,1)
-    !153: Green(0,1,0)
-    !204: Yellow(1,1,0)
+    !91: Blue(0,0,1)
+    !132: Cyan(0,1,1)
+    !173: Green(0,1,0)
+    !214: Yellow(1,1,0)
     !255: Red(1,0,0)
     Rarr(0)=1
     Garr(0)=1
     Barr(0)=1
-    do i=1,51 !White(1,1,1)-Blue(0,0,1)
-        Rarr(i)=dfloat(51-i)/51
-        Garr(i)=dfloat(51-i)/51
+    do i=1,91 !White(1,1,1)-Blue(0,0,1)
+        Rarr(i)=dfloat(91-i)/91
+        Garr(i)=dfloat(91-i)/91
         Barr(i)=1
     end do
     j=0
-    do i=52,102 !Blue(0,0,1)-Cyan(0,1,1)
+    do i=92,132 !Blue(0,0,1)-Cyan(0,1,1)
         j=j+1
         Rarr(i)=0
-        Garr(i)=dfloat(j)/51
+        Garr(i)=dfloat(j)/41
         Barr(i)=1
     end do
     j=0
-    do i=103,153 !Cyan(0,1,1)-Green(0,1,0)
+    do i=133,173 !Cyan(0,1,1)-Green(0,1,0)
         j=j+1
         Rarr(i)=0
         Garr(i)=1
-        Barr(i)=dfloat(51-j)/51
+        Barr(i)=dfloat(41-j)/41
     end do
     j=0
-    do i=154,204 !Green(0,1,0)-Yellow(1,1,0)
+    do i=174,214 !Green(0,1,0)-Yellow(1,1,0)
         j=j+1
-        Rarr(i)=dfloat(j)/51
+        Rarr(i)=dfloat(j)/41
         Garr(i)=1
         Barr(i)=0
     end do
     j=0
-    do i=205,255 !Yellow(1,1,0)-Red(1,0,0)
+    do i=215,255 !Yellow(1,1,0)-Red(1,0,0)
         j=j+1
         Rarr(i)=1
-        Garr(i)=dfloat(51-j)/51
+        Garr(i)=dfloat(41-j)/41
         Barr(i)=0
     end do
 else if (isel==8) then !Blue-White-Red
@@ -1759,5 +1817,5 @@ else if (isel==17) then !Black-Blue-Cyan
         Garr(i)=dfloat(i-100)/155
     end do
 end if
-if ((isel>=8.and.isel<=17).or.isel==3) CALL MYVLT(Rarr,Garr,Barr,nlevel)
+if ((isel>=6.and.isel<=17).or.isel==3) CALL MYVLT(Rarr,Garr,Barr,nlevel)
 end subroutine

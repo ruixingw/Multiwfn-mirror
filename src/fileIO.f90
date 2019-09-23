@@ -1581,7 +1581,7 @@ if (chartemp(1:11)==" ALPHA SPIN".or.chartemp(1:11)==" alpha spin") then
 	end do
 	if (name2(itmplen-1:itmplen)=="37".or.name2(itmplen-1:itmplen)=="39") then !Need to load occupation
 		if (nload/=nbasis) then
-			write(*,"(/,a)") " Warning: The number of orbitals is smaller than basis functions! This is because diffuse functions are used. &
+			write(*,"(/,a)") " Warning: The number of orbitals is smaller than basis functions! This is often because diffuse functions are used. &
 			Please now input the actual number of NAOs (you can easily find it from output of NBO program), e.g. 374"
 			read(*,*) nNAOs
 			call loclabel(10,chartemp(1:11))
@@ -1629,11 +1629,13 @@ else !Close shell system
 	end do
 	if (name2(itmplen-1:itmplen)=="37".or.name2(itmplen-1:itmplen)=="39") then
 		if (nload/=nbasis) then
-			write(*,"(/,a)") " Warning: The number of orbitals is smaller than basis functions! This is because diffuse functions are used. &
+			write(*,"(/,a)") " Warning: The number of orbitals is smaller than basis functions! This is often because diffuse functions are used. &
 			Please now input the actual number of NAOs (you can easily find it from output of NBO program), e.g. 374"
 			read(*,*) nNAOs
-			call loclabel(10,chartemp(1:11))
-			read(10,*)
+            rewind(10)
+            read(10,*)
+            read(10,*)
+            read(10,*)
 			do iorb=1,nNAOs
 				read(10,*) orbcoeff(1:nbasis,iorb)
 			end do
@@ -5771,6 +5773,8 @@ call loclabel(20,'iloadasCart=',ifound)
 if (ifound==1) read(20,*) c80tmp,iloadasCart
 call loclabel(20,'maxloadexc=',ifound)
 if (ifound==1) read(20,*) c80tmp,maxloadexc
+call loclabel(20,'iprintLMOorder=',ifound)
+if (ifound==1) read(20,*) c80tmp,iprintLMOorder
 
 !Below are the parameters involved in plotting
 call loclabel(20,'plotwinsize3D=',ifound)

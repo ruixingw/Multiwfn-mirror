@@ -1023,8 +1023,10 @@ if (ifound==1) then
 end if
 call loclabel(10,"MOs in the NAO basis:",ifound,1)
 if (ifound==0) then
-	write(*,"(a)") " Error: Cannot found MOs in NAO basis in the input file, the input file is invalid for this function! Please read manual carefully"
-	write(*,*)
+	write(*,"(a)") " Error: Cannot found MOs in NAO basis in the input file, you should use ""NAOMO"" keyword in NBO module"
+    write(*,*) "Press ENTER button to return"
+	read(*,*)
+    close(10)
 	return
 else !Acquire number of NAOs and centers
 	call loclabel(10,"NATURAL POPULATIONS",ifound,1)
@@ -1058,10 +1060,7 @@ else !Acquire number of NAOs and centers
 	!Get relationship between center and NAO indices, as well as center name, then store these informationto NAOcen
 	!We delay to read NAO information, because in alpha and beta cases may be different
 	call loclabel(10,"NATURAL POPULATIONS",ifound,1)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	read(10,*)
+	read(10,*);read(10,*);read(10,*);read(10,*)
 	ilastspc=1
 	do while(.true.)
 		read(10,"(a)") c80tmp
@@ -1088,15 +1087,16 @@ if (ispinmode==1) write(*,*) "This is open-shell calculation"
 NAOcompmaincyc: do while(.true.)
 do while(.true.)
 	write(*,*)
+    write(*,*) "------- Orbital composition analysis based on natural atomic orbitals -------"
 	write(*,*) "-10 Return"
 	write(*,*) "-1 Define fragment (for option 1)"
-	write(*,*) "0 Show composition of an orbital"
-	write(*,*) "1 Show fragment contribution in a range of orbitals"
-	if (ioutmode==0) write(*,"(a)") " 2 Select output mode (for option 0), current: Show all NAOs"
-	if (ioutmode==1) write(*,"(a)") " 2 Select output mode (for option 0), current: Only show core and valence NAOs"
-	if (ioutmode==2) write(*,"(a,f6.2,'%')") " 2 Select output mode (for option 0), current: Show NAOs whose contributions are >",outcrit
-	if (ispinmode==1) write(*,*) "3 Switch spin type, current: Alpha"
-	if (ispinmode==2) write(*,*) "3 Switch spin type, current: Beta"
+	write(*,*) " 0 Show composition of an orbital"
+	write(*,*) " 1 Show fragment contribution in a range of orbitals"
+	if (ioutmode==0) write(*,"(a)") "  2 Select output mode (for option 0), current: Show all NAOs"
+	if (ioutmode==1) write(*,"(a)") "  2 Select output mode (for option 0), current: Only show core and valence NAOs"
+	if (ioutmode==2) write(*,"(a,f6.2,'%')") "  2 Select output mode (for option 0), current: Show NAOs whose contributions are >",outcrit
+	if (ispinmode==1) write(*,*) " 3 Switch spin type, current: Alpha"
+	if (ispinmode==2) write(*,*) " 3 Switch spin type, current: Beta"
 	read(*,*) isel
 
 	if (isel==-10) then
@@ -1312,14 +1312,12 @@ if (isel==0.or.isel==1) then
 	end do
 	!Read MO in NAO basis
 	call loclabel(10,"MOs in the NAO basis:",ifound,0) !Don't rewind
-	!Check format before reading, NBO6 use different format to NBO3
-	read(10,"(a)") c80tmp
-	backspace(10)
-	if (c80tmp(2:2)==" ") then !NBO6
-		call readmatgau(10,NAOMO,0,"f8.4 ",17,8,3)
-	else !NBO3
-		call readmatgau(10,NAOMO,0,"f8.4 ",16,8,3)
-	end if
+    !Check columns should be skipped during matrix reading, then return to title line
+    read(10,*);read(10,*);read(10,*)
+    read(10,"(a)") c80tmp
+    nskipcol=index(c80tmp,"- -")
+    backspace(10);backspace(10);backspace(10);backspace(10)
+    call readmatgau(10,NAOMO,0,"f8.4 ",nskipcol,8,3)
 end if
 
 if (isel==0) then

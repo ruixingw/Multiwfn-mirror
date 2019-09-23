@@ -18,6 +18,7 @@ integer,allocatable :: surtrifrag(:) !Each surface triangle belongs to which fra
 real*8 nucchgbackup(ncenter) !Backup nuclear charge, because which may be flushed by .chg file
 integer isurftype !How to define the surface. 1=Isosurface of electron density, 2=A certain real space function, 5/6=Hirshfeld/Becke surface, 10=Isosurface of existing grid data
 real*8 smat(ncenter,ncenter),Pvec(ncenter),tmprarr(ncenter)
+integer,allocatable :: tmpintarr(:)
 isurftype=1
 surfisoval=0.001D0
 imapfunc=1
@@ -36,8 +37,8 @@ do while(.true.)
 	tetravol2=0D0
 	tetravol3=0D0
 	write(*,*)
-	write(*,"(a)") " If this module is used in your research, aside from citing the Multiwfn original paper, please also cite below paper, &
-	which detailedly described the basic algorithm of this module"
+	write(*,"(a)") " If this module is used in your research, please cite both the Multiwfn original paper and below paper, &
+	the latter detailedly described the basic algorithm of this module"
 	write(*,"(a)") " Tian Lu, Feiwu Chen, Quantitative analysis of molecular surface based on improved Marching Tetrahedra algorithm, &
 	J. Mol. Graph. Model., 38, 314-323 (2012)"
 	write(*,*)
@@ -257,8 +258,8 @@ do while(.true.)
 		do while(.true.)
 			write(*,*) "0 Return to upper level menu"
 			write(*,"(a,f7.4)") " 1 The ratio of vdW radius used to extend spatial region of cubic grids:",vdwmulti
-			if (ifelim==0) write(*,*) "2 If eliminate redundant vertices: No"
-			if (ifelim==1) write(*,"(a,f6.3,a)") " 2 If elimnate redundant vertices: Yes, criteria:",critmerge," Bohr"
+			if (ifelim==0) write(*,*) "2 Toggle if eliminating redundant vertices: No"
+			if (ifelim==1) write(*,"(a,f6.3,a)") " 2 Toggle if eliminating redundant vertices: Yes, criterion is",critmerge," Bohr"
 			write(*,"(' 3 Number of bisections before linear interpolation, current:',i5)") nbisec
 			read(*,*) isel2
 			
@@ -272,8 +273,8 @@ do while(.true.)
 				if (ifelim==1) then
 					ifelim=0
 				else if (ifelim==0) then
-					write(*,"(a)") "Input a value (in Bohr). If the distance between any two vertices is smaller than this value, one of them will be merged to the other."
-					write(*,"(a)") "Hint: 0.5 times grid spacing is recommended in general"
+					write(*,"(a)") " Input a value (in Bohr). If the distance between any two vertices is smaller than this value, one of them will be merged to the other."
+					write(*,"(a)") " Hint: 0.5 times grid spacing is recommended in general"
 					read(*,*) critmerge
 					ifelim=1
 				end if
@@ -866,7 +867,10 @@ if (ireadextmapval==0) then !Directly calculate
 			nHirBecatm=0
 			allocate(HirBecatm(nHirBecatm))
 		end if
-		!$OMP PARALLEL DO SHARED(survtx,iprog) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
+        !It is best to add CRITICAL to the progress variable, however this may slow down calculation. In current case
+        !The progress bar may be messed up when calculation of mapped function is very fast (e.g. ALIE), this is not a big problem.
+        call showprog(0,100)
+		!$OMP PARALLEL DO SHARED(survtx,iprog,ii) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
 		do icyc=1,nsurvtx
 			if (elimvtx(icyc)==1) cycle
 			survtx(icyc)%value=calcmapfunc(imapfunc,survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z,nHirBecatm,HirBecatm)
@@ -881,6 +885,7 @@ if (ireadextmapval==0) then !Directly calculate
 		if (nHirBecatm==0) deallocate(HirBecatm)
 	end if
 	call walltime(iwalltime2)
+    if (ii<100) call showprog(100,100) !Guarantee that 100% must be printed
 	write(*,"(' Calculation of mapped function took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 
 else if (ireadextmapval==1) then !Load mapped function from external file
@@ -1214,6 +1219,8 @@ do while(.true.)
     write(*,*) "14 Calculate area of the region around a specific surface extreme"
     write(*,*) "15 Basin-like partition of surface and calculate areas"
 ! 	write(*,*) "16 Export center of surface facets as pdb file" !Can also output to xyz file
+    write(*,*) "18 Discard some surface extrema by inputting their indices"
+    write(*,*) "19 Merge some surface extrema and take their average position"
 	if (imapfunc==22) write(*,*) "20 Fingerprint plot analysis"
 	read(*,*) isel
 	
@@ -1245,7 +1252,7 @@ do while(.true.)
 		end if
 		do i=1,nsurlocmin
 			idx=surlocminidx(i)
-			if (idx==0) cycle
+			if (idx==0) cycle !The extreme has already been discarded
 			char1tmp=" "
 			if (idx==indsurfmin) char1tmp="*"
 			if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
@@ -1264,7 +1271,7 @@ do while(.true.)
 		end if
 		do i=1,nsurlocmax
 			idx=surlocmaxidx(i)
-			if (idx==0) cycle
+			if (idx==0) cycle !The extreme has already been discarded
 			char1tmp=" "
 			if (idx==indsurfmax) char1tmp="*"
 			if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
@@ -1310,7 +1317,7 @@ do while(.true.)
 		end do
 		do i=1,nsurlocmin
 			idx=surlocminidx(i)
-			if (idx==0) cycle
+			if (idx==0) cycle !The extreme has already been discarded
 			if (imapfunc==1.or.imapfunc==3) then
 				if (iESPev==0) then
 					tmpval=survtx(idx)%value*au2kcal
@@ -1359,7 +1366,7 @@ do while(.true.)
 		    read(c200tmp,*) vallowlim,valhighlim
 		    do i=1,nsurlocmin
 			    idx=surlocminidx(i)
-			    if (idx==0) cycle !This slot has been discarded before
+			    if (idx==0) cycle !The extreme has already been discarded
 			    if (survtx(idx)%value>vallowlim.and.survtx(idx)%value<valhighlim) surlocminidx(i)=0
 		    end do
 		    write(*,"(' Surface minima with value from',f10.5,' to',f10.5,' have been discarded')") vallowlim,valhighlim
@@ -1383,7 +1390,7 @@ do while(.true.)
 		    read(c200tmp,*) vallowlim,valhighlim
 		    do i=1,nsurlocmax
 			    idx=surlocmaxidx(i)
-			    if (idx==0) cycle !This slot has been discarded before
+			    if (idx==0) cycle !The extreme has already been discarded
 			    if (survtx(idx)%value>vallowlim.and.survtx(idx)%value<valhighlim) surlocmaxidx(i)=0
 		    end do
 		    write(*,"(' Surface maxima with value from',f10.5,' to',f10.5,' have been discarded')") vallowlim,valhighlim
@@ -1502,12 +1509,14 @@ do while(.true.)
 		write(10,"(a)") "REMARK   The third last column is function values in a.u."
 		do i=1,nsurlocmax
 			idx=surlocmaxidx(i)
-			if (idx/=0) write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
+            if (idx==0) cycle !The extreme has already been discarded
+			write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
 			"HETATM",i,' '//"C "//' ',"MOL",'A',1,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a,survtx(idx)%value,1.0," C"
 		end do
 		do i=1,nsurlocmin
 			idx=surlocminidx(i)
-			if (idx/=0) write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
+            if (idx==0) cycle !The extreme has already been discarded
+			write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
 			"HETATM",i,' '//"O "//' ',"MOL",'A',1,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a,survtx(idx)%value,1.0," O"
 		end do
 		write(10,"('END')")
@@ -1929,7 +1938,65 @@ do while(.true.)
 		end do
 		write(*,*) "Center of surface triangles have been outputted to tri.pdb in current folder"
 		close(10)
+        
+	else if (isel==18) then  !Discard some surface extrema by inputting indices
+        write(*,*) "Select the type of surface extrema"
+        write(*,*) "1: Surface maxima   2: Surface minima"
+        write(*,*) "Input 0 can return"
+        read(*,*) itype
+        if (itype==0) cycle
+        read(*,*) itype
+        write(*,*) "Input index range, e.g. 2,6-8,10"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,nremove)
+        allocate(tmpintarr(nremove))
+        call str2arr(c2000tmp,nremove,tmpintarr)
+        if (itype==1) surlocmaxidx(tmpintarr)=0
+        if (itype==2) surlocminidx(tmpintarr)=0
+        write(*,"(' Done!',i5,' extrema have been removed')") nremove
+        deallocate(tmpintarr)
 	
+	else if (isel==19) then  !Merge some surface extrema and take their average position
+        write(*,"(a)") " In this function, you need to select a set of surface extrema. The position of the first selected extreme &
+        will be replaced with average coordinate of all selected extrema, other extrema will be removed"
+        write(*,*)
+        write(*,*) "Select the type of surface extrema"
+        write(*,*) "1: Surface maxima   2: Surface minima"
+        write(*,*) "Input 0 can return"
+        read(*,*) itype
+        if (itype==0) cycle
+        write(*,*) "Input index range, e.g. 2,6-8,10"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,nselsur)
+        allocate(tmpintarr(nselsur))
+        call str2arr(c2000tmp,nselsur,tmpintarr)
+        avgx=0;avgy=0;avgz=0
+        ncount=0 !The number of not discarded selected extrema
+        ifirst=0 !The first not discarded selected extrema
+        do itmp=1,nselsur
+            isur=tmpintarr(itmp)
+            if (itype==1) idx=surlocmaxidx(isur)
+            if (itype==2) idx=surlocminidx(isur)
+            if (idx==0) cycle !Already discarded
+            avgx=avgx+survtx(idx)%x
+            avgy=avgy+survtx(idx)%y
+            avgz=avgz+survtx(idx)%z
+            ncount=ncount+1
+            if (ifirst==0) then
+                ifirst=isur
+                ifirstvtx=idx
+            else
+                if (itype==1) surlocmaxidx(isur)=0
+                if (itype==2) surlocminidx(isur)=0
+            end if
+        end do
+        survtx(ifirstvtx)%x=avgx/ncount
+        survtx(ifirstvtx)%y=avgy/ncount
+        survtx(ifirstvtx)%z=avgz/ncount
+        deallocate(tmpintarr)
+        if (itype==1) write(*,"(i5,' positive extrema have been merged as positive extreme',i5)") ncount,ifirst
+        if (itype==2) write(*,"(i5,' negative extrema have been merged as negative extreme',i5)") ncount,ifirst
+    
 	else if (isel==20) then !Fingerprint plot
 		call fingerprt(HirBecatm,nHirBecatm)
 	end if
@@ -2714,18 +2781,18 @@ write(*,"(' Area of selected surface region:',f10.3,' Angstrom^2')") areasel*b2a
 write(*,"(' Average value of selected surface region:',f12.5,' a.u.')") avgvalsel
 write(*,"(' Product of above two values:',f16.5,' a.u.*Angstrom^2')") avgvalsel* areasel*b2a**2
 
-open(10,file="selsurf.pdb",status="replace")
+open(10,file="selsurf.pqr",status="replace")
 write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface vertices')") nselvtx
+write(10,"(a)") "REMARK   The third last column is function values in a.u."
 do i=1,nsurvtx
 	if (elimvtx(i)==0.and.iselvtx(i)==1) then !Output as carbon atoms
-        tmpfuncval=survtx(i)%value
-		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
-		"HETATM",i,' '//"C "//' ',"MOL",'A',1,survtx(i)%x*b2a,survtx(i)%y*b2a,survtx(i)%z*b2a,1.0,tmpfuncval,"C "
+        write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f14.8,f9.4,a2)") &
+		"HETATM",i,' '//"C "//' ',"MOL",'A',1,survtx(i)%x*b2a,survtx(i)%y*b2a,survtx(i)%z*b2a,survtx(i)%value,1.0," C"
 	end if
 end do
 write(10,"('END')")
 close(10)
-write(*,"(a)") " Vertices of selected surface region have been exported to selsurf.pdb in current folder so that you can visualize them"
+write(*,"(a)") " Vertices of selected surface region have been exported to selsurf.pqr in current folder so that you can visualize them"
 
 end subroutine
 

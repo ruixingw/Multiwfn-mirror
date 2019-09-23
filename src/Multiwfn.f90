@@ -11,7 +11,7 @@ call getarg(1,filename)
 call getarg(2,cmdarg2)
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.7(dev), release date: 2019-Sep-14"
+write(*,*) "Version 3.7(dev), release date: 2019-Sep-21"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"

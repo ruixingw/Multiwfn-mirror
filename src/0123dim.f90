@@ -2356,8 +2356,10 @@ do while(.true.)
 		write(*,*) "e.g. 1,0 means solid line; 1,10 means DOT; 10,10 means DASH"
 		write(*,*) "     10,15 means DASH with larger interstice"
 		write(*,*) "Note: 1,0 and 10,15 are default for positive and negative lines, respectively"
+        write(*,"(' Current values are:',2i5)") ctrposstyle(1),ctrposstyle(2)
 		read(*,*) ctrposstyle(1),ctrposstyle(2)
 		write(*,*) "Input line width, e.g. 2"
+        write(*,"(' Note: Current value is:',i5)") iwidthposctr
 		read(*,*) iwidthposctr
 	else if (isel==13) then
 		write(*,*) "Use which color?"
@@ -2367,19 +2369,21 @@ do while(.true.)
 		write(*,*) "e.g. 1,0 means solid line; 1,10 means DOT; 10,10 means DASH"
 		write(*,*) "     10,15 means DASH with larger interstice"
 		write(*,*) "Note: 1,0 and 10,15 are default for positive and negative lines, respectively"
+        write(*,"(' Current values are:',2i5)") ctrnegstyle(1),ctrnegstyle(2)
 		read(*,*) ctrnegstyle(1),ctrnegstyle(2)
 		write(*,*) "Input line width, e.g. 2"
+        write(*,"(' Note: Current value is:',i5)") iwidthnegctr
 		read(*,*) iwidthnegctr
 	else if (isel==15) then
 		iclrindctrpos=11
 		iclrindctrneg=3
 		ctrposstyle(1)=1
 		ctrposstyle(2)=0
-		iwidthposctr=5
+		iwidthposctr=4
 		ctrnegstyle(1)=10
 		ctrnegstyle(2)=15
-		iwidthnegctr=5
-		write(*,"(a)") " OK! Saved picture with current line setting will be suitable for publication purpose"
+		iwidthnegctr=4
+		write(*,"(a)") " OK! Saved picture with current line setting should be suitable for publication purpose"
 	end if
 end do
 end subroutine

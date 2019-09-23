@@ -596,7 +596,7 @@ if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
     write(*,"('The number of basis functions in the dimer',i10)") nbasis
     allocate(ovlpbasmat(nbasis,nbasis))
     write(*,*) "Loading overlap matrix of dimer, please wait..."
-    call loclabel(10,"*** Overlap ***",ifound,1)
+    call loclabel(10,"*** Overlap ***",ifound)
     call readmatgau(10,ovlpbasmat,1,"D14.6",7,5)
     close(10)
 
@@ -623,14 +623,14 @@ if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
 	    write(*,"(' MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo1/2
 	    write(*,"(' MOs from',i8,' to',i8,' are Beta orbitals')") nmo1/2+1,nmo1
 	    write(*,*) "Loading molecular orbital coefficients of monomer 1, please wait..."
-	    call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound,1)
+	    call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound)
 	    call readmatgau(10,cobas1(1:nbasis1,1:nmo1/2),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
-	    call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound,1)
+	    call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound)
 	    call readmatgau(10,cobas1(1:nbasis1,nmo1/2+1:),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
     else !Closed-shell
 	    write(*,"(' The number of molecular orbitals in monomer 1',i10)") nmo1
 	    write(*,*) "Loading molecular orbital coefficients of monomer 1, please wait..."
-	    call loclabel(10,"Molecular Orbital Coefficients:",ifound,1)
+	    call loclabel(10,"Molecular Orbital Coefficients:",ifound)
 	    call readmatgau(10,cobas1(1:nbasis1,:),0,"f10.5",21,5,3) !nbasis1+1:nbasis are empty
     end if
     close(10)
@@ -659,14 +659,14 @@ if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
 	    write(*,"(' MOs from',i8,' to',i8,' are Alpha orbitals')") 1,nmo2/2
 	    write(*,"(' MOs from',i8,' to',i8,' are Beta orbitals')") nmo2/2+1,nmo2
 	    write(*,*) "Loading molecular orbital coefficients of monomer 2, please wait..."
-	    call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound,1)
+	    call loclabel(10,"Alpha Molecular Orbital Coefficients:",ifound)
 	    call readmatgau(10,cobas2(nbasis1+1:,1:nmo2/2),0,"f10.5",21,5,3) !1:nbasis1 are empty
-	    call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound,1)
+	    call loclabel(10,"Beta Molecular Orbital Coefficients:",ifound)
 	    call readmatgau(10,cobas2(nbasis1+1:,nmo2/2+1:),0,"f10.5",21,5,3) !1:nbasis1 are empty
     else !Closed-shell
 	    write(*,"(' The number of molecular orbitals in monomer 2',i10)") nmo2
 	    write(*,*) "Loading molecular orbital coefficients of monomer 2, please wait..."
-	    call loclabel(10,"Molecular Orbital Coefficients:",ifound,1)
+	    call loclabel(10,"Molecular Orbital Coefficients:",ifound)
 	    call readmatgau(10,cobas2(nbasis1+1:,:),0,"f10.5",21,5,3) !1:nbasis1 are empty
     end if
     close(10)
@@ -832,7 +832,7 @@ do i=1,nfrag
 		write(*,"(a)") " Error: Some linearly dependent basis functions were removed by Gaussian! You should regenerate the Gaussian output file with IOp(3/32=2)!"
 		return
 	end if
-	call loclabel(10,"alpha electrons",ifound,1)
+	call loclabel(10,"alpha electrons",ifound)
 	read(10,*) numaelec(i),c80tmp,c80tmp,numbelec(i)
 	call loclabel(10,"NAtoms",ifound)
 	read(10,*) c80tmp,numatom(i)
@@ -2288,6 +2288,7 @@ if (ifiletype==0) then
 	    write(*,"(a)") " Error: The input file you used does not meet requirement! Please carefully check Section 3.100.18 of the manual!"
 	    write(*,*) "Press ENTER button to return"
 	    read(*,*)
+        close(10)
 	    return
     end if
     read(10,*) c80tmp,nmo
@@ -2297,7 +2298,9 @@ if (ifiletype==0) then
     read(10,*) naelec,c80tmp,c80tmp,nbelec
     if (naelec/=nbelec) then
 	    write(*,*) "Error: Only closed-shell wavefunction is supported!"
-	    write(*,*)
+	    write(*,*) "Press ENTER button to return"
+        read(*,*)
+        close(10)
 	    return
     end if
     !Load geometry
@@ -2305,8 +2308,9 @@ if (ifiletype==0) then
     call loclabel(10,"Standard orientation:",ifound)
     if (ifound==0) then
 	    write(*,*) "Error: Cannot found ""Standard orientation"" section!"
-	    write(*,*) "Press ENTER button to exit"
+	    write(*,*) "Press ENTER button to return"
         read(*,*)
+        close(10)
 	    return
     end if
     read(10,*)
@@ -2351,7 +2355,7 @@ if (ifiletype==0) then
 else
     if (wfntype/=0) then
 	    write(*,*) "Error: Only closed-shell wavefunction is supported!"
-	    write(*,*) "Press ENTER button to exit"
+	    write(*,*) "Press ENTER button to return"
         read(*,*)
 	    return
     end if
@@ -2372,7 +2376,7 @@ read(*,*) iplesel
 !Load information outputted by NBO program
 allocate(atompi(ncenter))
 atompi=0 !0 means the atom does not have corresponding pi orbital
-call loclabel(10,"NATURAL POPULATIONS",ifound,1)
+call loclabel(10,"NATURAL POPULATIONS",ifound)
 read(10,*)
 read(10,*)
 read(10,*)
@@ -2407,19 +2411,18 @@ write(*,*) "Loading NAOMO matrix..."
 allocate(NAOMO(numNAO,nmo))
 call loclabel(10,"MOs in the NAO basis:",ifound,0) !Don't rewind
 if (ifound==0) then
-	write(*,*) "Error: Cannot found ""MOs in NAO basis"" section!"
-	write(*,*) "Press ENTER button to exit"
+	write(*,"(a)") " Error: Cannot found ""MOs in NAO basis"" section! You should use ""NAOMO"" keyword in NBO module"
+	write(*,*) "Press ENTER button to return"
     read(*,*)
+    close(10)
 	return
 end if
-!Check format before reading, NBO6 use different format to NBO3
+!Check columns should be skipped during matrix reading, then return to title line
+read(10,*);read(10,*);read(10,*)
 read(10,"(a)") c80tmp
-backspace(10)
-if (c80tmp(2:2)==" ") then !NBO6
-	call readmatgau(10,NAOMO,0,"f8.4 ",17,8,3)
-else !NBO3
-	call readmatgau(10,NAOMO,0,"f8.4 ",16,8,3)
-end if
+nskipcol=index(c80tmp,"- -")
+backspace(10);backspace(10);backspace(10);backspace(10)
+call readmatgau(10,NAOMO,0,"f8.4 ",nskipcol,8,3)
 
 close(10)
 
@@ -2621,14 +2624,14 @@ use util
 implicit real*8 (a-h,o-z)
 integer piorblist(nmo) !1 means this orbital is expected pi orbital
 real*8,allocatable :: tmparr(:)
-real*8 :: thresdens=0.02D0,thressingle=0.85D0
+real*8 :: thresdens=0.01D0,thressingle=0.85D0
 integer :: ionlyocc=1,idebug=0,icompmethod=1
 integer,allocatable :: atmrange(:)
 character c2000tmp*2000,c200tmp*200,selectyn
 real*8 CObasa_LMO(nbasis,nbasis),CObasb_LMO(nbasis,nbasis),atmcomp(ncenter,nmo)
 
 if (.not.allocated(b)) then
-	write(*,*) "Error: wavefunction information is not presented but needed!"
+	write(*,*) "Error: Wavefunction information is not presented but needed!"
 	write(*,*) "Press ENTER button to return"
 	read(*,*)
 	return
@@ -2755,8 +2758,8 @@ else if (iorbform==-1) then !LMO case
 		else if (isel==2) then
 			write(*,*) "Input the threshold density in a.u., e.g. 0.02"
 			write(*,"(a)") " Note: Assume that in an orbital, A and B are the two atoms having maximum contributions, &
-			the orbital will be regarded as pi orbital if electron densities at two representative points between A and B &
-            are both smaller than the threshold density"
+			the orbital will be regarded as pi orbital if its density at two representative points between A and B &
+            is both smaller than the threshold"
 			read(*,*) thresdens
 		else if (isel==3) then
 			if (ionlyocc==1) then
@@ -2797,7 +2800,6 @@ else if (iorbform==-1) then !LMO case
 	allocate(tmparr(ncenter))
 	do imo=1,nmo
 		if (ionlyocc==1.and.MOocc(imo)==0) cycle
-		
         !tmparr records composition of all atoms in current orbital
 		if (icompmethod==1) then
             if (MOocc(imo)==0) then
@@ -2818,24 +2820,21 @@ else if (iorbform==-1) then !LMO case
 				tmpmax=tmparr(iatm)
 			end if
 		end do
-		MOocc=0
-		MOocc(imo)=2D0
-		!Use density of at a few probe points between the atoms to determine if is pi orbital
+		!Use orbital density of at a few probe points between the atoms to determine if is pi orbital
         ratio1=0.7D0
         ratio2=0.3D0
         tmpx=ratio1*a(imax)%x+ratio2*a(imax2)%x
 		tmpy=ratio1*a(imax)%y+ratio2*a(imax2)%y
 		tmpz=ratio1*a(imax)%z+ratio2*a(imax2)%z
-		dens1=fdens(tmpx,tmpy,tmpz)
+		dens1=fmo(tmpx,tmpy,tmpz,imo)**2
 		tmpx=ratio2*a(imax)%x+ratio1*a(imax2)%x
 		tmpy=ratio2*a(imax)%y+ratio1*a(imax2)%y
 		tmpz=ratio2*a(imax)%z+ratio1*a(imax2)%z
-		dens2=fdens(tmpx,tmpy,tmpz)
+		dens2=fmo(tmpx,tmpy,tmpz,imo)**2
 		!tmpx=0.5D0*a(imax)%x+0.5D0*a(imax2)%x
 		!tmpy=0.5D0*a(imax)%y+0.5D0*a(imax2)%y
 		!tmpz=0.5D0*a(imax)%z+0.5D0*a(imax2)%z
 		!dens3=fdens(tmpx,tmpy,tmpz)
-		MOocc=MOocc_org
 		if (idebug==1) write(*,"(' Orb:',i5,'  max:',i5,f6.1,'%  max2:',i5,f6.1,'%  rho1:',f9.5,'  rho2:',f9.5)") &
         imo,imax,tmparr(imax)*100,imax2,tmparr(imax2)*100,dens1,dens2
 		if (tmparr(imax)>thressingle) cycle !Pass single center LMO (Lone pair, inner-core)

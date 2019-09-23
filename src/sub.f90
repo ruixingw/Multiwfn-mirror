@@ -487,7 +487,8 @@ do while(.true.)
 					cycle
 				end if
 			end if
-			write(*,*) "Set to which value? e.g. 1.2"
+            write(*,*)
+			write(*,*) "Set occupation number to which value? e.g. 1.2"
 			write(*,*) "Note:"
 			write(*,"(a)") " You can also input for example ""+1.1"" ""-1.1"" ""*1.1"" ""/1.1"" to add, minus, multiply and divide the occupation numbers by 1.1"
 			write(*,"(a)") " To recover the initial occupation numbers, input ""i"""
