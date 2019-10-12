@@ -3280,3 +3280,72 @@ do iatm=1,ncenter
     end do
 end do
 end subroutine
+
+
+
+
+!!---------  Align atoms in "a" (mol1) to "a_org" (mol2), the atoms must have the same order and same number
+!See http://nghiaho.com/?page_id=671
+!Test purpose:
+!call readinfile("C:\Users\Sobereva\Desktop\md2.xyz",0)
+!call geomalign
+!call outxyz("new.xyz",10)
+subroutine geomalign
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+real*8 xyz1(3,ncenter),xyz2(3,ncenter),eleidx(ncenter),com1(3),com2(3)  !1/2/3=x,y,z
+real*8 singval(3),Umat(3,3),Vmat(3,3),Hmat(3,3),Rmat(3,3)
+
+do i=1,ncenter
+    xyz1(1,i)=a_org(i)%x
+    xyz1(2,i)=a_org(i)%y
+    xyz1(3,i)=a_org(i)%z
+    xyz2(1,i)=a(i)%x
+    xyz2(2,i)=a(i)%y
+    xyz2(3,i)=a(i)%z
+    eleidx(i)=a_org(i)%index
+end do
+totmass=sum(atmwei(eleidx(:)))
+do i=1,3
+    com1(i)=sum( atmwei(eleidx(:))*xyz1(i,:) )/totmass
+    com2(i)=sum( atmwei(eleidx(:))*xyz2(i,:) )/totmass
+end do
+
+Hmat=0
+do iatm=1,ncenter
+    xyz1(:,iatm)=xyz1(:,iatm)-com1(:)
+    xyz2(:,iatm)=xyz2(:,iatm)-com2(:)
+    Hmat=Hmat+matmul(xyz2(:,iatm:iatm),transpose(xyz1(:,iatm:iatm)))
+end do
+
+call SVDmat(1,Hmat,Umat,Vmat,singval,info)
+Rmat=matmul(Vmat,transpose(Umat))
+!write(*,*) detmat(Rmat)
+!call showmatgau(Rmat,"Rotation matrix")
+!if (detmat(Rmat)<0) Rmat(:,3)=-Rmat(:,3) !As mentioned in the webpage, this line should be added, however it incorrectly make molecule mirror inverted!
+
+!Rotate mol2
+do i=1,ncenter
+    xyz2(:,i)=matmul(Rmat,xyz2(:,i))
+end do
+
+!Move center of mass of mol2 to mol1
+do i=1,ncenter
+    xyz2(:,i)=xyz2(:,i)+com1(:)
+end do
+
+!RMSD
+RMSD=0
+do i=1,ncenter
+    RMSD=RMSD+sum(((xyz1(:,i)+com1(:))-xyz2(:,i))**2)
+end do
+RMSD=dsqrt(RMSD/ncenter)
+write(*,"(' RMSD:',f12.6,' Bohr')") RMSD
+
+do i=1,ncenter
+    a(i)%x=xyz2(1,i)
+    a(i)%y=xyz2(2,i)
+    a(i)%z=xyz2(3,i)
+end do
+end subroutine

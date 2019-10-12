@@ -76,14 +76,17 @@ CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set extension distance",idisextdist)
 CALL wgapp(idisotherset,"Set isovalue",idissetorbisovalue)
-CALL wgapp(idisotherset,"Set lighting",idissetlight)
+CALL wgapp(idisotherset,"Set lightings",idissetlight)
 CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
 CALL wgapp(idisotherset,"Set atomic label color",idisatmlabclr)
 CALL wgapp(idisotherset,"Use CPK style",idisuseCPK)
 CALL wgapp(idisotherset,"Use vdW style",idisusevdW)
 CALL wgapp(idisotherset,"Use line style",idisuseline)
-CALL WGPOP(idiswindow,"Measure geometry",idismeasuremenu)
-CALL wgapp(idismeasuremenu,"dist./angle/dih.",idismeasure)
+CALL wgapp(idisotherset,"Toggle showing hydrogens",idisshowhydrogen)
+CALL wgapp(idisotherset,"Set atom highlighting",idishighlightatom)
+CALL WGPOP(idiswindow,"Tools",idistools)
+CALL wgapp(idistools,"Measure geometry",idismeasure)
+CALL wgapp(idistools,"Batch plotting orbitals",idisbatchplot)
 if (imodlayout==2) call swgdrw(0.9D0) !Set height of drawing widget 0.9*width to make it fully shown
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
@@ -188,7 +191,10 @@ call SWGCBK(idisatmlabclr,setatmlabclr)
 call SWGCBK(idisuseCPK,setCPKstyle)
 call SWGCBK(idisusevdW,setvdWstyle)
 call SWGCBK(idisuseline,setlinestyle)
+call SWGCBK(idisshowhydrogen,setshowhydrogen)
+call SWGCBK(idishighlightatom,sethighlightatom)
 call SWGCBK(idismeasure,measuregeom)
+call SWGCBK(idisbatchplot,batchplot)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -1630,6 +1636,16 @@ call swgscl(idisatmsize,ratioatmsphere)
 call drawmol
 end subroutine
 
+subroutine setshowhydrogen(id)
+integer,intent (in) :: id
+if (ishowhydrogen==1) then
+    ishowhydrogen=0
+else
+    ishowhydrogen=1
+end if
+call drawmol
+end subroutine
+
 subroutine setplaneXVU(id)
 integer,intent (in) :: id
 call GWGFLT(id,XVU)
@@ -2316,5 +2332,51 @@ end if
 call SWGTXT(igeomresult,resultstr)
 end subroutine
 
+
+
+!!!-------- Plot a batch of orbitals
+subroutine batchplot(id)
+use defvar
+use util
+integer,intent (in) :: id
+character c2000tmp*2000,c80tmp*80
+integer batchlist(nmo)
+c2000tmp=" "
+CALL SWGWTH(100)
+CALL swgtit("Save isosurface of a batch of orbitals as graphical file")
+call dwgtxt("Input orbital indices, e.g. 3,7-11,23 (Negative index is not supported)",c2000tmp)
+if (c2000tmp==" ") return
+call str2arr(c2000tmp,norb,batchlist)
+isavepic=1
+do idx=1,norb
+    iorbvis=batchlist(idx)
+    call showorbsel(inouse,iorbvis)
+    write(*,"(a,i6.6,a)") " Saved image file with ",iorbvis," prefix in current folder"
+end do
+isavepic=0
+write(*,*) "Done!"
+CALL SWGWTH(20) !Recover default
+end subroutine
+
+
+!!!-------- Set highlighting for a batch of atoms
+subroutine sethighlightatom(id)
+use defvar
+use util
+integer,intent (in) :: id
+character c2000tmp*2000
+if (allocated(highlightatomlist)) deallocate(highlightatomlist)
+c2000tmp=" "
+CALL SWGWTH(100)
+CALL swgtit("Set highlighting for a batch of atoms")
+call dwgtxt("Input indices of the atoms to be highlighted, e.g. 3,7-11,23",c2000tmp)
+CALL SWGWTH(20) !Recover default
+if (c2000tmp/=" ") then
+    call str2arr(c2000tmp,ntmp)
+    allocate(highlightatomlist(ntmp))
+    call str2arr(c2000tmp,ntmp,highlightatomlist)
+end if
+call drawmol
+end subroutine
 
 end module

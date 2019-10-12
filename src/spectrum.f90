@@ -10,17 +10,25 @@ use util
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: weight(:) !Weight of various system for plotting mixed spectrum
 real*8,allocatable :: dataxall(:,:),strall(:,:),FWHMall(:,:) !Transition data loaded from multiple files. The first index corresponds to system index
-integer,allocatable :: numdataall(:)
+integer,allocatable :: numdataall(:) !numdata is maximum length of numdataall
 character*80,allocatable :: mollegend(:) 
 real*8,allocatable :: linexall(:,:),lineyall(:,:) !Array used to draw discrete lines for all systems. The first index corresponds to system index
 real*8,allocatable :: curveyall(:,:) !The first index corresponds to system index. curvey in global array is used to record weighted curve
 integer,allocatable :: tmparr(:)
 real*8,allocatable :: indcurve(:,:) !Y value of curve of each individual band
 integer,allocatable :: indband2idx(:),idx2indband(:) !Used to map individual band index
-character c200tmp*200,c200tmp2*200,selectyn,graphformat_old*4
+character c200tmp*200,c200tmp2*200,selectyn,graphformat_old*4,c2000tmp*2000
 character clegend*2000 !Buffer for showing legends
 integer :: icurveclr=1,ilineclr=5 !Default: Red for curve, black for discrete lines
 integer :: thk_curve=3,thk_weighted=8,thk_legend=2,thk_discrete=1,thk_axis=1,thk_grid=1 !thickness
+!Used for drawing spikes for indicating position of levels
+integer,parameter :: maxspike=10
+real*8,allocatable :: spikey(:) !Temporarily used for plotting spikes
+integer,allocatable :: spikeidx(:,:) !Store level indices in each batch
+integer :: spikenum(maxspike)=0 !The number of level indices in each batch
+integer :: spikecolor(maxspike)=5 !Color of each spike batch, default to black
+integer :: spikethick=3
+
 
 if (ifiletype/=0) then !Foolish users always do foolish things
 	if (ifiletype==1) then
@@ -34,10 +42,10 @@ if (ifiletype/=0) then !Foolish users always do foolish things
 	return
 end if
 
-!Spectrum types: 1=IR  2=Raman (or pre-resonance Raman)  3=UV-Vis  4=ECD  5=VCD  6=ROA
+!**** Spectrum types: 1=IR  2=Raman (or pre-resonance Raman)  3=UV-Vis  4=ECD  5=VCD  6=ROA
 !
 !Definition of units:  iunitx =0 cm^-1, =1 eV, =2 nm, =3 1000cm^-1
-!For vibrational spectrum, cm^-1 is always used; For electronic spectrum, eV, nm, 1000cm^-1 can be used 
+!For vibrational spectrum, cm^-1 is always used, and used as internal unit; For electronic spectrum, eV (internal unit), nm, 1000cm^-1 can be used 
 !Note: For nm unit, we still store all data and FWHM in eV, and generate curve as usual in eV. Only at final stage, we scale the curve to get the one in nm
 !If we choose 1000cm^-1, we immediately convert all data and FWHM into 1000cm^-1 before generating curve.
 !When unit is changed, we reset lower and upper limit to auto rather than convert them to current unit to avoid problems.
@@ -55,7 +63,9 @@ idraw=0
 isavepic=0
 ishowline=1
 ishowgrid=1
+ishowlevel=0
 ishowtotal=1 !If showing weighted spectrum
+idegen=0
 iweisyscurve=0
 iunitliney=1 !Only for IR
 shiftx=0D0   !Shift value in X direction
@@ -269,14 +279,17 @@ do while(.true.)
 		if (ishowtotal==1) write(*,*) "21 Toggle showing weighted curve, current: Yes"
 	end if
 	write(*,*) "22 Set thickness of curves/lines/texts/axes/grid"
+    if (nsystem==1) write(*,*) "23 Set status of showing spikes to indicate transition levels"
 	read(*,*) isel
     
     if (isel==-4) then
         call setgraphformat
+        
 	else if (isel==-3) then
 		istrtype=0
         graphformat=graphformat_old
 		return
+        
 	else if (isel==-2) then !Export transition data
 		if (nsystem==1) then
 			open(10,file="transinfo.txt",status="replace")
@@ -300,6 +313,7 @@ do while(.true.)
 			write(*,"(a)") " The transition data have been exported to .txt with ""transinfo"" as prefix in current directory, &
 			these files can be directly used as input file of Multiwfn."
 		end if
+        
 	else if (isel==-1.or.isel==20) then !Show transition data and modify strengths
 		do imol=1,nsystem
 			if (nsystem>1) write(*,"(/,' Transition data of system',i5)") imol
@@ -308,13 +322,6 @@ do while(.true.)
 				do i=1,numdataall(imol)
 					write(*,"(i6,1x,f12.5,7x,f12.5,f12.5)") i,dataxall(imol,i),strall(imol,i),strall(imol,i)/2.5066D0
 				end do
-				!For zyz tasks
-! 				open(10,file="data.txt",status="replace")
-! 				write(10,*) " Index  Freq.(cm^-1)  Intens.( km/mol   esu^2*cm^2)"
-! 				do i=1,numdataall(imol)
-! 					write(10,"(i6,1x,f12.5,7x,f12.5,f12.5)") i,dataxall(imol,i),strall(imol,i),strall(imol,i)/2.5066D0
-! 				end do
-! 				close(10)
 			else if (ispectrum==2) then !Raman
 				if (iramantype==1) write(*,*) " Index  Freq.(cm^-1)      Activities(A^4/amu)"
 				if (iramantype==2) write(*,*) " Index  Freq.(cm^-1)          Intensity"
@@ -362,12 +369,15 @@ do while(.true.)
 			deallocate(tmparr)
 			write(*,*) "Done!"
 		end if
+        
 	else if (isel==0) then !Draw curve
 		idraw=1
 		isavepic=0
+        
 	else if (isel==1) then !Save curve picture
 		idraw=1
 		isavepic=1
+        
 	else if (isel==3) then !Change X axis
 		write(*,*) "Input lower limit, upper limit and step between ticks e.g. 200,1700,150"
 		write(*,*) "Hint: If only input 0, the axis will be inverted"
@@ -382,6 +392,7 @@ do while(.true.)
 			if (xlow>xhigh.and.stepx>0) stepx=-stepx
 		end if
 		iusersetX=1 !User has modified it
+        
 	else if (isel==4) then !Change left Y axis
 		if (orgy1==0.and.endy1==0.and.stepy1==0) then
 			write(*,"(a)") " Note: To use this function, you should plot the graph at least once so that lower and upper limits of Y-axis could be initialized"
@@ -414,6 +425,7 @@ do while(.true.)
 			orgy2=orgy1/ratiotmp
 			stepy2=stepy1/ratiotmp
 		end if
+        
 	else if (isel==5) then !Change right Y axis
 		if (orgy2==0.and.endy2==0.and.stepy2==0) then
 			write(*,"(a)") " Note: To use this function, you should plot the graph at least once so that lower and upper limits of Y-axis could be initialized"
@@ -445,15 +457,18 @@ do while(.true.)
 			orgy1=orgy2*ratiotmp
 			stepy1=stepy2*ratiotmp
 		end if
+        
 	else if (isel==6) then !Set broadening function
         write(*,*) "Choose one of broadening functions:"
 		write(*,*) "1 Lorentzian"
 		write(*,*) "2 Gaussian"
 		write(*,*) "3 Pseudo-Voigt"
 		read(*,*) ibroadfunc
+        
 	else if (isel==7) then !Scale factor for curve
 		write(*,*) "Input the scale factor, e.g. 0.8"
 		read(*,*) scalecurve
+        
 	else if (isel==8) then !Set FWHM
 		if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then !Always use cm^-1
 			write(*,*) "Input the FWHM in cm^-1, e.g. 4"
@@ -465,12 +480,14 @@ do while(.true.)
 		end if
 		read(*,*) tmp
 		FWHMall=tmp
+        
 	else if (isel==9) then !If show discrete lines
 		if (ishowline==1) then
 			ishowline=0
 		else
 			ishowline=1
 		end if
+        
 	else if (isel==10) then !Change unit of X or Y axis. Not applied to VCD/ECD
 		if (ispectrum==1) then !IR
 			if (iunitliney==1) then
@@ -497,18 +514,22 @@ do while(.true.)
 				end if
 			end if
 		end if
+        
 	else if (isel==11) then !Weight of Gaussian function
 		write(*,*) "Input a value, e.g. 0.3"
 		read(*,*) gauweigh
+        
 	else if (isel==12) then !Shift value in X
 		write(*,*) "Input a value, e.g. 4.5"
 		read(*,*) shiftx
+        
 	else if (isel==13) then !Set line and curve colors
 		if (nsystem==1) write(*,*) "Use which color for curve?"
 		if (nsystem>1) write(*,*) "Use which color for weighted curve?"
 		call selcolor(icurveclr)
 		write(*,*) "Use which color for discrete lines?"
 		call selcolor(ilineclr)
+        
 	else if (isel==14) then !Set scale factor for transition energies or frequencies
 		if (nsystem>1) then
 			write(*,*) "Note: This operation will be applied to all systems loaded"
@@ -549,18 +570,21 @@ do while(.true.)
 			dataxall=dataxall*tmpval
 		end if
 		write(*,*) "Done! Transition energies have been scaled"
+        
 	else if (isel==17) then !If showing grids on the plot
 		if (ishowgrid==1) then
 			ishowgrid=0
 		else if (ishowgrid==0) then
 			ishowgrid=1
 		end if
+        
 	else if (isel==18) then !If weighting curve of each system
 		if (iweisyscurve==1) then
 			iweisyscurve=0
 		else if (iweisyscurve==0) then
 			iweisyscurve=1
 		end if
+        
 	else if (isel==19) then !Convert between Raman activity and Raman intensity
 		if (nsystem>1) then
 			write(*,*) "Note: This operation will be applied to all systems loaded"
@@ -576,7 +600,7 @@ do while(.true.)
 			v0=1240.7011D0/v0*8065.5447D0 !Convert nm to cm-1
 		end if
 		write(*,*) "Input temperature in K (Input 0 means ignoring the Boltzmann term)"
-		write(*,*) "Note: If press ENTER directly, 298.15K will be used"
+		write(*,*) "Note: If press ENTER button directly, 298.15K will be used"
 		read(*,"(a)") c200tmp
 		if (c200tmp==" ") then
 			temper=298.15D0
@@ -604,12 +628,14 @@ do while(.true.)
 		else if (iramantype==2) then
 			iramantype=1
 		end if
+        
 	else if (isel==21) then !If weighting curve of each system
 		if (ishowtotal==1) then
 			ishowtotal=0
 		else if (ishowtotal==0) then
 			ishowtotal=1
 		end if
+        
 	else if (isel==22) then
 		do while(.true.)
 			write(*,*)
@@ -631,6 +657,96 @@ do while(.true.)
 			if (isel2==6) read(*,*) thk_grid
 			write(*,*) "Done!"
 		end do
+        
+    else if (isel==23) then !Set status of showing spikes
+        if (.not.allocated(spikeidx)) allocate(spikeidx(maxspike,numdata))
+        write(*,"(a)") " Note: You can use options 1~10 to define at most 10 sets of spikes"
+        do while(.true.)
+            write(*,*)
+            if (idegen==1) write(*,"(a,f6.3)") " -3 Toggle considering degenerate, current: Yes, with threshold of ",degencrit
+            if (idegen==0) write(*,"(a,f8.6)") " -3 Toggle considering degenerate, current: No"
+            write(*,"(a,i3)") " -2 Set spike thick, current:",spikethick
+            if (ispectrum==3.or.ispectrum==4) then
+                if (ishowlevel==1) write(*,*) "-1 Toggle showing spikes to indicate transition energies, current: Yes"
+                if (ishowlevel==0) write(*,*) "-1 Toggle showing spikes to indicate transition energies, current: No"
+            else if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then
+                if (ishowlevel==1) write(*,*) "-1 Toggle showing spikes to indicate vibrational levels, current: Yes"
+                if (ishowlevel==0) write(*,*) "-1 Toggle showing spikes to indicate vibrational levels, current: No"
+            end if
+            write(*,*) " 0 Return"
+            do ibatch=1,maxspike
+                if (spikenum(ibatch)==0) then
+                    write(*,"(i3,' Undefined spike set, choose to define')") ibatch
+                else
+                    write(*,"(i3,' Number of levels:',i6,',  Color: ',a)") ibatch,spikenum(ibatch),trim(colorname(spikecolor(ibatch)))
+                end if
+            end do
+            read(*,*) isel2
+            if (isel2==-3) then
+                if (idegen==1) then
+                    idegen=0
+                else
+                    idegen=1
+                    if (ispectrum==3.or.ispecturm==4) then
+                        write(*,*) "Input threshold for determining degenerate in eV, e.g. 0.05"
+                    else
+                        write(*,*) "Input threshold for determining degenerate in cm^-1, e.g. 0.2"
+                    end if
+                    read(*,"(a)") c200tmp
+                    if (c200tmp==" ") then
+                        if (ispectrum==3.or.ispecturm==4) then
+                            degencrit=0.05D0
+                        else
+                            degencrit=0.2D0
+                        end if
+                    else
+                        read(c200tmp,*) degencrit
+                    end if
+                end if
+            else if (isel2==-2) then
+                write(*,*) "Input thick, e.g. 2"
+                read(*,*) spikethick
+            else if (isel2==-1) then
+                if (ishowlevel==1) then
+                    ishowlevel=0
+                else
+                    ishowlevel=1
+                end if
+            else if (isel2==0) then
+                exit
+            else
+                nold=count(spikenum>0)
+                write(*,*) "Input index of the levels to show, e.g. 2,3,7-10,44"
+                if (spikenum(isel2)>0) then
+                    write(*,*) "If input ""0"", this batch will be undefined"
+                    write(*,*) "If press ENTER button directly, the definition will be kept unchanged"
+                else
+                    write(*,*) "If press ENTER button directly, all levels will be added"
+                end if
+                read(*,"(a)") c2000tmp
+                if (spikenum(isel2)>0.and.c2000tmp(1:1)=="0") then
+                    spikenum(isel2)=0
+                    cycle
+                end if
+                if (spikenum(isel2)==0.and.c2000tmp==" ") then
+                    spikenum(isel2)=numdata
+                    forall (il=1:numdata) spikeidx(isel2,il)=il
+                else if (spikenum(isel2)>0.and.c2000tmp==" ") then !Unchanged
+                    continue
+                else
+                    call str2arr(c2000tmp,spikenum(isel2),spikeidx(isel2,:))
+                    if (any(spikeidx(isel2,:)>numdata)) then
+                        spikenum(isel2)=0
+                        write(*,*) "Error: One or more indices exceeded valid range!"
+                        cycle
+                    end if
+                end if
+                write(*,*) "Use which color?"
+		        call selcolor(spikecolor(isel2))
+                if (nold==0.and.any(spikenum>0)) ishowlevel=1
+            end if
+        end do
+    
 	end if
 	
 	if (isel==15.and.nsystem>1) then !Showing individual transition contribution is not possible when multiple files are involved
@@ -640,6 +756,10 @@ do while(.true.)
 		cycle
 	end if
 	
+    
+    
+    
+    
 
 	!!=======================================================================!!
 	!!=======================================================================!!
@@ -964,26 +1084,32 @@ do while(.true.)
 		else
 			CALL HWFONT
 		end if
-		call AXSLEN(2150,1500)
+		if (ishowlevel==0) call AXSLEN(2150,1500)
+        if (ishowlevel==1) call AXSLEN(2150,1400) !When showing spikes, compress the spectrum region to leave space for plotting spikes
         if (ishowline==1) then
-		    call axspos(400,1640)
+		    if (ishowlevel==0) call axspos(400,1640) !Left more space at right side to show axis
+		    if (ishowlevel==1) call axspos(400,1540)
         else
-		    call axspos(510,1640)
+		     if (ishowlevel==0) call axspos(510,1640)
+		     if (ishowlevel==1) call axspos(510,1540)
         end if
 ! 		call center
 		if (isavepic==0) call WINTIT("Click right mouse button to close")
-		CALL TICKS(1,'XY')
+		if (ishowlevel==0) CALL TICKS(1,'XY')
+		if (ishowlevel==1) CALL TICKS(0,'X')
 		call ERRMOD("ALL","OFF")
 		CALL LABDIG(1,"X")
 		if (iunitx==1) CALL LABDIG(2,"X") !eV, use more digital
 		! Name of X-axis
-		if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then
-			call TEXMOD("ON")
-			CALL NAME('Wavenumber (cm$^{-1}$)','X')
-		end if
-		if (iunitx==1) CALL NAME('Excitation energy (eV)','X')
-		if (iunitx==2) CALL NAME('Wavelength (nm)','X')
-		if (iunitx==3) CALL NAME('Wavenumber (1000cm$^{-1}$)','X')
+        if (ishowlevel==0) then
+		    if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then
+			    call TEXMOD("ON")
+			    CALL NAME('Wavenumber (cm$^{-1}$)','X')
+		    end if
+		    if (iunitx==1) CALL NAME('Excitation energy (eV)','X')
+		    if (iunitx==2) CALL NAME('Wavelength (nm)','X')
+		    if (iunitx==3) CALL NAME('Wavenumber (1000cm$^{-1}$)','X')
+        end if
 		! Name of Y-axis
 		call TEXMOD("ON")
 		if (ispectrum==1.or.ispectrum==3) then
@@ -1011,9 +1137,11 @@ do while(.true.)
 			CALL LABDIG(4,"Y")
 		end if
 		if (ishowline==1) then
-			call setgrf('NAME','NAME','TICKS','NONE') !If show discrete lines, leave right axis empty
+			if (ishowlevel==0) call setgrf('NAME','NAME','TICKS','NONE') !If show discrete lines, leave right axis empty
+            if (ishowlevel==1) call setgrf('TICKS','NAME','TICKS','NONE')
 		else
-			call setgrf('NAME','NAME','TICKS','TICKS')
+			if (ishowlevel==0) call setgrf('NAME','NAME','TICKS','TICKS')
+			if (ishowlevel==1) call setgrf('TICKS','NAME','TICKS','TICKS')
 		end if
 		ileg=0
 		numleg=1+nsystem
@@ -1119,7 +1247,7 @@ do while(.true.)
 					if (iclrtmp==2) then !2 corresponds to green, which is too bright
 						iclrtmp=12 !Change to dark green
 					else if (iclrtmp==12) then
-						iclrtmp=2 
+						iclrtmp=2
 					end if
 					call setcolor(iclrtmp)
 				end if
@@ -1127,7 +1255,76 @@ do while(.true.)
 			end do
 			call color("WHITE")
 			call xaxgit !Draw a line corresponding to Y=0
+            call endgrf
 		end if
+        
+        !Draw spikes to show levels
+        if (ishowlevel==1) then
+            call AXSLEN(2150,90)
+            if (ishowline==0) call axspos(510,1630)
+            if (ishowline==1) call axspos(400,1630)
+            CALL TICKS(1,'X')
+            CALL TICKS(0,'Y')
+            if (idegen==1) then !Determine maximum degenerate
+                maxdegen=1
+                do idata=1,numdata
+                    degentest=1
+                    enei=dataxall(1,idata)
+                    do jdata=idata+1,numdata
+                        enej=dataxall(1,jdata)
+                        if (abs(enej-enei)<degencrit) degentest=degentest+1
+                    end do
+                    if (degentest>maxdegen) maxdegen=degentest
+                end do
+                CALL TICKS(1,'Y')
+            end if
+            if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then
+			    call TEXMOD("ON")
+			    CALL NAME('Wavenumber (cm$^{-1}$)','X')
+		    end if
+		    if (iunitx==1) CALL NAME('Excitation energy (eV)','X')
+		    if (iunitx==2) CALL NAME('Wavelength (nm)','X')
+		    if (iunitx==3) CALL NAME('Wavenumber (1000cm$^{-1}$)','X')
+            call setgrf('NAME','TICKS','NONE','TICKS')
+		    if (idegen==0) CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, 0D0,1D0,0D0,1D0)
+            if (idegen==1) CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, 0D0,dfloat(maxdegen),0D0,1D0)
+            allocate(spikey(3*numdata))
+            call LINWID(spikethick)
+            
+            do iset=1,maxspike
+                if (spikenum(iset)==0) cycle
+                spikey=0
+                if (idegen==0) then !Do not consider degenerate
+                    do idata=1,numdata
+				        inow=3*(idata-1)
+				        if (any(spikeidx(iset,1:spikenum(iset))==idata)) spikey(inow+2)=0.9D0
+                    end do
+                else !Consider degenerate in current set
+                    istart=1
+                    do while(istart<spikenum(iset))
+                        do idata=istart,spikenum(iset)
+                            ireal=spikeidx(iset,idata)
+                            enei=dataxall(1,ireal)
+                            degentest=1
+                            do jdata=idata+1,spikenum(iset)
+                                jreal=spikeidx(iset,jdata)
+                                enej=dataxall(1,jreal)
+                                if (abs(enej-enei)<degencrit) degentest=degentest+1
+                            end do
+				            inow=3*(ireal-1)
+                            spikey(inow+2)=degentest
+                        end do
+                        istart=istart+degentest
+                    end do
+                end if
+                call setcolor(spikecolor(iset))
+			    CALL CURVE(linexall(1,1:3*numdata),spikey,3*numdata)
+            end do
+            deallocate(spikey)
+		    CALL ENDGRF
+			call color("WHITE")
+        end if
+        
 		call disfin
 		if (isavepic==1) write(*,*) "Graphic file has been saved to current folder with ""DISLIN"" prefix"
 	end if

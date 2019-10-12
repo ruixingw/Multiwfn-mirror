@@ -26,7 +26,7 @@ real*8 beckeweigrid(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 
 if (wfntype==2.or.wfntype==3.or.wfntype==4) then
-	write(*,*) "Error: This function only works for restricted or unrestricted SCF wavefunction!"
+	write(*,*) "Error: This function only works for single-determinant SCF wavefunction!"
 	write(*,*) "Press ENTER button to return"
 	read(*,*)
 	return

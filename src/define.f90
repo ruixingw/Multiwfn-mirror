@@ -163,7 +163,7 @@ real*8 :: YWTatomexp(18,3)=reshape((/ & !Corresponding exponent of YWTatom, the 
 0.5288D0,0.3379D0,0.1912D0,0.139D0,0.1059D0,0.0884D0,0.0767D0,0.0669D0,0.0608D0,0.0549D0,0.0496D0,0.0449D0,0.0411D0,0.0382D0,0.0358D0,0.0335D0,0.0315D0,0.0296D0, &
 1.0D0,1.0D0,0.9992D0,0.6945D0,0.53D0,0.548D0,0.4532D0,0.3974D0,0.3994D0,0.3447D0,0.2511D0,0.215D0,0.1874D0,0.1654D0,0.1509D0,0.1369D0,0.1259D0,0.1168D0, &
 1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0236D0,0.7753D0,0.5962D0,0.6995D0,0.5851D0,0.5149D0,0.4974D0,0.4412D0 /),(/18,3/))
-!Atomic weights, from http://www.chem.qmul.ac.uk/iupac/AtWt/, the data is mainly based on Pure Appl. Chem., 81, 2131-2156 (2009)
+!Atomic masses/weights, from http://www.chem.qmul.ac.uk/iupac/AtWt/, the data is mainly based on Pure Appl. Chem., 81, 2131-2156 (2009)
 real*8 :: atmwei(0:nelesupp)=(/ 0D0,1.00794D0,4.0026D0,6.941D0,9.01218D0,10.811D0,12.0107D0,14.0067D0,15.9994D0,18.9984D0,20.1797D0,& !1~10
 22.98977D0,24.305D0,26.98154D0,28.0855D0,30.97376D0,32.065D0,35.453D0,39.948D0,39.0983D0,40.078D0,& !11~20
 44.95591D0,47.867D0,50.9415D0,51.9961D0,54.93805D0,55.845D0,58.93319D0,58.6934D0,63.546D0,65.38D0,& !21~30
@@ -302,7 +302,7 @@ real*8 :: CP3n3RGB(3)=(/0.72D0,0D0,0.72D0/),CP3n1RGB(3)=(/1D0,0.5D0,0D0/),CP3p1R
 real*8 :: atm3Dclr(0:nelesupp,3) !Colors of the atom spheres shown in 3D plots, set in "loadsetting" routine
 
 !Plotting Internal parameter
-integer :: imodlayout=0,plotwinsize3D=90
+integer :: imodlayout=0,plotwinsize3D=90,ishowhydrogen=1
 integer :: idrawbasinidx=0,idrawinternalbasin=0 !Draw which basin. If draw interal part of the basin
 integer :: ifixorbsign=0 !if 1, during generating orbital isosurface by drawmolgui, most part will always be positive (namely if sum(cubmat)<0 or sum(cubmattmp)<0, the data sign will be inverted)
 integer :: iatom_on_plane=0,iatom_on_plane_far=0,ibond_on_plane=0,plesel,IGRAD_ARROW=0,ILABEL_ON_CONTOUR,ncontour
@@ -311,8 +311,9 @@ integer :: iclrindctrpos=5,iclrindctrneg=5,ivdwclrindctr=3,iclrindgradline=6,vdw
 integer :: isavepic=0,icurve_vertlinex=0,iclrindatmlab=1,imarkrefpos=0,ilog10y=0,iclrcurve=1
 integer :: inucespplot=0,idrawmol=1,idrawisosur=0,isosursec=0,idrawtype=1,idrawcontour=1
 integer :: iinvgradvec=0,icolorvecfield=0,vecclrind=30,idrawplanevdwctr=0,iplaneoutall=0,icurvethick=5,iclrtrans=0
-character :: stream_intmethod*5="RK2",clrtransname(0:17)*50=(/ "Rainbow & white/black for out-of-limit data","Rainbow","Reversed rainbow","Rainbow starting from white","Spectrum","Reversed Spectrum","Grey","Reversed Grey","Blue-White-Red",&
-"Red-White-Blue","Blue-Green-Red","Red-Green-Blue","White-Dark red","Black-Orange-Yellow","White-Dark green","Black-Green","White-Dark blue","Black-Blue-Cyan" /)
+integer,allocatable :: highlightatomlist(:)
+character :: stream_intmethod*5="RK2",clrtransname(0:18)*50=(/ "Rainbow & white/black for out-of-limit data","Rainbow","Reversed rainbow","Rainbow starting from white","Spectrum","Reversed Spectrum","Grey","Reversed Grey","Blue-White-Red",&
+"Red-White-Blue","Blue-Green-Red","Red-Green-Blue","White-Dark red","Black-Orange-Yellow","White-Dark green","Black-Green","White-Dark blue","Black-Blue-Cyan","Viridis" /)
 real*8 :: surcolorzmin,surcolorzmax !fillctr is the contour value will be draw on fillcolor map
 real*8 :: curve_vertlinex=0D0,curvexyratio=0.618D0 !Gold partition
 real*8 :: gradplotstep=0.002D0,gradplotdis=0.01D0,gradplottest=0.2D0,cutgradvec=0.3D0

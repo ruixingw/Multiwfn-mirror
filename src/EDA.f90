@@ -440,6 +440,7 @@ end subroutine
 !Return value: istatus=0 means all parameters are successfully assigned.  =1: Some parameters are missing
 subroutine setvdWparm(ivdwmode,FFtype,parmA,parmB,istatus)
 use defvar
+use util
 implicit real*8 (a-h,o-z)
 integer ivdwmode,istatus
 real*8 parmA(ncenter),parmB(ncenter)
@@ -502,6 +503,7 @@ character*2 :: GAFFname(nGAFFtype)=(/ &
 "n3","np","nq","n4","nk","nl","na","nb","nc","nd","ne","nf","nh","nm",&
 "nn","no","s ","s2","s4","s6","sx","sy","sh","ss","sp","sq","p2","p3",&
 "p4","p5","pb","pc","pd","pe","pf","px","py","f ","cl","br","i " /)
+character*2 c2tmp
 real*8 :: GAFF_A(nGAFFtype)=(/ & !GAFF well depth in kcal/mol
 0.0157D0,0.0157D0,0.0157D0,0.0150D0,0.0150D0,0.0150D0,0.0157D0,0.0157D0,&
 0.0000D0,0.0157D0,0.0157D0,0.0000D0,0.0157D0,0.2100D0,0.2104D0,0.1700D0,&
@@ -550,6 +552,17 @@ atmcyc:	do iatm=1,ncenter
 			if (FFtype(iatm)==GAFFname(itype)) then
 				parmA(iatm)=GAFF_A(itype)
 				parmB(iatm)=GAFF_B(itype)
+				cycle atmcyc
+			end if
+		end do
+        !Final check. GaussView always uses uppercase, if the second character is convert to lowercase, may be assignment can be successful
+		ntottype=nAMBERtype
+		do itype=1,ntottype
+            c2tmp=FFtype(iatm)
+            call uc2lc(c2tmp(2:2))
+			if (c2tmp==AMBERname(itype)) then
+				parmA(iatm)=AMBER_A(itype)
+				parmB(iatm)=AMBER_B(itype)
 				cycle atmcyc
 			end if
 		end do

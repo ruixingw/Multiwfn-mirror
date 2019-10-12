@@ -802,6 +802,7 @@ end if
 end function
 
 
+
 !!-------- Get trace of a matrix
 real*8 function mattrace(mat)
 real*8 mat(:,:)

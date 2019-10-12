@@ -187,6 +187,7 @@ write(*,*) "5 Output current wavefunction as .wfn file"
 write(*,*) "6 Output current wavefunction as Molden input file (.molden)"
 write(*,*) "7 Output current wavefunction as .fch file"
 write(*,*) "8 Output current wavefunction as .47 file"
+write(*,*) "9 Output current wavefunction as old Molekel input file (.mkl)"
 if (allocated(CObasa)) then
     write(*,*) "10 Output current system and wavefunction to Gaussian input file"
 else
@@ -279,6 +280,16 @@ else if (isel==8) then
 		read(*,"(a)") c200tmp
 		write(*,*) "Exporting, please wait..."
 		call out47(c200tmp,10)
+	end if
+else if (isel==9) then
+	if (.not.allocated(CObasa)) then
+		write(*,*) "Error: This function works only when input file contains basis function information"
+	else
+		write(*,*) "Input path for exporting file, e.g. C:\ltwd.mkl"
+		read(*,"(a)") c200tmp
+		write(*,*) "Exporting, please wait..."
+		call outmkl(c200tmp,10)
+		write(*,*) "Exporting .mkl file finished!"
 	end if
 else if (isel==10) then
 	write(*,*) "Input path for generating file, e.g. C:\ltwd.gjf"
@@ -953,7 +964,7 @@ write(10,"(a,/,/,a,/,/,2i3)") trim(ctitle)//" guess=cards","Please check this fi
 do i=1,ncenter
 	write(10,"(a,3f14.8)") ind2name(a(i)%index),a(i)%x,a(i)%y,a(i)%z
 end do
-write(10,"(/,'5(E16.9)',/,'-1')")
+write(10,"(/,'(5E16.9)',/,'-1')")
 do i=1,nbasis !Cycle orbitals
 	if (all(ifunrestrict==0)) then
 		write(10,"('! Orbital:',i6,' Occ:',f10.6,' from fragment',i4)") i,MOocc(i),wherefraga(i)
@@ -2643,6 +2654,8 @@ read(*,*) iorbform
 
 piorblist=0
 pinelec=0D0
+tolerpara=0.1D0
+tolerperp=80
 if (iorbform==0) then !Delocalized case
     thres=0.05D0
     avgx=sum(a(:)%x)/ncenter
@@ -2675,11 +2688,7 @@ if (iorbform==0) then !Delocalized case
         Clearly, the larger the value, the higher the tendency that the orbitals will be determined as pi. &
         If you press ENTER button directly, 0.1 will be employed, which is usually suitable"
         read(*,"(a)") c200tmp
-        if (c200tmp==" ") then
-            tolerpara=0.1D0
-        else
-            read(c200tmp,*) tolerpara
-        end if
+        if (c200tmp/=" ") read(c200tmp,*) tolerpara
         if (iplane==1) c200tmp="Z"
         if (iplane==2) c200tmp="X"
         if (iplane==3) c200tmp="Y"
@@ -2687,11 +2696,7 @@ if (iorbform==0) then !Delocalized case
         write(*,"(a)") " Note: If the contribution is lower than this value, the orbital will not be identified as pi. &
         If you press ENTER button directly, 80% will be employed, which is usually suitable"
         read(*,"(a)") c200tmp
-        if (c200tmp==" ") then
-            tolerperp=80
-        else
-            read(c200tmp,*) tolerperp
-        end if
+        if (c200tmp/=" ") read(c200tmp,*) tolerperp
         
 	end if
 
@@ -2716,7 +2721,6 @@ if (iorbform==0) then !Delocalized case
                 if (testmag<0.2D0) exit !The orbital may be core orbital of an atom, but GTF of this atom have been discarded using main function 6, therefore vanished
                 perpcontri=perpcontri/sum(CO(imo,:)**2)*100
                 if (perpcontri<tolerperp) exit
-                !write(*,*) testmag,perpcontri
 				piorblist(imo)=1
 				pinelec=pinelec+MOocc(imo)
 				write(*,"(i6,2f14.6)") imo,MOocc(imo),MOene(imo)*au2ev

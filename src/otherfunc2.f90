@@ -423,7 +423,6 @@ if (selectyn=='n'.or.selectyn=='N') then
 			gauinpcontent(i)=trim(gauinpcontent(i))//" NMR"
 			if (index(gauinpcontent(i),'conn')==0) gauinpcontent(i)=trim(gauinpcontent(i))//" geom=connectivity"
 		end if
-! 		write(*,"(a)") gauinpcontent(i)
 	end do
 	close(10)
 
@@ -437,7 +436,7 @@ if (selectyn=='n'.or.selectyn=='N') then
 			if (ifile>1.and.index(gauinpcontent(i),'#')/=0) then
 				write(10,"(a)") trim(gauinpcontent(i))//" guess=read"
 			else
-				write(10,"(a)") gauinpcontent(i)
+				write(10,"(a)") trim(gauinpcontent(i))
 			end if
 		end do
 		!Write Bq information
@@ -802,8 +801,8 @@ do isep=nmo,1,-1
 	if (MOtype(isep)==1) exit
 end do
 if (wfntype==1.or.wfntype==4) write(*,"(' Note: The orbitals from',i6,' to',i6,' are alpha; from',i6,' to',i6,' are beta')") 1,isep,isep+1,nmo
-write(*,"(a)") " Input the range of the orbitals of present wavefunction to be considered, e.g. 2,9. &
-If press ENTER directly, all orbitals will be taken into account"
+write(*,"(a)") " Input lower and upper limits of the orbitals to be considered in the present wavefunction, e.g. 2,9"
+write(*,*) "If press ENTER button directly, all orbitals will be taken into account"
 read(*,"(a)") c80tmp
 if (c80tmp==" ") then
 	istart1=1
@@ -829,8 +828,8 @@ do isep=nmo2,1,-1
 end do
 write(*,*)
 if (iwfntype2==1.or.iwfntype2==4) write(*,"(' Note: The orbitals from',i6,' to',i6,' are alpha; from',i6,' to',i6,' are beta')") 1,isep,isep+1,nmo
-write(*,"(a)") " Input the range of the orbitals of the second wavefunction to be considered, e.g. 2,9. &
-If press ENTER directly, all orbitals will be taken into account"
+write(*,"(a)") " Input lower and upper limits of the orbitals to be considered in the second wavefunction, e.g. 2,9"
+write(*,*) "If press ENTER button directly, all orbitals will be taken into account"
 read(*,"(a)") c80tmp
 if (c80tmp==" ") then
 	istart2=1

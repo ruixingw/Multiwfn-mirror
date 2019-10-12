@@ -33,15 +33,18 @@ character :: PDOSstring(nfragmax)*80=(/"PDOS frag.1","PDOS frag.2","PDOS frag.3"
 integer :: ishowPDOSline(nfragmax),ishowPDOScurve(nfragmax),icurvewidth=3,ilinewidth=2,intarr(2)
 integer :: iclrPDOS(nfragmax)=(/ 1,3,10,14,12,9,13,11,6,7 /)
 !Below are used for defining fragments. For Mulliken/SCPA, they correspond to basis function, while for Hirshfeld/Becke, they correspond to atom indices
-integer :: nfragDOS(nfragmax) !The number of basis functions or atoms in them (0=undefined)
-integer,allocatable :: fragDOS(:,:) !The index of basis functions or atoms (#1) in fragments (#2)
+integer :: nfragDOS(nfragmax) !The number of terms in the fragments (0=undefined)
+integer,allocatable :: fragDOS(:,:) !The index of basis functions/atoms or MOs (#1) in fragments (#2)
+!Used for plotting "MO DOS"
+!integer,parameter :: allMODOS=10 !Up to 10 sets
+!integer MODOSidx(allMODOS,nmo) !The index of featured MOs in each set
+!integer MOdosnum(allMODOS) !The number of featured MOs in each set
 !Below are used for photoelectron spectra (PES). In order to avoid confusing, they are not share with the ones for DOS
 real*8 :: PES_shift=0,PES_Xlow=0,PES_Xhigh=5,PES_Xstep=0.5D0,scalePEScurve=0.2D0
 real*8,allocatable :: PESlinex(:),PESliney(:),PES_str(:),PES_FWHM(:)
 real*8 :: PEScurve(num1Dpoints)
 real*8,allocatable :: bindene(:)
 integer :: ishowPEScurve=1,ishowPESline=1,iusersetPES_Y=0,invPES_X=0
-
 
 if (.not.(ifiletype==0.or.ifiletype==1.or.ifiletype==9.or.ifiletype==10)) then
 	write(*,"(a,/)") " Error: This function is only available for input file containing basis function information &
@@ -62,6 +65,7 @@ enehigh=0.2D0
 stepx=0.1D0
 stepy=2
 gauweigh=0.5D0 !The weight of Gaussian in Pseudo-Voigt function
+iPDOStype=0 !=0 defined.  =1: The PDOS to be plotted is for basis function/atom.  =2: is for MOs
 nfragDOS=0
 ishowTDOScurve=1
 ishowTDOSline=1
@@ -74,6 +78,7 @@ ishowHOMOlev=1
 ishowYlab=1
 iunitx=1
 unitstr=" a.u."
+idegen=0
 !ispin=0: Restricted wavefunction, >0: Unrestricted wavefunction (=1: alpha, =2: beta, =3: alpha+beta)
 ispin=0
 if (wfntype==1.or.wfntype==4) ispin=1 !For U, alpha part by default
@@ -186,11 +191,17 @@ MOene_dos=MOene
 MOocc_dos=MOocc
 if (ifiletype==0.and.(inp==3.or.inp==4)) MOene_dos=au2eV*MOene
 
-do while(.true.) !!!!! Main loop
+
+
+!!!!! ***** Main loop ***** !!!!!!
+!!!!! ***** Main loop ***** !!!!!!
+!!!!! ***** Main loop ***** !!!!!!
+do while(.true.)
+
 idoPDOS=0
 if (any(nfragDOS>0)) idoPDOS=1
 idoOPDOS=0
-if (all(nfragDOS(1:2)>0).and.icompmethod<=2) idoOPDOS=1
+if (all(nfragDOS(1:2)>0).and.icompmethod<=2.and.iPDOStype==1) idoOPDOS=1
 
 !Unknow text file doesn't contains wavefunction info, couldn't define fragment
 write(*,*)
@@ -199,7 +210,8 @@ write(*,*) "-10 Return to main menu"
 write(*,*) "-5 Customize energy levels, occupations, strengths and FWHMs for specific MOs"
 write(*,*) "-4 Show all orbital information"
 write(*,*) "-3 Export energy levels, occupations, strengths and FWHMs to plain text file"
-if (allocated(CObasa)) write(*,*) "-1 Define fragments"
+write(*,*) "-2 Define MO fragments for MO-PDOS"
+if (allocated(CObasa)) write(*,*) "-1 Define fragments for PDOS/OPDOS"
 if (idoOPDOS==1) then
 	write(*,*) "0 Draw TDOS+PDOS+OPDOS graph!"
 else if (idoPDOS==1) then
@@ -322,8 +334,72 @@ else if (isel==-3) then
 	if (iunitx==1) write(*,*) "Note: The unit of energy levels and FWHMs in this file is a.u."
 	if (iunitx==2) write(*,*) "Note: The unit of energy levels and FWHMs in this file is eV"
 	write(*,*)
+
+else if (isel==-2) then !Define MO sets for PDOS
+    if (iPDOStype==1.and.any(nfragDOS>0)) then
+        write(*,"(a)") " Warning: You have defined atom or basis function fragments, which conflict with MO fragments. &
+        To proceed, these fragments will be cleaned, OK? (y/n)"
+        read(*,*) selectyn
+        if (selectyn=='y') then
+            nfragDOS=0
+        else
+            cycle
+        end if
+    end if
+    write(*,"(a)") " Note: You can use options 1~10 to define up to 10 MO sets for plotting respective PDOS"
+    do while(.true.)
+        write(*,*)
+        if (idegen==1) write(*,"(a,f6.3)") " -1 Toggle considering degenerate, current: Yes, with threshold of ",degencrit
+        if (idegen==0) write(*,"(a)") " -1 Toggle considering degenerate, current: No"
+        write(*,*) " 0 Return"
+        do iset=1,nfragmax
+            if (nfragDOS(iset)==0) then
+                write(*,"(i3,' This set is undefined')") iset
+            else
+                write(*,"(i3,' There are',i6,' orbitals')") iset,nfragDOS(iset)
+            end if
+        end do
+        read(*,*) iset
+        if (iset==-1) then
+            if (idegen==1) then
+                idegen=0
+            else
+                write(*,*) "Input threshold for determining degenerate in eV, e.g. 0.01"
+                write(*,*) "If press ENTER button directly, 0.005 eV will be used"
+                read(*,"(a)") c80tmp
+                if (c80tmp==" ") then
+                    degencrit=0.005D0
+                else
+                    read(c80tmp,*) degencrit
+                end if
+                idegen=1
+            end if
+        else if (iset==0) then
+            iPDOStype=2
+            exit
+        else
+            write(*,*) "Input index of the MOs, e.g. 2,3,7-10,23"
+            if (nfragDOS(iset)>0) write(*,*) "If input 0, then this set will be unset"
+            read(*,"(a)") c2000tmp
+            if (c2000tmp(1:1)=="0") then
+                nfragDOS(iset)=0
+            else
+                call str2arr(c2000tmp,nfragDOS(iset),fragDOS(:,iset))
+            end if
+        end if
+    end do
     
 else if (isel==-1) then
+    if (iPDOStype==2.and.any(nfragDOS>0)) then
+        write(*,"(a)") " Warning: You have defined MO fragments, which conflicts with present fragment setting. To proceed, &
+        the MO fragments will be cleaned, OK? (y/n)"
+        read(*,*) selectyn
+        if (selectyn=='y') then
+            nfragDOS=0
+        else
+            cycle
+        end if
+    end if
     write(*,*)
 	write(*,*) "           ----------------- Define fragments -----------------"
 	write(*,"(a)") " Note: Up to 10 fragments can be defined for plotting PDOS, but OPDOS will only be plotted for fragments 1 and 2"
@@ -346,6 +422,7 @@ else if (isel==-1) then
 		if (index(c80tmp(1:len_trim(c80tmp)),' ')/=0.or.c80tmp==" ") then
 			write(*,*) "Inputting error!"
         else if (c80tmp=='0'.or.c80tmp=='q') then
+            iPDOStype=1
             exit
 		else if (c80tmp=='e') then !Export fragment definition
 			open(10,file="DOSfrag.txt",status="replace")
@@ -541,66 +618,92 @@ else if (isel==0.or.isel==10) then
 	
     FWHMmax=maxval(FWHM)
 	if (idoPDOS==1) then !Calculate composition used for plotting PDOS
-        compfrag=0
-		ntime=1 !One set of orbital
-		if (ispin==3) ntime=2 !Unrestricted wavefunction and both spins are considered, two passes using different CObas are needed
-        if (icompmethod<=2) then !Mulliken/SCPA
-		    write(*,*) "Calculating orbital composition, please wait..."
-		    OPfrag12=0
-			tmpmat=>CObasa
-			if (ispin==2) tmpmat=>CObasb
-			do itime=1,ntime !itime=1: tmpmat=CObasa, itime=2: tmpmat=CObasb
-				if (itime==2) tmpmat=>CObasb
-				!!$OMP PARALLEL DO SHARED(compfrag,OPfrag12) PRIVATE(ifrag,imo,imoall,imoslot,allsqr,i,j,ibas,jbas) schedule(dynamic) NUM_THREADS(nthreads)
-				do imo=1,nbasis
-					imoslot=imo !The index to be placed into arrays, count from 1 even for beta only
-					if (itime==2) imoslot=imo+nbasis
-					imoall=imo !The index defined from 1 to nmo
-					if (ispin==2.or.itime==2) imoall=imo+nbasis
-					if (MOene_dos(imoall)<enelow-3*FWHMmax.or.MOene_dos(imoall)>enehigh+3*FWHMmax) cycle
-					if (icompmethod==2) allsqr=sum(tmpmat(:,imo)**2)
-					do ifrag=1,nfragmax
-						if (nfragDOS(ifrag)==0) cycle
-						do i=1,nfragDOS(ifrag) !Cycle each basis in the fragment
-							ibas=fragDOS(i,ifrag)
-							if (icompmethod==2) then !SCPA
-								compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+tmpmat(ibas,imo)**2/allsqr
-							else !Mulliken
-								do jbas=1,nbasis !Cycle all basis, included inner&external cross term and local term (when ibas==jbas)
-									compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(ibas,jbas)
-								end do
-							end if
-						end do
-					end do
- 					!Calculate Overlap population between frag 1&2 via Mulliken method
-					if (idoOPDOS==1) then
-						do i=1,nfragDOS(1)
-							ibas=fragDOS(i,1)
-							do j=1,nfragDOS(2)
-								jbas=fragDOS(j,2)
-								OPfrag12(imoslot)=OPfrag12(imoslot)+2*tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(ibas,jbas)
-							end do
-						end do
-					end if
-				end do
-				!!$OMP END PARALLEL DO
-			end do
-            
-        else if (icompmethod>=3) then !Hirshfeld/Becke, the compositions have already been calculated when switch to them in the interface
-            do itime=1,ntime !1: alpha, 2: beta
-                do imo=1,nbasis
-					imoslot=imo !The index to be placed into arrays, count from 1 even for beta only
-					if (itime==2) imoslot=imo+nbasis
-					imoall=imo !The index defined from 1 to nmo
-					if (ispin==2.or.itime==2) imoall=imo+nbasis
-				    do ifrag=1,nfragmax
-					    if (nfragDOS(ifrag)==0) cycle
-					    do i=1,nfragDOS(ifrag) !Cycle each atom in the fragment
-						    iatm=fragDOS(i,ifrag)
-						    compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+atmcomp(iatm,imoall)
+        if (iPDOStype==1) then !Basis function or atom PDOS
+            compfrag=0
+		    ntime=1 !One set of orbital
+		    if (ispin==3) ntime=2 !Unrestricted wavefunction and both spins are considered, two passes using different CObas are needed
+            if (icompmethod<=2) then !Mulliken/SCPA
+		        write(*,*) "Calculating orbital composition, please wait..."
+		        OPfrag12=0
+			    tmpmat=>CObasa
+			    if (ispin==2) tmpmat=>CObasb
+			    do itime=1,ntime !itime=1: tmpmat=CObasa, itime=2: tmpmat=CObasb
+				    if (itime==2) tmpmat=>CObasb
+				    !!$OMP PARALLEL DO SHARED(compfrag,OPfrag12) PRIVATE(ifrag,imo,imoall,imoslot,allsqr,i,j,ibas,jbas) schedule(dynamic) NUM_THREADS(nthreads)
+				    do imo=1,nbasis !Cycle MOs
+					    imoslot=imo !The index to be placed into arrays, count from 1 even for beta only
+					    if (itime==2) imoslot=imo+nbasis
+					    imoall=imo !The index defined from 1 to nmo
+					    if (ispin==2.or.itime==2) imoall=imo+nbasis
+					    if (MOene_dos(imoall)<enelow-3*FWHMmax.or.MOene_dos(imoall)>enehigh+3*FWHMmax) cycle
+					    if (icompmethod==2) allsqr=sum(tmpmat(:,imo)**2)
+					    do ifrag=1,nfragmax
+						    if (nfragDOS(ifrag)==0) cycle
+						    do i=1,nfragDOS(ifrag) !Cycle each basis in the fragment
+							    ibas=fragDOS(i,ifrag)
+							    if (icompmethod==2) then !SCPA
+								    compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+tmpmat(ibas,imo)**2/allsqr
+							    else !Mulliken
+								    do jbas=1,nbasis !Cycle all basis, included inner&external cross term and local term (when ibas==jbas)
+									    compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(ibas,jbas)
+								    end do
+							    end if
+						    end do
 					    end do
+ 					    !Calculate Overlap population between frag 1&2 via Mulliken method
+					    if (idoOPDOS==1) then
+						    do i=1,nfragDOS(1)
+							    ibas=fragDOS(i,1)
+							    do j=1,nfragDOS(2)
+								    jbas=fragDOS(j,2)
+								    OPfrag12(imoslot)=OPfrag12(imoslot)+2*tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(ibas,jbas)
+							    end do
+						    end do
+					    end if
 				    end do
+				    !!$OMP END PARALLEL DO
+			    end do
+            
+            else if (icompmethod>=3) then !Hirshfeld/Becke, the compositions have already been calculated when switch to them in the interface
+                do itime=1,ntime !1: alpha, 2: beta
+                    do imo=1,nbasis !Cycle MOs
+					    imoslot=imo !The index to be placed into arrays, count from 1 even for beta only
+					    if (itime==2) imoslot=imo+nbasis
+					    imoall=imo !The index defined from 1 to nmo
+					    if (ispin==2.or.itime==2) imoall=imo+nbasis
+				        do ifrag=1,nfragmax
+					        if (nfragDOS(ifrag)==0) cycle
+					        do i=1,nfragDOS(ifrag) !Cycle each atom in the fragment
+						        iatm=fragDOS(i,ifrag)
+						        compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+atmcomp(iatm,imoall)
+					        end do
+				        end do
+                    end do
                 end do
+            end if
+        
+        else if (iPDOStype==2) then !MO PDOS
+            compfrag=0
+            do iset=1,nfragmax
+                if (nfragDOS(iset)==0) cycle
+                if (idegen==0) then
+                    do idx=1,nfragDOS(iset)
+                        imo=fragDOS(idx,iset)
+                        compfrag(imo,iset)=1
+                    end do
+                else if (idegen==1) then
+                    istart=1
+                    do while(istart<nfragDOS(iset))
+                        ndegen=1
+                        imo=fragDOS(istart,iset)
+                        do jdx=istart+1,nfragDOS(iset)
+                            jmo=fragDOS(jdx,iset)
+                            if (abs(MOene(jmo)-MOene(imo))<degencrit/au2eV) ndegen=ndegen+1
+                        end do
+                        compfrag(imo,iset)=ndegen
+                        istart=istart+ndegen
+                    end do
+                end if
             end do
         end if
 	end if
@@ -613,7 +716,6 @@ else if (isel==0.or.isel==10) then
 			if (ispin==2) imoall=imo+nbasis
 			if (MOene_dos(imoall)<enelow-3*FWHMmax.or.MOene_dos(imoall)>enehigh+3*FWHMmax) cycle
 			LDOScomp(imo)=fmo(x,y,z,imoall)**2
-			!write(*,"(2i6,f16.8)") imo,imoall,LDOScomp(imo)
 		end do
 	end if
 	

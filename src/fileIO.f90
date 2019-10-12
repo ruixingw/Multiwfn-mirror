@@ -5321,6 +5321,121 @@ close(ifileid)
 end subroutine
 
 
+
+
+!!!--------------- Output current wavefunction to mkl file (old Molekel input file), then orca_2mkl can convert it to .gbw
+!The format is exactly identical to the .mkl file produced by orca_2mkl (e.g. orca_2mkl test can generate test.mkl from test.gbw)
+subroutine outmkl(outname,ifileid)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character(len=*) outname
+integer ifileid
+character symbol,writeformat*20
+character*4 irrep(nmo)
+
+open(ifileid,file=outname,status="replace")
+write(ifileid,"(a)") "$MKL"
+write(ifileid,"(a)") "#"
+write(ifileid,"(a)") "# MKL format file produced by Multiwfn"
+write(ifileid,"(a)") "#"
+write(ifileid,"(a)") "$CHAR_MULT"
+write(ifileid,"(2i3)") nint(sum(a(:)%charge)-naelec-nbelec),nint(naelec-nbelec+1)
+write(ifileid,"(a)") "$END"
+write(ifileid,*)
+
+write(ifileid,"(a)") "$COORD"
+do i=1,ncenter
+	write(ifileid,"(i4,1x,3f11.6)") a(i)%index,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+end do
+write(ifileid,"(a)") "$END"
+write(ifileid,*)
+
+write(ifileid,"(a)") "$BASIS"
+do iatm=1,ncenter
+	do ish=1,nshell
+		if (shcen(ish)==iatm) then
+			symbol=shtype2name(shtype(ish))
+			write(ifileid,"(i2,1x,a,f4.1)") shtype2nbas(shtype(ish)),symbol,1D0
+			if (ish==0) then
+				istart=0
+			else
+				istart=sum(shcon(1:ish-1))
+			end if
+			do ipsh=istart+1,istart+shcon(ish)
+				write(ifileid,"(f19.9,f17.9)") primshexp(ipsh),primshcoeff(ipsh)
+			end do
+		end if
+	end do
+	if (iatm/=ncenter) write(ifileid,"(a)") "$$"
+end do
+write(ifileid,"(a)") "$END"
+write(ifileid,*)
+
+nframe=ceiling(nbasis/5D0)
+!if (allocated(MOsym)) then
+!    irrep=MOsym
+!else
+    irrep=" a1g" !orca_2mkl convention
+!end if
+write(ifileid,"(a)") "$COEFF_ALPHA"
+do iframe=1,nframe
+    if (iframe/=nframe) then
+        ncol=5
+    else
+        ncol=nbasis-(nframe-1)*5
+    end if
+    ibeg=(iframe-1)*5+1
+    iend=(iframe-1)*5+ncol
+    write(writeformat,"('(',i1,'(a,1x))')") ncol
+    write(ifileid,writeformat) irrep(ibeg:iend)
+    write(writeformat,"('(',i1,'(f13.7,1x))')") ncol
+    write(ifileid,writeformat) MOene(ibeg:iend)
+    write(writeformat,"('(',i1,'(f12.7,1x))')") ncol
+	do ibas=1,nbasis
+        write(ifileid,writeformat) CObasa(ibas,ibeg:iend)
+	end do
+end do
+write(ifileid,"(a)") " $END"
+write(ifileid,*)
+
+write(ifileid,"(a)") "$OCC_ALPHA"
+write(ifileid,"(5f12.7)") MOocc(1:nbasis)
+write(ifileid,"(a)") " $END"
+    
+if (wfntype==1.or.wfntype==4) then !Open shell
+    write(ifileid,*)
+    write(ifileid,"(a)") "$COEFF_BETA"
+    do iframe=1,nframe
+        if (iframe/=nframe) then
+            ncol=5
+        else
+            ncol=nbasis-(nframe-1)*5
+        end if
+        ibeg=(iframe-1)*5+1
+        iend=(iframe-1)*5+ncol
+        write(writeformat,"('(',i1,'(a,1x))')") ncol
+        write(ifileid,writeformat) irrep(ibeg+nbasis:iend+nbasis)
+        write(writeformat,"('(',i1,'(f13.7,1x))')") ncol
+        write(ifileid,writeformat) MOene(ibeg+nbasis:iend+nbasis)
+        write(writeformat,"('(',i1,'(f12.7,1x))')") ncol
+	    do ibas=1,nbasis
+            write(ifileid,writeformat) CObasb(ibas,ibeg:iend)
+	    end do
+    end do
+    write(ifileid,"(a)") " $END"
+    write(ifileid,*)
+
+    write(ifileid,"(a)") "$OCC_BETA"
+    write(ifileid,"(5f12.7)") MOocc(nbasis+1:nmo)
+    write(ifileid,"(a)") " $END"
+end if
+
+close(ifileid)
+end subroutine
+
+
+
 !!!------------------------- Output current wavefunction to .fch file
 !informode=1: print prompt message, =0: do not print
 subroutine outfch(outname,ifileid,infomode)

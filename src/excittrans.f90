@@ -127,11 +127,30 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		else
 			write(*,"(a)") " Please input path of Gaussian/ORCA output file or plain text file, electron excitation information will be loaded from this file"
 			write(*,*) "e.g. C:\lovelive\sunshine\yosoro.out"
+            if (ifiletype==1.or.ifiletype==9) write(*,"(a)") " Hint: If pressing ENTER button directly, the file with identical name as input file but &
+            with .out or .log suffix will be loaded"
 			do while(.true.)
 				read(*,"(a)") excitfilename
-				inquire(file=excitfilename,exist=alive)
-				if (alive) exit
-				write(*,*) "Cannot find this file, input again"
+                if (excitfilename==" ") then
+                    ipos=index(filename,'.',back=.true.)
+                    excitfilename=trim(filename(:ipos))//"out"
+				    inquire(file=excitfilename,exist=alive)
+                    if (alive) then
+                        write(*,"(a)") " Found "//trim(excitfilename)
+                        exit
+                    end if
+                    excitfilename=trim(filename(:ipos))//"log"
+				    inquire(file=excitfilename,exist=alive)
+                    if (alive) then
+                        write(*,"(a)") " Found "//trim(excitfilename)
+                        exit
+                    end if
+                    write(*,"(' Error: Unable to find either ',a,' or ',a)") trim(filename(:ipos))//"out",trim(filename(:ipos))//"log"
+                else
+				    inquire(file=excitfilename,exist=alive)
+				    if (alive) exit
+				    write(*,*) "Cannot find this file, input again"
+                end if
 			end do
 		end if
 	end if
@@ -926,10 +945,13 @@ real*8 orbval(nmo),wfnderv(3,nmo)
 integer,allocatable :: skippair(:) !Record which orbital pairs will be ignored due to negligible coefficient
 real*8,allocatable :: holegrid(:,:,:),elegrid(:,:,:),Sm(:,:,:),Sr(:,:,:),transdens(:,:,:),holecross(:,:,:),elecross(:,:,:),Cele(:,:,:),Chole(:,:,:),magtrdens(:,:,:,:)
 real*8,allocatable :: cubx(:),cuby(:),cubz(:) !Used to calculate Coulomb attractive energy
+character cubsuff*12
+iaddstateidx=0
+cubsuff=".cub"
 
 if (.not.allocated(CObasa)) then
 	write(*,*) "Error: The input file does not contain basis function information!"
-	write(*,*) "Please read manual to make clear which kinds of input files could be used!"
+	write(*,"(a)") " Please carefully read Section 3.21 of manual to make clear which kinds of input files could be used!"
 	write(*,*) "Press ENTER button to exit"
 	read(*,*)
 	return
@@ -1276,6 +1298,8 @@ Chole=Chole*rnormhole/(sum(Chole)*dvol)
 do while(.true.)
 	write(*,*)
 	write(*,*) "               -------------- Post-process menu --------------"
+    if (iaddstateidx==1) write(*,*) "-1 Toggle if adding state index at end of exported cube filename, current: Yes"
+    if (iaddstateidx==0) write(*,*) "-1 Toggle if adding state index at end of exported cube filename, current: No"
 	write(*,*) "0 Return"
 	write(*,*) "1 Show isosurface of hole distribution"
 	write(*,*) "2 Show isosurface of electron distribution"
@@ -1296,7 +1320,15 @@ do while(.true.)
 	write(*,*) "17 Output cube file of transition magnetic dipole moment density"
 	write(*,*) "18 Calculate hole-electron Coulomb attractive energy (exciton binding energy)"
 	read(*,*) isel
-	if (isel==0) then
+    if (isel==-1) then
+        if (iaddstateidx==0) then
+            iaddstateidx=1
+            write(cubsuff,"('_',i5.5,'.cub')") istate
+        else if (iaddstateidx==1) then
+            iaddstateidx=0
+            cubsuff=".cub"
+        end if
+	else if (isel==0) then
 		goto 10
 	else if (isel==1.or.isel==2.or.isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==9) then
 	 	if (allocated(cubmat)) deallocate(cubmat)
@@ -1430,8 +1462,8 @@ do while(.true.)
  		write(*,*) "2 Local term only"
  		write(*,*) "3 Cross term only"
  		read(*,*) isel2
-		write(*,*) "Outputting hole distribution to hole.cub in current folder"
-		open(10,file="hole.cub",status="replace")
+		write(*,*) "Outputting hole distribution to hole"//trim(cubsuff)//" in current folder"
+		open(10,file="hole"//trim(cubsuff),status="replace")
 		if (isel2==1) call outcube(holegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		if (isel2==2) call outcube(holegrid-holecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		if (isel2==3) call outcube(holecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
@@ -1443,8 +1475,8 @@ do while(.true.)
  		write(*,*) "2 Local term only"
  		write(*,*) "3 Cross term only"
  		read(*,*) isel2
-		write(*,*) "Outputting electron distribution to electron.cub in current folder"
-		open(10,file="electron.cub",status="replace")
+		write(*,*) "Outputting electron distribution to electron"//trim(cubsuff)//" in current folder"
+		open(10,file="electron"//trim(cubsuff),status="replace")
 		if (isel2==1) call outcube(elegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		if (isel2==2) call outcube(elegrid-elecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		if (isel2==3) call outcube(elecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
@@ -1456,19 +1488,19 @@ do while(.true.)
  		write(*,*) "2 Sr function (recommended)"
  		read(*,*) iovlptype
  		if (iovlptype==1) then
-			write(*,*) "Outputting Sm function to Sm.cub in current folder"
-			open(10,file="Sm.cub",status="replace")
+			write(*,*) "Outputting Sm function to Sm"//trim(cubsuff)//" in current folder"
+			open(10,file="Sm"//trim(cubsuff),status="replace")
 			call outcube(Sm,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
  		else if (iovlptype==2) then
-			write(*,*) "Outputting Sr function to Sr.cub in current folder"
-			open(10,file="Sr.cub",status="replace")
+			write(*,*) "Outputting Sr function to Sr"//trim(cubsuff)//" in current folder"
+			open(10,file="Sr"//trim(cubsuff),status="replace")
 			call outcube(Sr,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
  		end if
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==13) then
-		write(*,"(a)") " Outputting transition density to transdens.cub in current folder"
-		open(10,file="transdens.cub",status="replace")
+		write(*,"(a)") " Outputting transition density to transdens"//trim(cubsuff)//" in current folder"
+		open(10,file="transdens"//trim(cubsuff),status="replace")
 		call outcube(transdens,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
@@ -1490,27 +1522,27 @@ do while(.true.)
 				end do
 			end do
 		end do
-		write(*,*) "Outputting to transdipdens.cub in current folder"
-		open(10,file="transdipdens.cub",status="replace")
+		write(*,*) "Outputting to transdipdens"//trim(cubsuff)//" in current folder"
+		open(10,file="transdipdens"//trim(cubsuff),status="replace")
 		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 		deallocate(cubmat)
 	else if (isel==15) then
-		write(*,*) "Outputting charge density difference to CDD.cub in current folder"
-		open(10,file="CDD.cub",status="replace")
+		write(*,*) "Outputting charge density difference to CDD"//trim(cubsuff)//" in current folder"
+		open(10,file="CDD"//trim(cubsuff),status="replace")
 		call outcube(elegrid-holegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==16) then
-		open(10,file="Cele.cub",status="replace")
+		open(10,file="Cele"//trim(cubsuff),status="replace")
 		call outcube(Cele,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
-		write(*,"('Cele function has been outputted to ""Cele.cub"" in current folder')")
-		open(10,file="Chole.cub",status="replace")
+		write(*,"('Cele function has been outputted to Cele"//trim(cubsuff)//" in current folder')")
+		open(10,file="Chole"//trim(cubsuff),status="replace")
 		call outcube(Chole,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		close(10)
-		write(*,"('Chole function has been outputted to ""Chole.cub"" in current folder')")
+		write(*,"('Chole function has been outputted to Chole"//trim(cubsuff)//" in current folder')")
  	else if (isel==17) then
         if (idomag==0) then
             write(*,"(a)") " Error: In order to export transition magnetic dipole moment density, you must select &
@@ -1522,8 +1554,8 @@ do while(.true.)
 		write(*,*) "Select the component of transition magnetic dipole moment density"
 		write(*,*) "1: X component  2: Y component  3: Z component"
  		read(*,*) ifac
-		write(*,*) "Outputting to magtrdipdens.cub in current folder"
-		open(10,file="magtrdipdens.cub",status="replace")
+		write(*,*) "Outputting to magtrdipdens"//trim(cubsuff)//" in current folder"
+		open(10,file="magtrdipdens"//trim(cubsuff),status="replace")
 		if (ifac==1) call outcube(magtrdens(:,:,:,1),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		if (ifac==2) call outcube(magtrdens(:,:,:,2),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 		if (ifac==3) call outcube(magtrdens(:,:,:,3),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)

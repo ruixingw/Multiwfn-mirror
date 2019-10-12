@@ -1996,7 +1996,7 @@ do while(.true.)
         deallocate(tmpintarr)
         if (itype==1) write(*,"(i5,' positive extrema have been merged as positive extreme',i5)") ncount,ifirst
         if (itype==2) write(*,"(i5,' negative extrema have been merged as negative extreme',i5)") ncount,ifirst
-    
+        write(*,*) "Note that the value of mapped function at this extreme is not updated"
 	else if (isel==20) then !Fingerprint plot
 		call fingerprt(HirBecatm,nHirBecatm)
 	end if

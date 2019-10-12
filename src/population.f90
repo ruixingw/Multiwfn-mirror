@@ -260,12 +260,13 @@ end if
 !Show fragment information
 if (allocated(frag1)) then
 	write(*,"(/,' Fragment charge:',f12.6)") sum(a(frag1)%charge-atmeletot(frag1))
+	write(*,"(' Fragment population:',f12.6)") sum(atmeletot(frag1))
 	if (wfntype==1.or.wfntype==2.or.wfntype==4) write(*,"(' Fragment spin population:',f12.6)") sum(spinpop(frag1))
 end if
 
 call path2filename(firstfilename,chgfilename)
 write(*,*)
-write(*,"(a)") " If output atom with charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
+write(*,"(a)") " If outputting atoms coordinates with their charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=="y".or.selectyn=="Y") then
 	open(10,file=trim(chgfilename)//".chg",status="replace")
@@ -342,7 +343,10 @@ if (wfntype==0.or.wfntype==3) then
 		write(*,"(' Atom',i6,'(',a2,')','  Population:',f10.5,'  Atomic charge:',f10.5)") iatm,a(iatm)%name,atmelea(iatm),a(iatm)%charge-atmelea(iatm)
 	end do
 	write(*,"(' Total net charge:',f10.5)") sum(a(:)%charge)-sum(atmelea(:))
-	if (allocated(frag1)) write(*,"(/,' Fragment charge:',f12.6)") sum(a(frag1)%charge-atmelea(frag1))
+	if (allocated(frag1)) then
+        write(*,"(/,' Fragment charge:',f12.6)") sum(a(frag1)%charge-atmelea(frag1))
+        write(*,"(' Fragment population:',f12.6)") sum(atmelea(frag1))
+    end if
 else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	write(*,*) "    Atom      Alpha pop.   Beta pop.    Spin pop.     Atomic charge"
 	do iatm=1,ncenter
@@ -351,13 +355,14 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	write(*,"(' Total net charge:',f10.5,'      Total spin electrons:',f10.5)") sum(a(:)%charge)-sum(atmelea(:))-sum(atmeleb(:)),sum(atmelea(:))-sum(atmeleb(:))
 	if (allocated(frag1)) then
 		write(*,"(/,' Fragment charge:',f12.6)") sum(a(frag1)%charge-atmelea(frag1)-atmeleb(frag1))
+        write(*,"(' Fragment population:',f12.6)") sum(atmelea(frag1)+atmeleb(frag1))
 		write(*,"(' Fragment spin population:',f12.6)") sum(atmelea(frag1)-atmeleb(frag1))
 	end if
 end if
 
 call path2filename(firstfilename,chgfilename)
 write(*,*)
-write(*,"(a)") " If output atom coordinates with charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
+write(*,"(a)") " If outputting atoms coordinates with their charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=="y".or.selectyn=="Y") then
 	open(10,file=trim(chgfilename)//".chg",status="replace")
@@ -554,6 +559,7 @@ if (isel==1.or.isel==2.or.isel==4) then
 		write(*,*)
 		if (allocated(frag1)) then
 			write(ides,"(' Fragment charge:',f12.6)") sum(charge(frag1))
+            write(ides,"(' Fragment population:',f12.6)") sum(a(frag1)%charge) - sum(charge(frag1))
 			if (wfntype==1.or.wfntype==2.or.wfntype==4) write(ides,"(' Fragment spin population:',f12.6)") sum(spinpop(frag1))
 			write(*,*)
 		end if
@@ -649,7 +655,7 @@ if (isel==1.or.isel==2.or.isel==4) then
 	!If calculating atomic charges, asking user if output it
 	if (isel==1) then
 		call path2filename(firstfilename,chgfilename)
-		write(*,"(a)") " If output atoms with charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
+		write(*,"(a)") " If outputting atoms coordinates with their charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
 		read(*,*) selectyn
 		if (selectyn=="y".or.selectyn=="Y") then
 			open(10,file=trim(chgfilename)//".chg",status="replace")
@@ -1070,7 +1076,10 @@ else if (chgtype==7) then
 end if
 
 !Show fragment charge
-if (allocated(frag1)) write(*,"(/,' Fragment charge:',f12.6)") sum(charge(frag1))
+if (allocated(frag1)) then
+    write(*,"(/,' Fragment charge:',f12.6)") sum(charge(frag1))
+    write(*,"(' Fragment population:',f12.6)") sum(a(frag1)%charge) - sum(charge(frag1))
+end if
 
 write(*,*)
 call walltime(nwalltime2)
@@ -1078,7 +1087,7 @@ write(*,"(' Calculation took up',i8,' seconds wall clock time')")  nwalltime2-nw
 
 call path2filename(firstfilename,chgfilename)
 write(*,*)
-write(*,"(a)") " If output atoms with charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
+write(*,"(a)") " If outputting atoms coordinates with their charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=="y".or.selectyn=="Y") then
 	open(10,file=trim(chgfilename)//".chg",status="replace")
@@ -1421,7 +1430,7 @@ do while(.true.) !Interface loop
 	if (ifloadconflist==1) write(*,"(a,i4,a)") "-1 Reload list of conformers from external file, current:",nconf," conformers"
 	write(*,*) "0 Return"
 	write(*,*) "1 Start standard two-stage RESP fitting calculation"
-	write(*,*) "2 Start one-stage ESP fitting calculation with all your settings"
+	write(*,*) "2 Start one-stage ESP fitting calculation with constraints"
 	if (iloadgau==0) then
 		if (igridtype==1) write(*,*) "3 Set method and parameters for distributing fitting points, current: MK"
 		if (igridtype==2) write(*,*) "3 Set method and parameters for distributing fitting points, current: CHELPG"
@@ -1563,22 +1572,44 @@ do while(.true.) !Interface loop
 		end do
 		
 	else if (isel==5) then
-		write(*,*) "0 No equivalence constraint will be imposed"
-		write(*,*) "1 Load equivalence constraint setting from external plain text file"
-		write(*,*) "2 H in each =CH2, -CH2-, CH3 are constrainted to be equivalent"
-		read(*,*) ieqvcons
-		if (ieqvcons==1) then
-			write(*,*) "Input path of the plain text file, e.g. C:\eqvcons.txt"
-			do while(.true.)
-				read(*,"(a)") eqvconsfilepath
-				inquire(file=eqvconsfilepath,exist=alive)
-				if (alive) exit
-				write(*,*) "Cannot find the file, input again"
-			end do
-			write(*,*) "OK, equivalence constraint will be loaded from it during calculation"
-		end if
+        write(*,*) "Note 1: These options do not affect result of standard two-stage fitting"
+        write(*,"(a)") " Note 2: If you input ""e"", then equivalence constraint corresponding to option 2 will be exported as &
+        eqvcons_std.txt in current folder, then you can add new constraints to this file and use it in fitting via option 1"
+        do while(.true.)
+            write(*,*)
+		    write(*,*) "0 No equivalence constraint will be imposed"
+		    write(*,*) "1 Load equivalence constraint setting from external plain text file"
+		    write(*,*) "2 H in each =CH2, -CH2-, CH3 are constrainted to be equivalent"
+            read(*,"(a)") c80
+            if (index(c80,'e')==0) then
+		        read(c80,*) ieqvcons
+                if (ieqvcons==0) then
+                    write(*,*) "OK, no equivalence constraint will be imposed"
+		        else if (ieqvcons==1) then
+			        write(*,*) "Input path of the plain text file, e.g. C:\eqvcons.txt"
+			        do while(.true.)
+				        read(*,"(a)") eqvconsfilepath
+				        inquire(file=eqvconsfilepath,exist=alive)
+				        if (alive) exit
+				        write(*,*) "Cannot find the file, input again"
+			        end do
+			        write(*,*) "OK, equivalence constraint will be loaded from it during calculation"
+                else if (ieqvcons==2) then
+                    write(*,*) "OK, this equivalence constraint will be employed during calculation"
+                end if
+                exit
+            else
+                ieqvold=ieqvcons
+                ieqvcons=3
+                goto 20
+30              write(*,"(a)") " Done! The equivalence constraint has been exported to eqvcons_std.txt in current folder"
+                ieqvcons=ieqvold
+		    end if
+        end do
 		
 	else if (isel==6) then
+        write(*,*) "Note: These options do not affect result of standard two-stage fitting"
+        write(*,*)
 		write(*,*) "0 No charge constraint will be imposed" 
 		write(*,*) "1 Load charge constraint setting from external plain text file"
 		read(*,*) ichgcons
@@ -1590,7 +1621,7 @@ do while(.true.) !Interface loop
 				if (alive) exit
 				write(*,*) "Cannot find the file, input again"
 			end do
-			write(*,*) "OK, charge constraint will be loaded from it during calculation"
+			write(*,*) "OK, charge constraints will be loaded from it during calculation"
 		end if
 		
 	else if (isel==7) then
@@ -1698,10 +1729,6 @@ if (iloadgau==0) then
 			call fitESP_calcESP(0,iESPtype,nptthis,ESPpt(:,1:nptthis,iconf),ESPptval(1:nptthis,iconf),conffilepath(iconf))
 		end if
 		
-!  		do ipt=1,nESPpt(iconf)
-!  			write(11,"(i6,3f12.6,f16.10)") ipt,ESPpt(:,ipt,iconf),ESPptval(ipt,iconf)
-!  		end do
-!  		pause
 	end do
 	
 	if (ifloadconflist==1) then
@@ -1744,10 +1771,11 @@ end if
 write(*,*)
 
 
-!For standard RESP or one-stage fitting with eqv. cons. on H in -CH3, -CH2-, =CH2, we need to identify bonding and generate relevant arrays
+!For standard two-stage RESP fitting, or one-stage fitting with eqv. cons. on H in -CH3, -CH2-, =CH2, &
+!we need to identify bonding and generate relevant arrays
 if (isel==1.or.ieqvcons==2) then
 	!Generate bonding matrix, used to identify -CH3, -CH2-, =CH2 groups
-	bondedmat=0
+20	bondedmat=0
 	if (ideterbond==1) then !Guess bonding relationship
 		do i=1,ncenter
 			do j=i+1,ncenter
@@ -1765,7 +1793,8 @@ if (isel==1.or.ieqvcons==2) then
 		end do
 	end if
 	
-	!Identify active C and H in stage 2 of standard RESP fitting, meantime generate equivalence list considering hydrogens in each -CH3, -CH2-, =CH2 is equivalent
+	!Identify active C and H in stage 2 of standard RESP fitting, meantime generate equivalence &
+    !list considering hydrogens in each -CH3, -CH2-, =CH2 is equivalent
 	neqvlist_H=0
 	eqvlist_H=0
 	nCHlist=0
@@ -1811,6 +1840,19 @@ if (isel==1.or.ieqvcons==2) then
 			eqvlist_H(1,neqvlist_H)=icen
 		end if
 	end do
+    if (ieqvcons==3) then !Export the generated eqv. const.
+        open(20,file="eqvcons_std.txt",status="replace")
+        do itmp=1,neqvlist_H
+            if (eqvlistlen_H(itmp)>1) then
+                do jtmp=1,eqvlistlen_H(itmp)-1
+                     write(20,"(i6,',')",advance='no') eqvlist_H(jtmp,itmp)
+                end do
+                write(20,"(i6)") eqvlist_H(jtmp,itmp)
+            end if
+        end do
+        close(20)
+        goto 30
+    end if
 end if
 
 !By default, equivalence constraint is not employed, therefore each atom occupies a slot
@@ -1970,7 +2012,10 @@ end do
 if (nconf>1) write(*,"(' Weighted RMSE:',f12.6,'   Weighted RRMSE',f12.6)") weiRMSE,weiRRMSE
 
 !Show fragment charge
-if (allocated(frag1)) write(*,"(/,' Fragment charge:',f12.6)") sum(atmchg(frag1))
+if (allocated(frag1)) then
+    write(*,"(/,' Fragment charge:',f12.6)") sum(atmchg(frag1))
+    write(*,"(' Fragment population:',f12.6)") sum(a(frag1)%charge) - sum(atmchg(frag1))
+end if
 
 !Export .chg file
 call path2filename(firstfilename,outchgfilepath)
@@ -2228,7 +2273,7 @@ forall(i=1:ncenter) MKatmlist(i)=i
 
 10 do while(.true.)
 	write(*,*)
-	if (igridtype==1) write(*,*) "              ------------ Calculation of MK charges ------------"
+	if (igridtype==1) write(*,*) "            -------------- Calculation of MK charges --------------"
 	if (igridtype==2) write(*,*) "            ------------ Calculation of CHELPG charges ------------"
 	if (iloadchg==0) write(*,*) "-3 Toggle using atomic charges in external file, current: No"
 	if (iloadchg==1) write(*,*) "-3 Toggle using atomic charges in external file, current: Yes"
@@ -2257,9 +2302,8 @@ forall(i=1:ncenter) MKatmlist(i)=i
 	if (iESPtype==3) write(*,*) "5 Choose ESP type, current: Transition electronic"
 	if (ioutfitptval==0) write(*,*) "6 Toggle if exporting fitting points with ESP after the task, current: No"
 	if (ioutfitptval==1) write(*,*) "6 Toggle if exporting fitting points with ESP after the task, current: Yes"
-	!This feature is hidden to user. Its default status is "No", if you want to use it, choose it and then input an output file of e.g. pop=MK/CHELPG task with IOp(6/33=2)
-! 	if (iloadgau==0) write(*,"(a)") " 7 Toggle if reading fitting points and ESP values from Gaussian output file of ESP fitting task with IOp(6/33=2) keyword, current: No"
-! 	if (iloadgau==1) write(*,"(a)") " 7 Toggle if reading fitting points and ESP values from Gaussian output file of ESP fitting task with IOp(6/33=2) keyword, current: Yes"
+ 	if (iloadgau==0) write(*,"(a)") " 7 Toggle if reading fitting points and ESP values from Gaussian output file of pop=MK/CHELPG task with IOp(6/33=2), current: No"
+ 	if (iloadgau==1) write(*,"(a)") " 7 Toggle if reading fitting points and ESP values from Gaussian output file of pop=MK/CHELPG task with IOp(6/33=2), current: Yes"
 	if (iradiisel==1) write(*,*) "10 Choose the atomic radii used in fitting, current: Automatic"
 	if (iradiisel==2) write(*,*) "10 Choose the atomic radii used in fitting, current: Scaled UFF"
 	if (iradiisel==3) write(*,*) "10 Choose the atomic radii used in fitting, current: Customized"
@@ -2547,7 +2591,10 @@ RMSE=dsqrt(RMSE/nESPpt)
 write(*,"(' RMSE:',f12.6,'   RRMSE:',f12.6)") RMSE,RRMSE
 
 !Show fragment charge
-if (allocated(frag1)) write(*,"(/,' Fragment charge:',f12.6)") sum(cenchg(frag1))
+if (allocated(frag1)) then
+    write(*,"(/,' Fragment charge:',f12.6)") sum(cenchg(frag1))
+    write(*,"(' Fragment population:',f12.6)") sum(a(frag1)%charge) - sum(cenchg(frag1))
+end if
 write(*,*)
 
 !Exporting fitting points with ESP values
@@ -2597,7 +2644,7 @@ end if
 
 !Export .chg file. Additional centers are denoted as Bq
 call path2filename(firstfilename,outchgfilepath)
-write(*,"(a)") " If output atom coordinates with charges to "//trim(outchgfilepath)//".chg in current folder? (y/n)"
+write(*,"(a)") " If outputting atoms coordinates with their charges to "//trim(outchgfilepath)//".chg in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=="Y") then
 	open(10,file=trim(outchgfilepath)//".chg",status="replace")
@@ -3318,14 +3365,16 @@ do icyc=1,maxcyc
 	lastcharge=charge
 end do
 
-if (allocated(frag1)) write(*,"(/,' Fragment charge:',f12.6)") sum(charge(frag1))
-
+if (allocated(frag1)) then
+    write(*,"(/,' Fragment charge:',f12.6)") sum(charge(frag1))
+    write(*,"(' Fragment population:',f12.6)") sum(a(frag1)%charge) - sum(charge(frag1))
+end if
 call walltime(iwalltime2)
 write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 
 call path2filename(firstfilename,chgfilename)
 write(*,*)
-write(*,"(a)") " If output atoms with charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
+write(*,"(a)") " If outputting atoms coordinates with their charges to "//trim(chgfilename)//".chg in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=="y".or.selectyn=="Y") then
 	open(10,file=trim(chgfilename)//".chg",status="replace")

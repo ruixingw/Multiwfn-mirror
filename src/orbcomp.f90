@@ -983,7 +983,9 @@ do imo=ibeg,iend
 	!end do
     !write(*,"(i6,f12.6)") imo,sum(atmcomp(:,imo))*100
     itmp=imo-ibeg+1
-    atmcomp(:,itmp)=atmcomp(:,itmp)/sum(atmcomp(:,itmp))
+    allsum=sum(atmcomp(:,itmp))
+    if (allsum==0) cycle !When MO is larger than basis function, highest several MO will be filled by blank information to make them equal
+    atmcomp(:,itmp)=atmcomp(:,itmp)/allsum
 end do
 
 if (iautointgrid==1) then
