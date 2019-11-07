@@ -243,6 +243,7 @@ do while(.true.)
 			ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
 			if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
 			
+            filename_tmp=filename
 			if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
 			write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
 			""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"

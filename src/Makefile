@@ -7,11 +7,11 @@ LIB = ./dislin_d-11.0.a -lXm -lXt -lX11 -lGL #Works for CentOS 7.2
 FC = ifort
 EXE = Multiwfn
 
-objects = define.o util.o plot.o function.o GUI.o sub.o integral.o Lebedev-Laikov.o \
+objects = define.o util.o plot.o Bspline.o sym.o function.o GUI.o sub.o integral.o Lebedev-Laikov.o \
 DFTxclib.o edflib.o fileIO.o spectrum.o DOS.o Multiwfn.o 0123dim.o LSB.o \
 population.o orbcomp.o bondorder.o topology.o excittrans.o otherfunc.o \
 otherfunc2.o surfana.o procgriddata.o AdNDP.o fuzzy.o CDA.o basin.o \
-orbloc.o visweak.o EDA.o atmraddens.o
+orbloc.o visweak.o EDA.o atmraddens.o NAONBO.o
 
 default : $(objects) 
 	$(FC) $(OPT) $(objects) $(LIB) -o $(EXE)
@@ -31,10 +31,13 @@ dislin_d.mod : dislin_d.f90
 define.o : define.f90 dislin_d.mod
 	$(FC) $(OPT) -c define.f90
 
+Bspline.o : Bspline.f90
+	$(FC) $(OPT) -c Bspline.f90
+
 util.o : util.f90 define.o
 	$(FC) $(OPT) -c util.f90
 
-function.o : function.f90 define.o util.o
+function.o : function.f90 define.o util.o bspline_sub_module.mod
 	$(FC) $(OPT) -c function.f90
 
 plot.o : plot.f90 define.o util.o
@@ -46,7 +49,7 @@ GUI.o : GUI.f90 define.o plot.o
 modules = define.o util.o function.o plot.o GUI.o
 
 
-#Others
+#Library or adpated third-part codes
 
 DFTxclib.o : DFTxclib.F
 	$(FC) $(OPT) -c DFTxclib.F
@@ -54,14 +57,22 @@ DFTxclib.o : DFTxclib.F
 Lebedev-Laikov.o : Lebedev-Laikov.F
 	$(FC) $(OPT) -c Lebedev-Laikov.F
 
+sym.o : sym.F
+	$(FC) $(OPT) -c sym.F
+
+edflib.o : edflib.f90
+	$(FC) $(OPT) -c edflib.f90
+
+atmraddens.o : atmraddens.f90
+	$(FC) $(OPT) -c atmraddens.f90
+
+#Others
+
 sub.o : sub.f90 $(modules)
 	$(FC) $(OPT) -c sub.f90
 
 integral.o : integral.f90 $(modules)
 	$(FC) $(OPT) -c integral.f90
-
-edflib.o : edflib.f90 $(modules)
-	$(FC) $(OPT) -c edflib.f90
 
 fileIO.o : fileIO.f90 $(modules)
 	$(FC) $(OPT) -c fileIO.f90
@@ -129,7 +140,5 @@ visweak.o : visweak.f90 $(modules)
 EDA.o : EDA.f90 $(modules)
 	$(FC) $(OPT) -c EDA.f90
 
-atmraddens.o : atmraddens.f90 $(modules)
-	$(FC) $(OPT) -c atmraddens.f90
-
-
+NAONBO.o : NAONBO.f90 $(modules)
+	$(FC) $(OPT) -c NAONBO.f90

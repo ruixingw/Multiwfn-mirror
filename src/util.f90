@@ -564,9 +564,9 @@ z=  x1*y2-y1*x2
 end subroutine
 
 
-!--- Generate full arrangement arry
-!ncol is the number of element, nrow=ncol!
-!example: nrow=3!=6, ncol=3, the arr will be:
+!--- Generate full arrangement (all permutation) array
+!ncol is the number of elements, nrow should have size of (ncol)!
+!Example: nrow=3!=6, ncol=3, the returned arr will be:
 ! 1           3           2
 ! 2           1           3
 ! 2           3           1

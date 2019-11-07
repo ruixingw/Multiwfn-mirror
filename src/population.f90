@@ -33,7 +33,7 @@ else
 			write(*,"(a,i5)") " -1 Redefine fragment, current number of atoms:",size(frag1)
 		end if
 		write(*,*) "0 Return"
-		write(*,*) "1 Hirshfeld atom population"
+		write(*,*) "1 Hirshfeld atomic charge"
 		write(*,*) "2 Voronoi deformation density (VDD) atom population"
 		!Not available because integration error of below two methods by means of Becke integration are too large
 	! 		write(*,*) "3 Integrate electron density in voronoi cell"
@@ -50,7 +50,7 @@ else
 		write(*,*) "12 CHELPG ESP fitting atomic charge"
 		write(*,*) "13 Merz-Kollmann (MK) ESP fitting atomic charge"
 		write(*,*) "14 AIM atomic charge"
-		write(*,*) "15 Hirshfeld-I atom population"
+		write(*,*) "15 Hirshfeld-I atomic charge"
 		write(*,*) "16 CM5 atomic charge"
 		write(*,*) "17 Electronegativity Equalization Method (EEM) atomic charge"
 		write(*,*) "18 Restrained ElectroStatic Potential (RESP) atomic charge"
@@ -1075,6 +1075,8 @@ else if (chgtype==7) then
 	call doCM5(charge)
 end if
 
+call normalizecharge(charge) !Calculate and print normalized charge
+
 !Show fragment charge
 if (allocated(frag1)) then
     write(*,"(/,' Fragment charge:',f12.6)") sum(charge(frag1))
@@ -1099,6 +1101,8 @@ if (selectyn=="y".or.selectyn=="Y") then
 	write(*,"(a)") " Columns 1 to 5 are name,X,Y,Z,charge respectively, unit is Angstrom"
 end if
 end subroutine
+
+
 
 
 !!------ Calculate atomic dipole moment corrected charge based on existing atomic charge (charge) and atomic dipole moments (dipx/y/z)
@@ -1399,7 +1403,7 @@ real*8 atmchg_stage1(ncenter) !Record stage 1 result of standard RESP
 !eqvlist records equivalence relationship. neqvlist is the number of equivalence constraints, eqvlistlen is the number of atoms in each equivalence constraint
 !If e.g. eqvlist(1:eqvlistlen(3),3) contains 5,6, that means atoms 5 and 6 should be contrainted to be eequivalent.
 !If eqvlistlen(i) is 1, that means no equivalence constraint is imposed to atom i
-integer neqvlist,eqvlistlen(ncenter),eqvlist(10,ncenter) !Size of 10 and ncenter are sufficiently high
+integer neqvlist,eqvlistlen(ncenter),eqvlist(500,ncenter) !Size of 500 and ncenter are sufficiently high
 !Arrays used for constructing standard RESP type of constraint 
 real*8 bondedmat(ncenter,ncenter) !1/0 means the two atoms are bonded / not bonded
 integer H_list(5) !Temporarily record index
@@ -1417,15 +1421,11 @@ iloadgau=0
 ieqvcons=2
 ichgcons=0 !=0/1 apply/disable charge constraint
 
-! ichgcons=1
-! chgconsfilepath="C:\Users\Sobereva\Desktop\RESP\methanol\chgcons.txt"
-! gauoutfilepath="C:\Users\Sobereva\Desktop\RESP\largemol\test.out"
-
 maincyc: do while(.true.) !Main loop
 
 do while(.true.) !Interface loop
 	write(*,*)
-	write(*,*) "             ------------ Calculation of RESP charges ------------"
+	write(*,*) "            ------------ Calculation of RESP charges ------------"
 	if (ifloadconflist==0) write(*,*) "-1 Load list of conformer and weights from external file"
 	if (ifloadconflist==1) write(*,"(a,i4,a)") "-1 Reload list of conformers from external file, current:",nconf," conformers"
 	write(*,*) "0 Return"
@@ -1436,11 +1436,11 @@ do while(.true.) !Interface loop
 		if (igridtype==2) write(*,*) "3 Set method and parameters for distributing fitting points, current: CHELPG"
 	end if
 	write(*,*) "4 Set hyperbolic penalty parameters"
-	if (ieqvcons==0) write(*,*) "5 Set equivalence constraint in one-stage fitting, current: No constraint"
-	if (ieqvcons==1) write(*,*) "5 Set equivalence constraint in one-stage fitting, current: Customized"
-	if (ieqvcons==2) write(*,*) "5 Set equivalence constraint in one-stage fitting, current: H in CH2 and CH3"
-	if (ichgcons==0) write(*,*) "6 Set charge constraint in one-stage fitting, current: No constraint"
-	if (ichgcons==1) write(*,*) "6 Set charge constraint in one-stage fitting, current: Customized"
+	if (ieqvcons==0) write(*,*) "5 Set equivalence constraint in fitting, current: No constraint"
+	if (ieqvcons==1) write(*,*) "5 Set equivalence constraint in fitting, current: Customized"
+	if (ieqvcons==2) write(*,*) "5 Set equivalence constraint in fitting, current: H in CH2 and CH3"
+	if (ichgcons==0) write(*,*) "6 Set charge constraint in fitting, current: No constraint"
+	if (ichgcons==1) write(*,*) "6 Set charge constraint in fitting, current: Customized"
 	if (ideterbond==1) write(*,*) "7 Set the way of determining connectivity, current: Guess from bond length"
 	if (ideterbond==2) write(*,*) "7 Set the way of determining connectivity, current: Load from .mol"
 	if (iloadgau==0) write(*,"(a)") " 8 Toggle if loading fitting points and ESP values from Gaussian output file of pop=MK/CHELPG task with IOp(6/33=2) during the calculation, current: No"
@@ -1485,7 +1485,7 @@ do while(.true.) !Interface loop
 		close(10)
 		totwei=sum(confweight)
 		write(*,"(' Sum of weights:',f12.6)") totwei
-		if (abs(totwei-1)>0.001) write(*,*) "Warning: The sum of weights deviates from 1.0 evidently!"
+		if (abs(totwei-1)>0.001D0) write(*,*) "Warning: The sum of weights deviates from 1.0 evidently!"
 		ifloadconflist=1
 	else if (isel==0) then
 		Return
@@ -1572,43 +1572,45 @@ do while(.true.) !Interface loop
 		end do
 		
 	else if (isel==5) then
-        write(*,*) "Note 1: These options do not affect result of standard two-stage fitting"
-        write(*,"(a)") " Note 2: If you input ""e"", then equivalence constraint corresponding to option 2 will be exported as &
-        eqvcons_std.txt in current folder, then you can add new constraints to this file and use it in fitting via option 1"
+        write(*,*)
+        write(*,"(a)") " Please select options 1~3. You can also use options 10 or 11 to generate file containing &
+        equivalence constraint, which can then be utilized by option 1"
+        write(*,"(a)") " Note: For standard two-stage RESP fitting, options 0 and 1 only take effect for the first stage"
         do while(.true.)
             write(*,*)
 		    write(*,*) "0 No equivalence constraint will be imposed"
 		    write(*,*) "1 Load equivalence constraint setting from external plain text file"
-		    write(*,*) "2 H in each =CH2, -CH2-, CH3 are constrainted to be equivalent"
-            read(*,"(a)") c80
-            if (index(c80,'e')==0) then
-		        read(c80,*) ieqvcons
-                if (ieqvcons==0) then
-                    write(*,*) "OK, no equivalence constraint will be imposed"
-		        else if (ieqvcons==1) then
-			        write(*,*) "Input path of the plain text file, e.g. C:\eqvcons.txt"
-			        do while(.true.)
-				        read(*,"(a)") eqvconsfilepath
-				        inquire(file=eqvconsfilepath,exist=alive)
-				        if (alive) exit
-				        write(*,*) "Cannot find the file, input again"
-			        end do
-			        write(*,*) "OK, equivalence constraint will be loaded from it during calculation"
-                else if (ieqvcons==2) then
-                    write(*,*) "OK, this equivalence constraint will be employed during calculation"
-                end if
-                exit
-            else
+		    write(*,"(a)") " 2 Constraint H in each =CH2, -CH2-, CH3 to be equivalent in one-stage fitting"
+            write(*,"(a)") " 10 Export equivalence constraint corresponding to ""H in each =CH2, -CH2-, CH3"" to eqvcons_H.txt in current folder"
+            write(*,"(a)") " 11 Generate equivalence constraint according to point group of global or local geometry and write to eqvcons_PG.txt in current folder" 
+            read(*,*) ieqvcons
+            if (ieqvcons==0) then
+                write(*,*) "OK, no equivalence constraint will be imposed"
+		    else if (ieqvcons==1) then
+			    write(*,*) "Input path of the plain text file, e.g. C:\eqvcons.txt"
+			    do while(.true.)
+				    read(*,"(a)") eqvconsfilepath
+				    inquire(file=eqvconsfilepath,exist=alive)
+				    if (alive) exit
+				    write(*,*) "Cannot find the file, input again"
+			    end do
+			    write(*,*) "OK, equivalence constraint will be loaded from it during calculation"
+            else if (ieqvcons==2) then
+                write(*,*) "OK, this equivalence constraint will be employed during calculation"
+            else if (ieqvcons==10) then
                 ieqvold=ieqvcons
                 ieqvcons=3
                 goto 20
-30              write(*,"(a)") " Done! The equivalence constraint has been exported to eqvcons_std.txt in current folder"
+30              write(*,"(a)") " Done! The equivalence constraint has been exported to eqvcons_H.txt in current folder"
                 ieqvcons=ieqvold
+            else if (ieqvcons==11) then
+                call genPGeqvcons
 		    end if
+            if (ieqvcons==0.or.ieqvcons==1.or.ieqvcons==2) exit
         end do
 		
 	else if (isel==6) then
-        write(*,*) "Note: These options do not affect result of standard two-stage fitting"
+        write(*,"(a)") " Note: For standard two-stage RESP fitting, below options only take effect for the first stage"
         write(*,*)
 		write(*,*) "0 No charge constraint will be imposed" 
 		write(*,*) "1 Load charge constraint setting from external plain text file"
@@ -1841,7 +1843,7 @@ if (isel==1.or.ieqvcons==2) then
 		end if
 	end do
     if (ieqvcons==3) then !Export the generated eqv. const.
-        open(20,file="eqvcons_std.txt",status="replace")
+        open(20,file="eqvcons_H.txt",status="replace")
         do itmp=1,neqvlist_H
             if (eqvlistlen_H(itmp)>1) then
                 do jtmp=1,eqvlistlen_H(itmp)-1
@@ -1861,74 +1863,73 @@ eqvlistlen=1
 forall(i=1:neqvlist) eqvlist(1,i)=i
 
 
-!------ Start charge fitting now!!!
-if (isel==2) then !One-stage ESP fitting
-
-	!Setting up charge constraint
-	if (ichgcons==1) then !Load setting from plain text file
-		write(*,"(' Loading charge constraint setting from ',a)") trim(chgconsfilepath)
-		open(10,file=chgconsfilepath,status="old")
-		nchgcons=totlinenum(10,1) !The number of charge constraint terms
-		allocate(chgconsnatm(nchgcons),chgconsval(nchgcons),chgconsatm(nfitcen,nchgcons))
-		rewind(10)
-		do icons=1,nchgcons
-			read(10,"(a)") c2000tmp
-			isep=index(trim(c2000tmp),' ',back=.true.)
-			read(c2000tmp(isep+1:),*) chgconsval(icons)
-			call str2arr(c2000tmp(:isep-1),ntmp)
-			chgconsnatm(icons)=ntmp
-			call str2arr(c2000tmp(:isep-1),ntmp,chgconsatm(1:ntmp,icons))
-			write(*,"(' Charge constraint',i4,':',i4,' atoms, charge:',f12.6)") icons,ntmp,chgconsval(icons)
-		end do
-		close(10)
-	else !No charge constraint
-		nchgcons=0
-		allocate(chgconsnatm(nchgcons),chgconsval(nchgcons),chgconsatm(nfitcen,nchgcons))
-	end if
+!------ Start charge fitting now!
+!------ Start charge fitting now!
+!Setting up charge constraint
+if (ichgcons==1) then !Load setting from plain text file
+	write(*,"(' Loading charge constraint setting from ',a)") trim(chgconsfilepath)
+	open(10,file=chgconsfilepath,status="old")
+	nchgcons=totlinenum(10,1) !The number of charge constraint terms
+	allocate(chgconsnatm(nchgcons),chgconsval(nchgcons),chgconsatm(nfitcen,nchgcons))
+	rewind(10)
+	do icons=1,nchgcons
+		read(10,"(a)") c2000tmp
+		isep=index(trim(c2000tmp),' ',back=.true.)
+		read(c2000tmp(isep+1:),*) chgconsval(icons)
+		call str2arr(c2000tmp(:isep-1),ntmp)
+		chgconsnatm(icons)=ntmp
+		call str2arr(c2000tmp(:isep-1),ntmp,chgconsatm(1:ntmp,icons))
+		write(*,"(' Charge constraint',i4,':',i4,' atoms, charge:',f12.6)") icons,ntmp,chgconsval(icons)
+	end do
+	close(10)
+else !No charge constraint
+	nchgcons=0
+	allocate(chgconsnatm(nchgcons),chgconsval(nchgcons),chgconsatm(nfitcen,nchgcons))
+	write(*,*) "No charge constraint is imposed in this stage"
+end if
 	
-	!Setting up equivalence constraint
-	if (ieqvcons==1) then !Load setting from plain text file
-		eqvlist=0
-		write(*,"(' Loading equivalence constraint setting from ',a)") trim(eqvconsfilepath)
-		open(10,file=eqvconsfilepath,status="old")
-		neqvlist=totlinenum(10,1)
-		rewind(10)
-		do ieqv=1,neqvlist
-			read(10,"(a)") c2000tmp
-			call str2arr(c2000tmp,ntmp)
-			eqvlistlen(ieqv)=ntmp
-			call str2arr(c2000tmp,ntmp,eqvlist(1:ntmp,ieqv))
-		end do
-		close(10)
-		!If there are atoms have not appeared in the equivalence constraint list, add them to a slot
-		do icen=1,nfitcen
-			if (all(eqvlist/=icen)) then
-				neqvlist=neqvlist+1
-				eqvlistlen(neqvlist)=1
-				eqvlist(1,neqvlist)=icen
-			end if
-		end do
-	else if (ieqvcons==2) then !Impose equivalence constraint on hydrogens in each CH2 and CH3 group
-		neqvlist=neqvlist_H
-		eqvlistlen=eqvlistlen_H
-		eqvlist=eqvlist_H
-	end if
-	
-	call showeqvcons(neqvlist,eqvlistlen,eqvlist)
-	write(*,*)
+!Setting up equivalence constraint
+if (ieqvcons==1) then !Load setting from plain text file
+	eqvlist=0
+	write(*,"(' Loading equivalence constraint setting from ',a)") trim(eqvconsfilepath)
+	open(10,file=eqvconsfilepath,status="old")
+	neqvlist=totlinenum(10,1)
+	rewind(10)
+	do ieqv=1,neqvlist
+		read(10,"(a)") c2000tmp
+		call str2arr(c2000tmp,ntmp)
+		eqvlistlen(ieqv)=ntmp
+		call str2arr(c2000tmp,ntmp,eqvlist(1:ntmp,ieqv))
+	end do
+	close(10)
+	!If there are atoms have not appeared in the equivalence constraint list, add them to a slot
+	do icen=1,nfitcen
+		if (all(eqvlist/=icen)) then
+			neqvlist=neqvlist+1
+			eqvlistlen(neqvlist)=1
+			eqvlist(1,neqvlist)=icen
+		end if
+	end do
+else if (ieqvcons==2.and.isel==2) then !Impose equivalence constraint on hydrogens in each CH2 and CH3 group for one-stage fitting
+	neqvlist=neqvlist_H
+	eqvlistlen=eqvlistlen_H
+	eqvlist=eqvlist_H
+end if
+call showeqvcons(neqvlist,eqvlistlen,eqvlist)
+write(*,*)
+    
+if (isel==1) then !Do first step of standard RESP fitting
+	write(*,*) "**** Stage 1: RESP fitting under weak hyperbolic penalty"
+	call RESPiter(hyper_a_1,hyper_b,nconf,confweight,nfitcen,fitcen,maxESPpt,nESPpt,ESPpt,ESPptval,&
+	atmchg_stage1,nchgcons,chgconsnatm,chgconsatm,chgconsval,neqvlist,eqvlistlen,eqvlist,iESPtype)
+else if (isel==2) then !One-stage ESP fitting	
 	write(*,*) "One-stage restrainted ESP fitting iteration has started"
 	call RESPiter(hyper_a,hyper_b,nconf,confweight,nfitcen,fitcen,maxESPpt,nESPpt,ESPpt,ESPptval,&
 	atmchg,nchgcons,chgconsnatm,chgconsatm,chgconsval,neqvlist,eqvlistlen,eqvlist,iESPtype)
-
-else if (isel==1) then !Standard RESP fitting
-
-	write(*,*) "**** Stage 1: RESP fitting under weak hyperbolic penalty"
-	write(*,*) "No charge constraint and equivalence constraint are imposed in this stage"
-	nchgcons=0
-	allocate(chgconsnatm(nchgcons),chgconsval(nchgcons),chgconsatm(nfitcen,nchgcons))
-	call RESPiter(hyper_a_1,hyper_b,nconf,confweight,nfitcen,fitcen,maxESPpt,nESPpt,ESPpt,ESPptval,&
-	atmchg_stage1,nchgcons,chgconsnatm,chgconsatm,chgconsval,neqvlist,eqvlistlen,eqvlist,iESPtype)
-	
+end if 
+    
+!Do second step of standard RESP fitting
+if (isel==1) then
 	write(*,*)
 	write(*,*) "**** Stage 2: RESP fitting under strong hyperbolic penalty"
 	if (nCHlist>0) then
@@ -2038,6 +2039,7 @@ end do maincyc
 end subroutine
 
 
+
 !!------ Perform RESP iteration
 subroutine RESPiter(hyper_a,hyper_b,nconf,confweight,nfitcen,fitcen,maxESPpt,nESPpt,ESPpt,ESPptval,&
 atmchg,nchgcons,chgconsnatm,chgconsatm,chgconsval,neqvlist,eqvlistlen,eqvlist,iESPtype)
@@ -2048,7 +2050,7 @@ real*8 hyper_a,hyper_b
 integer nconf,nfitcen,maxESPpt,nchgcons,neqvlist,iESPtype
 integer nESPpt(nconf)
 real*8 confweight(nconf),fitcen(3,nfitcen,nconf),ESPpt(3,maxESPpt,nconf),ESPptval(maxESPpt,nconf),atmchg(nfitcen),chgconsval(nchgcons)
-integer chgconsnatm(nchgcons),chgconsatm(ncenter,nchgcons),eqvlistlen(ncenter),eqvlist(10,ncenter)
+integer chgconsnatm(nchgcons),chgconsatm(ncenter,nchgcons),eqvlistlen(ncenter),eqvlist(500,ncenter)
 real*8,allocatable :: Bvec(:),Amat(:,:),Amat_bk(:,:),Amat_tmp(:,:),Amatinv(:,:),qvec(:),qvec_old(:)
 real*8,allocatable :: Bveceqv(:),Amateqv(:,:),Amateqvinv(:,:),qveceqv(:) !The counterpart of Amat,Bvec,qvec when considering equivalence contraint
 integer :: maxiter=30
@@ -2205,13 +2207,14 @@ end if
 atmchg=qvec(1:nfitcen)
 end subroutine
 
+
 !!----- Show atom equivalence constraint in ESP fitting
 subroutine showeqvcons(neqvlist,eqvlistlen,eqvlist)
 use defvar
 implicit real*8 (a-h,o-z)
-integer neqvlist,eqvlistlen(ncenter),eqvlist(10,ncenter)
+integer neqvlist,eqvlistlen(ncenter),eqvlist(500,ncenter)
 if (any(eqvlistlen(1:neqvlist)>1)) then
-	write(*,*) "Atoms equivalence constraint imposed in this fitting stage:"
+	write(*,*) "Atom equivalence constraint imposed in this fitting stage:"
 	icons=0
 	do ieqv=1,neqvlist
 		if (eqvlistlen(ieqv)>1) then
@@ -2225,11 +2228,90 @@ if (any(eqvlistlen(1:neqvlist)>1)) then
 		end if
 	end do
 else
-	write(*,*) "No atoms equivalence constraint is imposed in this fitting stage"
+	write(*,*) "No atom equivalence constraint is imposed in this fitting stage"
 end if
 end subroutine
 
 
+
+!!----------- Generate equivalence list according to point group of provided fragment geometry and write to eqvcons_PG.txt
+subroutine genPGeqvcons
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000,pglabel*3,c80tmp*80,selectyn
+real*8 coord(3,ncenter)
+integer atmlist(ncenter),atmindex(ncenter),classnatm(ncenter),classidx(ncenter,ncenter)
+toler=0.1D0 !loose
+open(10,file="eqvcons_PG.txt",status="replace")
+write(*,"(a)") " Note: You can change tolerance for detecting point group to e.g. 0.08 by inputting ""t 0.08"". The default tolerance is 0.1"
+do while(.true.)
+    write(*,*)
+    write(*,*) "Input indices of the atoms in the fragment, e.g. 3,6-10,12,14"
+    write(*,*) "To add all atoms in the system, input ""a"""
+    write(*,*) "To exit, input ""q"""
+    read(*,"(a)") c2000tmp
+    if (index(c2000tmp,'q')/=0) then
+        exit
+    else if (index(c2000tmp,'t')/=0) then
+        read(c2000tmp,*) c80tmp,toler
+        write(*,"(' The tolerance has been set to',f8.4)") toler
+    else
+        if (index(c2000tmp,'a')/=0) then
+            nselatm=ncenter
+            forall(iatm=1:ncenter) atmlist(iatm)=iatm
+        else
+            call str2arr(c2000tmp,nselatm,atmlist)
+        end if
+        atmindex(1:nselatm)=a(atmlist(1:nselatm))%index
+        coord(1,1:nselatm)=a(atmlist(1:nselatm))%x*b2a
+        coord(2,1:nselatm)=a(atmlist(1:nselatm))%y*b2a
+        coord(3,1:nselatm)=a(atmlist(1:nselatm))%z*b2a
+        call PG_eqvatm(nselatm,atmindex(1:nselatm),coord(:,1:nselatm),toler,pglabel,nclass,classnatm(1:nselatm),classidx(1:nselatm,1:nselatm))
+        nwrite=count(classnatm(1:nclass)>1)
+        !Using loose tolerance, the equivalence atoms can also be detected, but sometimes point group is failed to recognized
+        if (pglabel/=" ") then
+            write(*,"(' Detected point group: ',a)") pglabel
+        else
+            !Even in many cases point group cannot be recognized, the symmetry-equivalence atoms are still correctly recognized
+            !write(*,*) "Failed to detect point group"
+        end if
+        if (nwrite==0) then
+            write(*,*) "No symmetry-equivalence atoms were found"
+            cycle
+        end if
+        write(*,"(' Number of symmetry-equivalence classes:',i5)") nwrite
+        ic=0
+        do iclass=1,nclass
+            ntmp=classnatm(iclass)
+            if (ntmp==1) cycle
+            ic=ic+1
+            write(*,"(' Class',i5,a,':',i5,' atoms')") ic,' ('//a(classidx(1,iclass))%name//')',ntmp
+            do iatm=1,ntmp
+                write(*,"(i5)",advance="no") atmlist(classidx(iatm,iclass))
+                if (iatm/=ntmp) write(*,"(a)",advance="no") ','
+            end do
+            write(*,*)
+        end do
+        write(*,*) "Accept and append to eqvcons_PG.txt in current folder? (y/n)"
+        read(*,*) selectyn
+        if (selectyn=='y') then
+            do iclass=1,nclass
+                ntmp=classnatm(iclass)
+                if (ntmp==1) cycle
+                do iatm=1,ntmp
+                    write(10,"(i5)",advance="no") atmlist(classidx(iatm,iclass))
+                    if (iatm/=ntmp) write(10,"(a)",advance="no") ','
+                end do
+                write(10,*)
+            end do
+            write(*,*) "The constraints have been appended to eqvcons_PG.txt in current folder"
+        end if
+    end if
+end do
+close(10)
+write(*,*) "Finished writing of the eqvcons_PG.txt!"
+end subroutine
 
 
 
@@ -3301,17 +3383,7 @@ do icyc=1,maxcyc
 		if (itype==1) then
 			write(*,"(a,f10.6)") " All atomic charges have converged to criterion of",crit
 			write(*,"(' Sum of all charges:',f14.8)") sum(charge)
-			!Normalize to get rid of integration inaccuracy
-			totnumelec=sum(a%charge-charge)
-			facnorm=nelec/totnumelec
-			do iatm=1,ncenter
-				charge(iatm)=a(iatm)%charge-facnorm*(a(iatm)%charge-charge(iatm))
-			end do
-			write(*,*)
-			write(*,*) "Final atomic charges, after normalization to actual number of electrons"
-			do iatm=1,ncenter
-				write(*,"(' Atom',i5,'(',a2,')',': ',f12.6)") iatm,a(iatm)%name,charge(iatm)
-			end do
+			call normalizecharge(charge) !Calculate and print normalized charge
 			exit
 		else
 			write(*,*) "Hirshfeld-I atomic spaces converged successfully!"
@@ -3370,6 +3442,7 @@ if (allocated(frag1)) then
     write(*,"(' Fragment population:',f12.6)") sum(a(frag1)%charge) - sum(charge(frag1))
 end if
 call walltime(iwalltime2)
+write(*,*)
 write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 
 call path2filename(firstfilename,chgfilename)
@@ -4046,5 +4119,25 @@ do iatm=1,ncenter
     
     call showprog(iatm,ncenter)
 end do
+end subroutine
 
+
+
+
+!---- Print and return normalized atomic charges
+!This is mainly used for getting rid of integration inaccuracy of the atomic charges derived by real space integration
+subroutine normalizecharge(charge)
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 charge(ncenter)
+totnumelec=sum(a%charge-charge)
+facnorm=nelec/totnumelec
+do iatm=1,ncenter
+	charge(iatm)=a(iatm)%charge-facnorm*(a(iatm)%charge-charge(iatm))
+end do
+write(*,*)
+write(*,*) "Final atomic charges, after normalization to actual number of electrons"
+do iatm=1,ncenter
+	write(*,"(' Atom',i5,'(',a2,')',': ',f12.6)") iatm,a(iatm)%name,charge(iatm)
+end do
 end subroutine

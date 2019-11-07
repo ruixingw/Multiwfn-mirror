@@ -555,6 +555,7 @@ real*8 function userfunc(x,y,z)
 real*8 x,y,z,vec(3),mat(3,3)
 userfunc=1D0 !Default value. Note: default "iuserfunc" is 0
 !Below functions can be selected by "iuserfunc" parameter in settings.ini
+if (iuserfunc==-3) userfunc=splineintp3d(x,y,z,1) !The function value evaluated by cubic spline interpolation from cubmat
 if (iuserfunc==-2) userfunc=calcprodens(x,y,z,0) !Promolecular density
 if (iuserfunc==-1) userfunc=linintp3d(x,y,z,1) !The function value evaluated by trilinear interpolation from cubmat
 if (iuserfunc==1) userfunc=fspindens(x,y,z,'a') !Alpha density
@@ -3348,6 +3349,80 @@ else
 end if
 end subroutine
 
+
+
+!!!---- Use cubic spline interpolation to obtain value at a given point by using cubmat
+!itype==1: interpolate from cubmat, =2: from cubmattmp
+!If all grid points in cubmat are used in the interpolation, the cost will be extremely high if very large number of points are to be calculated, &
+!therefore I decide only takes a few grids around the present position for the interpolation, and this idea works well and the cost is significantly lowered
+!The spline interpolation code comes from https://github.com/jacobwilliams/bspline-fortran, the Bspline.f90 is slightly adapted, &
+!See comment of subroutine db3ink and db3val to understand the use of the routines
+real*8 function splineintp3D(x,y,z,itype)
+use bspline_sub_module
+real*8 x,y,z
+integer itype
+integer,parameter :: norder=4 !4 corresponds to cubic spline interpolation. order = polynomial degree + 1, order from 3 to 6 are supported
+!According to my experience, norder=4~6 has negligible difference. Even norder=3 is quite similar to norder=4. The norder seems doesn't affect cost
+integer,parameter :: kx=norder,ky=norder,kz=norder
+integer :: inbvx=1,inbvy=1,inbvz=1,iloy=1,iloz=1 !Must be set to 1 before call as mentioned in the test file, though I don't know why
+integer :: iknot=0  !Automatically determine the knots
+integer,parameter :: next=4 !The number of extended grids on both sides. Test showed that 4 leads to converge result, increasing it will not detectably affect result
+integer,parameter :: nlocgrd=2+2*next
+real*8 :: xarr(nlocgrd),yarr(nlocgrd),zarr(nlocgrd)
+real*8 tx(nlocgrd+kx),ty(nlocgrd+ky),tz(nlocgrd+kz) !Not used because I let knot automatically determined, but these arrays must be defined
+real*8 cubloc(nlocgrd,nlocgrd,nlocgrd),spline3Dcoeff(nlocgrd,nlocgrd,nlocgrd)
+
+do ix=1,nx
+	x1=orgx+(ix-1)*dx
+	x2=orgx+ix*dx
+	if (x>=x1.and.x<x2) exit
+end do
+do iy=1,ny
+	y1=orgy+(iy-1)*dy
+	y2=orgy+iy*dy
+	if (y>=y1.and.y<y2) exit
+end do
+do iz=1,nz
+	z1=orgz+(iz-1)*dz
+	z2=orgz+iz*dz
+	if (z>=z1.and.z<z2) exit
+end do
+if (ix+1>nx-next.or.iy+1>ny-next.or.iz+1>nz-next .or. ix<next+1.or.iy<next+1.or.iz<next+1) then !Out of grid data range
+	splineintp3D=0D0
+    return
+end if
+ilowx=ix-next
+ihighx=ix+1+next
+ilowy=iy-next
+ihighy=iy+1+next
+ilowz=iz-next
+ihighz=iz+1+next
+do ix=ilowx,ihighx
+    xarr(ix-ilowx+1)=orgx+(ix-1)*dx
+end do
+do iy=ilowy,ihighy
+    yarr(iy-ilowy+1)=orgy+(iy-1)*dy
+end do
+do iz=ilowz,ihighz
+    zarr(iz-ilowz+1)=orgz+(iz-1)*dz
+end do
+do ix=ilowx,ihighx
+    do iy=ilowy,ihighy
+        do iz=ilowz,ihighz
+            if (itype==1) cubloc(ix-ilowx+1,iy-ilowy+1,iz-ilowz+1)=cubmat(ix,iy,iz)
+            if (itype==2) cubloc(ix-ilowx+1,iy-ilowy+1,iz-ilowz+1)=cubmattmp(ix,iy,iz)
+        end do
+    end do
+end do
+
+!Initialize
+call db3ink(xarr,nlocgrd,yarr,nlocgrd,zarr,nlocgrd,cubloc,kx,ky,kz,iknot,tx,ty,tz,spline3Dcoeff,iflag)
+if (iflag/=0) write(*,*) "Error when initializing B-spline!"
+
+!Evaluate value
+idx=0;idy=0;idz=0 !Do not evaluate derivative
+call db3val(x,y,z,idx,idy,idz,tx,ty,tz,nlocgrd,nlocgrd,nlocgrd,kx,ky,kz,spline3Dcoeff,splineintp3D,iflag,inbvx,inbvy,inbvz,iloy,iloz)
+end function
 
 
 

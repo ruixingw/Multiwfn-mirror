@@ -319,8 +319,8 @@ real*8 :: curve_vertlinex=0D0,curvexyratio=0.618D0 !Gold partition
 real*8 :: gradplotstep=0.002D0,gradplotdis=0.01D0,gradplottest=0.2D0,cutgradvec=0.3D0
 real*8 :: clrRcub1same=0.3D0,clrGcub1same=0.75D0,clrBcub1same=0.3D0,clrRcub1oppo=0.3D0,clrGcub1oppo=0.45D0,clrBcub1oppo=0.9D0 !Color for isosurface 1 with solid style
 real*8 :: clrRcub2same=0.4D0,clrGcub2same=0.5D0,clrBcub2same=0.0D0,clrRcub2oppo=0.35D0,clrGcub2oppo=0.1D0,clrBcub2oppo=0.9D0 !Color for isosurface 2 with solid style
-real*8 :: clrRcub1samemeshpt=0.3D0,clrGcub1samemeshpt=0.75D0,clrBcub1samemeshpt=0.3D0,clrRcub1oppomeshpt=0.3D0,clrGcub1oppomeshpt=0.45D0,clrBcub1oppomeshpt=0.9D0 !Color for isosurface 1 with solid style
-real*8 :: clrRcub2samemeshpt=0.4D0,clrGcub2samemeshpt=0.5D0,clrBcub2samemeshpt=0.0D0,clrRcub2oppomeshpt=0.35D0,clrGcub2oppomeshpt=0.1D0,clrBcub2oppomeshpt=0.9D0 !Color for isosurface 2 with solid style
+real*8 :: clrRcub1samemeshpt=0.3D0,clrGcub1samemeshpt=0.75D0,clrBcub1samemeshpt=0.3D0,clrRcub1oppomeshpt=0.3D0,clrGcub1oppomeshpt=0.45D0,clrBcub1oppomeshpt=0.9D0 !Color for isosurface 1 with mesn style
+real*8 :: clrRcub2samemeshpt=0.4D0,clrGcub2samemeshpt=0.5D0,clrBcub2samemeshpt=0.0D0,clrRcub2oppomeshpt=0.35D0,clrGcub2oppomeshpt=0.1D0,clrBcub2oppomeshpt=0.9D0 !Color for isosurface 2 with mesh style
 real*8 :: opacitycub1=0.7D0,opacitycub2=0.7D0 !Opacity for isosurface 1 and 2 with transparent style
 !About topology information on plane
 integer :: imark3n3=1,imark3n1=1,imark3p1=1,imark3p3=1,imarkpath=1,sizemarkcp=30,sizemarkpath=10,sizemark3n1path=7,idrawintbasple=0,isurfstyle=2
@@ -353,7 +353,8 @@ integer :: isys=1 !Windows
 #else
 integer :: isys=2 !Linux/MacOS
 #endif
-integer :: igenDbas=0,igenMagbas=0,igenP=1,iwfntmptype=1,outmedinfo=0,intmolcust=0,isilent=0,idelvirorb=1,ifchprog=1,iloadascart=0,maxloadexc=0,iprintLMOorder=0
+integer :: igenDbas=0,igenMagbas=0,igenP=1,iwfntmptype=1,outmedinfo=0,intmolcust=0,isilent=0,idelvirorb=1
+integer :: ifchprog=1,iloadascart=0,maxloadexc=0,iprintLMOorder=0,iMCBOtype=0
 integer :: iuserfunc=0,iDFTxcsel=84,iKEDsel=0,ispheratm=1,ishowchgtrans=0,SpherIVgroup=0,MCvolmethod=2,readEDF=1,isupplyEDF=2,ishowptESP=1,imolsurparmode=1
 integer :: NICSnptlim=8000
 real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0,espprecutoff=0D0
@@ -476,4 +477,26 @@ integer,allocatable :: realatttable(:,:) !realatttable(i,j)=k means the jth memb
 real*8,allocatable :: realattval(:),realattxyz(:,:) !Value and xyz coordinate of actual attractors. For the ones having multiple crude attractors, these arrays record average value
 logical*1,allocatable :: interbasgrid(:,:,:) !.true. means this is a boundary grid, else it is a internal grid
 logical*1,allocatable :: grdposneg(:,:,:) !.true. means the value at this grid is positive, .false. means negative
+end module
+
+
+!-------- NAO related arrays and matrices
+!For NAOset, NAOocc, NAOene, the second index is spin, 0/1/2=total/alpha/beta. For other NAO related arrays, they are independent of spin
+module NAOmod
+integer iopshNAO !0: Closed shell, 1: Open shell (total, alpha and beta are respectively analyzed). This variable is set during loadNAOinfo
+integer numNAO !The number of NAOs
+integer numNAOcen !The number of centers in involved in NAO analysis, usually equals to ncenter
+integer,allocatable :: NAOinit(:),NAOend(:) !size of numNAOcen. Initial and ending indices of NAOs of atoms
+integer,allocatable :: NAOcen(:) !size of numNAO. Attributed center of NAOs
+character,allocatable :: NAOcenname(:)*2 !size of numNAO. The center name loaded from NPA output, e.g. C, H, O
+character,allocatable :: NAOset(:,:)*3  !(numNAO,0:2). Set of NAOs attributed to. i.e. Cor, Val, Ryd (Case sensitive!)
+character,allocatable :: NAOshell(:)*2  !size of numNAO. Shell name that NAOs attributed to, e.g. 2S, 3p, 3d
+character,allocatable :: NAOtype(:)*7 !size of numNAO. Type name of NAOs. e.g. px, dx2y2
+real*8,allocatable :: NAOocc(:,:),NAOene(:,:) !size of numNAO. Occupation and energy (a.u.) of NAOs
+real*8,allocatable :: DMNAO(:,:),DMNAOa(:,:),DMNAOb(:,:) !size of (numNAO,numNAO) (I found in rare case is (nbasis,nbasis)). Density matrix of total electrons, alpha electrons and beta electrons
+!In the following matrices, "nbasis" and NBsUse are the number of basis functions before and after linear dependency elimination, respectively
+real*8,allocatable :: NAOMO(:,:) !size of (numNAO,NBsUse). (i,r) is coeff. of NAO i in MO r. If numNAO<nbasis, the gap is filled by blank. For open shell, this records alpha part.
+real*8,allocatable :: NAOMOb(:,:) !NAOMO for beta part
+real*8,allocatable :: AONAO(:,:) !size of (nbasis,numNAO). 
+!Note that AONAO does not distinguish spin, because NAO orbitals are always generated using total density matrix
 end module

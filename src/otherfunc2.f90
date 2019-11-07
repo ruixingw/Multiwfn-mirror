@@ -23,6 +23,7 @@ do while(.true.)
 	write(*,*) "16 Generate natural orbitals based on the density matrix in .fch/.fchk file"
     write(*,*) "17 Calculate Coulomb and exchange integrals between two orbitals"
     write(*,*) "18 Calculate bond length/order alternation (BLA/BOA)"
+    write(*,*) "19 AV1245 (Used for calculating aromaticity for large ring)"
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -62,6 +63,8 @@ do while(.true.)
         call orb_coulexcint
     else if (isel==18) then
         call bondalter
+    else if (isel==19) then
+        call AV1245
 	end if
 end do
 end subroutine
@@ -1112,8 +1115,11 @@ if (irdfreq==1) then
 	end do
 	write(*,*) "Load which one? Input the index, e.g. 2"
 	do i=1,nfreqval
-		if (freqval(i)>0) write(*,"(i8,'   w=',f12.6,' (',f12.2,'nm )')") i,freqval(i),1240.7011D0/(freqval(i)*au2eV)
-		!if (freqval(i)==0) write(*,"(i8,'   w=',f12.6,' (     Static    )')") i,freqval(i)
+		if (freqval(i)==0) then
+            write(*,"(i8,'   w=',f12.6,' (     Static    )')") i,freqval(i)
+		else if (freqval(i)>0) then
+            write(*,"(i8,'   w=',f12.6,' (',f12.2,'nm )')") i,freqval(i),1240.7011D0/(freqval(i)*au2eV)
+        end if
 	end do
 	read(*,*) ifreq
 	if (freqval(ifreq)>0) write(*,"(' Note: Printed (hyper)polarizability will correspond to w=',f12.6,' (',f12.2,'nm )',/)") freqval(ifreq),1240.7011D0/(freqval(ifreq)*au2eV)
@@ -1282,6 +1288,7 @@ if (isel==1.or.isel==3.or.isel==5) then
 		read(*,*) ibeta
 		rewind(10)
 		
+        !Load beta data
 		if (ibeta==1) then !Beta(-w;w,0) case
 			call loclabel(10,"-- Beta(-w,w,0) frequency",ifound)
 			do i=1,ifreq
@@ -1409,6 +1416,7 @@ if (isel==1.or.isel==3.or.isel==5) then
 			write(ides,*)
 		end if
 		
+        !Output beta of various forms
 		betaX=0
 		betaY=0
 		betaZ=0
@@ -1434,7 +1442,8 @@ if (isel==1.or.isel==3.or.isel==5) then
 		write(ides,form) " Beta _|_(z) :",beta_per
 		write(*,*)
         
-        if (ibeta==2) then !Parsing Beta(-2w;w,w)
+        !Beta(-2w;w,w) as been parsed before, in this case we also output HRS related quantites
+        if (ibeta==2) then
             !Calculate <beta_ZZZ^2> and <beta_XZZ^2>, without Kleinman condition approximation
             !Below, the Eqs. 4 and 5 in Phys. Chem. Chem. Phys., 10, 6223¨C6232 (2008) are employed
             !Note that <beta_xzz^2> is equivalent to the <beta_zxx^2> occured in many literatures
@@ -1482,14 +1491,23 @@ if (isel==1.or.isel==3.or.isel==5) then
             write(ides,*) "Note: Kleinman's symmetry condition is not employed for below quantities:"
             write(ides,"(' <beta_ZZZ^2>:',1PE16.8)") betazzz2_avg
             write(ides,"(' <beta_XZZ^2>:',1PE16.8)") betaxzz2_avg
-            write(ides,"(' Hyper-Rayleigh scattering (beta_HRS):',f14.3)") dsqrt(betazzz2_avg+betaxzz2_avg)
+            if (iunit==1) then
+                write(ides,"(' Hyper-Rayleigh scattering (beta_HRS):',f14.3)") dsqrt(betazzz2_avg+betaxzz2_avg)
+            else
+                write(ides,"(' Hyper-Rayleigh scattering (beta_HRS):',1PE14.4)") dsqrt(betazzz2_avg+betaxzz2_avg)
+            end if
             write(ides,"(' Depolarization ratio (DR):',f8.3)") betazzz2_avg/betaxzz2_avg
         
             betaJ1norm=dsqrt(6*betazzz2_avg-9*betaxzz2_avg)
             betaJ3norm=dsqrt((-7*betazzz2_avg+63*betaxzz2_avg)/2)
-            write(ides,"(' |<beta J=1>|:',f14.3)") betaJ1norm
-            write(ides,"(' |<beta J=3>|:',f14.3)") betaJ3norm
             rho=betaJ3norm/betaJ1norm
+            if (iunit==1) then
+                write(ides,"(' |<beta J=1>|:',f14.3)") betaJ1norm
+                write(ides,"(' |<beta J=3>|:',f14.3)") betaJ3norm
+            else
+                write(ides,"(' |<beta J=1>|:',1PE14.4)") betaJ1norm
+                write(ides,"(' |<beta J=3>|:',1PE14.4)") betaJ3norm
+            end if
             write(ides,"(' Nonlinear anisotropy parameter (rho):',f8.3)") rho
             write(ides,"(' Dipolar contribution to beta, phi_beta(J=1):  ',f8.3)") 1D0/(1D0+rho)
             write(ides,"(' Octupolar contribution to beta, phi_beta(J=3):',f8.3)") rho/(1D0+rho)
@@ -1506,7 +1524,11 @@ if (isel==1.or.isel==3.or.isel==5) then
                 do iang=1,360
                     rad=omegaval/180*pi
                     rinten=betaxzz2_avg*cos(rad)**4+betazzz2_avg*sin(rad)**4+sin(rad)**2*cos(rad)**2*(7*betaxzz2_avg-betazzz2_avg)
-                    write(12,"(f6.1,f20.6)") omegaval,rinten
+                    if (iunit==1) then
+                        write(12,"(f6.1,f20.6)") omegaval,rinten
+                    else
+                        write(12,"(f6.1,1PE16.6)") omegaval,rinten
+                    end if
                     omegaval=omegaval+1
                 end do
                 close(12)
@@ -4403,14 +4425,12 @@ integer :: cenind(12)
 write(*,*) "Input atom indices in the chain (the sequence is arbitrary)"
 write(*,*) "e.g. 2,14,16-17,19,21,23-24"
 read(*,"(a)") c2000tmp
-!c2000tmp="1-4,9-10,12,14,16-17,19,21,23-24,26,28,30-31,33,35,37-38,40,42,44-45,47,49,51-52,54,56,58-59,61,63"
 call str2arr(c2000tmp,nchainatm)
 allocate(chainatm(nchainatm),atmseq(nchainatm),atmtmp(ncenter))
 call str2arr(c2000tmp,nchainatm,chainatm)
 
 write(*,*) "Input index of the two atoms at the two ends, e.g. 13,24"
 read(*,*) ibeg,iend
-!ibeg=1;iend=63
 
 if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
 
@@ -4497,7 +4517,6 @@ do idx=1,nchainatm-1
             avgBO_even=avgBO_even+bondorder
         end if
     end if
-    
 end do
 
 write(*,*)
@@ -4519,4 +4538,169 @@ if (iBO==1) then
     write(*,"(a,f12.4)") " Bond order alternation (BOA):    ",BOA
 end if
 
+end subroutine
+
+
+
+
+!!-------------------------------------------------------------------
+!!------------ AV1245, used for calculating aromaticity of large ring
+!!-------------------------------------------------------------------
+subroutine AV1245
+use defvar
+use util
+use NAOmod
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer,allocatable :: atmarr(:),atmarrorg(:)
+integer cenind(12)
+real*8,allocatable :: PSmat(:,:),PSmatA(:,:),PSmatB(:,:)
+
+iopsh=0
+if (allocated(CObasa)) then !Calculate AV1245 in original basis
+    if (allocated(Palpha)) then !Open shell
+        iopsh=1
+        allocate(PSmatA(nbasis,nbasis),PSmatB(nbasis,nbasis))
+        PSmatA=matmul(Palpha,Sbas)
+        PSmatB=matmul(Pbeta,Sbas)
+    else
+        allocate(PSmat(nbasis,nbasis))
+        PSmat=matmul(Ptot,Sbas)
+    end if
+    ifNAO=0
+else !Load NAO and DMNAO information
+    write(*,"(a)") " Basis information is not presented, therefore trying to load natural atomic orbital (NAO) information from input file"
+    open(10,file=filename,status="old")
+    call checkNPA(ifound);if (ifound==0) return
+    call loadNAOinfo
+    write(*,*) "Loading NAO information finished!"
+    call checkDMNAO(ifound);if (ifound==0) return
+    call loadDMNAO
+    close(10)
+    write(*,*) "Loading density matrix in NAO basis finished!"
+    write(*,*) "The AV1245 will be calculated based on NAOs"
+    if (iopshNAO==0) then
+        allocate(PSmat(numNAO,numNAO))
+        PSmat=DMNAO
+    else if (iopshNAO==1) then !Open shell
+        iopsh=1
+        allocate(PSmatA(numNAO,numNAO),PSmatB(numNAO,numNAO))
+        PSmatA=DMNAOa
+        PSmatB=DMNAOb
+    end if
+    nbasis=numNAO
+    ifNAO=1
+    !Move information from NAO variables to common variables, so that multi-center bond order routines could be used
+    if (allocated(basstart)) deallocate(basstart,basend)
+    allocate(basstart(ncenter),basend(ncenter))
+    basstart=NAOinit
+    basend=NAOend
+end if
+iMCBOtype_old=iMCBOtype
+iMCBOtype=2
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "          ------- AV1245 (Phys. Chem. Chem. Phys., 18, 11839) -------"
+    write(*,*) "Input index of the atoms in the order of connectivity, e.g. 2,3,7,18,19,20"
+    write(*,*) "To exit, input ""q"""
+    !When NAO information is loaded form NBO output file, geometry information is not available and cannot generate connectivity
+    if (ifNAO==0) write(*,"(a)") " Hint: If input ""d"" and press ENTER button, then you can input the indices in arbitrary order because the actual order &
+    will be automatically guessed, however in this case any atom should not connect to more than two atoms in the ring"
+    read(*,"(a)") c2000tmp
+    
+    if (index(c2000tmp,'q')/=0) then
+        exit
+    else if (index(c2000tmp,'d')/=0) then
+        if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
+        write(*,*)
+        write(*,*) "Input index of the atoms, the order is arbitrary"
+        write(*,*) "For example: 1,3-4,6-8,10-14"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,natm)
+        allocate(atmarr(natm),atmarrorg(natm))
+        call str2arr(c2000tmp,natm,atmarrorg)
+        !Reorganize the atmarrorg to correct sequence as atmarr according to connectivity
+        atmarr=0
+        atmarr(1)=atmarrorg(1)
+        inow=atmarr(1) !Current atom
+        atmarrorg(1)=0 !This atom has been picked out, so set to zero
+        do idx=2,natm
+            do jdx=1,natm
+                if (atmarrorg(jdx)==0) cycle
+                jatm=atmarrorg(jdx)
+                if (connmat(inow,jatm)/=0) then
+                    inow=jatm
+                    atmarr(idx)=inow
+                    atmarrorg(jdx)=0
+                    exit
+                end if
+            end do
+            if (jdx==natm+1) then
+                write(*,"(' Failed to determine connectivity of atom',i6)") inow
+                exit
+            end if
+        end do
+        deallocate(atmarrorg)
+        if (any(atmarr<=0)) then
+            write(*,"(a)") " Unfortunately, the order was not successfully recognized, you should manually input &
+            the atom indices according to connectivity"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            deallocate(atmarr)
+            cycle
+        else
+            write(*,*) "The order of the atoms in the ring has been successfully identified"
+            write(*,*)
+        end if
+    else
+        call str2arr(c2000tmp,natm)
+        allocate(atmarr(natm))
+        call str2arr(c2000tmp,natm,atmarr)
+    end if
+    
+    write(*,"(' Number of selected atoms:',i6)") natm
+    write(*,*) "Atomic sequence:"
+    write(*,"(12i6)") atmarr
+    write(*,*)
+    totval=0
+    ipos=1
+    do while(.true.)
+        cenind(1)=atmarr(ipos)
+        if (ipos+1>natm) then
+            cenind(2)=atmarr(ipos+1-natm)
+        else
+            cenind(2)=atmarr(ipos+1)
+        end if
+        if (ipos+3>natm) then
+            cenind(3)=atmarr(ipos+3-natm)
+        else
+            cenind(3)=atmarr(ipos+3)
+        end if
+        if (ipos+4>natm) then
+            cenind(4)=atmarr(ipos+4-natm)
+        else
+            cenind(4)=atmarr(ipos+4)
+        end if
+        if (iopsh==0) then
+            call calcmultibndord(4,cenind,PSmat,nbasis,tmpval)
+        else
+            call calcmultibndord(4,cenind,PSmatA,nbasis,tmpvalA)
+            call calcmultibndord(4,cenind,PSmatB,nbasis,tmpvalB)
+            tmpval=8*(tmpvalA+tmpvalB) !8=2^(n-1)
+        end if
+        tmpval=tmpval/3 !Convert 4c-MCI to 4c-ESI according to Eq.10 of AV1245 paper
+        write(*,"(' 4-center electron sharing index of',4i6,':',f14.8)") cenind(1:4),tmpval
+        totval=totval+tmpval
+        if (ipos==natm) exit
+        ipos=ipos+1
+    end do
+    
+    totval=totval/natm
+    write(*,"(/,a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000
+    !write(*,"(a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000*0.635 !mimic data of AV1245 paper
+    deallocate(atmarr)
+end do
+
+iMCBOtype=iMCBOtype_old
 end subroutine

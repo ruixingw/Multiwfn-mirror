@@ -3,16 +3,14 @@ subroutine AdNDP
 use defvar
 use util
 use GUI
+use NAOmod
 implicit real*8 (a-h,o-z)
-integer,allocatable :: NAOinit(:),NAOend(:) !NAO index range of each atom
 integer,allocatable :: nNAOatm(:) !The number of NAOs of each atom
-integer,allocatable :: NAOcen(:),NAOtype(:) !The center attributed to and type of NAOs, 0=Cor 1=Val 2=Ryd
 integer,allocatable :: atmcomb(:) !Store combination of specific number of atoms
 integer,allocatable :: idxarray(:) !A contiguous array by default, used as underground numbering array for generating atom combinations
 integer,allocatable :: searchlist(:) !Store atom indices for those will be exhaustively searched
-real*8,allocatable :: DMNAO(:,:),DMNAObeta(:,:),orbeigval(:),orbeigvec(:,:),removemat(:,:),colvec(:,:),rowvec(:,:),DMNAOblk(:,:),AONAO(:,:)
-! real*8 :: bndcrit(30)=(/ 1.9D0,1.7D0,1.7D0,(1.8D0,i=4,30) /) !Bond threshold for different center-bonds
-real*8 :: bndcrit=1.7D0
+real*8,allocatable :: orbeigval(:),orbeigvec(:,:),removemat(:,:),colvec(:,:),rowvec(:,:),DMNAOblk(:,:)
+! real*8 :: bndcrit(30)=(/ 1.9D0,1.7D0,1.7D0,(1.8D0,i=4,30) /) 
 integer :: numprint=100
 real*8,allocatable :: candiocc(:),candivec(:,:),candinatm(:) !Store candidate orbital information, occupation, eigenvector(in total NAOs), number of atoms
 integer,allocatable :: candiatmlist(:,:) !Store atom list of candidate orbitals
@@ -20,141 +18,65 @@ real*8,allocatable :: savedocc(:),savedvec(:,:),savednatm(:) !Store saved orbita
 integer,allocatable :: savedatmlist(:,:) !Store atom list of saved orbitals
 real*8,allocatable :: oldsavedocc(:),oldsavedvec(:,:),oldsavednatm(:),oldDMNAO(:,:) !For temporarily store data
 integer,allocatable :: oldsavedatmlist(:,:),eiguselist(:),tmparr(:)
-integer numNAO !Total number of NAOs
-real*8,allocatable :: adndpcobas(:,:),Fmat(:,:),Emat(:,:)
+real*8,allocatable :: adndpCObas(:,:),Fmat(:,:),Emat(:,:)
 character :: c80tmp*80,c80tmp2*80,c200tmp*200,c1000tmp*1000,c2000tmp*2000,selectyn,fchfilename*200=' '
 
+bndcrit=1.7D0  !Bond occupation threshold for different center-bonds
+
 open(10,file=filename,status="old")
-!Read in NAO range for all atoms
-call loclabel(10,"NATURAL POPULATIONS",ifound)
-if (ifound==0) then
-	write(*,*) "Error: Cannot find NATURAL POPULATIONS field in the input file!"
-	write(*,*) "Press ENTER button to return"
-	read(*,*)
-    close(10)
-	return
-end if
-write(*,*) "Loading NAO information and density matrix in NAO basis..."
-read(10,*)
-read(10,*)
-read(10,*)
-read(10,*)
-ilastspc=0
-!We need to know how many atoms in total
-do while(.true.)
-	read(10,"(a)") c80tmp
-	if (c80tmp==' '.or.index(c80tmp,"low occupancy")/=0.or.index(c80tmp,"Population inversion found")/=0.or.index(c80tmp,"effective core potential")/=0) then
-		if (ilastspc==1) then
-			ncenter=iatm
-			numNAO=inao
-			exit
-		end if
-		ilastspc=1 !last line is space
-	else
-		read(c80tmp,*) inao,c80tmp2,iatm
-		ilastspc=0
-	end if
-end do
-write(*,"(' Number of atoms:',i5)") ncenter
-if (.not.allocated(a)) allocate(a(ncenter))
-allocate(NAOinit(ncenter),NAOend(ncenter))
-allocate(NAOcen(numNAO),NAOtype(numNAO),nNAOatm(ncenter))
-call loclabel(10,"NATURAL POPULATIONS",ifound)
-read(10,*)
-read(10,*)
-read(10,*)
-read(10,*)
-ilastspc=1
-do while(.true.)
-	read(10,"(a)") c80tmp
-	if (c80tmp/=' ') then
-		read(c80tmp,*) inao,c80tmp2,iatm
-		do iele=1,nelesupp
-			if (c80tmp2(1:2)==ind2name(iele)) then
-				a(iatm)%name=c80tmp2(1:2)
-				a(iatm)%index=iele
-				exit
-			end if
-			if (iele==nelesupp) write(*,*) "Warning: Detected unrecognizable element name!"
-		end do
-		NAOcen(inao)=iatm
-		if (index(c80tmp,"Cor")/=0) then
-			NAOtype(inao)=0
-		else if (index(c80tmp,"Val")/=0) then
-			NAOtype(inao)=1
-		else if (index(c80tmp,"Ryd")/=0) then
-			NAOtype(inao)=2
-		end if
-		if (ilastspc==1) NAOinit(iatm)=inao
-		ilastspc=0
-	else
-		NAOend(iatm)=inao
-		if (iatm==ncenter) exit
-		ilastspc=1
-	end if
-end do
-do idx=1,ncenter
-	nNAOatm(idx)=NAOend(idx)-NAOinit(idx)+1
-end do
-write(*,"(' Number of natural atomic orbitals (NAOs):',i6)") numNAO
+
+call checkNPA(ifound);if (ifound==0) return
+write(*,*) "Loading NAO information..."
+call loadNAOinfo
+call loadNAOatminfo
+allocate(nNAOatm(ncenter))
+nNAOatm(:)=NAOend(:)-NAOinit(:)+1
 
 call loclabel(10,'basis functions,',igauout)
 if (igauout==1) then !Gaussian+NBO output file
 	read(10,*) nbasis
 	write(*,"(' The number of basis functions:',i6)") nbasis
-else !Assume that the number of basis functions is identical to numNAO. However, when this is not true, cumbersome thing will occur...
+    if (numNAO/=nbasis) then
+        write(*,"(a)") " Warning: The number of basis functions is unequal to the number of NAOs, commonly this is because &
+        diffuse functions are used. If then Multiwfn fails to load data from input file and thus crashes, &
+        you should remove diffuse functions and regenerate the files, then try to redo the AdNDP analysis"
+    end if
+else !Cannot load from Gaussian output, assume the number of basis functions is identical to numNAO. However, when this is not true, cumbersome thing will occur...
 	nbasis=numNAO
 end if
 
-!Read in density matrix in NAO basis. NAO information always use those generated by total density
-!DMNAO and AONAO is different for total, alpha and beta density
-allocate(DMNAO(numNAO,numNAO))
-call loclabel(10,"NAO density matrix:",ifound)
-if (ifound==0) then
-	write(*,"(a)") " Error: Cannot found NAO density matrix field in the input file! You should use ""DMNAO"" keyword in NBO module"
-    write(*,*) "Press ENTER button to return"
-    read(*,*)
-    close(10)
-	return
-end if
-!For open-shell case, DMNAO doesn't print for total, so the first time loaded DMNAO is alpha(open-shell) or total(closed-shell)
-!Check columns should be skipped during matrix reading, then return to title line
-read(10,*);read(10,*);read(10,*)
-read(10,"(a)") c80tmp
-nskipcol=index(c80tmp,"- -")
-backspace(10);backspace(10);backspace(10);backspace(10)
-write(*,*) "Loading DMNAO matrix ..."
-call readmatgau(10,DMNAO,0,"f8.4 ",nskipcol,8,3)
-iusespin=0
-!Check if this is open-shell calculation
-call loclabel(10," Alpha spin orbitals ",iopenshell)
-if (iopenshell==1) then
-	write(*,*) "Use which density matrix? 0=Total 1=Alpha 2=Beta"
-	read(*,*) iusespin
-	if (iusespin==1.or.iusespin==2) bndcrit=bndcrit/2D0
-	if (iusespin==0.or.iusespin==2) then !if ==1, that is alpha, this is current DMNAO
-		allocate(DMNAObeta(numNAO,numNAO))
-        write(*,*) "Loading DMNAO matrix of beta electrons ..."
-		call loclabel(10,"*******         Beta  spin orbitals         *******",ifound)
-		call loclabel(10,"NAO density matrix:",ifound,0)
-		call readmatgau(10,DMNAObeta,0,"f8.4 ",nskipcol,8,3)
-		if (iusespin==0) then
-			DMNAO=DMNAO+DMNAObeta
-		else if (iusespin==2) then
-			DMNAO=DMNAObeta
-		end if
-		deallocate(DMNAObeta)
-	end if
+write(*,*) "Loading DMNAO matrix..."
+write(*,*)
+call checkDMNAO(ifound);if (ifound==0) return
+call loadDMNAO
+
+if (iopshNAO==1) then !Open shell case
+	write(*,*) "Use which density matrix for AdNDP analysis? 0=Total 1=Alpha 2=Beta"
+	read(*,*) ispin
+    if (ispin==1.or.ispin==2) bndcrit=bndcrit/2D0
+    if (ispin==0) then
+        continue !The current DMNAO is already total density matrix
+    else if (ispin==1) then
+        DMNAO=DMNAOa
+    else if (ispin==2) then
+        DMNAO=DMNAOb
+    end if
+else
+    ispin=0
 end if
 
 close(10) !Loading finished
 
 
 !==== Remove core contribution from density matrix
-do i=1,numNAO
-	if (NAOtype(i)==0) DMNAO(i,i)=0D0
+removeocc=0
+do iNAO=1,numNAO
+	if (NAOset(iNAO,ispin)=="Cor") then
+        DMNAO(iNAO,iNAO)=0D0
+        removeocc=removeocc+NAOocc(iNAO,ispin)
+    end if
 end do
-write(*,*) "Note: Contributions from core NAOs to density matrix have been eliminated"
+write(*,"(a,i6,a)") " Note: Contributions from core NAOs to density matrix (",nint(removeocc)," electrons) have been eliminated"
 write(*,*) "Note: Default exhaustive search list is the entire system"
 write(*,*)
 !Initialization
@@ -508,6 +430,7 @@ do while(.true.)
 		
 	else if (isel==7.or.isel==8.or.isel==9.or.isel==10.or.isel==14) then !Visualize or export cube file for candidate or saved orbitals, or save them as .molden
 		!Now we need basis functions information, load them from .fch file
+        !At the same time, the CObas matrix generated by AONAO and AdNDP in NAO basis will be passed to "readfchadndp" to yield CO matrix used for real space visualization
 		!If .fch or .fchk file with identical name in identical folder as initial input file can be found, then directly load it
 		lenname=len_trim(filename)
 		inquire(file=filename(1:lenname-3)//'fch',exist=alive)
@@ -522,16 +445,17 @@ do while(.true.)
 			read(*,"(a)") fchfilename
 			inquire(file=fchfilename,exist=alive)
 			if (alive.eqv..false.) then
-				write(*,*) "Error: File cannot be found! Hence orbitals can not be visualized"
+				write(*,*) "Error: File cannot be found! Hence orbitals cannot be visualized"
 				write(*,*)
 				fchfilename=' '
 				goto 1
 			end if
 		end if
 		if (.not.allocated(AONAO)) then
-			allocate(AONAO(nbasis,numNAO))
-			call loadAONAO(AONAO,numNAO,ifound)
-			if (ifound==0) cycle
+            open(10,file=filename,status="old")
+            call checkAONAO(ifound);if (ifound==0) cycle
+			call loadAONAO(nbasis)
+            close(10)
 		end if
 		!Load mainbody of .fch file, and convert adndp orbitals (NAO basis) to CO matrix (GTF basis) so that fmo function can directly calculate orbital wavefunction value
 		write(*,"(' Loading ',a)") trim(fchfilename)
@@ -540,14 +464,14 @@ do while(.true.)
 		if (isel==7) then !Visualize saved orbitals
 			allocate(adndpcobas(nbasis,numsaved))
 			adndpcobas(:,:)=matmul(AONAO,transpose(savedvec)) !cobasaadndp(i,j) means coefficient of basis function i in orbital j
-			call readfchadndp(fchfilename,iusespin,savedocc,adndpcobas,numsaved)
+			call readfchadndp(fchfilename,ispin,savedocc,adndpcobas,numsaved)
 			call drawmolgui
             write(*,*)
             
 		else if (isel==8) then !Visualize candidate orbitals
 			allocate(adndpcobas(nbasis,numcandi))
 			adndpcobas(:,:)=matmul(AONAO,transpose(candivec))
-			call readfchadndp(fchfilename,iusespin,candiocc,adndpcobas,numcandi)
+			call readfchadndp(fchfilename,ispin,candiocc,adndpcobas,numcandi)
 			call drawmolgui
             write(*,*)
             
@@ -569,11 +493,11 @@ do while(.true.)
 			if (isel==9) then !Saved orbitals
 				allocate(adndpcobas(nbasis,numsaved))
 				adndpcobas(:,:)=matmul(AONAO,transpose(savedvec)) !cobasaadndp(i,j) means coefficient of basis function i in orbital j
-				call readfchadndp(fchfilename,iusespin,savedocc,adndpcobas,numsaved)
+				call readfchadndp(fchfilename,ispin,savedocc,adndpcobas,numsaved)
 			else if (isel==10) then !Candidate orbitals
 				allocate(adndpcobas(nbasis,numcandi))
 				adndpcobas(:,:)=matmul(AONAO,transpose(candivec))
-				call readfchadndp(fchfilename,iusespin,candiocc,adndpcobas,numcandi)
+				call readfchadndp(fchfilename,ispin,candiocc,adndpcobas,numcandi)
 			end if
 			!Set up grid
             call setgrid(0,igridsel)
@@ -697,10 +621,6 @@ do while(.true.)
 				write(*,*) "Error: Unable to find this file!"
 				cycle
 			end if
-			open(10,file=filename,status="old")
-			call loclabel(10,"basis functions,",ifound)
-			read(10,*) nbasis
-			close(10)
 			allocate(Fmat(nbasis,nbasis))
 			open(10,file=c200tmp,status="old")
 			if (index(c200tmp,".47")/=0) then
@@ -711,14 +631,14 @@ do while(.true.)
 					cycle
 				end if
 				read(10,*)
-				write(*,*) "Trying to load Fock matrix from .47 file..."
+				write(*,*) "Loading Fock matrix from .47 file..."
 			end if
 			read(10,*) ((Fmat(i,j),j=1,i),i=1,nbasis) !Load total or alpha Fock matrix
-			if (iopenshell==1) then !Open-shell
-				if (iusespin==0) then !User selected total density
+			if (iopshNAO==1) then !Open-shell
+				if (ispin==0) then !User selected total density
 					write(*,"(a,/)") " Error: This is an open-shell system but you selected analyzing total density, in this case orbital energy cannot be printed"
 					cycle
-				else if (iusespin==2) then !User selected beta spin
+				else if (ispin==2) then !User selected beta spin
 					read(10,*) ((Fmat(i,j),j=1,i),i=1,nbasis) !Load beta Fock matrix
 				end if
 			end if
@@ -727,11 +647,13 @@ do while(.true.)
  					Fmat(i,j)=Fmat(j,i)
  				end do
 			end do
+            close(10)
 		end if
 		if (.not.allocated(AONAO)) then
-			allocate(AONAO(nbasis,numNAO))
-			call loadAONAO(AONAO,numNAO,ifound)
-			if (ifound==0) cycle
+            open(10,file=filename,status="old")
+            call checkAONAO(ifound);if (ifound==0) cycle
+			call loadAONAO(nbasis)
+            close(10)
 		end if
 		allocate(adndpcobas(nbasis,numsaved),Emat(numsaved,numsaved))
 		!Note that savedvec is savedvec(numsaved,numNAO)
@@ -755,6 +677,8 @@ end do
 end subroutine
 
 
+
+
 !!!------------- Define search list for exhaustive search
 subroutine adndpdeflist(searchlist,lensearchlist)
 use defvar
@@ -764,6 +688,7 @@ integer searchlisttmp(ncenter),searchlist(ncenter) !tmp verison is used to tempo
 integer lensearchlisttmp,lensearchlist !Effective length of the search list
 integer tmparr(ncenter)
 character cmd*200,elename*2
+
 lensearchlisttmp=lensearchlist
 searchlisttmp=searchlist
 if (lensearchlisttmp>0) then
@@ -790,23 +715,12 @@ write(*,*) "list      : Show current search list"
 write(*,*) "help      : Show help information again"
 write(*,*) "x         : Save the list and quit"
 write(*,*) "q         : Quit without saving"
+
 do while(.true.)
+    write(*,"(/,a)") " Please input command. Press ENTER button directly can show help, inputting ""x"" can save and return"
 	read(*,"(a)") cmd
 	
-	if (cmd=="list") then
-		if (lensearchlisttmp>0) then
-			write(*,"('Currently',i5,' atoms are present in the search list:')") lensearchlisttmp
-			do i=1,lensearchlisttmp
-				write(*,"(i5,'(',a,')')",advance='no') searchlisttmp(i),a(searchlisttmp(i))%name
-				if (mod(i,8)==0) write(*,*)
-			end do
-			write(*,*)
-		else
-			write(*,*) "Current search list is empty"
-		end if
-		write(*,*)
-	else if (cmd=="help") then
-		write(*,*)
+    if (cmd==" ") then
 		write(*,*) "Exemplificative commands:"
 		write(*,*) "a 1,4,5,6 : Add atom 1,4,5,6 to the list"
 		write(*,*) "a 2-6     : Add atom 2,3,4,5,6 to the list"
@@ -820,6 +734,18 @@ do while(.true.)
 		write(*,*) "help      : Show help information again"
 		write(*,*) "x         : Save the list and quit"
 		write(*,*) "q         : Quit without saving"
+	else if (cmd=="list") then
+		if (lensearchlisttmp>0) then
+			write(*,"(' Currently',i5,' atoms are present in the search list:')") lensearchlisttmp
+			do i=1,lensearchlisttmp
+				write(*,"(i5,'(',a,')')",advance='no') searchlisttmp(i),a(searchlisttmp(i))%name
+				if (mod(i,8)==0) write(*,*)
+			end do
+			write(*,*)
+		else
+			write(*,*) "Current search list is empty"
+		end if
+		write(*,*)
 	else if (cmd=='q') then
 		write(*,*)
 		exit
@@ -922,56 +848,4 @@ do while(.true.)
 		write(*,*) "Error: Unrecognizable input"
 	end if
 end do
-end subroutine
-
-
-!------- Load AONAO matrix and read "nbasis" from Gaussian output file
-!Note: numNAO may be different with nbasis, when linear dependence occurs, NBO will delete some NAO, hence the numNAO<=nbasis
-subroutine loadAONAO(AONAO,numNAO,ifound)
-use defvar
-use util
-implicit real*8 (a-h,o-z)
-real*8 AONAO(nbasis,numNAO)
-character c80tmp*80
-integer ifound
-!Now load transformation matrix between NAOs and AOs
-!Note that even for open-shell case, AONAO only be printed once, namely for density
-open(10,file=filename,status="old")
-call loclabel(10,"NAOs in the AO basis:",ifound)
-if (ifound==0) then
-	write(*,"(a)") " Error: Cannot found NAOs in the AO basis field in the Gaussian output file! You should use ""AONAO"" keyword in NBO module!"
-    write(*,*) "Press ENTER button to return"
-	read(*,*)
-	close(10)
-	return
-end if
-write(*,"(a)") " Loading transformation matrix between original basis and NAO from Gaussian output file..." 
-!Check columns should be skipped during matrix reading, then return to title line
-read(10,*);read(10,*);read(10,*)
-read(10,"(a)") c80tmp
-nskipcol=index(c80tmp,"- -")
-backspace(10);backspace(10);backspace(10);backspace(10)
-!Note: AONAO matrix in NBO output may be any number of columns (so that to ensure long data can be fully recorded), 
-!so we must try to determine the actual number of rows and then use correct format to load it
-!I assume that at least 5 columns and at most 8 columns
-read(10,*)
-read(10,*)
-read(10,"(a)") c80tmp
-if8col=index(c80tmp,'8')
-if7col=index(c80tmp,'7')
-if6col=index(c80tmp,'6')
-if5col=index(c80tmp,'5')
-backspace(10)
-backspace(10)
-backspace(10)
-if (if8col/=0) then !8 columns
-    call readmatgau(10,AONAO,0,"f8.4 ",nskipcol,8,3)
-else if (if7col/=0) then !7 columns
-	call readmatgau(10,AONAO,0,"f9.4 ",nskipcol,7,3)
-else if (if6col/=0) then !6 columns
-	call readmatgau(10,AONAO,0,"f10.4",nskipcol,6,3)
-else if (if5col/=0) then !5 columns
-	call readmatgau(10,AONAO,0,"f11.4",nskipcol,5,3)
-end if
-close(10)
 end subroutine

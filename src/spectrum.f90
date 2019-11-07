@@ -17,7 +17,7 @@ real*8,allocatable :: curveyall(:,:) !The first index corresponds to system inde
 integer,allocatable :: tmparr(:)
 real*8,allocatable :: indcurve(:,:) !Y value of curve of each individual band
 integer,allocatable :: indband2idx(:),idx2indband(:) !Used to map individual band index
-character c200tmp*200,c200tmp2*200,selectyn,graphformat_old*4,c2000tmp*2000
+character c200tmp*200,c200tmp2*200,strfmt*10,selectyn,graphformat_old*4,c2000tmp*2000
 character clegend*2000 !Buffer for showing legends
 integer :: icurveclr=1,ilineclr=5 !Default: Red for curve, black for discrete lines
 integer :: thk_curve=3,thk_weighted=8,thk_legend=2,thk_discrete=1,thk_axis=1,thk_grid=1 !thickness
@@ -28,7 +28,11 @@ integer,allocatable :: spikeidx(:,:) !Store level indices in each batch
 integer :: spikenum(maxspike)=0 !The number of level indices in each batch
 integer :: spikecolor(maxspike)=5 !Color of each spike batch, default to black
 integer :: spikethick=3
-
+!Used for showing extrema labels. The numbers are determined by numlocmax and numlocmin, which are initially zero and assigned when determining extrema
+integer :: ishowextrema=0 !0=Do not show, 1=show maxima, 2= show minima, 3= show both. Will be initialize to zero
+integer minlabX(num1Dpoints),maxlabX(num1Dpoints) !Record the point index of the extrema in the curve
+integer :: iextlabelrot=1,extlabeldecimal=1,extlabelsize=30,extlabelcontent=1,extlabelclr=3 !Blue
+integer :: extmaxlabelshiftX=-16,extmaxlabelshiftY=20,extminlabelshiftX=20,extminlabelshiftY=-15 !Default label shifts, corresponding to rotated 90 degree case
 
 if (ifiletype/=0) then !Foolish users always do foolish things
 	if (ifiletype==1) then
@@ -59,7 +63,6 @@ iusersetY1=0 !User has not set the axes definition by himself
 iusersetY2=0
 iusersetX=0
 orgy1=0;endy1=0;stepy1=0;orgy2=0;endy2=0;stepy2=0 !Temporarily used for scale left and right Y axes
-idraw=0
 isavepic=0
 ishowline=1
 ishowgrid=1
@@ -67,6 +70,7 @@ ishowlevel=0
 ishowtotal=1 !If showing weighted spectrum
 idegen=0
 iweisyscurve=0
+ishowextrema=0
 iunitliney=1 !Only for IR
 shiftx=0D0   !Shift value in X direction
 iramantype=1 !1=Raman activities  2=Raman intensities
@@ -247,7 +251,7 @@ do while(.true.)
 		write(*,*) "14 Multiply the transition energies by a factor"
 	end if
 	if (nsystem==1) write(*,*) "15 Output contribution of individual transition to the spectrum"
-	if (.not.(nsystem>1.and.all(weight==1))) write(*,*) "16 Find the positions of local minimum and maximum"
+	if (.not.(nsystem>1.and.all(weight==1))) write(*,*) "16 Set status of showing labels of spectrum minima and maxima"
 	if (ishowgrid==1) write(*,*) "17 Toggle showing dashed grid lines, current: ON"
 	if (ishowgrid==0) write(*,*) "17 Toggle showing dashed grid lines, current: OFF"
 	if (nsystem>1.and.any(weight/=1)) then
@@ -356,7 +360,7 @@ do while(.true.)
 				read(*,*) imol
 			end if
 			write(*,*) "Input index range of transitions"
-			write(*,*) "e.g. 1,3-6,22 means selecting mode 1,3,4,5,6,22"
+			write(*,*) "e.g. 1,3-6,22 means selecting modes 1,3,4,5,6,22"
 			read(*,"(a)") c200tmp
 			call str2arr(c200tmp,ntmparr)
 			allocate(tmparr(ntmparr))
@@ -369,13 +373,10 @@ do while(.true.)
 			deallocate(tmparr)
 			write(*,*) "Done!"
 		end if
-        
 	else if (isel==0) then !Draw curve
-		idraw=1
 		isavepic=0
         
 	else if (isel==1) then !Save curve picture
-		idraw=1
 		isavepic=1
         
 	else if (isel==3) then !Change X axis
@@ -570,6 +571,72 @@ do while(.true.)
 			dataxall=dataxall*tmpval
 		end if
 		write(*,*) "Done! Transition energies have been scaled"
+    
+    else if (isel==16) then !Set showing method of extrema labels
+        do while(.true.)
+            write(*,*)
+            write(*,*) "0 Return"
+            if (ishowextrema==0) write(*,*) "1 Change displaying status of labels, current: Do not show"
+            if (ishowextrema==1) write(*,*) "1 Change displaying status of labels, current: Show maxima"
+            if (ishowextrema==2) write(*,*) "1 Change displaying status of labels, current: Show minima"
+            if (ishowextrema==3) write(*,*) "1 Change displaying status of labels, current: Show minima and maxima"
+            write(*,"(a,i3)") " 2 Set label size, current:",extlabelsize
+            write(*,"(a,i3)") " 3 Set decimal digits, current:",extlabeldecimal
+            if (iextlabelrot==0) write(*,*) "4 Switch label rotation, current: Do not rotate"
+            if (iextlabelrot==1) write(*,*) "4 Switch label rotation, current: Rotated by 90 degree"
+            write(*,*) "5 Set label color, current: "//trim(colorname(extlabelclr))
+            if (extlabelcontent==1) write(*,*) "6 Switch label content, current: X-axis position"
+            if (extlabelcontent==2) write(*,*) "6 Switch label content, current: Y-axis value"
+            write(*,"(a,i4,',',i4)") " 7 Set shift of minimum labels in X and Y, current:",extminlabelshiftX,extminlabelshiftY
+            write(*,"(a,i4,',',i4)") " 8 Set shift of maximum labels in X and Y, current:",extmaxlabelshiftX,extmaxlabelshiftY
+            read(*,*) isellab
+            if (isellab==0) then
+                exit
+            else if (isellab==1) then
+                write(*,*) "0 Do not show extrema on the spectrum"
+                write(*,*) "1 Show maxima on the spectrum"
+                write(*,*) "2 Show minima on the spectrum"
+                write(*,*) "3 Show both maxima and minima on the spectrum"
+                read(*,*) ishowextrema
+            else if (isellab==2) then
+                isizeold=extlabelsize
+                write(*,*) "Input label size, e.g. 25. The default is 30"
+                read(*,*) extlabelsize
+                if (iextlabelrot==0) extmaxlabelshiftY=extmaxlabelshiftY+(extlabelsize-isizeold)
+            else if (isellab==3) then
+                write(*,*) "Input decimal digits, e.g. 3. The default is 1"
+                read(*,*) extlabeldecimal
+            else if (isellab==4) then
+                if (iextlabelrot==1) then
+                    iextlabelrot=0
+                    extmaxlabelshiftX=0
+                    extmaxlabelshiftY=35
+                    extmaxlabelshiftY=extmaxlabelshiftY+(extlabelsize-30) !30 is default Y shift
+                    extminlabelshiftX=0
+                    extminlabelshiftY=-15
+                else if (iextlabelrot==0) then
+                    iextlabelrot=1
+                    extmaxlabelshiftX=-16
+                    extmaxlabelshiftY=20
+                    extminlabelshiftX=20
+                    extminlabelshiftY=-15
+                end if
+            else if (isellab==5) then
+                call selcolor(extlabelclr)
+            else if (isellab==6) then
+                if (extlabelcontent==1) then
+                    extlabelcontent=2
+                else if (extlabelcontent==2) then
+                    extlabelcontent=1
+                end if
+            else if (isellab==7) then
+                write(*,*) "Input shift of minimum labels in X and Y, respectively, e.g. 0,-20"
+                read(*,*) extminlabelshiftX,extminlabelshiftY
+            else if (isellab==8) then
+                write(*,*) "Input shift of maximum labels in X and Y, respectively, e.g. 0,-20"
+                read(*,*) extmaxlabelshiftX,extmaxlabelshiftY
+            end if
+        end do
         
 	else if (isel==17) then !If showing grids on the plot
 		if (ishowgrid==1) then
@@ -766,7 +833,7 @@ do while(.true.)
 	!!=============== Below functions need calculation of curves ============!!
 	!!=======================================================================!!
 	!!=======================================================================!!
-	if (isel==0.or.isel==1.or.isel==2.or.isel==15.or.isel==16) then
+	if (isel==0.or.isel==1.or.isel==2.or.isel==15) then
 		!====== Construct correspondence array if outputting individual bands. Only available when one file is loaded
 		!This function is not available when multiple systems are considered
 		if (isel==15) then
@@ -1022,35 +1089,42 @@ do while(.true.)
 			if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) write(*,*) "Column 2: Raman intensity (K)"
 			if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) write(*,*) "Column 2: ROA intensity (10^4 K)"
 		end if
-		
-	else if (isel==16) then !Find minimum/maximum positions
-		numlocmax=0
-		do ipoint=2,num1Dpoints-1
-			gradold=curvey(ipoint)-curvey(ipoint-1)
-			gradnew=curvey(ipoint+1)-curvey(ipoint)
-			if (gradold*gradnew<0D0.and.gradold>gradnew) then
-				numlocmax=numlocmax+1
-				write(*,"(' Local maximum X:',f15.4,'      Value:',f15.4)") curvex(ipoint),curvey(ipoint)
-			end if
-		end do
-		write(*,*)
-		numlocmin=0
-		do ipoint=2,num1Dpoints-1
-			gradold=curvey(ipoint)-curvey(ipoint-1)
-			gradnew=curvey(ipoint+1)-curvey(ipoint)
-			if (gradold*gradnew<0D0.and.gradold<gradnew) then
-				numlocmin=numlocmin+1
-				write(*,"(' Local minimum X:',f15.4,'      Value:',f15.4)") curvex(ipoint),curvey(ipoint)
-			end if
-		end do
-		write(*,"(/,' Totally found',i5,' local minimum,',i5,' local maximum')") numlocmin,numlocmax
-		if (nsystem>1) write(*,*) "Note: The minimum and maximum reported above correspond to weighted spectrum"
-	end if
-
+	end if	
+	
+    !Find and print minimum/maximum positions
+    if (isel==0) then
+        write(*,*) "Extrema on the spectrum curve:"
+	    numlocmax=0
+	    do ipoint=2,num1Dpoints-1
+		    gradold=curvey(ipoint)-curvey(ipoint-1)
+		    gradnew=curvey(ipoint+1)-curvey(ipoint)
+		    if (gradold*gradnew<0D0.and.gradold>gradnew) then
+			    numlocmax=numlocmax+1
+                maxlabX(numlocmax)=ipoint
+			    write(*,"(' Maximum',i5,'   X:',f15.4,'   Value:',f15.4)") numlocmax,curvex(ipoint),curvey(ipoint)
+		    end if
+	    end do
+	    numlocmin=0
+	    do ipoint=2,num1Dpoints-1
+		    gradold=curvey(ipoint)-curvey(ipoint-1)
+		    gradnew=curvey(ipoint+1)-curvey(ipoint)
+		    if (gradold*gradnew<0D0.and.gradold<gradnew) then
+			    numlocmin=numlocmin+1
+                minlabX(numlocmin)=ipoint
+                if (ispectrum>2) then !UV-Vis, ECD, VCD, ROA
+			        write(*,"(' Minimum',i5,'   X:',f15.3,'   Value:',f15.4)") numlocmin,curvex(ipoint),curvey(ipoint)
+                end if
+		    end if
+	    end do
+        if (ispectrum<=2) write(*,"(a)") " Position of minima are not reported since they are commonly not of interest for this kind of spectrum"
+	    if (nsystem>1) write(*,*) "Note: The extrema reported above correspond to weighted spectrum"
+    end if
+    
+    
 	!========================================
 	!============ Draw spectrum =============
 	!========================================
-	if (idraw==1) then
+	if (isel==0.or.isel==1) then
 
 		if (iusersetY1==0) then !Set default lower and upper limit of left Y axis
 			endy1=1.1D0*max(maxval(abs(curvey)),maxval(abs(curveyall)))
@@ -1084,10 +1158,12 @@ do while(.true.)
 		else
 			CALL HWFONT
 		end if
-		if (ishowlevel==0) call AXSLEN(2150,1500)
-        if (ishowlevel==1) call AXSLEN(2150,1400) !When showing spikes, compress the spectrum region to leave space for plotting spikes
+        nxpixel=2150
+		if (ishowlevel==0) nypixel=1500
+        if (ishowlevel==1) nypixel=1400 !When showing spikes, compress the spectrum region to leave space for plotting spikes
+        call AXSLEN(nxpixel,nypixel)
         if (ishowline==1) then
-		    if (ishowlevel==0) call axspos(400,1640) !Left more space at right side to show axis
+		    if (ishowlevel==0) call axspos(400,1640) !Leave more space at right side to show axis
 		    if (ishowlevel==1) call axspos(400,1540)
         else
 		     if (ishowlevel==0) call axspos(510,1640)
@@ -1258,9 +1334,50 @@ do while(.true.)
             call endgrf
 		end if
         
+        !Show labels to indicate located extrema
+        call setgrf('NONE','NONE','NONE','NONE')
+		CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, orgy1,endy1,orgy1,stepy1)
+        pix2usrX=(xhigh-xlow)/nxpixel !used to shift label position in X
+        pix2usrY=(endy1-orgy1)/nypixel !used to shift label position in Y
+        call height(extlabelsize)
+        call setcolor(extlabelclr)
+        if (extlabeldecimal/=0) write(strfmt,"(a,i1,a)") "(f20.",extlabeldecimal,")"
+        if (ishowextrema==1.or.ishowextrema==3) then !Show maxima labels
+            if (iextlabelrot==1) call angle(90)
+            do imax=1,numlocmax
+                imaxpt=maxlabX(imax)
+                if (extlabeldecimal==0) then
+                    if (extlabelcontent==1) write(c200tmp,"(i20)") nint(curvex(imaxpt))
+                    if (extlabelcontent==2) write(c200tmp,"(i20)") nint(curvey(imaxpt))
+                else
+                    if (extlabelcontent==1) write(c200tmp,strfmt) curvex(imaxpt)
+                    if (extlabelcontent==2) write(c200tmp,strfmt) curvey(imaxpt)
+                end if
+                call rlmess(trim(adjustl(c200tmp)),curvex(imaxpt)+extmaxlabelshiftX*pix2usrX,curvey(imaxpt)+extmaxlabelshiftY*pix2usrY)
+            end do
+        end if
+        if (ishowextrema==2.or.ishowextrema==3) then !Show minima labels
+            if (iextlabelrot==1) call angle(-90)
+            do imin=1,numlocmin
+                iminpt=minlabX(imin)
+                if (extlabeldecimal==0) then
+                    if (extlabelcontent==1) write(c200tmp,"(i20)") nint(curvex(iminpt))
+                    if (extlabelcontent==2) write(c200tmp,"(i20)") nint(curvey(iminpt))
+                else
+                    if (extlabelcontent==1) write(c200tmp,strfmt) curvex(iminpt)
+                    if (extlabelcontent==2) write(c200tmp,strfmt) curvey(iminpt)
+                end if
+                call rlmess(trim(adjustl(c200tmp)),curvex(iminpt)+extminlabelshiftX*pix2usrX,curvey(iminpt)+extminlabelshiftY*pix2usrY)
+            end do
+        end if
+        call setcolor(5) !Recover to black
+        call height(36) !Recover to default
+        call angle(0) !Recover to default
+		call endgrf
+        
         !Draw spikes to show levels
         if (ishowlevel==1) then
-            call AXSLEN(2150,90)
+            call AXSLEN(nxpixel,90)
             if (ishowline==0) call axspos(510,1630)
             if (ishowline==1) call axspos(400,1630)
             CALL TICKS(1,'X')
@@ -1328,7 +1445,6 @@ do while(.true.)
 		call disfin
 		if (isavepic==1) write(*,*) "Graphic file has been saved to current folder with ""DISLIN"" prefix"
 	end if
-	idraw=0
 
 end do
 end subroutine
@@ -1537,35 +1653,68 @@ if (igauout==1) then
 					read(*,*) ctest2
 					write(*,"(a)") " If also load combination band frequencies? (y/n)"
 					read(*,*) ctest3
-					nummode=numdata
-					if (ctest2=='y'.or.ctest2=='Y') numdata=numdata+nummode
-					if (ctest3=='y'.or.ctest3=='Y') numdata=numdata+nummode*(nummode-1)/2
+                    
+                    !Detect total number of fund. over. comb. bands.
+                    !This cannot be easily infer from number of harmonic frequency for non-linear system, i.e. over.=numdata, comb.=nummode*(nummode-1)/2
+                    !However for linear system, the case is complicated, so we directly derect the number of outputted lines
+                    numfund=numdata !Number of Anharm. is always identical to harm
+                    write(*,"(' Number of fundamental frequencies:',i6)") numfund
+                    numover=0
+                    if (ctest2=='y'.or.ctest2=='Y') then
+                        call loclabel(10,"Overtones",ifound,0)
+                        read(10,*);read(10,*);read(10,*)
+                        do while(.true.)
+                            read(10,"(a)") c80tmp
+                            if (c80tmp==" ") exit
+                            numover=numover+1
+                        end do
+                        write(*,"(' Number of Overtone frequencies:   ',i6)") numover
+                    end if
+                    numcomb=0
+                    if (ctest3=='y'.or.ctest3=='Y') then
+                        call loclabel(10,"Combination Bands",ifound,0)
+                        read(10,*);read(10,*);read(10,*)
+                        do while(.true.)
+                            read(10,"(a)") c80tmp
+                            if (c80tmp==" ") exit
+                            numcomb=numcomb+1
+                        end do
+                        write(*,"(' Number of Combination frequencies:',i6)") numcomb
+                    end if
+                    numdata=numfund+numover+numcomb
+					
 					deallocate(datax,str,FWHM)
 					allocate(datax(numdata),str(numdata),FWHM(numdata))
+			        if (ispectrum==1) call loclabel(10,"Anharmonic Infrared Spectroscopy")
+			        if (ispectrum==2) call loclabel(10,"Anharmonic Raman Spectroscopy")
+			        if (ispectrum==5) call loclabel(10,"Anharmonic VCD Spectroscopy")
 					FWHM=8D0
 					idata=0
 					call loclabel(10,"Fundamental Bands",ifound,0)
 					read(10,*);read(10,*);read(10,*)
-					do itmp=1,nummode
+					do itmp=1,numfund
 						idata=idata+1
-						read(10,*) c200tmp,harmfreq,datax(idata),rnouse,str(idata)
+                        read(10,"(22x)",advance='no')
+						read(10,*) harmfreq,datax(idata),rnouse,str(idata)
 						if (ispectrum==2) str(idata)=0.059320323D0*harmfreq*str(idata) !The conversion coefficient can be found in output file
 					end do
 					if (ctest2=='y'.or.ctest2=='Y') then
 						call loclabel(10,"Overtones",ifound,0)
 						read(10,*);read(10,*);read(10,*)
-						do itmp=1,nummode
+						do itmp=1,numover
 							idata=idata+1
-							read(10,*) c200tmp,harmfreq,datax(idata),str(idata)
+                            read(10,"(22x)",advance='no')
+							read(10,*) harmfreq,datax(idata),str(idata)
 							if (ispectrum==2) str(idata)=0.059320323D0*harmfreq*str(idata) !The conversion coefficient can be found in output file
 						end do
 					end if
 					if (ctest3=='y'.or.ctest3=='Y') then
 						call loclabel(10,"Combination Bands",ifound,0)
 						read(10,*);read(10,*);read(10,*)
-						do itmp=1,nummode*(nummode-1)/2
+						do itmp=1,numcomb
 							idata=idata+1
-							read(10,*) c200tmp,c200tmp,harmfreq,datax(idata),str(idata)
+                            read(10,"(22x)",advance='no')
+							read(10,*) harmfreq,datax(idata),str(idata)
 							if (ispectrum==2) str(idata)=0.059320323D0*harmfreq*str(idata) !The conversion coefficient can be found in output file
 						end do
 					end if

@@ -1095,6 +1095,8 @@ else
 end if
 surfareapos=0D0
 surfareaneg=0D0
+surfareapol=0D0
+surfareanonpol=0D0
 do i=1,nsurtri
 	if (elimtri(i)==1) cycle
 	if (surtriang(i)%value>=0) then
@@ -1102,6 +1104,11 @@ do i=1,nsurtri
 	else
 		surfareaneg=surfareaneg+surtriang(i)%area
 	end if
+    if (abs(surtriang(i)%value*au2kcal)<=10) then
+        surfareanonpol=surfareanonpol+surtriang(i)%area
+    else
+        surfareapol=surfareapol+surtriang(i)%area
+    end if
 end do
 write(*,"(' Overall surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") surfareaall,surfareaall*b2a*b2a
 write(*,"(' Positive surface area:     ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") surfareapos,surfareapos*b2a*b2a
@@ -1141,20 +1148,24 @@ end if
 chgsep=0D0
 varipos=0D0
 varineg=0D0
+polaridx=0D0
 do i=1,nsurtri
 	if (elimtri(i)==1) cycle
 	valtmp=surtriang(i)%value
-	chgsep=chgsep+abs(valtmp-avgall)*surtriang(i)%area
+    areatmp=surtriang(i)%area
 	if (valtmp>=0D0) then
-		varipos=varipos+surtriang(i)%area*(valtmp-avgpos)**2
+		varipos=varipos+areatmp*(valtmp-avgpos)**2
 	else
-		varineg=varineg+surtriang(i)%area*(valtmp-avgneg)**2
+		varineg=varineg+areatmp*(valtmp-avgneg)**2
 	end if
+	chgsep=chgsep+abs(valtmp-avgall)*areatmp
+    polaridx=polaridx+abs(valtmp)*areatmp
 end do
 if (surfareapos/=0D0) varipos=varipos/surfareapos
 if (surfareaneg/=0D0) varineg=varineg/surfareaneg
 variall=varipos+varineg
 chgsep=chgsep/surfareaall
+polaridx=polaridx/surfareaall
 if (imapfunc==1.or.imapfunc==3) then
 	balencechg=varipos*varineg/(varipos+varineg)**2
 	write(*,"(' Overall variance (sigma^2_tot):',f12.8,' a.u.^2 (',f12.5,' (kcal/mol)^2)')") variall,variall*au2kcal**2
@@ -1163,6 +1174,9 @@ if (imapfunc==1.or.imapfunc==3) then
 	write(*,"(' Balance of charges (nu):',f13.8)") balencechg
 	write(*,"(' Product of sigma^2_tot and nu: ',f12.8,' a.u.^2 (',f11.5,' (kcal/mol)^2)')") balencechg*variall,balencechg*variall*au2kcal**2
 	write(*,"(' Internal charge separation (Pi):',f13.8,' a.u. (',f13.5,' kcal/mol)')") chgsep,chgsep*au2kcal
+    write(*,"(' Molecular polarity index:',f13.8,' eV (',f13.5,' kcal/mol)')") polaridx*au2eV,polaridx*au2kcal
+    write(*,"(' Nonpolar surface area (|ESP| <= 10 kcal/mol):',f10.2,' Angstrom^2  (',f6.2,' %)')") surfareanonpol*b2a*b2a,surfareanonpol/surfareaall*100
+    write(*,"(' Polar surface area (|ESP| > 10 kcal/mol):    ',f10.2,' Angstrom^2  (',f6.2,' %)')") surfareapol*b2a*b2a,surfareapol/surfareaall*100
 else if (imapfunc==2) then
 	write(*,"(' Variance:  ',f13.8,' a.u.^2  (',f13.5,' eV^2,',E13.5,' kcal/mol^2)')") variall,variall*au2eV**2,variall*au2kcal**2
 else if (imapfunc==4) then
@@ -1214,7 +1228,7 @@ do while(.true.)
 	write(*,*) "9 Output surface area in specific value range of mapped function"
 	write(*,*) "10 Output the closest and farthest distance between the surface and a point"
 	write(*,*) "11 Output surface properties of each atom"
-	write(*,*) "12 Output surface properties of specific fragment" !if -12, can define additional geometry rule
+	write(*,*) "12 Output surface properties of specific fragment"
 	write(*,*) "13 Calculate grid data of mapped function and export it to mapfunc.cub"
     write(*,*) "14 Calculate area of the region around a specific surface extreme"
     write(*,*) "15 Basin-like partition of surface and calculate areas"
@@ -1618,13 +1632,22 @@ do while(.true.)
 		if (index(c200tmp,'f')/=0) then
 			write(*,*) "Calculating, please wait..."
 			distmax2=0
+            idx=0;jdx=0
 			do ivtx=1,nsurvtx
 				do jvtx=ivtx+1,nsurvtx
 					dist2=(survtx(ivtx)%x-survtx(jvtx)%x)**2+(survtx(ivtx)%y-survtx(jvtx)%y)**2+(survtx(ivtx)%z-survtx(jvtx)%z)**2
-					if (dist2>distmax2) distmax2=dist2
+					if (dist2>distmax2) then
+                        distmax2=dist2
+                        idx=ivtx
+                        jdx=jvtx
+                    end if
 				end do
 			end do
 			write(*,"(' The farthest distance is:',f12.6,' Bohr (',f12.6,' Angstrom)')") dsqrt(distmax2),dsqrt(distmax2)*b2a
+            write(*,"(' X/Y/Z of point 1: ',3f12.6,' Angstrom')") survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
+            write(*,"(' X/Y/Z of point 2: ',3f12.6,' Angstrom')") survtx(jdx)%x*b2a,survtx(jdx)%y*b2a,survtx(jdx)%z*b2a
+            write(*,"(' X/Y/Z of midpoint:',3f12.6,' Angstrom')") &
+            (survtx(idx)%x+survtx(jdx)%x)*b2a/2,(survtx(idx)%y+survtx(jdx)%y)*b2a/2,(survtx(idx)%z+survtx(jdx)%z)*b2a/2
 		else
 			if (index(c200tmp,',')/=0) then
 				read(c200tmp,*) tmpx,tmpy,tmpz
@@ -1652,7 +1675,7 @@ do while(.true.)
 		end if
 		write(*,*)
 		
-	else if (isel==11.or.isel==12.or.isel==-12) then !Separate the properties of the whole molecular surface into atomic or fragment local surface
+	else if (isel==11.or.isel==12) then !Separate the properties of the whole molecular surface into atomic or fragment local surface
 		if (isel==11) then
 			nsurfrag=ncenter !Each fragment corresponds to an atom
 		else if (abs(isel)==12) then
@@ -1667,10 +1690,6 @@ do while(.true.)
 					ifatmfrag(iatm)=0
 				end if
 			end do
-			if (isel==-12) then !Can input additional geometry rule to determine the local surface. Currently not used
-! 				write(*,*) "Input additional geometry rule"
-! 				read(*,*) geomrule
-			end if
 		end if
 		!Determine the triangles belong to which atom, use Voronoi-like partition
 		if (allocated(surtrifrag)) deallocate(surtrifrag)
@@ -1682,13 +1701,6 @@ do while(.true.)
 			surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
 			surtriy=sum(survtx(surtriang(itri)%idx(1:3))%y)/3D0
 			surtriz=sum(survtx(surtriang(itri)%idx(1:3))%z)/3D0
-			
-			! Additional condition for determining local surface!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! 			if (a(surfrag(1))%name=="Si") then
-! 				tmp=2.5D0/b2a
-! 				if (isel==12.and.(surtriz>tmp.or.surtriz<-tmp)) cycle  !equatorial
-! 				if (isel==-12.and.(surtriz<tmp.and.surtriz>-tmp)) cycle  !end
-! 			end if
 
 			do iatm=1,ncenter
 				disttmp=dsqrt((surtrix-a(iatm)%x)**2+(surtriy-a(iatm)%y)**2+(surtriz-a(iatm)%z)**2)
@@ -1735,24 +1747,35 @@ do while(.true.)
 		end do
 		fragsuravg=fragsuravg/fragsurarea
 		fragsurchgsep=0D0
+        fragpolaridx=0 !Only output for fragment, not every atom case
+        fragareapol=0
+        fragareanonpol=0
 		do itri=1,nsurtri !Get variance
 			if (elimtri(itri)==1) cycle
 			iattfrag=surtrifrag(itri)
 			if (iattfrag==0) cycle
 			tmpval=surtriang(itri)%value
+            tmparea=surtriang(itri)%area
 			if (tmpval>0) then
-				fragsurvar(iattfrag,2)=fragsurvar(iattfrag,2)+surtriang(itri)%area*(tmpval-fragsuravg(iattfrag,2))**2
+				fragsurvar(iattfrag,2)=fragsurvar(iattfrag,2)+tmparea*(tmpval-fragsuravg(iattfrag,2))**2
 			else if (tmpval<0) then
-				fragsurvar(iattfrag,3)=fragsurvar(iattfrag,3)+surtriang(itri)%area*(tmpval-fragsuravg(iattfrag,3))**2
+				fragsurvar(iattfrag,3)=fragsurvar(iattfrag,3)+tmparea*(tmpval-fragsuravg(iattfrag,3))**2
 			end if
-			fragsurchgsep(iattfrag)=fragsurchgsep(iattfrag)+surtriang(itri)%area*abs(tmpval-fragsuravg(iattfrag,1))
+			fragsurchgsep(iattfrag)=fragsurchgsep(iattfrag)+tmparea*abs(tmpval-fragsuravg(iattfrag,1))
+            fragpolaridx=fragpolaridx+tmparea*abs(tmpval)
+            if (abs(tmpval)*au2kcal>10D0) then
+                fragareapol=fragareapol+tmparea
+            else
+                fragareanonpol=fragareanonpol+tmparea
+            end if
 		end do
 		fragsurvar=fragsurvar/fragsurarea
 		fragsurvar(:,1)=fragsurvar(:,2)+fragsurvar(:,3)
 		fragsurchgsep=fragsurchgsep/fragsurarea(:,1)
+        fragpolaridx=fragpolaridx/fragsurarea(1,1)
 		!Print atomic values
 		write(*,*)
-		if (isel==11) write(*,*) "Note: The atoms having zero surface area are not shown below"
+		if (isel==11) write(*,*) "Note: The atoms having zero surface area (i.e. buried) are not shown below"
 		if (abs(isel)==12) write(*,*) "Properties on the surface of this fragment:"
 		if (imapfunc==1.or.imapfunc==3) then !ESP
 			if (isel==11) then
@@ -1786,12 +1809,15 @@ do while(.true.)
 				write(*,"(' Overall average value: ',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,1),fragsuravg(1,1)*au2kcal
 				write(*,"(' Positive average value:',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,2),fragsuravg(1,2)*au2kcal
 				write(*,"(' Negative average value:',f13.8,' a.u. (',f14.8,' kcal/mol)')") fragsuravg(1,3),fragsuravg(1,3)*au2kcal
-				write(*,"(' Overall variance (sigma^2_tot):',f12.8,' a.u.^2 (',f13.7,' (kcal/mol)^2)')") fragsurvar(1,1),fragsurvar(1,1)*au2kcal**2
-				write(*,"(' Positive variance:     ',f13.8,' a.u.^2 (',f14.8,' (kcal/mol)^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2kcal**2
-				write(*,"(' Negative variance:     ',f13.8,' a.u.^2 (',f14.8,' (kcal/mol)^2)')") fragsurvar(1,3),fragsurvar(1,3)*au2kcal**2
+				write(*,"(' Overall variance (sigma^2_tot):',f12.8,' a.u.^2 (',f12.5,' (kcal/mol)^2)')") fragsurvar(1,1),fragsurvar(1,1)*au2kcal**2
+				write(*,"(' Positive variance:     ',f13.8,' a.u.^2 (',f13.5,' (kcal/mol)^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2kcal**2
+				write(*,"(' Negative variance:     ',f13.8,' a.u.^2 (',f13.5,' (kcal/mol)^2)')") fragsurvar(1,3),fragsurvar(1,3)*au2kcal**2
 				write(*,"(' Balance of charges (nu):',f13.8)") balencechg
-				write(*,"(' Product of sigma^2_tot and nu: ',f12.8,' a.u.^2 (',f12.7,' (kcal/mol)^2)')") balencechg*fragsurvar(1,1),balencechg*fragsurvar(1,1)*au2kcal**2
-				write(*,"(' Internal charge separation (Pi):',f13.8,' a.u. (',f13.8,' kcal/mol)')") fragsurchgsep(1),fragsurchgsep(1)*au2kcal
+				write(*,"(' Product of sigma^2_tot and nu: ',f12.8,' a.u.^2 (',f11.5,' (kcal/mol)^2)')") balencechg*fragsurvar(1,1),balencechg*fragsurvar(1,1)*au2kcal**2
+				write(*,"(' Internal charge separation (Pi):',f13.8,' a.u. (',f13.5,' kcal/mol)')") fragsurchgsep(1),fragsurchgsep(1)*au2kcal
+                write(*,"(' Molecular polarity index (MPI):',f13.8,' eV (',f13.5,' kcal/mol)')") fragpolaridx*au2eV,fragpolaridx*au2kcal
+                write(*,"(' Nonpolar surface area (|ESP| <= 10 kcal/mol):',f10.2,' Angstrom^2  (',f6.2,' %)')") fragareanonpol*b2a*b2a,fragareanonpol/fragsurarea(1,1)*100
+                write(*,"(' Polar surface area (|ESP| > 10 kcal/mol):    ',f10.2,' Angstrom^2  (',f6.2,' %)')") fragareapol*b2a*b2a,fragareapol/fragsurarea(1,1)*100
 			end if
 		else if (imapfunc==2) then !ALIE
 			if (isel==11) then
@@ -1945,7 +1971,6 @@ do while(.true.)
         write(*,*) "Input 0 can return"
         read(*,*) itype
         if (itype==0) cycle
-        read(*,*) itype
         write(*,*) "Input index range, e.g. 2,6-8,10"
         read(*,"(a)") c2000tmp
         call str2arr(c2000tmp,nremove)

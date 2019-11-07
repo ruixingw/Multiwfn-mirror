@@ -64,7 +64,7 @@ do while(.true.)
 			call str2arr(c2000tmp,nfragatmnum,fragatm)
 			call sort(fragatm,"val")
 		else if (iselect==-4) then
-			write(*,*) "How many atoms will be excluded?"
+			write(*,*) "Input indices of the atoms to be excluded"
 			write(*,*) "e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will be excluded"
 			read(*,"(a)") c2000tmp
 			call str2arr(c2000tmp,nexclatm)
@@ -3051,7 +3051,7 @@ end subroutine
 
 !!-------- Randomly generate name of Sobereva's lover
 subroutine mylover(outname)
-integer,parameter :: nlovers=51
+integer,parameter :: nlovers=52
 character*80 lovername(nlovers),outname
 CALL RANDOM_SEED()
 CALL RANDOM_NUMBER(tmp)
@@ -3106,7 +3106,8 @@ lovername(47)="Violet_Evergarden\Violet_Evergarden"
 lovername(48)="Otobuko\Mizuho_Miyanokouji"
 lovername(49)="iDOLM@STER\Makoto_Kikuchi"
 lovername(50)="Fate\Rin_Tohsaka"
-lovername(51)="Magical Girl Spec-Ops Asuka\Asuka Otori"
+lovername(51)="Magical_Girl_Spec-Ops Asuka\Asuka Otori"
+lovername(52)="Granblue_Fantasy\Katalina"
 !Dear Kanan,
 !
 !You are the only one I deeply love forever in the real world,
@@ -3267,18 +3268,22 @@ end subroutine
 subroutine genconnmat
 use defvar
 implicit real*8 (a-h,o-z)
-if (allocated(connmat)) deallocate(connmat)
-allocate(connmat(ncenter,ncenter))
-write(*,*) "Generating bonding relationship..."
-write(*,"(a,f6.3,a)") " Note: If distance between two atoms is smaller than sum of their &
-covalent radii multiplied by ",bondcrit,", then they are regarded as bonded"
-connmat=0
-do iatm=1,ncenter
-    do jatm=iatm+1,ncenter
-        if ( distmat(iatm,jatm) < bondcrit*(covr(a(iatm)%index)+covr(a(jatm)%index)) ) connmat(iatm,jatm)=1
-        connmat(jatm,iatm)=connmat(iatm,jatm)
+if (allocated(a)) then
+    if (allocated(connmat)) deallocate(connmat)
+    allocate(connmat(ncenter,ncenter))
+    write(*,*) "Generating bonding relationship..."
+    write(*,"(a,f6.3,a)") " Note: If distance between two atoms is smaller than sum of their &
+    covalent radii multiplied by ",bondcrit,", then they are regarded as bonded"
+    connmat=0
+    do iatm=1,ncenter
+        do jatm=iatm+1,ncenter
+            if ( distmat(iatm,jatm) < bondcrit*(covr(a(iatm)%index)+covr(a(jatm)%index)) ) connmat(iatm,jatm)=1
+            connmat(jatm,iatm)=connmat(iatm,jatm)
+        end do
     end do
-end do
+else
+    write(*,"(a)") " Unable to generate bonding relationship because there is no atom information!"
+end if
 end subroutine
 
 
@@ -3348,4 +3353,80 @@ do i=1,ncenter
     a(i)%y=xyz2(2,i)
     a(i)%z=xyz2(3,i)
 end do
+end subroutine
+
+
+
+!!------- Get point group and list of symmetry-equivalence atoms by invoking SYVA routines
+!The tolerance affects if symmetry-equivalence atoms and point group could be successfully recognized, the value
+!should not be too large, otherwise the recognition may be completely failed!
+!  Input variables:
+!natoms: The number of inputted atoms
+!nat(1:natoms): Element index of all inputted atoms
+!coord(1:3,1:natoms): x,y,z of all inputted atoms, must be in Angstrom, otherwise point group determination may be incorrect!
+!delta: Representing the distortion of the geometry. 0.01 is aproximately identical to "default" in gview, 0.1 corresponds to loose
+!  Returned variables:
+!pglabel: Point group label
+!nclass: The number of equivalent classes, should have size of "natoms"
+!classnatm(i): The number of atoms in equivalent class i, should have size of "natoms"
+!classidx(:,i): The atom indices in equivalent class i, both dimension should have size of "natoms"
+subroutine PG_eqvatm(natoms,nat,coord,delta,pglabel,nclass,classnatm,classidx)
+implicit real*8 (a-h,o-z)
+common /data/ wt(90),symb(90)
+common /chartab/ nir(2,55),chtab(14,322),nsymop(14,4,55),nrotharm(3,322),pgsymb(57),irsymb(322)
+common /subgroups/ nsgb(2,57),nsgr(406)
+character symb*2,pglabel*3,pgsymb*3,irsymb*4
+logical issubgroup
+integer natoms,nclass
+integer classnatm(natoms),classidx(natoms,natoms)
+integer,parameter :: nmax=150 !nmat: maximum number of symmetic operation
+real*8 coord(3,natoms),delta,pc(3),symn(3,nmax)
+integer nat(natoms),nper(natoms,250),nscl(natoms,natoms),nccl(natoms),nsym(nmax,5),natsym(natoms)
+ncr=0
+nsr=0
+nsg=0
+nout=0 !Suppress almost all output of SYVA routines
+
+if (natoms==1) then
+    nclass=1
+    classnatm(1)=1
+    classidx(1,1)=1
+    pglabel="C1"
+    return
+end if
+
+!Check atoms passed-in
+!write(*,'(1x,a,10x,a1,16x,a1,15x,a1,15x,a1)') 'number','x','y','z','w'
+!do i=1,natoms
+!   write(*,'(1x,i3,2x,4f16.6)') nat(i),(coord(j,i),j=1,3),wt(nat(i))
+!end do
+
+!Calculation of the COM (centre of mass) of the molecule
+call syva_cmass(natoms,nat,wt,coord,wmol,cmx,cmy,cmz)
+pc(1)=cmx;pc(2)=cmy;pc(3)=cmz
+
+!Shift the origin of the Cartesian system to COM
+call syva_cshift(natoms,coord,pc)
+
+!Find symmetry operations
+call sym_elements(natoms,nat,coord,symb,delta,ng,ni,nsg,ncr,nsr, np,symn,nsym,nout,nprm,nper,nseq,nccl,nscl)
+
+!Detemines the equivalence classes defined by the symmetry operations
+call symclass(natoms,nprm,nper,nseq,nccl,nscl,nat,symb,nout)
+
+!write(*,*) "Symmetry-equivalence classes of atoms: ",nseq
+!do i=1,nseq
+!   write(*,'(/5x,a,i3,a7,a2,a1)') '#',i,' (atom ',symb(nat(nscl(1,i))),')'
+!   write(*,'(5x,15i4)') (nscl(j,i),j=1,nccl(i))
+!end do
+
+!Assign SYVA variables to returned variables
+nclass=nseq
+classnatm(1:nclass)=nccl(1:nclass)
+do i=1,nclass
+    classidx(:nccl(i),i)=nscl(:nccl(i),i)
+end do
+
+!Determine point group and framework group
+call syva_point_group(ng,ni,nsg,ncr,nsr,np,pglabel,nout)
 end subroutine

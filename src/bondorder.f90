@@ -100,7 +100,7 @@ do while(.true.)
 	else if (ibondana==2) then
 		call multicenter
 	else if (ibondana==-2) then
-		call bndordNAO(1)
+		call multicenterNAO
 	else if (ibondana==3.or.ibondana==-3) then
 	    !In symmortho the density matrix, CObasa/b and Sbas will change, so backup them
 	    if (allocated(Cobasb)) then !Open-shell
@@ -143,7 +143,7 @@ do while(.true.)
 		Bond Order Analysis Based on the Laplacian of Electron Density in Fuzzy Overlap Space, J. Phys. Chem. A, 117, 3100-3108 (2013)"
 		call intatomspace(2)
 	else if (ibondana==9) then
-		call bndordNAO(2)
+		call decompWibergNAO
 	end if
 end do
 end subroutine
@@ -507,257 +507,134 @@ end subroutine
 
 
 
-!!------ Bond order analysis in NAO basis
-!itask=1: Multicenter bond order calculation
-!itask=2: Decompose Wiberg bond order as atomic orbital pair and atomic shell pair contributions
-!NBO output file with DMNAO keyword should be used as input file
-subroutine bndordNAO(itask)
+
+!!------ Calculate multi-center bond order in NAO basis
+subroutine multicenterNAO
 use defvar
 use util
+use NAOmod
 implicit real*8 (a-h,o-z)
 integer cenind(12)
-integer,allocatable :: NAOinit(:),NAOend(:)
-character :: c80tmp*80,c80tmp2*80,c1000tmp*1000
-character,allocatable :: centername(:)*2
-real*8,allocatable :: DMNAO(:,:),DMNAOb(:,:),DMNAOtot(:,:)
-integer,allocatable :: NAOcen(:)
-character,allocatable :: NAOlang(:)*7,NAOcenname(:)*2,NAOtype(:)*3,NAOshtype(:)*2
-character*2 :: icenshname(100),jcenshname(100) !Record all shell type names in centers i and j, used for decomposition Wiberg bond order
-real*8,allocatable :: shcontri(:,:)
+character :: c1000tmp*1000
 
+!Load NAO and DMNAO information
 open(10,file=filename,status="old")
+call checkNPA(ifound);if (ifound==0) return
+call loadNAOinfo
+call checkDMNAO(ifound);if (ifound==0) return
+call loadDMNAO
+close(10)
 
-call loclabel(10,"NAO density matrix:",ifound)
-if (ifound==0) then
-	write(*,"(a)") " Error: Cannot found density matrix in NAO basis in the input file! You must use ""DMNAO"" keyword in the NBO"
-    write(*,*) "Press ENTER button to return"
-    read(*,*)
-    close(10)
-    return
-else !Acquire number of NAOs and centers
-	call loclabel(10,"NATURAL POPULATIONS",ifound)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	ilastspc=0
-	do while(.true.) !Find how many centers and how many NAOs. We need to carefully check where is ending
-		read(10,"(a)") c80tmp
-		if (c80tmp==' '.or.index(c80tmp,"low occupancy")/=0.or.index(c80tmp,"Population inversion found")/=0.or.index(c80tmp,"effective core potential")/=0) then
-			if (ilastspc==1) then
-				ncenter=iatm
-				numNAO=inao
-				exit
-			end if
-			ilastspc=1 !last line is space
-		else
-			read(c80tmp,*) inao,c80tmp2,iatm
-			ilastspc=0
-		end if
-	end do
-	write(*,"(' The number of atoms:',i10)") ncenter
-	write(*,"(' The number of NAOs: ',i10)") numNAO
-	allocate(NAOinit(ncenter),NAOend(ncenter),centername(ncenter),NAOcen(numNAO))
-	!Get relationship between centers and NAO indices
-	call loclabel(10,"NATURAL POPULATIONS",ifound)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	ilastspc=1
-	do while(.true.)
-		read(10,"(a)") c80tmp
-		if (c80tmp/=' ') then
-			read(c80tmp,*) inao,c80tmp2,iatm
-			NAOcen(inao)=iatm
-			if (ilastspc==1) NAOinit(iatm)=inao
-			ilastspc=0
-		else
-			NAOend(iatm)=inao
-			centername(iatm)=c80tmp2
-			if (iatm==ncenter) exit
-			ilastspc=1
-		end if
-	end do
-end if
+!Move information from NAO variables to common variables, so that multi-center bond order routines could be used
+ncenter=numNAOcen
 if (allocated(basstart)) deallocate(basstart,basend)
 allocate(basstart(ncenter),basend(ncenter))
 basstart=NAOinit
 basend=NAOend
 
-if (itask==2) then !Load detailed NAO information
-	allocate(NAOcenname(numNAO),NAOtype(numNAO),NAOlang(numNAO),NAOshtype(numNAO))
-	!Get relationship between center and NAO indices, as well as center name, then store these informationto NAOcen
-	!We delay to read NAO information, because in alpha and beta cases may be different
-	call loclabel(10,"NATURAL POPULATIONS",ifound)
-	read(10,*);read(10,*);read(10,*);read(10,*)
-	do iatm=1,ncenter
-		do inao=NAOinit(iatm),NAOend(iatm)
-			read(10,"(a)") c80tmp
-			if (index(c80tmp,"Cor")/=0) then
-				NAOtype(inao)="Cor"
-			else if (index(c80tmp,"Val")/=0) then
-				NAOtype(inao)="Val"
-			else if (index(c80tmp,"Ryd")/=0) then
-				NAOtype(inao)="Ryd"
+do while(.true.)
+	write(*,*)
+	write(*,*) "Input atom indices, e.g. 3,4,7,8,10    (2~12 centers)"
+	write(*,*) "Input 0 can exit"
+	read(*,"(a)") c1000tmp
+	if (c1000tmp(1:1)=='0') then
+		deallocate(basstart,basend)
+		return
+	else
+		call str2arr(c1000tmp,nbndcen,cenind)
+		if (nbndcen>=7) write(*,*) "Please wait..."
+
+		if (.not.allocated(DMNAOb)) then !Closed shell
+			call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndord)
+			if (nbndcen==2) then
+				write(*,"(a,f16.10)") " The Wiberg bond order:",bndord
+			else
+				write(*,"(a,f16.10)") " The multicenter bond order:",bndord
+				write(*,"(a,f16.10)") " The normalized multicenter bond order:",bndord/abs(bndord) * (abs(bndord)**(1D0/nbndcen))
 			end if
-			read(c80tmp,*) c80tmp2,NAOcenname(inao),c80tmp2,NAOlang(inao),c80tmp2,c80tmp2
-			NAOshtype(inao)=c80tmp2(1:2)
-		end do
-		read(10,*)
-	end do
-end if
-
-!Read in density matrix in NAO basis. NAO information always use those generated by total density
-!DMNAO and AONAO are different for total, alpha and beta density
-allocate(DMNAO(numNAO,numNAO))
-call loclabel(10,"NAO density matrix:",ifound)
-
-!For open-shell case, DMNAO doesn't print for total, so the first time loaded DMNAO is alpha(open-shell) or total(closed-shell)
-!Check columns should be skipped during matrix reading, then return to title line
-read(10,*);read(10,*);read(10,*)
-read(10,"(a)") c80tmp
-nskipcol=index(c80tmp,"- -")
-backspace(10);backspace(10);backspace(10);backspace(10)
-call readmatgau(10,DMNAO,0,"f8.4 ",nskipcol,8,3)
-call loclabel(10," Alpha spin orbitals ",iopenshell)
-if (iopenshell==1) then
-	write(*,*) "This is an open-shell calculation"
-	allocate(DMNAOb(numNAO,numNAO),DMNAOtot(numNAO,numNAO))
-	call loclabel(10,"*******         Beta  spin orbitals         *******",ifound)
-	call loclabel(10,"NAO density matrix:",ifound,0)
-	call readmatgau(10,DMNAOb,0,"f8.4 ",nskipcol,8,3)
-	DMNAOtot=DMNAO+DMNAOb
-end if
-
-close(10)
-
-! call showmatgau(DMNAO,"Density matrix in NAO basis ",0,"f14.8",6)
-
-if (itask==1) then !Multi-center bond order calculation
-	do while(.true.)
-		write(*,*)
-		write(*,*) "Input atom indices, e.g. 3,4,7,8,10    (2~12 centers)"
-		write(*,*) "Input 0 can exit"
-		read(*,"(a)") c1000tmp
-		if (c1000tmp(1:1)=='0') then
-			deallocate(basstart,basend)
-			return
-		else
-			call str2arr(c1000tmp,nbndcen,cenind)
-			if (nbndcen>=7) write(*,*) "Please wait..."
-
-			if (iopenshell==0) then
-				call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndord)
-				if (nbndcen==2) then
-					write(*,"(a,f16.10)") " The Wiberg bond order:",bndord
-				else
-					write(*,"(a,f16.10)") " The multicenter bond order:",bndord
-					write(*,"(a,f16.10)") " The normalized multicenter bond order:",bndord/abs(bndord) * (abs(bndord)**(1D0/nbndcen))
-				end if
-			else if (iopenshell==1) then
-				call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndordalpha)
-				call calcmultibndord(nbndcen,cenind,DMNAOb,numNAO,bndordbeta)
-				call calcmultibndord(nbndcen,cenind,DMNAOtot,numNAO,bndordmix)
-				bndordalpha=bndordalpha*2**(nbndcen-1)
-				bndordbeta=bndordbeta*2**(nbndcen-1)
-				totbndorder=bndordalpha+bndordbeta
-				if (nbndcen==2) then
-					write(*,"(a,f16.10)") " The bond order from alpha density matrix:",bndordalpha
-					write(*,"(a,f16.10)") " The bond order from beta density matrix: ",bndordbeta
-					write(*,"(a,f16.10)") " The sum of above two terms:",bndordalpha+bndordbeta
-					write(*,"(a,f16.10)") " The bond order from mixed alpha&beta density matrix: ",bndordmix
-				else
-					write(*,"(a,f13.7)") " The multicenter bond order from alpha density matrix:",bndordalpha
-					write(*,"(a,f13.7)") " The multicenter bond order from beta density matrix: ",bndordbeta
-					write(*,"(a,f13.7)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
-					write(*,"(a,f13.7)") " Above result in normalized form:",totbndorder/abs(totbndorder) * (abs(totbndorder)**(1D0/nbndcen))
-					write(*,"(a,f13.7)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
-					write(*,"(a,f13.7)") " Above result in normalized form:",bndordmix/abs(bndordmix) * (abs(bndordmix)**(1D0/nbndcen))
-				end if
+		else !Open shell
+			call calcmultibndord(nbndcen,cenind,DMNAOa,numNAO,bndordalpha)
+			call calcmultibndord(nbndcen,cenind,DMNAOb,numNAO,bndordbeta)
+			call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndordmix)
+			bndordalpha=bndordalpha*2**(nbndcen-1)
+			bndordbeta=bndordbeta*2**(nbndcen-1)
+			totbndorder=bndordalpha+bndordbeta
+			if (nbndcen==2) then
+				write(*,"(a,f16.10)") " The bond order from alpha density matrix:",bndordalpha
+				write(*,"(a,f16.10)") " The bond order from beta density matrix: ",bndordbeta
+				write(*,"(a,f16.10)") " The sum of above two terms:",bndordalpha+bndordbeta
+				write(*,"(a,f16.10)") " The bond order from mixed alpha&beta density matrix: ",bndordmix
+			else
+				write(*,"(a,f13.7)") " The multicenter bond order from alpha density matrix:",bndordalpha
+				write(*,"(a,f13.7)") " The multicenter bond order from beta density matrix: ",bndordbeta
+				write(*,"(a,f13.7)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
+				write(*,"(a,f13.7)") " Above result in normalized form:",totbndorder/abs(totbndorder) * (abs(totbndorder)**(1D0/nbndcen))
+				write(*,"(a,f13.7)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
+				write(*,"(a,f13.7)") " Above result in normalized form:",bndordmix/abs(bndordmix) * (abs(bndordmix)**(1D0/nbndcen))
 			end if
 		end if
-	end do
-	
-else if (itask==2) then !Decompose Wiberg bond order as atomic orbital pair contribution
-	if (iopenshell==1) then
-		write(*,*) "Error: This function currently only supports closed-shell system"
-		write(*,*) "Press ENTER button to return"
-		read(*,*)
-		return
 	end if
-	write(*,"(a)") " Note: The threshold for printing contribution is controlled by ""bndordthres"" in settings.ini"
-	do while(.true.)
-		write(*,*)
-		write(*,*) "Input two atom indices, e.g. 3,4"
-		write(*,*) "Input 0 can exit"
-		read(*,"(a)") c1000tmp
-		if (c1000tmp(1:1)=='0') return
-		read(c1000tmp,*) iatm,jatm
-		!Construct name list of all shells for iatm and jatm
-		numicensh=1
-		icenshname(1)=NAOshtype(basstart(iatm))
-		do ibas=basstart(iatm)+1,basend(iatm)
-			if (all(icenshname(1:numicensh)/=NAOshtype(ibas))) then
-				numicensh=numicensh+1
-				icenshname(numicensh)=NAOshtype(ibas)
-			end if
-		end do
-		numjcensh=1
-		jcenshname(1)=NAOshtype(basstart(jatm))
-		do jbas=basstart(jatm)+1,basend(jatm)
-			if (all(jcenshname(1:numjcensh)/=NAOshtype(jbas))) then
-				numjcensh=numjcensh+1
-				jcenshname(numjcensh)=NAOshtype(jbas)
-			end if
-		end do
-		allocate(shcontri(numicensh,numjcensh))
-		shcontri=0
-		!Calculate Wiberg bond order and output worthnoting component
-		bndord=0
-		write(*,*) "Contribution from NAO pairs that larger than printing threshold:"
-		write(*,*) " Contri.  NAO   Center   NAO type            NAO   Center   NAO type"
-		do ibas=basstart(iatm),basend(iatm)
-			do ish=1,numicensh !Find the belonging shell index within this atom for NAO ibas
-				if (NAOshtype(ibas)==icenshname(ish)) exit
-			end do
-			do jbas=basstart(jatm),basend(jatm)
-				do jsh=1,numjcensh
-					if (NAOshtype(jbas)==jcenshname(jsh)) exit
-				end do
-				contri=DMNAO(ibas,jbas)**2
-				bndord=bndord+contri
-				shcontri(ish,jsh)=shcontri(ish,jsh)+contri
-				if (contri>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--- ',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri,&
-				ibas,NAOcen(ibas),NAOcenname(ibas),NAOtype(ibas),NAOshtype(ibas),NAOlang(ibas),&
-				jbas,NAOcen(jbas),NAOcenname(jbas),NAOtype(jbas),NAOshtype(jbas),NAOlang(jbas)
-			end do
-		end do
-		write(*,*)
-		write(*,*) "Contribution from NAO shell pairs that larger than printing threshold:"
-		write(*,*) " Contri.  Shell  Center  Type        Shell  Center  Type"
-		do ish=1,numicensh
-			do jsh=1,numjcensh
-				if (shcontri(ish,jsh)>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')    ',a,'   --- ',i5,i5,'(',a,')    ',a)") shcontri(ish,jsh),&
-				ish,NAOcen(basstart(iatm)),NAOcenname(basstart(iatm)),icenshname(ish),&
-				jsh,NAOcen(basstart(jatm)),NAOcenname(basstart(jatm)),jcenshname(jsh)
-			end do
-		end do
-		write(*,"(/,a,f8.4)") " Total Wiberg bond order:",bndord
-		deallocate(shcontri)
-	end do
-end if
+end do
 end subroutine
 
 
-!!---- A general routine directly calculates two- or multi-center bond order without complex things
-!Shared by subroutine multicenter, bndordNAO and others
-!Note that for open-shell cases, the result variable "result" may then be multiplied by a proper factor
+
+
+!---- A general routine directly calculates two- or multi-center bond order without complex things, up to 12 centers
+!This is a wrapper of subroutine "calcmultibndord_do" for returning different definitions of multi-center bond order
+!Shared by subroutine multicenter, multicenterNAO, AV1245 and others
+!MCBOtype=0, return the MCBO in usual manner
+!MCBOtype=1, return the averaged result of positive order and reverse order of inputted atoms
+!MCBOtype=1, return the MCBO calculated as Eq. 9 of the AV1245 paper, namely taking all permutation into account
+!Note that for open-shell cases, the returned result should then be multiplied by a proper factor
+!  Input variables:
+!nbndcen: Actual number of atoms to be calculated
+!PSmat: commonly constructed as e.g. matmul(Ptot,Sbas)
+!cenind: Atomic indices, must be size of 12
+!matdim: commonly is nbasis
 subroutine calcmultibndord(nbndcen,cenind,PSmat,matdim,result)
+use defvar
+use util
+implicit real*8(a-h,o-z)
+integer nbndcen,cenind(12),cenindtmp(12),matdim
+real*8 PSmat(matdim,matdim),result
+integer,allocatable :: allperm(:,:)
+
+if (iMCBOtype==0) then
+    call calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
+else if (iMCBOtype==1) then
+    call calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result1)
+    do i=1,nbndcen !Reverse order
+        cenindtmp(nbndcen-i+1)=cenind(i)
+    end do
+    call calcmultibndord_do(nbndcen,cenindtmp,PSmat,matdim,result2)
+    result=(result1+result2)/2
+else if (iMCBOtype==2) then
+    nperm=ft(nbndcen)
+    allocate(allperm(nperm,nbndcen))
+    call fullarrange(allperm,nperm,nbndcen) !Generate all possible permutation sequence
+    result=0
+    !$OMP PARALLEL DO SHARED(result) PRIVATE(iperm,cenindtmp,resulttmp) schedule(dynamic) NUM_THREADS(nthreads)
+    do iperm=1,nperm
+        cenindtmp(1:nbndcen)=cenind(allperm(iperm,:))
+        call calcmultibndord_do(nbndcen,cenindtmp,PSmat,matdim,resulttmp)
+        !write(*,*) cenindtmp(1:nbndcen),resulttmp
+        !$OMP CRITICAL
+        result=result+resulttmp
+        !$OMP END CRITICAL
+    end do
+    !$OMP END PARALLEL DO
+    result=result/(2*nbndcen)
+end if
+end subroutine
+
+!!---- The actual working horse for multi-center bond order calculation
+subroutine calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
 use defvar
 implicit real*8(a-h,o-z)
 integer nbndcen,cenind(12),matdim
 real*8 PSmat(matdim,matdim),result
+
 result=0D0
 if (nbndcen==2) then
 	do ib=basstart(cenind(2)),basend(cenind(2))
@@ -1221,4 +1098,103 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then !Open shell
 	write(*,"(' Summing up occupancy perturbation from all orbitals:',f10.5)") sumupvar
 end if
 write(*,*)
+end subroutine
+
+
+
+
+
+!------ Decompose Wiberg bond order as NAO pair and NAO shell pair contributions
+!NBO output file with DMNAO keyword should be used as input file
+subroutine decompWibergNAO
+use defvar
+use NAOmod
+implicit real*8 (a-h,o-z)
+character*2 :: icenshname(100),jcenshname(100) !Record all shell type names in centers i and j
+character c80tmp*80
+real*8,allocatable :: shcontri(:,:)
+
+!Load NAO and DMNAO information
+open(10,file=filename,status="old")
+call checkNPA(ifound);if (ifound==0) return
+call loadNAOinfo
+call checkDMNAO(ifound);if (ifound==0) return
+call loadDMNAO
+close(10)
+
+write(*,"(a)") " Note: The threshold for printing contribution is controlled by ""bndordthres"" in settings.ini"
+do while(.true.)
+	write(*,*)
+	write(*,*) "Input two atom indices, e.g. 3,4"
+	write(*,*) "Input 0 can exit"
+	read(*,"(a)") c80tmp
+	if (c80tmp(1:1)=='0') return
+	read(c80tmp,*) iatm,jatm
+    
+	!Construct name list of all shells for iatm and jatm
+	numicensh=1
+	icenshname(1)=NAOshell(NAOinit(iatm))
+	do ibas=NAOinit(iatm)+1,NAOend(iatm)
+		if (all(icenshname(1:numicensh)/=NAOshell(ibas))) then
+			numicensh=numicensh+1
+			icenshname(numicensh)=NAOshell(ibas)
+		end if
+	end do
+	numjcensh=1
+	jcenshname(1)=NAOshell(NAOinit(jatm))
+	do jbas=NAOinit(jatm)+1,NAOend(jatm)
+		if (all(jcenshname(1:numjcensh)/=NAOshell(jbas))) then
+			numjcensh=numjcensh+1
+			jcenshname(numjcensh)=NAOshell(jbas)
+		end if
+	end do
+	allocate(shcontri(numicensh,numjcensh))
+	shcontri=0
+    
+	!Calculate Wiberg bond order and output worthnoting components
+	bndord=0
+	write(*,*) "Contribution from NAO pairs that larger than printing threshold:"
+	if (iopshNAO==0) write(*,*) " Contri.  NAO   Center   NAO type            NAO   Center   NAO type"
+	if (iopshNAO==1) write(*,*) "Spin   Contri.  NAO   Center   NAO type          NAO   Center   NAO type"
+	do iNAO=NAOinit(iatm),NAOend(iatm)
+		do ish=1,numicensh !Find the belonging shell index within this atom for iNAO
+			if (NAOshell(iNAO)==icenshname(ish)) exit
+		end do
+		do jNAO=NAOinit(jatm),NAOend(jatm)
+			do jsh=1,numjcensh
+				if (NAOshell(jNAO)==jcenshname(jsh)) exit
+			end do
+            if (iopshNAO==0) then !Closed shell
+			    contri=DMNAO(iNAO,jNAO)**2
+			    if (contri>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--- ',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri,&
+			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,0),NAOshell(iNAO),NAOtype(iNAO),&
+			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,0),NAOshell(jNAO),NAOtype(jNAO)
+            else !Open shell
+                contri1=2*DMNAOa(iNAO,jNAO)**2
+			    if (contri1>bndordthres) write(*,"(' Alpha',f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri1,&
+			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,1),NAOshell(iNAO),NAOtype(iNAO),&
+			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,1),NAOshell(jNAO),NAOtype(jNAO)
+                contri2=2*DMNAOb(iNAO,jNAO)**2
+			    if (contri2>bndordthres) write(*,"(' Beta ',f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri2,&
+			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,2),NAOshell(iNAO),NAOtype(iNAO),&
+			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,2),NAOshell(jNAO),NAOtype(jNAO)
+                contri=contri1+contri2
+            end if
+			bndord=bndord+contri
+			shcontri(ish,jsh)=shcontri(ish,jsh)+contri
+		end do
+	end do
+	write(*,*)
+	write(*,*) "Contribution from NAO shell pairs that larger than printing threshold:"
+	write(*,*) " Contri.  Shell  Center  Type        Shell  Center  Type"
+	do ish=1,numicensh
+		do jsh=1,numjcensh
+			if (shcontri(ish,jsh)>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')    ',a,'   --- ',i5,i5,'(',a,')    ',a)") shcontri(ish,jsh),&
+			ish,NAOcen(NAOinit(iatm)),NAOcenname(NAOinit(iatm)),icenshname(ish),&
+			jsh,NAOcen(NAOinit(jatm)),NAOcenname(NAOinit(jatm)),jcenshname(jsh)
+		end do
+	end do
+	write(*,"(/,a,f8.4)") " Total Wiberg bond order:",bndord
+	deallocate(shcontri)
+end do
 end subroutine

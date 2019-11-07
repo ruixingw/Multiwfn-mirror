@@ -993,6 +993,7 @@ if (iautointgrid==1) then
 	sphpot=nsphpotold
     radcut=radcutold
 end if
+
 end subroutine
 
 
@@ -1002,88 +1003,44 @@ end subroutine
 !!------------ Orbital composition analysis by NAO method
 subroutine orballcomp_NAO
 use defvar
+use NAOmod
 use util
 implicit real*8 (a-h,o-z)
-integer :: ioutmode=1,ifragend=0,iorboutcomp !The orbital index selected
-integer :: ispinmode=0 !0/1=close/open-shell
-integer numNAO
-integer,allocatable :: fragidx(:),NAOinit(:),NAOend(:),NAOcen(:),termtmp(:)
-character :: c80tmp*80,c80tmp2*80,c200*200 !type2char(0:2)=(/"Cor","Val","Ryd"/)
-character,allocatable :: NAOlang(:)*7,NAOcenname(:)*2,NAOtype(:)*3,centername(:)*2,NAOshtype(:)*2
+integer :: ioutmode=1
+integer :: ispinmode=0 !The spin under study. 0/1/2 = closed shell/alpha/beta
+integer,allocatable :: fragidx(:),termtmp(:)
+character :: c80tmp*80,c200*200,c3tmp*3
 real*8 :: outcrit=0.5D0
-real*8,allocatable :: NAOMO(:,:)
 
 open(10,file=filename,status="old")
-nmo=0
-call loclabel(10,"NBsUse=",ifound) !Gaussian may eliminate some linear dependency basis functions, so MO may be smaller than numNAO. NBsUse always equals to actual number of MO
+
+call checkNPA(ifound);if (ifound==0) return
+call loadNAOinfo
+
+!Get actual number of MOs
+!Gaussian may eliminate some linear dependency basis functions, so MO may be smaller than numNAO. NBsUse always equals to actual number of MO
+call loclabel(10,"NBsUse=",ifound)
 if (ifound==1) then
 	read(10,"(a)") c80tmp
 	!For DKH case, G09 may output such as RelInt: Using uncontracted basis, NUniq=   180 NBsUse=   180 0.100E-13, this nbsuse is meaningless, use next nbsuse
 	if (index(c80tmp,"RelInt")/=0) call loclabel(10,"NBsUse=",ifound)
 	itmp=index(c80tmp,'=')
-	read(c80tmp(itmp+1:),*) nmo
+	read(c80tmp(itmp+1:),*) numorb
+else !This make this analysis could be independent of Gaussian
+    numorb=numNAO
 end if
-call loclabel(10,"MOs in the NAO basis:",ifound,1)
-if (ifound==0) then
-	write(*,"(a)") " Error: Cannot found MOs in NAO basis in the input file, you should use ""NAOMO"" keyword in NBO module"
-    write(*,*) "Press ENTER button to return"
-	read(*,*)
-    close(10)
-	return
-else !Acquire number of NAOs and centers
-	call loclabel(10,"NATURAL POPULATIONS",ifound,1)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	ilastspc=0
-	do while(.true.) !Find how many center and how many NAOs. We need to carefully check where is ending
-		read(10,"(a)") c80tmp
-		if (c80tmp==''.or.index(c80tmp,"low occupancy")/=0.or.index(c80tmp,"Population inversion found")/=0.or.index(c80tmp,"effective core potential")/=0) then
-			if (ilastspc==1) then
-				ncenter=iatm
-				numNAO=inao
-				exit
-			end if
-			ilastspc=1 !last line is space
-		else
-			read(c80tmp,*) inao,c80tmp2,iatm
-			ilastspc=0
-		end if
-	end do
-	if (nmo==0) nmo=numNAO
-	write(*,"(' The number of atoms:',i10)") ncenter
-	write(*,"(' The number of NAOs: ',i10)") numNAO
-	write(*,"(' The number of MOs : ',i10)") nmo
-	allocate(fragidx(numNAO),termtmp(numNAO))
-	ifragend=0 !ifragend is acutal ending position of fragidx
-	allocate(NAOinit(ncenter),NAOend(ncenter),centername(ncenter))
-	allocate(NAOcen(numNAO),NAOcenname(numNAO),NAOtype(numNAO),NAOlang(numNAO),NAOMO(numNAO,nmo),NAOshtype(numNAO))
-	!Get relationship between center and NAO indices, as well as center name, then store these informationto NAOcen
-	!We delay to read NAO information, because in alpha and beta cases may be different
-	call loclabel(10,"NATURAL POPULATIONS",ifound,1)
-	read(10,*);read(10,*);read(10,*);read(10,*)
-	ilastspc=1
-	do while(.true.)
-		read(10,"(a)") c80tmp
-		if (c80tmp/='') then
-			read(c80tmp,*) inao,c80tmp2,iatm
-			NAOcen(inao)=iatm
-			if (ilastspc==1) NAOinit(iatm)=inao
-			ilastspc=0
-		else
-			NAOend(iatm)=inao
-			centername(iatm)=c80tmp2
-			if (iatm==ncenter) exit
-			ilastspc=1
-		end if
-	end do
-end if
+write(*,"(' The number of MOs:',i10)") numorb
 
-!Determine if this file is close or open shell calculation
-call loclabel(10,"*******         Alpha spin orbitals         *******",ispinmode,1)
-if (ispinmode==0) write(*,*) "This is closed-shell calculation"
-if (ispinmode==1) write(*,*) "This is open-shell calculation"
+!Note that in the current context, numorb=nbasis even for open shell case, because we explicitly distinguish spin
+call checkNAOMO(ifound);if (ifound==0) return
+call loadNAOMO(numorb)
+
+allocate(fragidx(numNAO),termtmp(numNAO))
+ifragend=0 !ifragend is actual ending position (number of elements) of fragidx array
+if (iopshNAO==1) ispinmode=1
+
+write(*,"(/,a)") " Please cite this paper together with Multiwfn original paper: &
+ACTA CHIMICA SINICA, 69, 2393 (2011) http://sioc-journal.cn/Jwk_hxxb/CN/abstract/abstract340458.shtml"
 
 !Interface
 NAOcompmaincyc: do while(.true.)
@@ -1106,21 +1063,23 @@ do while(.true.)
 		return
 	else if (isel==-1) then
 20		write(*,*) "Commands and examples:"
-		write(*,*) """q"" : Save setting and exit"
-		write(*,*) """help"" : Print these help content again"
-		write(*,*) """clean"": Clean current fragment"
-		write(*,*) """list"" : List NAOs in current fragment"
-		write(*,*) """all""  : Print all NAOs of current system"
-		write(*,*) """addall"": Add all NAOs to fragment"
-		write(*,*) """a 2,5-8,12"": Add all NAOs in atoms 2,5,6,7,8,12 to fragment"
-		write(*,*) """b 2,5-8,12"": Add NAOs 2,5,6,7,8,12 to fragment"
-		write(*,*) """da 5,7,11-13"": Delete all NAOs in atoms 5,7,11,12,13 from fragment"
-		write(*,*) """db 5,7,11-13"": Delete NAOs 5,7,11,12,13 from fragment"
+		write(*,*) "q: Save setting and exit"
+		write(*,*) "help: Print these help content again"
+		write(*,*) "clean: Clean current fragment"
+		write(*,*) "list: List NAOs in current fragment"
+		write(*,*) "all: Print all NAOs of current system"
+		write(*,*) "addall: Add all NAOs to fragment"
+		write(*,*) "a 2,5-8,12: Add all NAOs in atoms 2,5,6,7,8,12 to fragment"
+		write(*,*) "b 2,5-8,12: Add NAOs 2,5,6,7,8,12 to fragment"
+		write(*,*) "da 5,7,11-13: Delete all NAOs in atoms 5,7,11,12,13 from fragment"
+		write(*,*) "db 5,7,11-13: Delete NAOs 5,7,11,12,13 from fragment"
 		do while(.true.)
+            write(*,*)
+            write(*,*) "Please input command. Input ""help"" can show help. Input ""q"" can save and exit"
 			read(*,"(a)") c200
-			if (c200(1:4)=="help") then
+			if (index(c200,"help")/=0) then
 				goto 20
-			else if (c200(1:6)=="addall") then
+			else if (index(c200,"addall")/=0) then
 				forall(i=1:numNAO) fragidx(i)=i
 				ifragend=numNAO
 				write(*,*) "Done!"
@@ -1133,55 +1092,39 @@ do while(.true.)
 					write(*,"(12i6)") fragidx(1:ifragend)
 				end if
 				exit
-			else if (c200(1:5)=="clean") then
+			else if (index(c200,"clean")/=0) then
 				fragidx=0
 				ifragend=0
 				write(*,*) "Done!"
-			else if (c200(1:3)=="all") then
-				if (ispinmode==0) then
-					call loclabel(10,"NATURAL POPULATIONS",ifound,1)
-				else if (ispinmode==1) then
-					call loclabel(10,"NATURAL POPULATIONS",ifound,1) !Total density
-					read(10,*)
-					call loclabel(10,"NATURAL POPULATIONS",ifound,0) !Alpha density
-				else if (ispinmode==2) then
-					call loclabel(10,"NATURAL POPULATIONS",ifound,1) !Total density
-					read(10,*)
-					call loclabel(10,"NATURAL POPULATIONS",ifound,0) !Alpha density
-					read(10,*)
-					call loclabel(10,"NATURAL POPULATIONS",ifound,0) !Beta density
-				end if
-				read(10,*)
-				read(10,*)
-				read(10,*)
-				read(10,*)
+			else if (index(c200,"all")/=0) then
 				write(*,*) "Note: The ones with asterisks are those presented in current fragment"
-				write(*,*) "   NAO#     Atom   Label    Type      Occupancy      Energy"
-				itmp=0
-				do iatm=1,ncenter
-					do i=NAOinit(iatm),NAOend(iatm)
-						itmp=itmp+1
-						read(10,"(a)") c200
-						if (any(fragidx(1:ifragend)==itmp)) then
-							write(*,"(' *',a)") trim(c200)
-						else
-							write(*,"('  ',a)") trim(c200)
-						end if
-					end do
-					read(10,*)
-				end do
-			else if (c200(1:4)=="list") then
+                write(*,*) "      NAO#   Atom&Index    Type   Set&Shell    Occupancy   Energy (a.u.)"
+                do iNAO=1,numNAO
+                    c3tmp=" "
+                    if (any(fragidx(1:ifragend)==iNAO)) c3tmp=" * "
+                    write(*,"(a,i7,3x,a5,i5,5x,a7,1x,a3,'( ',a,')',f12.5,f14.5)") &
+                    c3tmp,iNAO,NAOcenname(iNAO),NAOcen(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshell(iNAO),NAOocc(iNAO,ispinmode),NAOene(iNAO,ispinmode)
+                end do
+			else if (index(c200,"list")/=0) then
 				write(*,*) "NAO indices in current fragment:"
 				if (ifragend==0) then
 					write(*,*) "None"
 				else
 					write(*,"(12i6)") fragidx(1:ifragend)
+                    write(*,*)
+                    write(*,*) "Detailed information:"
+                    write(*,*) "      NAO#   Atom&Index    Type   Set&Shell    Occupancy   Energy (a.u.)"
+                    do idx=1,ifragend
+                        iNAO=fragidx(idx)
+                        write(*,"(a,i7,3x,a5,i5,5x,a7,1x,a3,'( ',a,')',f12.5,f14.5)") &
+                        "   ",iNAO,NAOcenname(iNAO),NAOcen(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshell(iNAO),NAOocc(iNAO,ispinmode),NAOene(iNAO,ispinmode)
+                    end do
 				end if
 				
 			else if (c200(1:2)=="a ".or.c200(1:2)=="s ".or.c200(1:2)=="b ".or.c200(1:2)=="db".or.c200(1:2)=="da") then
 				call str2arr(c200(3:),nterm,termtmp)
 				if (c200(1:2)=="a ".or.c200(1:2)=="da") then !Check sanity of the input
-					if (any(termtmp(1:nterm)<=0).or.any(termtmp(1:nterm)>ncenter)) then
+					if (any(termtmp(1:nterm)<=0).or.any(termtmp(1:nterm)>numNAOcen)) then
 						write(*,*) "ERROR: Atom index exceeded valid range! Ignoring..."
 						cycle
 					end if
@@ -1245,12 +1188,12 @@ do while(.true.)
 		
 	else if (isel==1) then
 		if (ifragend==0) then
-			write(*,*) "Error: You haven't defined fragment or the fragment is empty!"
+			write(*,*) "Error: You have not defined fragment or the fragment is empty!"
 		else
 			write(*,*) "Input orbital range to be outputted  e.g. 1,10"
-			write(*,"(a,i7)") " Note: Should within   1 to",nmo
+			write(*,"(a,i7)") " Note: Should within   1 to",numorb
 			read(*,*) iorblow,iorbhigh
-			if (iorbhigh<iorblow.or.iorblow<=0.or.iorbhigh>nmo) then
+			if (iorbhigh<iorblow.or.iorblow<=0.or.iorbhigh>numorb) then
 				write(*,*) "Error: The range you inputted is invalid!"
 				cycle
 			else
@@ -1271,78 +1214,36 @@ do while(.true.)
 	else if (isel==3) then
 		if (ispinmode==1) then
 			ispinmode=2
-		else
+		else if (ispinmode==2) then
 			ispinmode=1
 		end if
 	end if
 end do
 
-!Start analysis!
-if (isel==0.or.isel==1) then
-	!Before analysis, read in NAO information according to spin mode
-	if (ispinmode==0) then
-		call loclabel(10,"NATURAL POPULATIONS",ifound,1)
-	else if (ispinmode==1) then
-		call loclabel(10,"NATURAL POPULATIONS",ifound,1) !Total density
-		read(10,*)
-		call loclabel(10,"NATURAL POPULATIONS",ifound,0) !Alpha density
-	else if (ispinmode==2) then
-		call loclabel(10,"NATURAL POPULATIONS",ifound,1) !Total density
-		read(10,*)
-		call loclabel(10,"NATURAL POPULATIONS",ifound,0) !Alpha density
-		read(10,*)
-		call loclabel(10,"NATURAL POPULATIONS",ifound,0) !Beta density
-	end if
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	read(10,*)
-	do iatm=1,ncenter
-		do inao=NAOinit(iatm),NAOend(iatm)
-			read(10,"(a)") c80tmp
-			if (index(c80tmp,"Cor")/=0) then
-				NAOtype(inao)="Cor"
-			else if (index(c80tmp,"Val")/=0) then
-				NAOtype(inao)="Val"
-			else if (index(c80tmp,"Ryd")/=0) then
-				NAOtype(inao)="Ryd"
-			end if
-			read(c80tmp,*) c80tmp2,NAOcenname(inao),c80tmp2,NAOlang(inao),c80tmp2,c80tmp2
-			NAOshtype(inao)=c80tmp2(1:2)
-		end do
-		read(10,*)
-	end do
-	!Read MO in NAO basis
-	call loclabel(10,"MOs in the NAO basis:",ifound,0) !Don't rewind
-    !Check columns should be skipped during matrix reading, then return to title line
-    read(10,*);read(10,*);read(10,*)
-    read(10,"(a)") c80tmp
-    nskipcol=index(c80tmp,"- -")
-    backspace(10);backspace(10);backspace(10);backspace(10)
-    call readmatgau(10,NAOMO,0,"f8.4 ",nskipcol,8,3)
-end if
-
-if (isel==0) then
+!Start analysis
+if (isel==0) then !Analyze one orbital
 	do while(.true.)
 		write(*,*) "Analyze which orbital? (Input 0 can return)"
 		read(*,*) iorboutcomp
-		if (iorboutcomp==0) exit
-		if (iorboutcomp<0.or.iorboutcomp>nmo) then
-			write(*,"(a,i7)") "Error: The orbital index should between  1 and",nmo
+		if (iorboutcomp==0) then
+            exit
+		else if (iorboutcomp<0.or.iorboutcomp>numorb) then
+			write(*,"(a,i7)") "Error: The orbital index should between  1 and",numorb
 			cycle
 		end if
 		
 		write(*,*)
-		if (ioutmode==2) write(*,"(a,f6.2,a)") "Note: All NAOs whose contribution <=",outcrit,"% are ignored"
+		if (ioutmode==2) write(*,"(a,f6.2,a)") "Note: All NAOs whose contribution <=",outcrit,"% will be ignored"
 		if (ispinmode==1) write(*,*) "Below are composition of alpha orbitals"
 		if (ispinmode==2) write(*,*) "Below are composition of beta orbitals"
 		write(*,*) "   NAO#   Center   Label      Type      Composition"
 		sumcomp=0D0
-		do inao=1,numNAO
-			tmpcomp=NAOMO(inao,iorboutcomp)**2*100D0
-			if (ioutmode==1.and.NAOtype(inao)=="Ryd") cycle !skip Ryd
+		do iNAO=1,numNAO
+			tmpcomp=NAOMO(iNAO,iorboutcomp)**2*100
+            if (ispinmode==2) tmpcomp=NAOMOb(iNAO,iorboutcomp)**2*100 !Use beta MO instead
+			if (ioutmode==1.and.NAOset(iNAO,ispinmode)=="Ryd") cycle !skip Ryd
 			if (ioutmode==2.and.tmpcomp<=outcrit) cycle
-			write(*,"( i8,i5,'(',a,')',4x,a,2x,a,'(',a,')',f14.6,'%' )") inao,NAOcen(inao),NAOcenname(inao),NAOlang(inao),NAOtype(inao),NAOshtype(inao),tmpcomp
+			write(*,"( i8,i5,'(',a,')',4x,a,2x,a,'(',a,')',f14.6,'%' )") iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshell(iNAO),tmpcomp
 			sumcomp=sumcomp+tmpcomp
 		end do
 		write(*,"(' Summing up the compositions listed above:',f14.6,'%')") sumcomp
@@ -1350,19 +1251,21 @@ if (isel==0) then
 		write(*,*)
 		write(*,*) "Condensed above result to atoms:"
 		write(*,*) "  Center   Composition"
-		do icen=1,ncenter
+		do icen=1,numNAOcen
 			sumcomp=0D0
-			do inao=NAOinit(icen),NAOend(icen)
-				tmpcomp=NAOMO(inao,iorboutcomp)**2*100D0
-				if (ioutmode==1.and.NAOtype(inao)=="Ryd") cycle !skip Ryd
+			do iNAO=NAOinit(icen),NAOend(icen)
+				tmpcomp=NAOMO(iNAO,iorboutcomp)**2*100
+                if (ispinmode==2) tmpcomp=NAOMOb(iNAO,iorboutcomp)**2*100 !Use beta MO instead
+				if (ioutmode==1.and.NAOset(iNAO,ispinmode)=="Ryd") cycle !skip Ryd
 				if (ioutmode==2.and.tmpcomp<=outcrit) cycle	
 				sumcomp=sumcomp+tmpcomp
 			end do
-			write(*,"( i6,'(',a,')',f12.6,'%' )") icen,centername(icen),sumcomp
+			write(*,"( i6,'(',a,')',f12.6,'%' )") icen,NAOcenname(icen),sumcomp
 		end do
 		write(*,*)
 	end do
-else if (isel==1) then
+    
+else if (isel==1) then !Show fragment contribution in a range of orbitals
 	if (ispinmode==1) write(*,*) "Below are composition of alpha orbitals"
 	if (ispinmode==2) write(*,*) "Below are composition of beta orbitals"
 	write(*,*) "  Orb.#         Core        Valence      Rydberg       Total"
@@ -1371,11 +1274,12 @@ else if (isel==1) then
 		sumcompval=0D0
 		sumcompryd=0D0
 		do itmp=1,ifragend
-			inao=fragidx(itmp)
-			tmpcomp=NAOMO(inao,imo)**2*100D0
-			if (NAOtype(inao)=="Cor") sumcompcor=sumcompcor+tmpcomp
-			if (NAOtype(inao)=="Val") sumcompval=sumcompval+tmpcomp
-			if (NAOtype(inao)=="Ryd") sumcompryd=sumcompryd+tmpcomp
+			iNAO=fragidx(itmp)
+			tmpcomp=NAOMO(iNAO,imo)**2*100
+            if (ispinmode==2) tmpcomp=NAOMOb(iNAO,imo)**2*100
+			if (NAOset(iNAO,ispinmode)=="Cor") sumcompcor=sumcompcor+tmpcomp
+			if (NAOset(iNAO,ispinmode)=="Val") sumcompval=sumcompval+tmpcomp
+			if (NAOset(iNAO,ispinmode)=="Ryd") sumcompryd=sumcompryd+tmpcomp
 		end do
 		sumcomptot=sumcompcor+sumcompval+sumcompryd
 		write(*,"(i6,5x,4(f12.6,'%'))") imo,sumcompcor,sumcompval,sumcompryd,sumcomptot

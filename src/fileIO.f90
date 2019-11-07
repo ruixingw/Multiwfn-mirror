@@ -1228,7 +1228,7 @@ do i=1,ncenter
 	else
 		call lc2uc(a(i)%name(1:1)) !Convert to upper case
 		call uc2lc(a(i)%name(2:2)) !Convert to lower case
-        if (a(i)%name(1:1)=='X') then !Dummy atom will be finally recognized as Bq
+        if (a(i)%name(1:2)=='X ') then !Dummy atom will be finally recognized as Bq
             a(i)%index=0
             cycle
         end if
@@ -3776,6 +3776,16 @@ if (wfntype==0) then
 	end do
 end if
 
+tmpnet=sum(a%charge)-nelec
+if (tmpnet>18.and.any(a%index>18)) then
+    write(*,"(/,a)") " !! Warning! Warning! Warning! Warning! Warning! Warning! Warning! Warning !!"
+    write(*,"(a,i5,a)") " The net charge of this system is quite large (",nint(tmpnet),")! Probably ECP is employed while you &
+    forgot to modify the atomic indices in [atoms] field of the .molden file to actual nuclear charges, in this case some &
+    analysis results will be problematic! Please check ""Molden"" part of Section 2.3 of Multiwfn manual to understand why and how to modify the file"
+    write(*,*) "Press ENTER button to continue"
+    read(*,*)
+end if
+
 end subroutine
 
 
@@ -4510,9 +4520,11 @@ do while(.true.)
     if (isolv==1) write(*,*) "-1 Toggle employing SMD solvation model, current: Yes, "//trim(solvname)
     if (isolv==0) write(*,*) "-1 Toggle employing SMD solvation model, current: No"
     if (itask==1) write(*,*) "0 Select task, current: Single point"
-    if (itask==2) write(*,*) "0 Select task, current: Optimization"
-    if (itask==3) write(*,*) "0 Select task, current: Frequency"
-    if (itask==4) write(*,*) "0 Select task, current: Optimization + Frequency"
+    if (itask==2) write(*,*) "0 Select task, current: Optimizing minimum"
+    if (itask==3) write(*,*) "0 Select task, current: Frequency analysis"
+    if (itask==4) write(*,*) "0 Select task, current: Optimizing minimum + Frequency"
+    if (itask==5) write(*,*) "0 Select task, current: Optimizing TS + Frequency"
+    if (itask==6) write(*,*) "0 Select task, current: Molecular Dynamics"
     write(*,*) "1 B97-3c"
     write(*,*) "2 RI-BLYP-D3(BJ)/def2-TZVP"
     write(*,*) "3 RI-B3LYP-D3(BJ)/def2-TZVP(-f)"
@@ -4538,6 +4550,7 @@ do while(.true.)
         write(*,*) "3 Frequency"
         write(*,*) "4 Optimization + Frequency"
         write(*,*) "5 Optimization for transition state + Frequency"
+        write(*,*) "6 Molecular dynamics"
         read(*,*) itask
     else if (ilevel==-1) then
         if (isolv==1) then
@@ -4641,6 +4654,8 @@ else if (itask==5) then !optTS
         keyword=trim(c200tmp)//" optTS freq noautostart miniprint nopop"
     end if
     if (ilevel==22.and.idiffuse==0) keyword=trim(keyword)//" def2-SVP/C" !RI-TDDFT opt must use /C
+else if (itask==6) then !MD
+    keyword=trim(c200tmp)//" MD noautostart miniprint nopop"
 end if
 
 open(ifileid,file=outname,status="replace")
@@ -4662,6 +4677,18 @@ if (isolv==1) then
 end if
 if (itask==5) then !Calculate Hessian for optTS
     write(ifileid,"(a)") "%geom Calc_Hess true end"
+else if (itask==6) then !MD
+    write(ifileid,"(a)") "%md"
+    write(ifileid,"(a)") "#restart ifexists  # Continue MD by reading [basename].mdrestart if it exists. In this case ""initvel"" should be commented"
+    write(ifileid,"(a)") " timestep 0.5_fs  # This stepsize is usually very safe"
+    write(ifileid,"(a)") " initvel 298.15_K  # Assign velocity to atoms according to temperature"
+    write(ifileid,"(a)") " thermostat berendsen 298.15_K timecon 50.0_fs  # Target temperature and coupling time constant"
+    write(ifileid,"(a)") " dump position stride 1 format xyz filename ""pos.xyz""  # Dump position every frame"
+    write(ifileid,"(a)") " dump force stride 1 format xyz filename ""force.xyz""  # Dump force every frame"
+    write(ifileid,"(a)") " dump velocity stride 1 format xyz filename ""vel.xyz""  # Dump velocity every frame"
+    write(ifileid,"(a)") "#minimize  # Do minimization prior to MD simulation"
+    write(ifileid,"(a)") " run 500  # Number of MD steps"
+    write(ifileid,"(a)") "end"
 end if
 if (ilevel==20) then
     write(ifileid,"(a)") "%tddft"
@@ -5325,6 +5352,10 @@ end subroutine
 
 !!!--------------- Output current wavefunction to mkl file (old Molekel input file), then orca_2mkl can convert it to .gbw
 !The format is exactly identical to the .mkl file produced by orca_2mkl (e.g. orca_2mkl test can generate test.mkl from test.gbw)
+!Note that when if the gbw file converted from .mkl is used as initial guess, the number of orbitals recorded in the .mkl can be &
+!smaller than number of basis functions. The only important point is that all occupied orbitals are recorded. The virtual orbitals &
+!can be ignored in the .mkl, the coefficients can also be all zero. Therefore, when exporting .mkl file, it is not necessary to check &
+!if the final several orbitals have all zero coeffienents due to the loaded wavefunction file has basis linear dependency
 subroutine outmkl(outname,ifileid)
 use defvar
 use util
@@ -5890,6 +5921,8 @@ call loclabel(20,'maxloadexc=',ifound)
 if (ifound==1) read(20,*) c80tmp,maxloadexc
 call loclabel(20,'iprintLMOorder=',ifound)
 if (ifound==1) read(20,*) c80tmp,iprintLMOorder
+call loclabel(20,'iMCBOtype=',ifound)
+if (ifound==1) read(20,*) c80tmp,iMCBOtype
 
 !Below are the parameters involved in plotting
 call loclabel(20,'plotwinsize3D=',ifound)
@@ -5934,6 +5967,16 @@ call loclabel(20,'atmlabRGB=',ifound)
 if (ifound==1) read(20,*) c80tmp,atmlabclrR,atmlabclrG,atmlabclrB
 call loclabel(20,'CP_RGB=',ifound)
 if (ifound==1) read(20,*) c80tmp,CP3n3RGB,CP3n1RGB,CP3p1RGB,CP3p3RGB
+call loclabel(20,'isoRGB_same=',ifound)
+if (ifound==1) then
+    read(20,*) c80tmp,clrRcub1same,clrGcub1same,clrBcub1same
+    clrRcub1samemeshpt=clrRcub1same;clrGcub1samemeshpt=clrGcub1same;clrBcub1samemeshpt=clrBcub1same
+end if
+call loclabel(20,'isoRGB_oppo=',ifound)
+if (ifound==1) then
+    read(20,*) c80tmp,clrRcub1oppo,clrGcub1oppo,clrBcub1oppo
+    clrRcub1oppomeshpt=clrRcub1oppo;clrGcub1oppomeshpt=clrGcub1oppo;clrBcub1oppomeshpt=clrBcub1oppo
+end if
 call loclabel(20,'atmcolorfile=',ifound) !Set atom 3D color either according to external file or default setting
 if (ifound==1) then
 	read(20,*) c80tmp,c200tmp

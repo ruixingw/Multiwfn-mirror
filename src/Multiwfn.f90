@@ -3,15 +3,16 @@ use defvar
 use util
 use GUI
 implicit real*8(a-h,o-z)
-character nowdate*20,nowtime*20,c200tmp*200,lovername*80,settingpath*200
-real*8,allocatable :: tmparr(:),tmpmat(:,:)
+character nowdate*20,nowtime*20,c200tmp*200,lovername*80,settingpath*200,strtmp*3
+real*8,allocatable :: tmparr(:),tmparr2(:),tmpmat(:,:),tmpmat2(:,:) !For debug purpose
+integer,allocatable :: tmparri(:),tmparr2i(:),tmpmati(:,:),tmpmat2i(:,:)
 
 call kmp_set_warnings_off() !In rare case, "Cannot open message catalog "1041\libiomp5ui.dll"" may occurs, this calling avoid this problem, or user should set KMP_WARNINGS environment variable to 0
 call getarg(1,filename)
 call getarg(2,cmdarg2)
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.7(dev), release date: 2019-Oct-10"
+write(*,*) "Version 3.7(dev), release date: 2019-Nov-8"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -155,17 +156,36 @@ if (itransparent==1) then
     CALL PNGMOD("ON",'TRANSPARENCY')
     CALL GIFMOD("ON",'TRANSPARENCY')
 end if
-!-- Show related molecular information
+
+!-- Show basic molecular information
 if (allocated(a)) then
 	call showformula
 	totmass=sum(atmwei(a%index))
 	write(*,"(' Molecule weight:',f16.5)") totmass
+    !-- Show point group
+    if (ncenter<200) then !Too large system will take evidently cost
+        allocate(tmpmat(3,ncenter),tmpmat2i(ncenter,ncenter),tmparri(ncenter))
+        tmpmat(1,:)=a%x*b2a;tmpmat(2,:)=a%y*b2a;tmpmat(3,:)=a%z*b2a
+        !This tolerance is suitable for most systems. 0.01 may be too tight, however if the criterion is loosen, in rare case &
+        !The SYVA routine will ceaselessly show "ERROR: Too many symmetry operations. Try a lower tolerance" and doesn't work
+        call PG_eqvatm(ncenter,a%index,tmpmat,0.01D0,strtmp,ncls,tmparri,tmpmat2i)
+        if (strtmp==" ".and.ncenter<50) then
+            do i=1,20
+                call PG_eqvatm(ncenter,a%index,tmpmat,i*0.005D0,strtmp,ncls,tmparri,tmpmat2i)
+                if (strtmp/=" ") exit
+            end do
+        end if
+        if (strtmp==" ") then
+            write(*,*) "Failed to detect point group"
+        else
+            write(*,"(' Point group: ',a)") strtmp
+        end if
+        deallocate(tmpmat,tmpmat2i,tmparri)
+    end if
 end if
-
 
 !Special treatment
 ! call sys1eprop !Show some system 1e properties, only works when Cartesian basis functions are presented
-
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
@@ -212,6 +232,10 @@ do while(.true.) !Main loop
         write(*,*) "Input path for generating ORCA input file, e.g. C:\ltwd.inp"
 	    read(*,"(a)") c200tmp
 	    call outORCAinp(c200tmp,10)
+    else if (c200tmp=="gi") then
+        write(*,*) "Input path for generating Gaussian input file, e.g. C:\ltwd.gjf"
+	    read(*,"(a)") c200tmp
+	    call outgjf(c200tmp,10)
     else
         read(c200tmp,*) isel
 	    if (isel==-11) then !Load a new file

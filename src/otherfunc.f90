@@ -2627,6 +2627,7 @@ end do
 end subroutine
 
 
+
 !!----------- Detect pi orbital and set occupation number
 subroutine detectpiorb
 use defvar
