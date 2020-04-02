@@ -1,6 +1,7 @@
 color Display Background white
 axes location Off
 display depthcue off
+display rendermode GLSL
 
 set CPsize 0.07
 set pathsize 0.02

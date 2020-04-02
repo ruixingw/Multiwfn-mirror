@@ -1,6 +1,16 @@
 !!----------------- Plot various kinds of DOS map
 !For .out or plain text file, only one type of spin MOs will be loaded and processed, and then we will not consider spin type
-!For .fch/.molden/.gms, etc., user can switch spin type anytime
+!For .mwfn/.fch/.molden/.gms, etc., user can switch spin type anytime
+
+!  Note on arrays and open-shell case:
+!  MOene_dos and MOocc_do are working horse for present module, they are completely identical to MOene and MOocc but may be changed in this module (e.g. between a.u. and eV).
+!Both of them have size of "nmo", the first and last half correspond to alpha and beta.
+!  Other arrays such as str, FWHM, PDOSliney and compfrag also have size of nmo. For closed shell case, imoend=nmo, and all slots are meaningful.
+!When only one spin is taken into account, namely alpha (ispin=1) or beta (ispin=2) case, imoend=nbasis, and their (1:nbasis) part correspond
+!to alpha or beta MOs, respectively, and (nbasis+1:nmo) part is meaningless.
+!  Therefore, to cycle all MOs in current set, looping "imo=1,imoend", the irealmo=imo+nbasis should be used for MOene_dos and MOocc_dos,
+!while imo should be used for other arrays
+    
 subroutine DOS
 use defvar
 use util
@@ -16,9 +26,9 @@ real*8 atmcomp(ncenter,nmo) !Use to store all atomic contributions to MOs by Hir
 !Curve data
 real*8 :: curvexpos(num1Dpoints),TDOScurve(num1Dpoints),OPDOScurve(num1Dpoints),PDOScurve(num1Dpoints,nfragmax),LDOScurve(num1Dpoints)
 real*8 :: LDOSxpos(num2Dpoints)
-!All ?DOSliney share DOSlinex(:) as X axis
+!All ?DOSliney share DOSlinex(:) as X axis data
 real*8,allocatable :: DOSlinex(:),TDOSliney(:),PDOSliney(:,:),OPDOSliney(:),LDOSliney(:)
-real*8,allocatable :: compfrag(:,:) !i,k element is the composition of fragment k in MO i
+real*8,allocatable :: compfrag(:,:) !i,k element is the composition of fragment k in MO i. compfrag(:,0) is used for recording degeneracy for TDOS
 real*8,allocatable :: OPfrag12(:) !Overlap population between fragment 1 and 2
 real*8,allocatable :: LDOScomp(:) !Composition at a point of each orbital
 real*8,allocatable :: LDOSptscomp(:,:) !Composition of each MO, ipt in a given line
@@ -35,10 +45,6 @@ integer :: iclrPDOS(nfragmax)=(/ 1,3,10,14,12,9,13,11,6,7 /)
 !Below are used for defining fragments. For Mulliken/SCPA, they correspond to basis function, while for Hirshfeld/Becke, they correspond to atom indices
 integer :: nfragDOS(nfragmax) !The number of terms in the fragments (0=undefined)
 integer,allocatable :: fragDOS(:,:) !The index of basis functions/atoms or MOs (#1) in fragments (#2)
-!Used for plotting "MO DOS"
-!integer,parameter :: allMODOS=10 !Up to 10 sets
-!integer MODOSidx(allMODOS,nmo) !The index of featured MOs in each set
-!integer MOdosnum(allMODOS) !The number of featured MOs in each set
 !Below are used for photoelectron spectra (PES). In order to avoid confusing, they are not share with the ones for DOS
 real*8 :: PES_shift=0,PES_Xlow=0,PES_Xhigh=5,PES_Xstep=0.5D0,scalePEScurve=0.2D0
 real*8,allocatable :: PESlinex(:),PESliney(:),PES_str(:),PES_FWHM(:)
@@ -46,9 +52,9 @@ real*8 :: PEScurve(num1Dpoints)
 real*8,allocatable :: bindene(:)
 integer :: ishowPEScurve=1,ishowPESline=1,iusersetPES_Y=0,invPES_X=0
 
-if (.not.(ifiletype==0.or.ifiletype==1.or.ifiletype==9.or.ifiletype==10)) then
+if (.not.(ifiletype==0.or.allocated(CObasa))) then
 	write(*,"(a,/)") " Error: This function is only available for input file containing basis function information &
-	(i.e. .fch/.molden/.gms) and plain text file with energy levels!"
+	(i.e. .mwfn/.fch/.molden/.gms) and plain text file with energy levels!"
 	write(*,*) "Press ENTER button to return"
 	read(*,*)
 	return
@@ -65,7 +71,7 @@ enehigh=0.2D0
 stepx=0.1D0
 stepy=2
 gauweigh=0.5D0 !The weight of Gaussian in Pseudo-Voigt function
-iPDOStype=0 !=0 defined.  =1: The PDOS to be plotted is for basis function/atom.  =2: is for MOs
+iPDOStype=0 !=0 defined.  =1: The PDOS to be plotted is for basis function/atom.  =2: MO-PDOS
 nfragDOS=0
 ishowTDOScurve=1
 ishowTDOSline=1
@@ -76,6 +82,10 @@ ishowOPDOSline=0
 ishowlegend=1
 ishowHOMOlev=1
 ishowYlab=1
+nlabdigX=2
+nlabdigY=2
+nlabdigY_OPDOS=2
+nlabdigY_LDOS=3
 iunitx=1
 unitstr=" a.u."
 idegen=0
@@ -84,7 +94,7 @@ ispin=0
 if (wfntype==1.or.wfntype==4) ispin=1 !For U, alpha part by default
 iusersetYleft=0 !If user has set lower and upper range of Y axis by himself
 iusersetcolorscale=0 !If user has set color scale of 2D LDOS by himself
-Yrightscafac=0.5D0 !Scale factor relative to left Y-axis of OPDOS (right Y-axis)
+Yrightsclfac=0.5D0 !Scale factor relative to left Y-axis of OPDOS (right Y-axis)
 yxratio=1D0
 graphformat_old=graphformat !User may change graphformat, backup it
 
@@ -138,7 +148,7 @@ if (ifiletype==0) then
 		end if
 		str=1D0
 		FWHM=defFWHM
-	else !Plain text file. 
+	else !Plain text file
 		read(10,*) nmo,inp
 		allocate(MOene(nmo),MOocc(nmo),str(nmo),FWHM(nmo))
 		if (inp==1.or.inp==3) then
@@ -154,6 +164,7 @@ if (ifiletype==0) then
 		end if
         if (inp==3.or.inp==4) then !Input file contains energies in eV, change unit
             MOene=MOene/au2eV !MOene only records a.u. Unit will be changed to eV when assigning MOene_dos
+            if (inp==4) FWHM=FWHM/au2eV
             iunitx=2
             enelow=enelow*au2eV
 		    enehigh=enehigh*au2eV
@@ -169,7 +180,7 @@ else if (allocated(CObasa)) then !For ispin=1 or 2, only 1:nbasis is used, while
 	allocate(str(nmo),FWHM(nmo))
 	!Allocate all arrays that may be used, don't consider if they will actually be used, because memory consuming is very little
 	allocate(DOSlinex(3*nmo),TDOSliney(3*nmo),PDOSliney(3*nmo,nfragmax),OPDOSliney(3*nmo),LDOSliney(3*nmo))
-	allocate(compfrag(nmo,nfragmax),OPfrag12(nmo))
+	allocate(compfrag(nmo,0:nfragmax),OPfrag12(nmo))
 	allocate(fragDOS(nbasis,nfragmax+1)) !The last slot is used to exchange fragment
 	allocate(LDOScomp(nmo))
 	str=1D0
@@ -192,7 +203,6 @@ MOocc_dos=MOocc
 if (ifiletype==0.and.(inp==3.or.inp==4)) MOene_dos=au2eV*MOene
 
 
-
 !!!!! ***** Main loop ***** !!!!!!
 !!!!! ***** Main loop ***** !!!!!!
 !!!!! ***** Main loop ***** !!!!!!
@@ -205,6 +215,8 @@ if (all(nfragDOS(1:2)>0).and.icompmethod<=2.and.iPDOStype==1) idoOPDOS=1
 
 !Unknow text file doesn't contains wavefunction info, couldn't define fragment
 write(*,*)
+write(*,"(a)") " Hint: You can input ""s"" to save current plotting status to a file, or input ""l"" to load status from a file"
+write(*,*)
 write(*,*) "          ================ Plot density-of-states ==============="
 write(*,*) "-10 Return to main menu"
 write(*,*) "-5 Customize energy levels, occupations, strengths and FWHMs for specific MOs"
@@ -215,7 +227,11 @@ if (allocated(CObasa)) write(*,*) "-1 Define fragments for PDOS/OPDOS"
 if (idoOPDOS==1) then
 	write(*,*) "0 Draw TDOS+PDOS+OPDOS graph!"
 else if (idoPDOS==1) then
-	write(*,*) "0 Draw TDOS+PDOS graph!"
+    if (iPDOStype==1) then
+	    write(*,*) "0 Draw TDOS+PDOS graph!"
+    else if (iPDOStype==2) then
+	    write(*,*) "0 Draw TDOS with MO-PDOS graph!"
+    end if
 else
 	write(*,*) "0 Draw TDOS graph!" !Reading text file can only draw spinless TDOS, because they impossible to define fragment
 end if
@@ -240,11 +256,167 @@ if (allocated(CObasa)) then
 	if (icompmethod==4) write(*,*) "7 Set the method for calculating PDOS, current: Becke"
 end if
 write(*,*) "8 Switch unit between a.u. and eV, current:"//unitstr
+if (idegen==1) write(*,"(a,f6.3,' eV')") " 9 Toggle considering degenerate, current: Yes, with threshold of ",degencrit
+if (idegen==0) write(*,"(a)") " 9 Toggle using line height to show orbital degeneracy, current: No"
 write(*,*) "10 Draw local DOS for a point"
 write(*,*) "11 Draw local DOS along a line"
 write(*,*) "12 Enter interface for plotting photoelectron (PES) spectrum"
 
-read(*,*) isel
+read(*,*) c80tmp
+
+if (index(c80tmp,'s')/=0) then
+    write(*,"(a)") " Input file path for saving current status, e.g. C:\Bang_Dream\RAS.dat"
+    write(*,"(a)") " Note: If you press ENTER button directly, status will be saved to DOS.dat in current folder"
+    read(*,"(a)") c200tmp
+    if (c200tmp==" ") c200tmp="DOS.dat"
+    open(10,file=c200tmp,status="replace")
+    write(10,*) nmo !Used to determine consistency between the status file and the current system
+    !Parameters that can be set in initial menu
+    write(10,"(a)") unitstr
+    write(10,*) iunitx
+    write(10,*) ibroadfunc
+    write(10,*) scalecurve
+    write(10,*) gauweigh
+    write(10,*) ispin
+    write(10,*) icompmethod
+    write(10,*) idegen
+    write(10,*) degencrit
+    write(10,*) iPDOStype
+    write(10,*) enelow
+    write(10,*) enehigh
+    write(10,*) Yrightsclfac
+    !Parameters that can be set in post-process menu
+    write(10,"(a)") graphformat
+    write(10,*) ylowerleft
+    write(10,*) yupperleft
+    write(10,*) stepx
+    write(10,*) stepy
+    write(10,*) ishowTDOScurve
+    write(10,*) ishowTDOSline
+    write(10,"(10i4)") ishowPDOSline(:)
+    write(10,"(10i4)") ishowPDOScurve(:)
+    write(10,*) ishowOPDOScurve
+    write(10,*) ishowOPDOSline
+    write(10,*) ishowlegend
+    write(10,*) ishowHOMOlev
+    write(10,*) ishowYlab
+    write(10,*) legendx
+    write(10,*) legendy
+    write(10,*) icurvewidth
+    write(10,*) ilinewidth
+    write(10,"(10i4)") iclrPDOS(:)
+    write(10,"(a)") TDOSstring
+    write(10,"(a)") OPDOSstring
+    do ifrag=1,nfragmax
+        write(10,"(a)") PDOSstring(ifrag)
+    end do
+    !Only for 2D-LDOS
+    write(10,*) yxratio
+    write(10,*) clrscllow
+    write(10,*) clrsclhigh
+    write(10,*) clrsclstep
+    write(10,*) Yleftstep
+    !Status
+    write(10,*) iusersetcolorscale
+    write(10,*) iusersetYleft
+    write(10,*) iPDOStype
+    !System specific information
+    write(10,*) nbasis
+    write(10,*) imoend
+    do imo=1,nmo
+        write(10,"(2E16.8,2f12.6)") MOene_dos(imo),MOocc_dos(imo),FWHM(imo),str(imo)
+    end do
+    do ifrag=1,nfragmax
+        write(10,*) nfragDOS(ifrag)
+        if (nfragDOS(ifrag)>0) write(10,"(12i6)") fragDOS(:nfragDOS(ifrag),ifrag)
+    end do
+    close(10)
+    write(*,*) "Done!"
+    cycle
+else if (index(c80tmp,'l')/=0) then
+    write(*,"(a)") " Input file path to load status from it, e.g. C:\Bang_Dream\RAS.dat"
+    write(*,"(a)") " Note: If you press ENTER button directly, status will be load from DOS.dat in current folder"
+    read(*,"(a)") c200tmp
+    if (c200tmp==" ") c200tmp="DOS.dat"
+	inquire(file=c200tmp,exist=alive)
+	if (alive==.false.) then
+	    write(*,*) "Error: Cannot find the file! Press ENTER button to return"
+        read(*,*)
+        cycle
+    end if
+    open(10,file=c200tmp,status="old")
+    read(10,*) nmotmp
+    if (nmotmp/=nmo) then
+        write(*,"(a)") " Warning: The status file seems to be inconsistent with current system, do you really want to continue to load it? (y/n)"
+        read(*,*) selectyn
+        if (selectyn=='n'.or.selectyn=='N') cycle
+    end if
+    nmo=nmotmp
+    !Parameters that can be set in initial menu
+    read(10,"(a)") unitstr
+    read(10,*) iunitx
+    read(10,*) ibroadfunc
+    read(10,*) scalecurve
+    read(10,*) gauweigh
+    read(10,*) ispin
+    read(10,*) icompmethod
+    read(10,*) idegen
+    read(10,*) degencrit
+    read(10,*) iPDOStype
+    read(10,*) enelow
+    read(10,*) enehigh
+    read(10,*) Yrightsclfac
+    !Parameters that can be set in post-process menu
+    read(10,"(a)") graphformat
+    read(10,*) ylowerleft
+    read(10,*) yupperleft
+    read(10,*) stepx
+    read(10,*) stepy
+    read(10,*) ishowTDOScurve
+    read(10,*) ishowTDOSline
+    read(10,"(10i4)") ishowPDOSline(:)
+    read(10,"(10i4)") ishowPDOScurve(:)
+    read(10,*) ishowOPDOScurve
+    read(10,*) ishowOPDOSline
+    read(10,*) ishowlegend
+    read(10,*) ishowHOMOlev
+    read(10,*) ishowYlab
+    read(10,*) legendx
+    read(10,*) legendy
+    read(10,*) icurvewidth
+    read(10,*) ilinewidth
+    read(10,"(10i4)") iclrPDOS(:)
+    read(10,"(a)") TDOSstring
+    read(10,"(a)") OPDOSstring
+    do ifrag=1,nfragmax
+        read(10,"(a)") PDOSstring(ifrag)
+    end do
+    !Only for 2D-LDOS
+    read(10,*) yxratio
+    read(10,*) clrscllow
+    read(10,*) clrsclhigh
+    read(10,*) clrsclstep
+    read(10,*) Yleftstep
+    !Status
+    read(10,*) iusersetcolorscale
+    read(10,*) iusersetYleft
+    read(10,*) iPDOStype
+    !System specific information
+    read(10,*) nbasis
+    read(10,*) imoend
+    do imo=1,nmo
+        read(10,"(2E16.8,2f12.6)") MOene_dos(imo),MOocc_dos(imo),FWHM(imo),str(imo)
+    end do
+    do ifrag=1,nfragmax
+        read(10,*) nfragDOS(ifrag)
+        if (nfragDOS(ifrag)>0) read(10,"(12i6)") fragDOS(:nfragDOS(ifrag),ifrag)
+    end do
+    close(10)
+    write(*,*) "Loading finished!"
+    cycle
+else
+    read(c80tmp,*) isel
+end if
 
 if (isel==-10) then
     graphformat=graphformat_old
@@ -336,21 +508,22 @@ else if (isel==-3) then
 	write(*,*)
 
 else if (isel==-2) then !Define MO sets for PDOS
-    if (iPDOStype==1.and.any(nfragDOS>0)) then
+    if (iPDOStype==1) then
         write(*,"(a)") " Warning: You have defined atom or basis function fragments, which conflict with MO fragments. &
         To proceed, these fragments will be cleaned, OK? (y/n)"
         read(*,*) selectyn
         if (selectyn=='y') then
             nfragDOS=0
+            iPDOStype=0
         else
             cycle
         end if
     end if
-    write(*,"(a)") " Note: You can use options 1~10 to define up to 10 MO sets for plotting respective PDOS"
+    write(*,"(a)") " Note 1: You can use options 1~10 to define up to 10 MO sets for plotting respective PDOS"
+    write(*,"(a)") " Note 2: The first published paper employing MO-PDOS map is: Tian Lu, Qinxue Chen, Zeyu Liu, &
+    ChemRxiv (2019) DOI: 10.26434/chemrxiv.11320130. Please kindly cite this paper if MO-PDOS map is employed in your work, thank you!"
     do while(.true.)
         write(*,*)
-        if (idegen==1) write(*,"(a,f6.3)") " -1 Toggle considering degenerate, current: Yes, with threshold of ",degencrit
-        if (idegen==0) write(*,"(a)") " -1 Toggle considering degenerate, current: No"
         write(*,*) " 0 Return"
         do iset=1,nfragmax
             if (nfragDOS(iset)==0) then
@@ -360,22 +533,12 @@ else if (isel==-2) then !Define MO sets for PDOS
             end if
         end do
         read(*,*) iset
-        if (iset==-1) then
-            if (idegen==1) then
-                idegen=0
+        if (iset==0) then
+            if (any(nfragDOS>0)) then
+                iPDOStype=2
             else
-                write(*,*) "Input threshold for determining degenerate in eV, e.g. 0.01"
-                write(*,*) "If press ENTER button directly, 0.005 eV will be used"
-                read(*,"(a)") c80tmp
-                if (c80tmp==" ") then
-                    degencrit=0.005D0
-                else
-                    read(c80tmp,*) degencrit
-                end if
-                idegen=1
+                iPDOStype=0
             end if
-        else if (iset==0) then
-            iPDOStype=2
             exit
         else
             write(*,*) "Input index of the MOs, e.g. 2,3,7-10,23"
@@ -390,15 +553,20 @@ else if (isel==-2) then !Define MO sets for PDOS
     end do
     
 else if (isel==-1) then
-    if (iPDOStype==2.and.any(nfragDOS>0)) then
+    if (iPDOStype==2) then
         write(*,"(a)") " Warning: You have defined MO fragments, which conflicts with present fragment setting. To proceed, &
         the MO fragments will be cleaned, OK? (y/n)"
         read(*,*) selectyn
         if (selectyn=='y') then
             nfragDOS=0
+            iPDOStype=0
         else
             cycle
         end if
+    end if
+    if (idegen==1) then
+        write(*,"(a)") " Note: Degeneracy cannot be shown on the map when plotting PDOS, therefore the degeneracy setting has been disabled"
+        idegen=0
     end if
     write(*,*)
 	write(*,*) "           ----------------- Define fragments -----------------"
@@ -422,7 +590,11 @@ else if (isel==-1) then
 		if (index(c80tmp(1:len_trim(c80tmp)),' ')/=0.or.c80tmp==" ") then
 			write(*,*) "Inputting error!"
         else if (c80tmp=='0'.or.c80tmp=='q') then
-            iPDOStype=1
+            if (any(nfragDOS>1)) then
+                iPDOStype=1
+            else
+                iPDOStype=0
+            end if
             exit
 		else if (c80tmp=='e') then !Export fragment definition
 			open(10,file="DOSfrag.txt",status="replace")
@@ -582,6 +754,27 @@ else if (isel==8) then
 		stepx=stepx/au2eV
 		stepy=stepy*au2eV
 	end if
+    
+else if (isel==9) then
+    if (idegen==1) then
+        idegen=0
+    else
+        if (iPDOStype==1) then
+            write(*,*) "Error: This feature cannot be enabled when plotting PDOS"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            cycle
+        end if
+        write(*,*) "Input threshold for determining degenerate in eV, e.g. 0.01"
+        write(*,*) "If press ENTER button directly, 0.005 eV will be used"
+        read(*,"(a)") c80tmp
+        if (c80tmp==" ") then
+            degencrit=0.005D0
+        else
+            read(c80tmp,*) degencrit
+        end if
+        idegen=1
+    end if
 	
 
 !!!!!!!!-------------- Now we compute and plot DOS (isel==0) or LDOS curve (isel==10)
@@ -615,8 +808,13 @@ else if (isel==0.or.isel==10) then
 		ishowLDOScurve=1
 		ishowLDOSline=1
 	end if
-	
+    
     FWHMmax=maxval(FWHM)
+    if (iunitx==1) then !a.u.
+        enediff=degencrit/au2eV !The degencrit, which is used to detect orbital degeneracy, is always in eV, so convert to a.u.
+    else if (iunitx==2) then !eV
+        enediff=degencrit
+    end if
 	if (idoPDOS==1) then !Calculate composition used for plotting PDOS
         if (iPDOStype==1) then !Basis function or atom PDOS
             compfrag=0
@@ -682,31 +880,46 @@ else if (isel==0.or.isel==10) then
                 end do
             end if
         
-        else if (iPDOStype==2) then !MO PDOS
+        else if (iPDOStype==2) then !MO-PDOS
             compfrag=0
+            !For various fragments
             do iset=1,nfragmax
                 if (nfragDOS(iset)==0) cycle
-                if (idegen==0) then
-                    do idx=1,nfragDOS(iset)
-                        imo=fragDOS(idx,iset)
-                        compfrag(imo,iset)=1
-                    end do
-                else if (idegen==1) then
+                if (idegen==1) then !Determine degeneracy and record as "compfrag"
                     istart=1
-                    do while(istart<nfragDOS(iset))
+                    do while(istart<=nfragDOS(iset))
                         ndegen=1
                         imo=fragDOS(istart,iset)
                         do jdx=istart+1,nfragDOS(iset)
                             jmo=fragDOS(jdx,iset)
-                            if (abs(MOene(jmo)-MOene(imo))<degencrit/au2eV) ndegen=ndegen+1
+                            if (abs(MOene_dos(jmo)-MOene_dos(imo))<enediff) ndegen=ndegen+1
                         end do
                         compfrag(imo,iset)=ndegen
                         istart=istart+ndegen
+                    end do
+                else
+                    do idx=1,nfragDOS(iset)
+                        imo=fragDOS(idx,iset)
+                        compfrag(imo,iset)=1
                     end do
                 end if
             end do
         end if
 	end if
+    !Set degeneracy for all MOs, can be used for MO-PDOS or normal TDOS map
+    if (idegen==1) then
+        imo=1
+        do while(imo<=imoend)
+            ndegen=1
+            do jmo=imo+1,imoend
+                if (abs(MOene_dos(imo)-MOene_dos(jmo))<enediff) ndegen=ndegen+1
+            end do
+            compfrag(imo,0)=ndegen
+            imo=imo+ndegen
+        end do
+    else
+        compfrag(:,0)=1
+    end if
     
     !Calculate LDOS for a point
 	if (isel==10) then
@@ -737,12 +950,15 @@ else if (isel==0.or.isel==10) then
 		if (isel==0) then
 			TDOSliney(inow+1)=0D0
 			TDOSliney(inow+2)=str(imo)
+            if (idegen==1) TDOSliney(inow+2)=compfrag(imo,0)
 			TDOSliney(inow+3)=0D0
 			do ifrag=1,nfragmax
 				if (nfragDOS(ifrag)>0) then
 					PDOSliney(inow+1,ifrag)=0D0
 					PDOSliney(inow+2,ifrag)=str(imo)*compfrag(imo,ifrag)
 					PDOSliney(inow+3,ifrag)=0D0
+                    !Using height to show degeneracy, do not scale because the axis will be shown at right
+                    if (idegen==1) PDOSliney(inow+2,ifrag)=compfrag(imo,ifrag)
 				end if
 			end do
 			if (idoOPDOS==1) then
@@ -824,8 +1040,8 @@ else if (isel==0.or.isel==10) then
 			stepy=(yupperleft-ylowerleft)/10
 		end if
 	end if
-	ylowerright=ylowerleft*Yrightscafac !Lower and upper limit for OPDOS
-	yupperright=yupperleft*Yrightscafac
+	ylowerright=ylowerleft*Yrightsclfac !Lower and upper limit for OPDOS
+	yupperright=yupperleft*Yrightsclfac
 	
 	do while(.true.)
         !======Draw various kinds of DOS now=======
@@ -850,11 +1066,15 @@ else if (isel==0.or.isel==10) then
 			end if
 			call hwfont
 			call AXSLEN(2450,1400)
-			if (ishowOPDOScurve==1.or.ishowOPDOSline==1) call AXSLEN(2300,1400) !Because OPDOS axis will be shown at right side
+			if (ishowOPDOScurve==1.or.ishowOPDOSline==1) then
+                call AXSLEN(2300,1400) !Because OPDOS axis will be shown at right side
+            else if (idegen==1) then !Because degeneracy axis will be shown at right side
+                call AXSLEN(2350,1400)
+            end if
 			call AXSPOS(350,1550)
 			if (isavepic==0) call WINTIT("Click right mouse button to close")
-			if (idoOPDOS==1) then
-				call setgrf('NAME','NAME','TICKS','LINE') !Avoid the ticks of TDOS/PDOS overlap with OPDOS at right side
+			if (idoOPDOS==1.or.idegen==1) then
+				call setgrf('NAME','NAME','TICKS','LINE')
 			else
 				call setgrf('NAME','NAME','TICKS','TICKS')
 			end if
@@ -868,9 +1088,8 @@ else if (isel==0.or.isel==10) then
                 CALL NAMDIS(40,'Y')
             end if
 			call ERRMOD("ALL","OFF")
-			CALL LABDIG(2,"X")
-			if (iunitx==1) CALL LABDIG(2,"Y")
-			if (iunitx==2) CALL LABDIG(3,"Y")
+			CALL LABDIG(nlabdigX,"X")
+			CALL LABDIG(nlabdigY,"Y")
 			if (iunitx==1) CALL NAME('Energy (a.u.)','X')
 			if (iunitx==2) CALL NAME('Energy (eV)','X')
 			CALL NAME('Density-of-states','Y')
@@ -920,7 +1139,7 @@ else if (isel==0.or.isel==10) then
 				call linwid(icurvewidth) !Set to user-defined line width
 				if (ishowTDOScurve==1) CALL CURVE(curvexpos,TDOScurve,num1Dpoints)
 				call linwid(ilinewidth) !Set to user-defined line width
-				if (ishowTDOSline==1) CALL CURVE(DOSlinex,TDOSliney,3*imoend)
+				if (ishowTDOSline==1.and.idegen/=1) CALL CURVE(DOSlinex,TDOSliney,3*imoend)
 				if (ishowTDOScurve==1.or.ishowTDOSline==1) then !Set legend
 					call legpat(0,1,-1,-1,-1,ileg)
 					CALL LEGLIN(clegend,trim(TDOSstring),ileg)
@@ -934,7 +1153,7 @@ else if (isel==0.or.isel==10) then
 						call linwid(icurvewidth) !Set to user-defined line width
 						if (ishowPDOScurve(ifrag)==1) CALL CURVE(curvexpos,PDOScurve(:,ifrag),num1Dpoints)
 						call linwid(ilinewidth) !Set to user-defined line width
-						if (ishowPDOSline(ifrag)==1) CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
+						if (ishowPDOSline(ifrag)==1.and.idegen/=1) CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
 						if (ishowPDOScurve(ifrag)==1.or.ishowPDOSline(ifrag)==1) then !Set legend
 							call legpat(0,1,-1,-1,-1,ileg)
 							CALL LEGLIN(clegend,trim(PDOSstring(ifrag)),ileg)
@@ -949,10 +1168,27 @@ else if (isel==0.or.isel==10) then
                 call height(38)
 				if (ishowlegend==1) call legend(clegend,3) !Draw the legends (for TDOS,PDOS), must before endgrf
 				call endgrf !Finished drawing TDOS/PDOS
+                
+                !Draw degeneracy for MO-PDOS using axis at right side
+                if (idegen==1) then
+					CALL LABDIG(1,"Y")
+					CALL NAME('Degeneracy','Y')
+					call setgrf('NONE','NONE','NONE','NAME')
+					CALL GRAF(enelow,enehigh,enelow,stepx, 0D0,10D0,0D0,1D0)
+                    if (ishowTDOSline==1) CALL CURVE(DOSlinex,TDOSliney,3*imoend)
+				    do ifrag=1,nfragmax
+					    if (nfragDOS(ifrag)>0.and.ishowPDOSline(ifrag)==1) then
+						    call setcolor(iclrPDOS(ifrag))
+						    call linwid(ilinewidth) !Set to user-defined line width
+						    CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
+					    end if
+				    end do
+                    call endgrf
+                end if
 
 				!Draw OPDOS
 				if (ishowOPDOScurve==1.or.ishowOPDOSline==1) then
-					CALL LABDIG(2,"Y")
+					CALL LABDIG(nlabdigY_OPDOS,"Y")
 					CALL NAME('OPDOS','Y')
                     if (ishowYlab==1) CALL NAMDIS(45,'Y')
 					call setgrf('NONE','NONE','NONE','NAME')
@@ -973,7 +1209,7 @@ else if (isel==0.or.isel==10) then
 			
 			!Draw LDOS
 			else if (isel==10) then
-				CALL LABDIG(3,"Y")
+				CALL LABDIG(nlabdigY_LDOS,"Y")
 				CALL GRAF(enelow,enehigh,enelow,stepx, ylowerleft,yupperleft,ylowerleft,stepy)
 				call linwid(icurvewidth) !Set to user-defined line width
 				if (ishowLDOScurve==1) CALL CURVE(curvexpos,LDOScurve,num1Dpoints)
@@ -992,7 +1228,7 @@ else if (isel==0.or.isel==10) then
 		!============= Post-process menu ==============
 		!============= Post-process menu ==============
 		write(*,*)
-		write(*,*) "                    -------- Post-process menu --------"
+		write(*,*) "                      -------- Post-process menu --------"
 		if (isel==0) then !T/P/OPDOS
             write(*,*) "-1 Set format of saved image file, current: "//graphformat
 			write(*,*) "0 Return"
@@ -1022,13 +1258,14 @@ else if (isel==0.or.isel==10) then
             if (ishowlegend==1) write(*,"(a,' X=',i5,', Y=',i5)") " 12 Set position of legends, current:",legendx,legendy
 			if (ishowlegend==1) write(*,*) "13 Toggle showing legends, current: Yes"
 			if (ishowlegend==0) write(*,*) "13 Toggle showing legends, current: No"
-			if (idoOPDOS==1) write(*,"(a,f10.5)") " 14 Set scale factor of Y-axis for OPDOS, current:",Yrightscafac
+			if (idoOPDOS==1) write(*,"(a,f10.5)") " 14 Set scale factor of Y-axis for OPDOS, current:",Yrightsclfac
 			write(*,*) "15 Toggle showing vertical dashed line to highlight HOMO level"
 			write(*,*) "16 Set the texts in the legends"
 			write(*,"(a,i3)") " 17 Set width of curves, current:",icurvewidth
 			write(*,"(a,i3)") " 18 Set width of lines, current:",ilinewidth
 		    if (ishowYlab==1) write(*,*) "19 Toggle showing labels and ticks on Y-axis, current: Yes"
 		    if (ishowYlab==0) write(*,*) "19 Toggle showing labels and ticks on Y-axis, current: No"
+            write(*,*) "20 Set number of decimal places for axes"
 			read(*,*) isel2
 
             if (isel2==-1) then
@@ -1045,15 +1282,15 @@ else if (isel==0.or.isel==10) then
 				open(10,file="DOS_line.txt",status="replace")
 				if (idoOPDOS==1) then
 					do i=1,3*imoend
-						write(10,"(f10.5,12f12.6)") DOSlinex(i),TDOSliney(i),OPDOSliney(i),PDOSliney(i,:)
+						write(10,"(f12.5,12f12.6)") DOSlinex(i),TDOSliney(i),OPDOSliney(i),PDOSliney(i,:)
 					end do
 				else if (idoPDOS==1) then
 					do i=1,3*imoend
-						write(10,"(f10.5,11f12.6)") DOSlinex(i),TDOSliney(i),PDOSliney(i,:)
+						write(10,"(f12.5,11f12.6)") DOSlinex(i),TDOSliney(i),PDOSliney(i,:)
 					end do
 				else
 					do i=1,3*imoend
-						write(10,"(f10.5,f12.6)") DOSlinex(i),TDOSliney(i)
+						write(10,"(f12.5,f12.6)") DOSlinex(i),TDOSliney(i)
 					end do
 				end if
 				close(10)
@@ -1086,8 +1323,8 @@ else if (isel==0.or.isel==10) then
 				write(*,*) "Input lower and upper limit as well as stepsize, e.g. 0.0,2.4,0.3"
 				read(*,*) ylowerleft,yupperleft,stepy
 				iusersetYleft=1
-				ylowerright=ylowerleft*Yrightscafac !Lower and upper limit for OPDOS. Set it here aims for immediately make effect
-				yupperright=yupperleft*Yrightscafac
+				ylowerright=ylowerleft*Yrightsclfac !Lower and upper limit for OPDOS. Set it here aims for immediately make effect
+				yupperright=yupperleft*Yrightsclfac
 			else if (isel2==5) then
 				if (ishowTDOScurve==0) then
 					ishowTDOScurve=1
@@ -1183,9 +1420,9 @@ else if (isel==0.or.isel==10) then
 				end if
 			else if (isel2==14) then
 				write(*,*) "Input scale factor, e.g. 0.15"
-				read(*,*) Yrightscafac
-				ylowerright=ylowerleft*Yrightscafac !Lower and upper limit for OPDOS. Set it here aims for immediately make effect
-				yupperright=yupperleft*Yrightscafac
+				read(*,*) Yrightsclfac
+				ylowerright=ylowerleft*Yrightsclfac !Lower and upper limit for OPDOS. Set it here aims for immediately make effect
+				yupperright=yupperleft*Yrightsclfac
 			else if (isel2==15) then
 				if (ishowHOMOlev==0) then
 					ishowHOMOlev=1
@@ -1225,6 +1462,25 @@ else if (isel==0.or.isel==10) then
                 else
                     ishowYlab=0
                 end if
+            else if (isel2==20) then
+                do while(.true.)
+                    write(*,*)
+                    write(*,*) "0 Return"
+                    write(*,"(a,i3)") " 1 Set decimal places for X axis, current:",nlabdigX
+                    write(*,"(a,i3)") " 2 Set decimal places for Y axis of TDOS/PDOS, current:",nlabdigY
+                    write(*,"(a,i3)") " 3 Set decimal places for Y axis of OPDOS, current:",nlabdigY_OPDOS
+                    write(*,"(a,i3)") " 4 Set decimal places for Y axis of LDOS, current:",nlabdigY_LDOS
+                    read(*,*) itmp
+                    if (itmp==0) then
+                        exit
+                    else
+                        write(*,*) "Input the number of decimal places, e.g. 3"
+                        if (itmp==1) read(*,*) nlabdigX
+                        if (itmp==2) read(*,*) nlabdigY
+                        if (itmp==3) read(*,*) nlabdigY_OPDOS
+                        if (itmp==4) read(*,*) nlabdigY_LDOS
+                    end if
+                end do
 			end if
 			
 		else if (isel==10) then !LDOS in 1D

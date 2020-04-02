@@ -1,5 +1,6 @@
 !-------- Main interface of visual study of weak interaction
 subroutine visweak_main
+use defvar
 implicit real*8 (a-h,o-z)
 do while(.true.)
 	write(*,*)
@@ -9,6 +10,7 @@ do while(.true.)
 	write(*,*) "2 NCI analysis based on promolecular density (JACS, 132, 6498)"
 	write(*,*) "3 Averaged NCI analysis (NCI analysis for multiple frames. JCTC, 9 ,2226)"
 	write(*,*) "5 DORI analysis (JCTC, 10, 3745)"
+	write(*,*) "6 Visualization of van der Waals potential"
 	write(*,*) "9 Becke/Hirshfeld surface analysis (CrystEngComm, 11, 19)"
 	write(*,*) "10 IGM analysis based on promolecular density (PCCP 19, 17928)"
 	read(*,*) isel
@@ -22,6 +24,8 @@ do while(.true.)
 		call RDG_MD
 	else if (isel==5) then
 		call funcvsfunc(5)
+    else if (isel==6) then
+        call vdWpotential
 	else if (isel==9) then
 		write(*,"(a)") " Note: To perform Becke or Hirshfeld surface analysis, you should use main function 12. &
 		Please check Section 3.15.5 of Multiwfn manual on how to do that. Corresponding examples are given as Sections 4.12.5 and 4.12.6."
@@ -258,9 +262,9 @@ end subroutine
 
 
 
-!!------------------------------------------------------------------------------------
-!! ----------- Independent Gradient Model (IGM) analysis based on promolecular density
-!!------------------------------------------------------------------------------------
+!!------------------------------------------------------------------------------------------------
+!! ----------- Independent Gradient Model (IGM) analysis based on promolecular density -----------
+!!------------------------------------------------------------------------------------------------
 subroutine IGM
 use function
 use util
@@ -642,5 +646,105 @@ do while (.true.)
 		if (isel==8) where (sl2r>rupper.or.sl2r<rlower) dg_inter=tmpval
 		write(*,*) "Done!"
 	end if !end of menu
+end do
+end subroutine
+
+
+
+
+!!-------------------------------------
+!!------ Calculate vdW potential ------
+!!-------------------------------------
+!For simplicity, only UFF is employed in current code (If using AMBER99 & GAFF, then atom types must be set first)
+subroutine vdwpotential
+use defvar
+use GUI
+implicit real*8 (a-h,o-z)
+real*8 parmA(ncenter),parmB(ncenter),UFF_A(103),UFF_B(103)
+real*8,allocatable :: repulgrid(:,:,:),dispgrid(:,:,:),vdwgrid(:,:,:)
+character outcubfile*200
+
+write(*,*) "Parameters of UFF forcefield are used in this module"
+write(*,"(' Element of probe atom: ',a,/)") ind2name(ivdwprobe)
+
+!call setvdWparm(1,FFtype,parmA,parmB,istatus)
+call defineUFFparm(UFF_A,UFF_B)
+do iatm=1,ncenter
+    parmA(iatm)=UFF_A(a(iatm)%index)
+    parmB(iatm)=UFF_B(a(iatm)%index)
+end do
+parmAj=UFF_A(ivdwprobe)
+parmBj=UFF_B(ivdwprobe)
+
+aug3D=8 !Use 8 Bohr as extension distance because vdW potential largely spread
+call setgrid(1,igridsel)
+allocate(repulgrid(nx,ny,nz),dispgrid(nx,ny,nz),vdwgrid(nx,ny,nz))
+    
+write(*,*) "Calculating, please wait..."
+!$OMP PARALLEL DO SHARED(repulgrid,dispgrid,vdwgrid) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprepul,tmpdisp,iatm,dist,Dij,Xij) schedule(dynamic) NUM_THREADS(nthreads)
+do k=1,nz
+	tmpz=orgz+(k-1)*dz
+	do j=1,ny
+		tmpy=orgy+(j-1)*dy
+		do i=1,nx
+			tmpx=orgx+(i-1)*dx
+            tmprepul=0
+            tmpdisp=0
+            do iatm=1,ncenter
+                dist=dsqrt( (a(iatm)%x-tmpx)**2 + (a(iatm)%y-tmpy)**2 + (a(iatm)%z-tmpz)**2 )*b2a
+				Dij=dsqrt(parmA(iatm)*parmAj) !Well depth
+				Xij=dsqrt(parmB(iatm)*parmBj) !vdW distance
+				tmprepul=tmprepul+Dij*(Xij/dist)**12 !Repulsion
+				tmpdisp=tmpdisp-2*Dij*(Xij/dist)**6 !Dispersion
+            end do
+            repulgrid(i,j,k)=tmprepul
+            dispgrid(i,j,k)=tmpdisp
+            vdWgrid(i,j,k)=tmprepul+tmpdisp
+		end do
+	end do
+end do
+!$OMP END PARALLEL DO
+
+write(*,*) "Note: The unit of the grid data is in kcal/mol"
+sur_value=1D0
+do while(.true.)
+	write(*,*)
+	write(*,*) "0 Return"
+	write(*,*) "1 Show isosurface graph of repulsion potential"
+	write(*,*) "2 Show isosurface graph of dispersion potential"
+	write(*,*) "3 Show isosurface graph of van der Waals potential"
+	write(*,*) "4 Export grid data of repulsion potential as repul.cub in current folder"
+	write(*,*) "5 Export grid data of dispersion potential as disp.cub in current folder"
+	write(*,*) "6 Export grid data of van der Waals potential as vdW.cub in current folder"
+	read(*,*) isel
+	if (isel==0) then
+		exit
+    else if (isel==1.or.isel==2.or.isel==3) then
+        if (allocated(cubmat)) deallocate(cubmat)
+        allocate(cubmat(nx,ny,nz))
+        if (isel==1) cubmat=repulgrid
+        if (isel==2) cubmat=dispgrid
+        if (isel==3) cubmat=vdwgrid
+		call drawisosurgui(1)
+        deallocate(cubmat)
+	else if (isel==4.or.isel==5.or.isel==6) then
+        if (allocated(cubmat)) deallocate(cubmat)
+        allocate(cubmat(nx,ny,nz))
+        if (isel==4) then
+            cubmat=repulgrid
+            outcubfile="repul.cub"
+        else if (isel==5) then
+            cubmat=dispgrid
+            outcubfile="disp.cub"
+        else if (isel==6) then
+            cubmat=vdwgrid
+            outcubfile="vdW.cub"
+        end if
+		open(10,file=outcubfile,status="replace")
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		close(10)
+        deallocate(cubmat)
+		write(*,"(' Done! Grid data has been exported to ',a,' in current folder')") trim(outcubfile)
+    end if
 end do
 end subroutine

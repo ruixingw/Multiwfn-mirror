@@ -518,11 +518,11 @@ do while(.true.)
 			imodwfn=1
 			if (any(MOocc/=int(MOocc))) then
 				if (wfntype==0) then
-					wfntype=3 !RHF-> Restricted post-HF wavefunction
-					write(*,*) "Note: Now the wavefunction is recognized as restricted post-HF wavefunction"
-				else if (wfntype==1.or.wfntype==2) then !UHF/ROHF-> Unrestricted post-HF wavefunction
+					wfntype=3 !RHF-> Restricted multiconfiguration wavefunction
+					write(*,"(a)") " Note: Now the wavefunction is recognized as a restricted multiconfiguration wavefunction"
+				else if (wfntype==1.or.wfntype==2) then !UHF/ROHF-> Unrestricted multiconfiguration wavefunction
 					wfntype=4
-					write(*,*) "Note: Now the wavefunction is recognized as unrestricted post-HF wavefunction"
+					write(*,"(a)") " Note: Now the wavefunction is recognized as an unrestricted multiconfiguration wavefunction"
 				end if
 			end if
 			write(*,*)
@@ -557,21 +557,21 @@ do while(.true.)
 			if (all(MOtype==0)) then
 				if (all(MOocc==nint(MOocc))) then !All A+B orbital & integer occupation
 					wfntype=0
-					write(*,"(' Note: Now the wavefunction is recognized as restricted closed-shell single-determinant wavefunction')")
+					write(*,"(' Note: Now the wavefunction is recognized as a restricted closed-shell single-determinant wavefunction')")
 				else !All A+B orbital & partial occupation
 					wfntype=3
-					write(*,"(' Note: Now the wavefunction is recognized as closed-shell post-HF wavefunction')")
+					write(*,"(' Note: Now the wavefunction is recognized as a restricted multiconfiguration wavefunction')")
 				end if
 			else
 				if (any(MOocc/=nint(MOocc)).and.all(MOtype/=0)) then !Either A or B, and partial occupation
 					wfntype=4
-					write(*,"(' Note: Now the wavefunction is recognized as open-shell post-HF wavefunction')")
+					write(*,"(' Note: Now the wavefunction is recognized as an unrestricted multiconfiguration wavefunction')")
 				else if (all(MOocc==nint(MOocc)).and.all(MOtype/=0)) then !Integer occupation and either A or B
 					wfntype=1
-					write(*,"(' Note: Now the wavefunction is recognized as unrestricted single-determinant wavefunction')")
+					write(*,"(' Note: Now the wavefunction is recognized as an unrestricted single-determinant wavefunction')")
 				else if (all(MOocc==nint(MOocc)).and.any(MOtype==0).and.all(MOtype/=2)) then !Integer occupation and at least one orbital is A, and B is unexisted
 					wfntype=2
-					write(*,"(' Note: Now the wavefunction is recognized as restricted open-shell wavefunction')")
+					write(*,"(' Note: Now the wavefunction is recognized as a restricted open-shell wavefunction')")
 				else
 					write(*,"(' Warning: The type of present wavefunction cannot be identified! You need to reset orbital types')")
 					write(*,*) "Press ENTER button to continue"
@@ -733,7 +733,7 @@ do while(.true.)
 			MOocc(1:ninnerele/2)=0D0
 			write(*,"(' The occupation of',i7,' lowest energy orbitals have been set to zero')") ninnerele/2
 		end if
-		if (wfntype==3.or.wfntype==4) write(*,"(' Warning: Discarding inner orbitals for post-HF wavefunction will lead to unexpected result!')") 
+		if (wfntype==3.or.wfntype==4) write(*,"(' Warning: Discarding inner orbitals for multiconfiguration wavefunction will lead to unexpected result!')") 
 		imodwfn=1
 	
 	else if (iselect==35) then
@@ -1208,11 +1208,11 @@ if (alive.and.ifiletype==1.and.functype==12) then !Use cubegen to calculate ESP
 		call system("rm cubegenpt.txt ESPresult.cub ESPgridtmp.cub nouseout -f")
 	end if
 	call walltime(iwalltime2)
-	if (infomode==0) write(*,"(' Calculation of grid data took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+	if (infomode==0) write(*,"(' Calculation of grid data took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 	return
 end if
 
-!---------------- Below are normal case, use Multiwfn internal code
+!--- Below are normal case, use Multiwfn internal code
 iorbsel=iorb
 calcfunc=functype
 if (functype==12) calcfunc=8 !If calculate total ESP, first calculate nuclear ESP, and finally call espcub to evaluate electronic ESP
@@ -1264,11 +1264,48 @@ call walltime(iwalltime2)
 if (functype==12.or.(functype==100.and.iuserfunc==14)) then
 	call espcub !Calculate electronic ESP and accumulate to existing cubmat
 else
-	if (infomode==0) write(*,"(' Calculation of grid data took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+	if (infomode==0) write(*,"(' Calculation of grid data took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 end if
 end subroutine
 
 
+!!!------ A concise routine specifically for filling up electron density to "rhocub" array
+subroutine saverhocub
+use defvar
+use function
+implicit real*8(a-h,o-z)
+real*8 xarr(nx),yarr(ny),zarr(nz)
+if (allocated(rhocub)) then
+    if (size(rhocub,1)==nx.and.size(rhocub,2)==ny.and.size(rhocub,3)==nz) return !Do need to calculate again
+else
+    allocate(rhocub(nx,ny,nz))
+end if
+write(*,*) "Calculating grid data of electron density..."
+ifinish=0
+do k=1,nz
+	zarr(k)=orgz+(k-1)*dz
+end do
+do j=1,ny
+	yarr(j)=orgy+(j-1)*dy
+end do
+do i=1,nx
+	xarr(i)=orgx+(i-1)*dx
+end do
+!$OMP PARALLEL DO SHARED(rhocub,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprho) schedule(dynamic) NUM_THREADS(nthreads)
+do k=1,nz
+	tmpz=zarr(k)
+	do j=1,ny
+		tmpy=yarr(j)
+		do i=1,nx
+			tmpx=xarr(i)
+			rhocub(i,j,k)=fdens(tmpx,tmpy,tmpz)
+		end do
+	end do
+	ifinish=ifinish+1
+    call showprog(ifinish,nz)
+end do
+!$OMP END PARALLEL DO
+end subroutine
 
 
 
@@ -1591,7 +1628,7 @@ else if (noatmwfn==1) then !Some wfn needs to be genereated by Gaussian and sphe
 end if
 write(*,*)
 
-!Setup custom operation list
+!Setup custom operation array with current size
 ncustommap=nfragatmnum
 if (allocated(custommapname)) deallocate(custommapname)
 if (allocated(customop)) deallocate(customop)
@@ -2246,16 +2283,19 @@ gridvec3=0;gridvec3(3)=dz
 end subroutine
 
 
-!!!------------------------- Delete virtual orbitals higher than LUMO+10 for HF/DFT wavefunctions
+
+!!!------------------- Delete virtual orbitals higher than LUMO+10 for HF/DFT wavefunctions
+!infomode=1 means show prompt
 subroutine delvirorb(infomode)
 use defvar
 implicit real*8 (a-h,o-z)
 integer :: infomode,nvirsave=10 !Lowest nvirsave virtual orbitals will be reserved
-if (ifiletype/=1.and.ifiletype/=9) return !Only works for fch and molden
+if (.not.allocated(CObasa)) return !Only works when all orbitals are available, which implies CObasa is allocated
 if (idelvirorb==0) return
-if (iuserfunc==24) return !linear response kernel require all orbital information
+!Linear response kernel, local electron affinity, orbital-weighted Fukui/dual descriptor require all orbital information
+if (iuserfunc==24.or.iuserfunc==27.or.iuserfunc==95.or.iuserfunc==96.or.iuserfunc==97.or.iuserfunc==98) return 
 if (imodwfn==1) return !Don't make things more complicated!
-!This routine doesn't work for post-HF instances
+
 if (wfntype==0.or.wfntype==2) then !RHF, ROHF
 	if (nmo<=naelec+nvirsave) return
 	nmo=naelec+10 !Simply shield those virtual orbitals
@@ -2263,18 +2303,22 @@ else if (wfntype==1) then !Perserve up to LUMO+10 for alpha, and identical numbe
 	if (nmo/2<=naelec+nvirsave) return !naelec is always >= nbelec
 	nperserve=naelec+nvirsave
 	!Cobasa and Cobasb are needn't to be modified
-	co(naelec+11:naelec+nvirsave+nperserve,:)=co(nmo/2+1:nmo/2+nperserve,:)
+	CO(naelec+11:naelec+nvirsave+nperserve,:)=CO(nmo/2+1:nmo/2+nperserve,:)
 	MOene(naelec+nvirsave+1:naelec+nvirsave+nperserve)=MOene(nmo/2+1:nmo/2+nperserve)
 	MOocc(naelec+nvirsave+1:naelec+nvirsave+nperserve)=MOocc(nmo/2+1:nmo/2+nperserve)
 	MOtype(naelec+nvirsave+1:naelec+nvirsave+nperserve)=MOtype(nmo/2+1:nmo/2+nperserve)
 	nmo=2*nperserve
+else !This routine doesn't work for post-HF instances
+    return
 end if
+
 imodwfn=1 !Will not call this routine again
-if (infomode==1.and.(wfntype==0.or.wfntype==1.or.wfntype==2)) then
+if (infomode==1) then
 	write(*,"(a)") " Note: Virtual orbitals higher than LUMO+10 have been discarded for saving computational time"
 	write(*,*)
 end if
 end subroutine
+
 
 
 !!!-------- imode=1: Convert unit of grid/plane parameters from Bohr to Angstrom. =2: Convert them back
@@ -2418,69 +2462,6 @@ do i=1,ngridnum1 !Calculate Hirshfeld weighting function
 		end if
 	end do
 end do
-end subroutine
-
-!!------- Calculate some quantities involved in Shubin's project in a plane
-!itype=1: Calculate the sum of atomic relative Shannon entropy (namely total relative Shannon entropy)
-!itype=2: Calculate the sum of x=[rhoA-rho0A]/rhoA
-!itype=3: Calculate the difference between total relative Shannon entropy and deformation density
-subroutine genentroplane(itype)
-use defvar
-use function
-implicit real*8 (a-h,o-z)
-integer itype
-real*8 planeprodens(ngridnum1,ngridnum2),planedens(ngridnum1,ngridnum2)
-if (allocated(planemat)) deallocate(planemat)
-allocate(planemat(ngridnum1,ngridnum2))
-planeprodens=0D0
-planemat=0D0
-!Calculate molecular density in the plane and store it to planedens
-!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planedens) schedule(dynamic) NUM_THREADS(nthreads)
-do i=1,ngridnum1
-	do j=1,ngridnum2
-		rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-		rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-		rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
-		planedens(i,j)=fdens(rnowx,rnowy,rnowz)
-	end do
-end do
-!$OMP END PARALLEL DO
-do jatm=1,ncenter_org !Calculate promolecular density in the plane and store it to planeprodens
-	call dealloall
-	call readwfn(custommapname(jatm),1)
-	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planeprodens) schedule(dynamic) NUM_THREADS(nthreads)
-	do i=1,ngridnum1
-		do j=1,ngridnum2
-			rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-			rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-			rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
-			planeprodens(i,j)=planeprodens(i,j)+fdens(rnowx,rnowy,rnowz)
-		end do
-	end do
-	!$OMP END PARALLEL DO
-end do
-!Calculate Hirshfeld weight, relative Shannon entropy and x=[rhoA-rho0A]/rhoA for each atom in the plane and accumulate them to planemat
-do jatm=1,ncenter_org !Cycle each atom, calculate its contribution in the plane
-	call dealloall
-	call readwfn(custommapname(jatm),1)
-	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz,rho0A,rhoA,tmpval) shared(planemat) schedule(dynamic) NUM_THREADS(nthreads)
-	do i=1,ngridnum1
-		do j=1,ngridnum2
-			rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-			rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-			rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
-			rho0A=fdens(rnowx,rnowy,rnowz)
-			rhoA=planedens(i,j)*rho0A/planeprodens(i,j)
-			if (itype==1.or.itype==3) tmpval=rhoA*log(rhoA/rho0A) !Relative Shannon entropy
-			if (itype==2) tmpval=(rhoA-rho0A)/rhoA !x=[rhoA-rho0A]/rhoA
-			planemat(i,j)=planemat(i,j)+tmpval
-		end do
-	end do
-	!$OMP END PARALLEL DO
-end do
-call dealloall
-call readinfile(firstfilename,1) !Retrieve the first loaded file(whole molecule)
-if (itype==3) planemat=planemat-(planedens-planeprodens) !Diff between total relative Shannon entropy and deformation density
 end subroutine
 
 
@@ -3429,4 +3410,52 @@ end do
 
 !Determine point group and framework group
 call syva_point_group(ng,ni,nsg,ncr,nsr,np,pglabel,nout)
+end subroutine
+
+
+
+
+!!-------- Input index of an atom, then the indices of all atoms in the fragment will be returned
+!"iatm" is the selected atom, "iffrag" has length of ncenter, if an atom is in the fragment, the value is 1, else 0
+subroutine getfragatoms(iselatm,iffrag)
+use defvar
+implicit real*8 (a-h,o-z)
+integer iselatm,iffrag(ncenter)
+iffrag=0
+iffrag(iselatm)=1
+if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
+do while(.true.)
+    inew=0
+    do iatm=1,ncenter
+        if (iffrag(iatm)==1) cycle
+        do jatm=1,ncenter !Cycle neighbouring atoms
+            if (jatm==iatm) cycle
+            if (connmat(iatm,jatm)==1.and.iffrag(jatm)==1) then
+                iffrag(iatm)=1
+                inew=inew+1
+                exit
+            end if
+        end do
+    end do
+    if (inew==0) exit
+end do
+end subroutine
+
+
+
+!!-------- Determine HOMO index. idxHOMO and idxHOMOb are global variables
+subroutine getHOMOidx
+use defvar
+if (wfntype==0) then
+    do idxHOMO=nmo,1,-1
+	    if (nint(MOocc(idxHOMO))==2) exit
+    end do
+else if (wfntype==1) then
+    do idxHOMO=nbasis,1,-1
+	    if (nint(MOocc(idxHOMO))==1) exit
+    end do
+    do idxHOMOb=nmo,nbasis+1,-1
+	    if (nint(MOocc(idxHOMOb))==1) exit
+    end do
+end if
 end subroutine

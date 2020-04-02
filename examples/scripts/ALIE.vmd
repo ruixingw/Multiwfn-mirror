@@ -27,7 +27,7 @@ material change specular EdgyGlass 0.000000
 mol modcolor 1 $id Volume 1
 mol scaleminmax $id 1 $colorlow $colorhigh
 
-#Load surfanalysis.pdb to show ESP extrema on vdW surface
+#Load surfanalysis.pdb to show ALIE extrema on vdW surface
 
 mol new surfanalysis.pdb
 mol modstyle 0 top VDW 0.1 20

@@ -555,27 +555,48 @@ real*8 function userfunc(x,y,z)
 real*8 x,y,z,vec(3),mat(3,3)
 userfunc=1D0 !Default value. Note: default "iuserfunc" is 0
 !Below functions can be selected by "iuserfunc" parameter in settings.ini
-if (iuserfunc==-3) userfunc=splineintp3d(x,y,z,1) !The function value evaluated by cubic spline interpolation from cubmat
-if (iuserfunc==-2) userfunc=calcprodens(x,y,z,0) !Promolecular density
-if (iuserfunc==-1) userfunc=linintp3d(x,y,z,1) !The function value evaluated by trilinear interpolation from cubmat
-if (iuserfunc==1) userfunc=fspindens(x,y,z,'a') !Alpha density
-if (iuserfunc==2) userfunc=fspindens(x,y,z,'b') !Beta density
-if (iuserfunc==3) userfunc=(x*x+y*y+z*z)*fdens(x,y,z) !Integrand of electronic spatial extent <R**2>
-if (iuserfunc==4) userfunc=weizpot(x,y,z) !Weizsacker potential
-if (iuserfunc==5) userfunc=KED(x,y,z,4) !Integrand of weizsacker functional
-if (iuserfunc==6) userfunc=4*pi*fdens(x,y,z)*(x*x+y*y+z*z) !Radial distribution function (assume that density is sphericalized)
-if (iuserfunc==7) userfunc=2D0/3D0*lagkin(x,y,z,0)/fdens(x,y,z) !Local Temperature(Kelvin), PNAS,81,8028
-if (iuserfunc==8) userfunc=totesp(x,y,z)/fdens(x,y,z) !Average local electrostatic potential, useful to exhibit atomic shell structure, see Chapter 8 of Theoretical Aspects of Chemical Reactivity
-if (iuserfunc==9) userfunc=fdens(x,y,z)/nelec !Shape function
-if (iuserfunc==10) userfunc=-Hamkin(x,y,z,0)-lagkin(x,y,z,0) !Potential energy density, also known as virial field
-if (iuserfunc==11) userfunc=-Hamkin(x,y,z,0) !Energy density
-if (iuserfunc==12) userfunc=-nucesp(x,y,z)*fdens(x,y,z) !Local nuclear attraction potential energy
-if (iuserfunc==13) userfunc=lagkin(x,y,z,0)/fdens(x,y,z) !This quantity at bond critical point is useful to discriminate covalent bonding and closed-shell interaction
-if (iuserfunc==14) userfunc=eleesp(x,y,z) !Electrostatic potential from electrons
-if (iuserfunc==15) userfunc=fdens(x,y,z)/flapl(x,y,z,'t') !Bond metallicity
-if (iuserfunc==16) userfunc=36*(3*pi*pi)**(2D0/3D0)/5D0*fdens(x,y,z)**(5D0/3D0)/flapl(x,y,z,'t') !Dimensionless bond metallicity
-if (iuserfunc==17) userfunc=-Hamkin(x,y,z,0)/fdens(x,y,z) !Energy density per electron
-if (iuserfunc==18) then !Region of Slow Electrons (RoSE), defined in Chem. Phys. Lett., 582, 144 (2013)
+select case(iuserfunc)
+case (-3) !The function value evaluated by cubic spline interpolation from cubmat
+    userfunc=splineintp3d(x,y,z,1)
+case (-2) !Promolecular density
+    userfunc=calcprodens(x,y,z,0)
+case (-1) !The function value evaluated by trilinear interpolation from cubmat
+    userfunc=linintp3d(x,y,z,1)
+case (1) !Alpha density
+    userfunc=fspindens(x,y,z,'a')
+case (2) !Beta density
+    userfunc=fspindens(x,y,z,'b')
+case (3) !Integrand of electronic spatial extent <R**2>
+    userfunc=(x*x+y*y+z*z)*fdens(x,y,z)
+case (4) !Weizsacker potential
+    userfunc=weizpot(x,y,z)
+case (5) !Integrand of weizsacker functional
+    userfunc=KED(x,y,z,4)
+case (6) !Radial distribution function (assume that density is sphericalized)
+    userfunc=4*pi*fdens(x,y,z)*(x*x+y*y+z*z)
+case (7) !Local Temperature(Kelvin), PNAS,81,8028
+    userfunc=2D0/3D0*lagkin(x,y,z,0)/fdens(x,y,z)
+case (8) !Average local electrostatic potential, useful in exhibiting atomic shell structure
+    userfunc=totesp(x,y,z)/fdens(x,y,z)
+case (9) !Shape function
+    userfunc=fdens(x,y,z)/nelec
+case (10) !Potential energy density, also known as virial field
+    userfunc=-Hamkin(x,y,z,0)-lagkin(x,y,z,0)
+case (11) !Energy density
+    userfunc=-Hamkin(x,y,z,0)
+case (12) !Local nuclear attraction potential energy
+    userfunc=-nucesp(x,y,z)*fdens(x,y,z)
+case (13) !This quantity at bond critical point is useful to discriminate covalent bonding and closed-shell interaction
+    userfunc=lagkin(x,y,z,0)/fdens(x,y,z)
+case (14) !Electrostatic potential from electrons
+    userfunc=eleesp(x,y,z)
+case (15) !Bond metallicity
+    userfunc=fdens(x,y,z)/flapl(x,y,z,'t')
+case (16) !Dimensionless bond metallicity
+    userfunc=36*(3*pi*pi)**(2D0/3D0)/5D0*fdens(x,y,z)**(5D0/3D0)/flapl(x,y,z,'t')
+case (17) !Energy density per electron
+    userfunc=-Hamkin(x,y,z,0)/fdens(x,y,z)
+case (18) !Region of Slow Electrons (RoSE), defined in Chem. Phys. Lett., 582, 144 (2013)
 	rho=fdens(x,y,z)
 	if (wfntype==0.or.wfntype==3) then !Closed-shell cases
 		Dh=2.871234000D0*rho**(5.0D0/3.0D0)
@@ -587,106 +608,184 @@ if (iuserfunc==18) then !Region of Slow Electrons (RoSE), defined in Chem. Phys.
 	end if
 	G=Lagkin(x,y,z,0)
 	userfunc=(Dh-G)/(Dh+G)
-end if
-if (iuserfunc==19) userfunc=SEDD(x,y,z) !SEDD
-if (iuserfunc==20) userfunc=DORI(x,y,z) !DORI
-if (iuserfunc==21) userfunc=-x*fdens(x,y,z) !Integrand of X component of electric dipole moment
-if (iuserfunc==22) userfunc=-y*fdens(x,y,z) !Integrand of Y component of electric dipole moment
-if (iuserfunc==23) userfunc=-z*fdens(x,y,z) !Integrand of Z component of electric dipole moment
-if (iuserfunc==24) userfunc=linrespkernel(x,y,z) !Approximate form of DFT linear response kernel for closed-shell
-if (iuserfunc==25) userfunc=fgrad(x,y,z,'t')/fdens(x,y,z)/2D0 !Magnitude of fluctuation of the electronic momentum
-if (iuserfunc==26) userfunc=KED(x,y,z,3) !Thomas-Fermi kinetic energy density
-if (iuserfunc==27) userfunc=loceleaff(x,y,z) !Local electron affinity
-if (iuserfunc==28) userfunc=(avglocion(x,y,z)+loceleaff(x,y,z))/2 !Local Mulliken electronegativity
-if (iuserfunc==29) userfunc=(avglocion(x,y,z)-loceleaff(x,y,z))/2 !Local hardness
-if (iuserfunc==30) userfunc=densellip(x,y,z,1) !Ellipticity of electron density
-if (iuserfunc==31) userfunc=densellip(x,y,z,2) !eta index, Angew. Chem. Int. Ed., 53, 2766-2770 (2014)
-if (iuserfunc==32) userfunc=densellip(x,y,z,2)-1 !Modified eta index
-if (iuserfunc==33) userfunc=PAEM(x,y,z,1) !PAEM, potential acting on one electron in a molecule, defined by Zhongzhi Yang
-if (iuserfunc==34) userfunc=PAEM(x,y,z,2) !The same as 33, but using DFT XC potential directly rather than evaluating the XC potential based on pair density
-if (iuserfunc==35) then !|V(r)|/G(r)
+case (19) !SEDD
+    userfunc=SEDD(x,y,z)
+case (20) !DORI
+    userfunc=DORI(x,y,z)
+case (21) !Integrand of X component of electric dipole moment
+    userfunc=-x*fdens(x,y,z)
+case (22) !Integrand of Y component of electric dipole moment
+    userfunc=-y*fdens(x,y,z)
+case (23) !Integrand of Z component of electric dipole moment
+    userfunc=-z*fdens(x,y,z)
+case (24) !Approximate form of DFT linear response kernel for closed-shell
+    userfunc=linrespkernel(x,y,z)
+case (25) !Magnitude of fluctuation of the electronic momentum
+    userfunc=fgrad(x,y,z,'t')/fdens(x,y,z)/2D0
+case (26) !Thomas-Fermi kinetic energy density
+    userfunc=KED(x,y,z,3)
+case (27) !Local electron affinity
+    userfunc=loceleaff(x,y,z)
+case (28) !Local Mulliken electronegativity
+    userfunc=(avglocion(x,y,z)+loceleaff(x,y,z))/2
+case (29) !Local hardness
+    userfunc=(avglocion(x,y,z)-loceleaff(x,y,z))/2
+case (30) !Ellipticity of electron density
+    userfunc=densellip(x,y,z,1)
+case (31) !eta index, Angew. Chem. Int. Ed., 53, 2766-2770 (2014)
+    userfunc=densellip(x,y,z,2)
+case (32) !Modified eta index
+    userfunc=densellip(x,y,z,2)-1
+case (33) !PAEM, potential acting on one electron in a molecule, defined by Zhongzhi Yang
+    userfunc=PAEM(x,y,z,1)
+case (34) !The same as 33, but using DFT XC potential directly rather than evaluating the XC potential based on pair density
+    userfunc=PAEM(x,y,z,2)
+case (35) !|V(r)|/G(r)
 	tmpval=lagkin(x,y,z,0)
 	userfunc=abs(-Hamkin(x,y,z,0)-tmpval)/tmpval
-end if
-if (iuserfunc==36) then !On-top pair density, i.e. r1=r2 case of pair density. paircorrtype affects result
+case (36) !On-top pair density, i.e. r1=r2 case of pair density. paircorrtype affects result
 	pairfunctypeold=pairfunctype
 	pairfunctype=12
 	userfunc=pairfunc(x,y,z,x,y,z)
 	pairfunctype=pairfunctypeold
-end if
-if (iuserfunc==37) userfunc=ELF_LOL(x,y,z,"SCI")
-if (iuserfunc==38) userfunc=Ang_rhoeigvec_ple(x,y,z,2) !The angle between the second eigenvector of rho and the plane defined by option 4 of main function 1000
-if (iuserfunc==39) userfunc=totespskip(x,y,z,iskipnuc) !ESP without contribution of nuclues "iskipnuc"
-if (iuserfunc==40) userfunc=weizsacker(x,y,z) !Steric energy
-if (iuserfunc==41) userfunc=stericpot(x,y,z) !Steric potential
-if (iuserfunc==42) userfunc=stericcharge(x,y,z) !Steric charge
-if (iuserfunc==43) userfunc=stericforce(x,y,z) !The magnitude of steric force
-if (iuserfunc==44) userfunc=stericpot_damp(x,y,z) !Steric potential with damping function to a given constant value
-if (iuserfunc==45) userfunc=stericforce_damp(x,y,z) !Steric force based on damped potential
-if (iuserfunc==46) userfunc=stericforce_directdamp(x,y,z) !Steric force directly damped to zero
-if (iuserfunc==50) userfunc=infoentro(2,x,y,z) !Shannon entropy density, see JCP,126,191107 for example
-if (iuserfunc==51) userfunc=Fisherinfo(1,x,y,z) !Fisher information density, see JCP,126,191107 for example
-if (iuserfunc==52) userfunc=Fisherinfo(2,x,y,z) !Second Fisher information density, see JCP,126,191107 for derivation
-if (iuserfunc==53) userfunc=Ghoshentro(x,y,z,1) !Ghosh entropy density with G(r) as kinetic energy density, PNAS,81,8028
-if (iuserfunc==54) userfunc=Ghoshentro(x,y,z,2) !Ghosh entropy density with G(r)-der2rho/8 as kinetic energy density, exactly corresponds to Eq.22 in PNAS,81,8028
-if (iuserfunc==55) userfunc=fdens(x,y,z)**2 !Integrand of quadratic form of Renyi entropy
-if (iuserfunc==56) userfunc=fdens(x,y,z)**3 !Integrand of cubic form of Renyi entropy
-if (iuserfunc==60) userfunc=paulipot(x,y,z) !Pauli potential, Comp. Theor. Chem., 1006, 92-99
-if (iuserfunc==61) userfunc=pauliforce(x,y,z) !The magnitude of Pauli force
-if (iuserfunc==62) userfunc=paulicharge(x,y,z) !Pauli charge
-if (iuserfunc==63) userfunc=quantumpot(x,y,z) !Quantum potential
-if (iuserfunc==64) userfunc=quantumforce(x,y,z) !The magnitude of quantum force
-if (iuserfunc==65) userfunc=quantumcharge(x,y,z) !Quantum charge
-if (iuserfunc==66) userfunc=elestatforce(x,y,z) !The magnitude of electrostatic force
-if (iuserfunc==67) userfunc=elestatcharge(x,y,z) !Electrostatic charge
-if (iuserfunc==70) userfunc=4.5D0*fdens(x,y,z)**2/lagkin(x,y,z,0)   !Phase-space-defined Fisher information density
-if (iuserfunc==71) userfunc=elemomdens(x,y,z,1) !X component of electron linear momentum density in 3D representation
-if (iuserfunc==72) userfunc=elemomdens(x,y,z,2) !Y component of electron linear momentum density in 3D representation
-if (iuserfunc==73) userfunc=elemomdens(x,y,z,3) !Z component of electron linear momentum density in 3D representation
-if (iuserfunc==74) userfunc=elemomdens(x,y,z,0) !Magnitude of electron linear momentum density in 3D representation
-if (iuserfunc==75) userfunc=magmomdens(x,y,z,1) !X component of magnetic dipole moment density
-if (iuserfunc==76) userfunc=magmomdens(x,y,z,2) !Y component of magnetic dipole moment density
-if (iuserfunc==77) userfunc=magmomdens(x,y,z,3) !Z component of magnetic dipole moment density
-if (iuserfunc==78) userfunc=magmomdens(x,y,z,0) !Magnitude of magnetic dipole moment density
-if (iuserfunc==79) userfunc=energydens_grdn(x,y,z) !Gradient norm of energy density
-if (iuserfunc==80) userfunc=energydens_lapl(x,y,z) !Laplacian of energy density
-if (iuserfunc==81) userfunc=hamkin(x,y,z,1) !X component of Hamiltonian kinetic energy density
-if (iuserfunc==82) userfunc=hamkin(x,y,z,2) !Y component of Hamiltonian kinetic energy density
-if (iuserfunc==83) userfunc=hamkin(x,y,z,3) !Z component of Hamiltonian kinetic energy density
-if (iuserfunc==84) userfunc=Lagkin(x,y,z,1) !X component of Lagrangian kinetic energy density
-if (iuserfunc==85) userfunc=Lagkin(x,y,z,2) !Y component of Lagrangian kinetic energy density
-if (iuserfunc==86) userfunc=Lagkin(x,y,z,3) !Z component of Lagrangian kinetic energy density
-if (iuserfunc==87) userfunc=localcorr(x,y,z,1) !Local total electron correlation function
-if (iuserfunc==88) userfunc=localcorr(x,y,z,2) !Local dynamic electron correlation function
-if (iuserfunc==89) userfunc=localcorr(x,y,z,3) !Local nondynamic electron correlation function
-if (iuserfunc==90) then
-	tmpELF=ELF_LOL(x,y,z,"ELF")
-	userfunc=tmpELF*tmpELF*(x*x+y*y+z*z)
-else if (iuserfunc==91) then
-	userfunc=tmpELF*tmpELF
-end if
-if (iuserfunc==100) userfunc=fdens(x,y,z)**2 !Disequilibrium (also known as semi-similarity), DOI: 10.1002/qua.24510
-if (iuserfunc==101) then !Positive part of ESP
+case (37) !SCI
+    userfunc=ELF_LOL(x,y,z,"SCI")
+case (38) !The angle between the second eigenvector of rho and the plane defined by option 4 of main function 1000
+    userfunc=Ang_rhoeigvec_ple(x,y,z,2)
+case (39) !ESP without contribution of nuclues "iskipnuc"
+    userfunc=totespskip(x,y,z,iskipnuc)
+case (40) !Steric energy
+    userfunc=weizsacker(x,y,z)
+case (41) !Steric potential
+    userfunc=stericpot(x,y,z)
+case (42) !Steric charge
+    userfunc=stericcharge(x,y,z)
+case (43) !The magnitude of steric force
+    userfunc=stericforce(x,y,z)
+case (44) !Steric potential with damping function to a given constant value
+    userfunc=stericpot_damp(x,y,z)
+case (45) !Steric force based on damped potential
+    userfunc=stericforce_damp(x,y,z)
+case (46) !Steric force directly damped to zero
+    userfunc=stericforce_directdamp(x,y,z)
+case (50) !Shannon entropy density, see JCP,126,191107 for example
+    userfunc=infoentro(2,x,y,z)
+case (51) !Fisher information density, see JCP,126,191107 for example
+    userfunc=Fisherinfo(1,x,y,z)
+case (52) !Second Fisher information density, see JCP,126,191107 for derivation
+    userfunc=Fisherinfo(2,x,y,z)
+case (53) !Ghosh entropy density with G(r) as kinetic energy density, PNAS,81,8028
+    userfunc=Ghoshentro(x,y,z,1)
+case (54) !Ghosh entropy density with G(r)-der2rho/8 as kinetic energy density, exactly corresponds to Eq.22 in PNAS,81,8028
+    userfunc=Ghoshentro(x,y,z,2)
+case (55) !Integrand of quadratic form of Renyi entropy
+    userfunc=fdens(x,y,z)**2
+case (56) !Integrand of cubic form of Renyi entropy
+    userfunc=fdens(x,y,z)**3
+case (60) !Pauli potential, Comp. Theor. Chem., 1006, 92-99
+    userfunc=paulipot(x,y,z)
+case (61) !Magnitude of Pauli force
+    userfunc=pauliforce(x,y,z)
+case (62) !Pauli charge
+    userfunc=paulicharge(x,y,z)
+case (63) !Quantum potential
+    userfunc=quantumpot(x,y,z)
+case (64) !The magnitude of quantum force
+    userfunc=quantumforce(x,y,z)
+case (65) !Quantum charge
+    userfunc=quantumcharge(x,y,z)
+case (66) !The magnitude of electrostatic force
+    userfunc=elestatforce(x,y,z)
+case (67) !Electrostatic charge
+    userfunc=elestatcharge(x,y,z)
+case (70) !Phase-space-defined Fisher information density
+    userfunc=4.5D0*fdens(x,y,z)**2/lagkin(x,y,z,0)
+case (71) !X component of electron linear momentum density in 3D representation
+    userfunc=elemomdens(x,y,z,1)
+case (72) !Y component of electron linear momentum density in 3D representation
+    userfunc=elemomdens(x,y,z,2)
+case (73) !Z component of electron linear momentum density in 3D representation
+    userfunc=elemomdens(x,y,z,3)
+case (74) !Magnitude of electron linear momentum density in 3D representation
+    userfunc=elemomdens(x,y,z,0)
+case (75) !X component of magnetic dipole moment density
+    userfunc=magmomdens(x,y,z,1)
+case (76) !Y component of magnetic dipole moment density
+    userfunc=magmomdens(x,y,z,2)
+case (77) !Z component of magnetic dipole moment density
+    userfunc=magmomdens(x,y,z,3)
+case (78) !Magnitude of magnetic dipole moment density
+    userfunc=magmomdens(x,y,z,0)
+case (79) !Gradient norm of energy density
+    userfunc=energydens_grdn(x,y,z)
+case (80) !Laplacian of energy density
+    userfunc=energydens_lapl(x,y,z)
+case (81) !X component of Hamiltonian kinetic energy density
+    userfunc=hamkin(x,y,z,1)
+case (82) !Y component of Hamiltonian kinetic energy density
+    userfunc=hamkin(x,y,z,2)
+case (83) !Z component of Hamiltonian kinetic energy density
+    userfunc=hamkin(x,y,z,3)
+case (84) !X component of Lagrangian kinetic energy density
+    userfunc=Lagkin(x,y,z,1)
+case (85) !Y component of Lagrangian kinetic energy density
+    userfunc=Lagkin(x,y,z,2)
+case (86) !Z component of Lagrangian kinetic energy density
+    userfunc=Lagkin(x,y,z,3)
+case (87) !Local total electron correlation function
+    userfunc=localcorr(x,y,z,1)
+case (88) !Local dynamic electron correlation function
+    userfunc=localcorr(x,y,z,2)
+case (89) !Local nondynamic electron correlation function
+    userfunc=localcorr(x,y,z,3)
+case (92) !vdW potential
+    userfunc=vdwpotfunc(x,y,z,1)
+case (93) !Repulsion potential
+    userfunc=vdwpotfunc(x,y,z,2)
+case (94) !Disperison potential
+    userfunc=vdwpotfunc(x,y,z,3)
+case (95) !Orbital-weighted f+ Fukui function
+    userfunc=orbwei_Fukui(1,x,y,z)
+case (96) !Orbital-weighted f- Fukui function
+    userfunc=orbwei_Fukui(2,x,y,z)
+case (97) !Orbital-weighted f0 Fukui function
+    userfunc=orbwei_Fukui(3,x,y,z)
+case (98) !Orbital-weighted dual descriptor
+    userfunc=orbwei_Fukui(4,x,y,z)
+case (100) !Disequilibrium (also known as semi-similarity), DOI: 10.1002/qua.24510
+    userfunc=fdens(x,y,z)**2
+case (101) !Positive part of ESP
 	userfunc=totesp(x,y,z)
 	if (userfunc<0D0) userfunc=0D0
-else if (iuserfunc==102) then !Negative part of ESP
+case (102) !Negative part of ESP
 	userfunc=totesp(x,y,z)
 	if (userfunc>0D0) userfunc=0D0
-else if (iuserfunc==103) then !Magnitude of electric field
+case (103) !Magnitude of electric field
 	call gencalchessmat(1,12,x,y,z,value,vec,mat) !Get gradient of ESP
 	userfunc=dsqrt(sum(vec**2))
-end if
-if (iuserfunc>=802.and.iuserfunc<=807) userfunc=funcvalLSB(x,y,z,iuserfunc-800)
-if (iuserfunc>=812.and.iuserfunc<=817) userfunc=1/funcvalLSB(x,y,z,iuserfunc-810)
-if (iuserfunc==900) userfunc=x !X coordinate
-if (iuserfunc==901) userfunc=y !Y coordinate
-if (iuserfunc==902) userfunc=z !Z coordinate
-if (iuserfunc==1000) userfunc=DFTxcfunc(x,y,z) !Various kinds of DFT exchange-correlation functions
-if (iuserfunc==1100) userfunc=DFTxcpot(x,y,z) !Various kinds of DFT exchange-correlation potentials
-if (iuserfunc==1200) userfunc=KED(x,y,z,iKEDsel) !Various kinds of electronic kinetic energy density (KED)
-if (iuserfunc==1201) userfunc=KEDdiff(x,y,z,iKEDsel,1) !Get difference between KED selected by iKEDsel and Weizsacker KED
-if (iuserfunc==1202) userfunc=KEDdiff(x,y,z,iKEDsel,2) !Get difference between KED selected by iKEDsel and Lagrangian KED
-if (iuserfunc==1203) userfunc=KEDdiff(x,y,z,iKEDsel,3) !Get absolute difference between KED selected by iKEDsel and Lagrangian KED
+case (802:807)
+    userfunc=funcvalLSB(x,y,z,iuserfunc-800)
+case (812:817)
+    userfunc=1/funcvalLSB(x,y,z,iuserfunc-810)
+case (900) !X coordinate
+    userfunc=x
+case (901) !Y coordinate
+    userfunc=y
+case (902) !Z coordinate
+    userfunc=z
+case (1000) !Various kinds of DFT exchange-correlation functions
+    userfunc=DFTxcfunc(x,y,z)
+case (1100) !Various kinds of DFT exchange-correlation potentials
+    userfunc=DFTxcpot(x,y,z)
+case (1200) !Various kinds of electronic kinetic energy density (KED)
+    userfunc=KED(x,y,z,iKEDsel)
+case (1201) !Get difference between KED selected by iKEDsel and Weizsacker KED
+    userfunc=KEDdiff(x,y,z,iKEDsel,1)
+case (1202) !Get difference between KED selected by iKEDsel and Lagrangian KED
+    userfunc=KEDdiff(x,y,z,iKEDsel,2)
+case (1203) !Get absolute difference between KED selected by iKEDsel and Lagrangian KED
+    userfunc=KEDdiff(x,y,z,iKEDsel,3)
+end select
 !Below are other examples
 ! userfunc=hamkin(x,y,z,3)-0.5D0*(hamkin(x,y,z,1)+hamkin(x,y,z,2)) !Anisotropy of Hamiltonian kinetic energy in Z, namely K_Z-0.5*(K_X+K_Y)
 ! userfunc=-x*y*fdens(x,y,z) !Integrand of XY component of electric quadrupole moment
@@ -1107,6 +1206,35 @@ do imo=1,nmo
 end do
 comp(0)=sum(comp(1:3)**2)
 magmomdens=comp(idir)
+end function
+
+
+!!!----- vdW potential (itype=1), repulsion potential (itype=2) and dispersion potential (itype=3)
+!UFF parameters are used. The unit is kcal/mol
+real*8 function vdwpotfunc(x,y,z,itype)
+integer itype
+real*8 x,y,z,parmA(ncenter),parmB(ncenter),UFF_A(103),UFF_B(103)
+
+call defineUFFparm(UFF_A,UFF_B)
+do iatm=1,ncenter
+    parmA(iatm)=UFF_A(a(iatm)%index)
+    parmB(iatm)=UFF_B(a(iatm)%index)
+end do
+parmAj=UFF_A(ivdwprobe)
+parmBj=UFF_B(ivdwprobe)
+
+repul=0
+disp=0
+do iatm=1,ncenter
+    dist=dsqrt( (a(iatm)%x-x)**2 + (a(iatm)%y-y)**2 + (a(iatm)%z-z)**2 )*b2a
+	Dij=dsqrt(parmA(iatm)*parmAj) !Well depth
+	Xij=dsqrt(parmB(iatm)*parmBj) !vdW distance
+	repul=repul+Dij*(Xij/dist)**12 !Repulsion
+	disp=disp-2*Dij*(Xij/dist)**6 !Dispersion
+end do
+if (itype==1) vdwpotfunc=repul+disp
+if (itype==2) vdwpotfunc=repul
+if (itype==3) vdwpotfunc=disp
 end function
 
 
@@ -1951,7 +2079,6 @@ call IGMprodens(1,x,y,z,IGM_grad,fragatm)
 call IGMprodens(0,x,y,z,grad,fragatm)
 delta_g_IGM=dsqrt(sum(IGM_grad**2))-dsqrt(sum(grad**2))
 end function
-
 
 
 !!!--------------- Output Shannon information entropy function at a point
@@ -3984,10 +4111,10 @@ end if
 end function
 
 
-!For visually examine functions used in DFRT2.0 project
+!!------For visually examine functions used in DFRT2.0 project
 real*8 function funcvalLSB(x,y,z,itype)
 integer itype
-integer,parameter :: nfunc=7
+integer,parameter :: nfunc=8
 real*8 x,y,z,valarr(nfunc),rho,gradrho(3)
 iexpcutoffold=expcutoff
 expcutoff=1
@@ -3997,6 +4124,56 @@ expcutoff=iexpcutoffold
 end function
 
 
+!!------ Orbital-weighted Fukui function or dual descriptor
+!itype=1: f+   =2: f-   =3: f0   =4: Dual descriptor
+!The delta parameter is defined by global variable "orbwei_delta"
+real*8 function orbwei_Fukui(itype,x,y,z)
+real*8 x,y,z,wfnval(nmo),expterm(nmo)
+
+idxHOMO=nint(naelec) !It is assumed that the occupation has not been altered
+idxLUMO=idxHOMO+1
+chempot=(MOene(idxHOMO)+MOene(idxLUMO))/2
+if (itype==1) then !f+
+    call orbderv(1,idxLUMO,nmo,x,y,z,wfnval)
+else if (itype==2) then !f-
+    call orbderv(1,1,idxHOMO,x,y,z,wfnval)
+else !f0 or DD
+    call orbderv(1,1,nmo,x,y,z,wfnval)
+end if
+
+if (itype==1.or.itype==3.or.itype==4) then !f+
+    do imo=idxLUMO,nmo
+        expterm(imo)=exp( -((chempot-MOene(imo))/orbwei_delta)**2 )
+    end do
+    denomin=sum(expterm(idxLUMO:nmo))
+    orbwei_Fpos=0
+    do imo=idxLUMO,nmo
+        wei=expterm(imo)/denomin
+	    orbwei_Fpos=orbwei_Fpos+wei*wfnval(imo)**2
+    end do
+end if
+if (itype==2.or.itype==3.or.itype==4) then !f-
+    do imo=1,idxHOMO
+        expterm(imo)=exp( -((chempot-MOene(imo))/orbwei_delta)**2 )
+    end do
+    denomin=sum(expterm(1:idxHOMO))
+    orbwei_Fneg=0
+    do imo=1,idxHOMO
+        wei=expterm(imo)/denomin
+	    orbwei_Fneg=orbwei_Fneg+wei*wfnval(imo)**2
+    end do
+end if
+
+if (itype==1) then !f+
+    orbwei_Fukui=orbwei_Fpos
+else if (itype==2) then !f-
+    orbwei_Fukui=orbwei_Fneg
+else if (itype==3) then !f0
+    orbwei_Fukui=(orbwei_Fpos+orbwei_Fneg)/2
+else if (itype==4) then !DD
+    orbwei_Fukui=orbwei_Fpos-orbwei_Fneg
+end if
+end function
 
 
 

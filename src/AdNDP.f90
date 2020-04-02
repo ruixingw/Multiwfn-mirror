@@ -12,14 +12,15 @@ integer,allocatable :: searchlist(:) !Store atom indices for those will be exhau
 real*8,allocatable :: orbeigval(:),orbeigvec(:,:),removemat(:,:),colvec(:,:),rowvec(:,:),DMNAOblk(:,:)
 ! real*8 :: bndcrit(30)=(/ 1.9D0,1.7D0,1.7D0,(1.8D0,i=4,30) /) 
 integer :: numprint=100
-real*8,allocatable :: candiocc(:),candivec(:,:),candinatm(:) !Store candidate orbital information, occupation, eigenvector(in total NAOs), number of atoms
+real*8,allocatable :: candiocc(:),candivec(:,:),candinatm(:) !Store candidate orbital information, occupation, eigenvector(row vector in NAOs), number of atoms
 integer,allocatable :: candiatmlist(:,:) !Store atom list of candidate orbitals
-real*8,allocatable :: savedocc(:),savedvec(:,:),savednatm(:) !Store saved orbital information, occupation, eigenvector(in total NAOs), number of atoms
+real*8,allocatable :: savedocc(:),savedvec(:,:),savednatm(:) !Store saved orbital information, occupation, eigenvector(row vector in NAOs), number of atoms
 integer,allocatable :: savedatmlist(:,:) !Store atom list of saved orbitals
 real*8,allocatable :: oldsavedocc(:),oldsavedvec(:,:),oldsavednatm(:),oldDMNAO(:,:) !For temporarily store data
 integer,allocatable :: oldsavedatmlist(:,:),eiguselist(:),tmparr(:)
 real*8,allocatable :: adndpCObas(:,:),Fmat(:,:),Emat(:,:)
-character :: c80tmp*80,c80tmp2*80,c200tmp*200,c1000tmp*1000,c2000tmp*2000,selectyn,fchfilename*200=' '
+real*8,allocatable :: atmcomp(:),shcomp(:)
+character :: c80tmp*80,c80tmp2*80,c200tmp*200,c2000tmp*2000,selectyn,fchfilename*200=' '
 
 bndcrit=1.7D0  !Bond occupation threshold for different center-bonds
 
@@ -83,11 +84,11 @@ write(*,*)
 nlencandi=100*ncenter !This is absolutely enough for each number of center searching
 allocate(candiocc(nlencandi+1),candivec(nlencandi+1,numNAO),candiatmlist(nlencandi+1,ncenter),candinatm(nlencandi+1)) !The last element is used as temporary space to exchange information
 allocate(eiguselist(nlencandi))
-nlensaved=30*ncenter !Each atom can form at most four bond, but we leave more space
+nlensaved=30*ncenter !Each atom can form at most four bonds, but we leave more space
 allocate(savedocc(nlensaved),savedvec(nlensaved,numNAO),savedatmlist(nlensaved,ncenter),savednatm(nlensaved))
 ncenana=1
 ioutdetail=0
-numsaved=0 !Number of saved orbitals
+numsaved=0 !Number of picked AdNDP orbitals
 numcandi=0 !Number of candidate orbitals
 lensearchlist=ncenter !The list length of atom search range, default is entire system
 allocate(colvec(numNAO,1),rowvec(1,numNAO))
@@ -146,20 +147,21 @@ do while(.true.)
 	write(*,"(' 2 Perform exhaustive search of ',i2,'-centers orbitals within the search list')") ncenana
 	write(*,*) "3 Set the number of centers in the next exhaustive search"
 	write(*,"(a,f8.3)") " 4 Set occupation threshold in the next exhaustive search, current:",bndcrit
-	if (numsaved>0) write(*,"(' 5 Show information of all AdNDP orbitals, current number:',i5)") numsaved
+	if (numsaved>0) write(*,"(' 5 Show information of AdNDP orbitals, current number:',i5)") numsaved
 	if (numsaved>0) write(*,*) "6 Delete some AdNDP orbitals"
 	if (numsaved>0) write(*,*) "7 Visualize AdNDP orbitals and molecular geometry"
 	if (numsaved==0) write(*,*) "7 Visualize AdNDP orbitals (none) and molecular geometry"
 	if (numcandi>0) write(*,*) "8 Visualize candidate orbitals and molecular geometry"
 	if (numcandi==0) write(*,*) "8 Visualize candidate orbitals (none) and molecular geometry"
-	if (numsaved>0) write(*,*) "9 Export some AdNDP orbitals to Gaussian type cube files"
-	if (numcandi>0) write(*,"(a)") " 10 Export some candidate orbitals to Gaussian type cube files"
+	if (numsaved>0) write(*,*) "9 Export some AdNDP orbitals to cube files"
+	if (numcandi>0) write(*,"(a)") " 10 Export some candidate orbitals to Gaussian-type cube files"
 	if (allocated(oldDMNAO)) write(*,"(a)") " 11 Save current density matrix and AdNDP orbital list again"
 	if (.not.allocated(oldDMNAO)) write(*,"(a)") " 11 Save current density matrix and AdNDP orbital list (Unsaved)"
 	if (allocated(oldDMNAO)) write(*,"(a)") " 12 Load saved density matrix and AdNDP orbital list"
 	write(*,"(a)") " 13 Show residual density distributions on the atoms in the search list"
-	if (numsaved>0) write(*,"(a)") " 14 Output all AdNDP orbitals as .molden file"
-	write(*,"(a)") " 16 Evaluate and output energy of picked AdNDP orbitals"
+	if (numsaved>0) write(*,"(a)") " 14 Export AdNDP orbitals as .molden file"
+	write(*,"(a)") " 15 Evaluate and output composition of AdNDP orbitals"
+	write(*,"(a)") " 16 Evaluate and output energy of AdNDP orbitals"
 	read(*,*) isel
 	
 	
@@ -211,6 +213,8 @@ do while(.true.)
 		npickout=ihigh-ilow+1
 		if (ihigh>numcandi) then
 			write(*,*) "Error: Picked orbitals should not be larger than candidate orbitals!"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
 			goto 1
 		end if
 		!Pick some orbitals from candidate list to permanent list
@@ -287,18 +291,14 @@ do while(.true.)
 		
 	else if (isel==1.or.isel==2) then
 		if (isel==1) then
-			write(*,*) "Input atom indices, e.g. 3,4,6,7,12   (should less than 1000 characters)"
-			write(*,*) "Note: Input ""all"" means all atoms in present system will be chosen"
-			read(*,"(a)") c1000tmp
-			if (index(c1000tmp,"all")/=0) then
+			write(*,*) "Input atom indices, e.g. 3,4-6,7,12"
+			write(*,*) "Note: Input ""a"" means all atoms in present system will be chosen"
+			read(*,"(a)") c2000tmp
+			if (index(c2000tmp,"a")/=0) then
 				ncenana=ncenter
 				forall(i=1:ncenter) atmcomb(i)=i
 			else
-				ncenana=1
-				do i=1,len_trim(c1000tmp)
-					if (c1000tmp(i:i)==',') ncenana=ncenana+1
-				end do
-				read(c1000tmp,*) atmcomb(1:ncenana)
+                call str2arr(c2000tmp,ncenana,atmcomb)
 				if (any(atmcomb(1:ncenana)>ncenter).or.any(atmcomb(1:ncenana)<=0)) then
 					write(*,*) "Error: Some inputted atom indices exceeded valid range!"
 					goto 1
@@ -483,7 +483,7 @@ do while(.true.)
 			MOocc=0
 			MOene=0
 			CObasa(:,1:numsaved)=matmul(AONAO,transpose(savedvec))
-			MOocc(1:numsaved)=(savedocc(1:numsaved))
+			MOocc(1:numsaved)=savedocc(1:numsaved)
 			nmo=nbasis !AdNDP only performed for total density or single set of spin spin, therefore when nmo should be forced to equal to nbasis
 			call outmolden("AdNDP.molden",10)
 			write(*,*) "All AdNDP orbitals have been stored to AdNDP.molden in current folder"
@@ -605,6 +605,56 @@ do while(.true.)
 		end do
 		write(*,*)
         
+	else if (isel==15) then !Output orbital composition of AdNDP orbitals. Adapted from NAOMO analysis module
+        allocate(atmcomp(ncenter_NAO),shcomp(numNAOsh))
+    	do while(.true.)
+		    write(*,*)
+		    write(*,*) "Analyze which orbital? e.g. 5"
+            write(*,*) "Input 0 can return"
+		    read(*,*) iorboutcomp
+		    if (iorboutcomp==0) then
+                if (allocated(atmcomp)) deallocate(atmcomp,shcomp)
+                exit
+		    else if (iorboutcomp<=0.or.iorboutcomp>numsaved) then
+			    write(*,"(a,i7)") " Error: The orbital index should between  1 and",numsaved
+			    cycle
+		    end if
+            
+            write(*,"(a,f6.3,a)") " Terms whose absolute contribution > ",compthres," % are printed. &
+            This threshold can be changed by ""compthres"" in settings.ini"
+            write(*,*)
+		    write(*,*) "   NAO#   Center   Label      Type    Composition"
+            shcomp=0D0
+            atmcomp=0D0
+            Rydcomp=0D0
+		    do iNAO=1,numNAO
+			    tmpcomp=savedvec(iorboutcomp,iNAO)**2*100
+                if (NAOset(iNAO,ispin)=="Ryd") Rydcomp=Rydcomp+tmpcomp
+                shcomp(bassh_NAO(iNAO))=shcomp(bassh_NAO(iNAO))+tmpcomp
+                atmcomp(NAOcen(iNAO))=atmcomp(NAOcen(iNAO))+tmpcomp
+			    if (abs(tmpcomp)<compthres) cycle !Skip showing too small terms
+			    write(*,"(i8,i5,'(',a,')',4x,a,2x,a,'(',a,')',f10.3,'%' )") &
+                iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOtype(iNAO),NAOset(iNAO,ispin),NAOshname(iNAO),tmpcomp
+		    end do
+		    write(*,*)
+		    write(*,*) "Condensed NAO terms to shells:"
+            do ish=1,numNAOsh
+                icen=shcen_NAO(ish)
+                if (abs(shcomp(ish))<compthres) cycle !Skip showing too small terms
+                write(*,"('   Atom:',i6,'(',a,')  Shell:',i6,'(',a,1x,a,')',f10.3,'%' )") &
+                icen,atmname_NAO(shcen_NAO(ish)),ish,shname_NAO(ish),shset_NAO(ish,ispin),shcomp(ish)
+            end do
+            write(*,*)
+		    write(*,*) "Condensed NAO terms to atoms:"
+		    write(*,*) "  Center   Composition"
+		    do icen=1,ncenter_NAO
+                if (abs(atmcomp(icen))<compthres) cycle !Skip showing too small terms
+			    write(*,"(i6,'(',a,')',f10.3,'%' )") icen,atmname_NAO(icen),atmcomp(icen)
+		    end do
+		    write(*,*)
+		    write(*,"(' Rydberg composition:',f10.3,'%')") Rydcomp
+	    end do
+    
 	else if (isel==16) then !Evaluate orbital energy
 		if (numsaved==0) then
 			write(*,*) "Error: You need to pick out at least one orbital!"

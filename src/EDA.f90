@@ -79,6 +79,7 @@ distmatA=distmat*b2a !Distance matrix in Angstrom
 	else !AMBER&GAFF
 		write(*,*) "4 Show current atomic types and charges"
 	end if
+	write(*,*) "5 Calculate grid data of vdW potential"
 	read(*,*) isel
 	
 	if (isel==-4) then
@@ -336,7 +337,6 @@ dispmatatm=dispmatatm*4.184D0
 
 totmat=elemat+repmat+dispmat
 totmatatm=elematatm+repmatatm+dispmatatm
-! call showmatgau(totmatatm,form="f14.3")
 
 !! Final stage: Output result
 write(*,*) "Note: All energies shown below are in kJ/mol!"
@@ -433,18 +433,9 @@ goto 10
 end subroutine
 
 
-
-!!------ Set up van der Waals parameters for all atoms, used for FF based EDA
-!FFtype, parmA and parmB should have dimension of ncenter.
-!ivdwmode=1: UFF, =2: AMBER99 & GAFF
-!Return value: istatus=0 means all parameters are successfully assigned.  =1: Some parameters are missing
-subroutine setvdWparm(ivdwmode,FFtype,parmA,parmB,istatus)
-use defvar
-use util
-implicit real*8 (a-h,o-z)
-integer ivdwmode,istatus
-real*8 parmA(ncenter),parmB(ncenter)
-character*2 FFtype(ncenter)
+!!------ Define UFF parameter, because UFF parameters has more than one use in Multiwfn
+subroutine defineUFFparm(UFF_A_in,UFF_B_in)
+real*8 :: UFF_A_in(103),UFF_B_in(103)
 real*8 :: UFF_A(103)=(/ & !UFF well depth (D) in kcal/mol
 0.044D0,0.056D0,& !1,2 (H,He)
 0.025D0,0.085D0,0.18D0,0.105D0,0.069D0,0.06D0,0.05D0,0.042D0,& !3~10 (Li~Ne)
@@ -467,6 +458,23 @@ real*8 :: UFF_B(103)=(/ & !UFF vdW distance (x) in Angstrom
 4.517D0,3.703D0,3.522D0,3.556D0,3.606D0,3.575D0,3.547D0,3.520D0,3.493D0,3.368D0,3.451D0,3.428D0,3.409D0,3.391D0,3.374D0,3.355D0,3.640D0,& !55~71 (Cs~Lu)
 3.141D0,3.170D0,3.069D0,2.954D0,3.120D0,2.840D0,2.754D0,3.293D0,2.705D0,4.347D0,4.297D0,4.370D0,4.709D0,4.750D0,4.765D0,& !72~86 (Hf~Rn)
 4.90D0,3.677D0,3.478D0,3.396D0,3.424D0,3.395D0,3.424D0,3.424D0,3.381D0,3.326D0,3.339D0,3.313D0,3.299D0,3.286D0,3.274D0,3.248D0,3.236D0 /) !87~103 (Fr~Lr)
+UFF_A_in=UFF_A
+UFF_B_in=UFF_B
+end subroutine
+
+
+!!------ Assign van der Waals parameters for all atoms according to their types, used for FF based EDA
+!FFtype, parmA and parmB should have dimension of ncenter.
+!ivdwmode=1: UFF, =2: AMBER99 & GAFF
+!Return value: istatus=0 means all parameters are successfully assigned.  =1: Some parameters are missing
+subroutine setvdWparm(ivdwmode,FFtype,parmA,parmB,istatus)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer ivdwmode,istatus
+real*8 parmA(ncenter),parmB(ncenter)
+character*2 FFtype(ncenter)
+real*8 :: UFF_A(103),UFF_B(103)
 
 !AMBER99 atomic information is taken from parm99.dat of AMBERtools package, the lone pair (LP) type is not taken into account
 !OM is not standard AMBER atomic type, however gview assigns carboxyl oxygen as OM, while in standard AMBER naming it should be O
@@ -524,6 +532,9 @@ real*8 :: GAFF_B(nGAFFtype)=(/ & !GAFF vdW radii in Angstrom
 1.8240D0,1.8240D0,1.8240D0,2.0000D0,2.0000D0,2.0000D0,2.0000D0,2.0000D0,2.0000D0,2.0000D0,2.0000D0,&
 2.0000D0,2.0000D0,2.1000D0,2.1000D0,2.1000D0,2.1000D0,2.1000D0,2.1000D0,2.1000D0,2.1000D0,2.1000D0,&
 2.1000D0,2.1000D0,1.75D0,1.948D0,2.02D0,2.15D0 /)
+
+!Fill UFF parameter
+call defineUFFparm(UFF_A,UFF_B)
 
 if (ivdwmode==1) then
 	do iatm=1,ncenter

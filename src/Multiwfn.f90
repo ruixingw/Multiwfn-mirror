@@ -3,7 +3,7 @@ use defvar
 use util
 use GUI
 implicit real*8(a-h,o-z)
-character nowdate*20,nowtime*20,c200tmp*200,lovername*80,settingpath*200,strtmp*3
+character nowdate*20,nowtime*20,c200tmp*200,c2000tmp*2000,lovername*80,settingpath*200,strtmp*3
 real*8,allocatable :: tmparr(:),tmparr2(:),tmpmat(:,:),tmpmat2(:,:) !For debug purpose
 integer,allocatable :: tmparri(:),tmparr2i(:),tmpmati(:,:),tmpmat2i(:,:)
 
@@ -12,7 +12,7 @@ call getarg(1,filename)
 call getarg(2,cmdarg2)
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.7(dev), release date: 2019-Nov-8"
+write(*,*) "Version 3.7(dev), release date: 2020-Mar-28"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -21,7 +21,7 @@ write(*,*) "Multiwfn English forum: http://sobereva.com/wfnbbs"
 write(*,*) "Multiwfn Chinese forum: http://bbs.keinsci.com/wfn"
 
 call date_and_time(nowdate,nowtime)
-write(*,"(/,' ( The number of threads:',i3,'   Current date: ',a,'-',a,'-',a,'   Time: ',a,':',a,':',a,' )')") &
+write(*,"(/,' ( The number of threads:',i4,'   Current date: ',a,'-',a,'-',a,'   Time: ',a,':',a,':',a,' )')") &
 nthreads,nowdate(1:4),nowdate(5:6),nowdate(7:8),nowtime(1:2),nowtime(3:4),nowtime(5:6)
 
 !For Linux/MacOS version, it seems the only way to set stacksize of each thread is to define KMP_STACKSIZE environment variable
@@ -39,7 +39,7 @@ write(*,*)
 if (trim(filename)=="") then !Haven't defined filename variable
 	call mylover(lovername)
 	write(*,"(a,a,a)") " Input file path, for example E:\",trim(lovername),".wfn"
-	write(*,*) "(Supported: .wfn/.wfx/.fch/.molden/.31/.chg/.pdb/.xyz/.mol/.cub/.grd, etc.)"
+	write(*,*) "(Supported: .mwfn/wfn/wfx/fch/molden/31/chg/pdb/xyz/mol/mol2/cub/grd, etc.)"
 	write(*,"(a)") " Hint: Press ENTER button directly can select file in a GUI window. To reload the file last time used, simply input the letter ""o"". &
 	Input such as ?miku.fch can open the miku.fch in the same folder as the file last time used."
 	do while(.true.)
@@ -93,7 +93,7 @@ if (trim(filename)=="") then !Haven't defined filename variable
 else
 	inquire(file=filename,exist=alive)
 	if (alive.eqv..false.) then
-		write(*,*) "File not found, exit program..."
+		write(*,*) "Error: File not found, exit program..."
 		read(*,*)
 		stop
 	end if
@@ -163,7 +163,7 @@ if (allocated(a)) then
 	totmass=sum(atmwei(a%index))
 	write(*,"(' Molecule weight:',f16.5)") totmass
     !-- Show point group
-    if (ncenter<200) then !Too large system will take evidently cost
+    if (ncenter<200.and.all(a%index>0)) then !Too large system will take evidently cost
         allocate(tmpmat(3,ncenter),tmpmat2i(ncenter,ncenter),tmparri(ncenter))
         tmpmat(1,:)=a%x*b2a;tmpmat(2,:)=a%y*b2a;tmpmat(3,:)=a%z*b2a
         !This tolerance is suitable for most systems. 0.01 may be too tight, however if the criterion is loosen, in rare case &
@@ -186,17 +186,19 @@ end if
 
 !Special treatment
 ! call sys1eprop !Show some system 1e properties, only works when Cartesian basis functions are presented
+!call fitatmdens
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
 
 	write(*,*)
 	if (allocated(cubmat)) write(*,*) "Note: A set of grid data presents in memory"
+    write(*,*) """q"": Exit program gracefully          ""r"": Load a new file"
 	write(*,*) "                   ************ Main function menu ************"
-	! write(*,*) "-11 Load a new file"
-	! write(*,*) "-10 Exit program" !You can also input ""q"" to exit
-	if (ifiletype==7.or.ifiletype==8.or.ifiletype==14) then
+	if (ifiletype==7) then
         write(*,*) "0 Show molecular structure and view isosurface"
+    else if (ifiletype==8) then
+        write(*,*) "0 View isosurface"
     else
         write(*,*) "0 Show molecular structure and view orbitals"
     end if
@@ -216,39 +218,40 @@ do while(.true.) !Main loop
 	if (.not.allocated(cubmat)) write(*,*) "13 Process grid data (No grid data is presented currently)"
 	write(*,*) "14 Adaptive natural density partitioning (AdNDP) analysis"
 	write(*,*) "15 Fuzzy atomic space analysis"
-	write(*,*) "16 Charge decomposition analysis (CDA) and extended CDA (ECDA)"
-	write(*,*) "17 Basin analysis"
-	write(*,*) "18 Electron excitation analysis"
-	write(*,*) "19 Orbital localization analysis"
-	write(*,*) "20 Visual study of weak interaction"
+	write(*,*) "16 Charge decomposition analysis (CDA) and plot orbital interaction diagram"
+	write(*,*) "17 Basin analysis                    18 Electron excitation analysis"
+	write(*,*) "19 Orbital localization analysis     20 Visual study of weak interaction"
 	write(*,*) "21 Energy decomposition analysis"
-	write(*,*) "100 Other functions (Part 1)        200 Other functions (Part 2)"
+	write(*,*) "100 Other functions (Part 1)         200 Other functions (Part 2)"
+	write(*,*) "300 Other functions (Part 3)"
 	! write(*,*) "1000 Special functions"
 	read(*,*) c200tmp
     
-    if (c200tmp=="q".or.c200tmp=="quit".or.c200tmp=="exit".or.c200tmp=="-10") then !Exit program
+    if (c200tmp=="q".or.c200tmp=="-10") then !Exit program
         stop
+	else if (c200tmp=="r".or.c200tmp=="-11") then !Load a new file
+	    call dealloall
+	    call dealloall_org
+	    filename=""
+	    deallocate(fragatm,fragatmbackup)
+	    ifirstMultiwfn=0
+	    goto 10
     else if (c200tmp=="oi") then
-        write(*,*) "Input path for generating ORCA input file, e.g. C:\ltwd.inp"
-	    read(*,"(a)") c200tmp
-	    call outORCAinp(c200tmp,10)
+	    call outORCAinp_wrapper
     else if (c200tmp=="gi") then
-        write(*,*) "Input path for generating Gaussian input file, e.g. C:\ltwd.gjf"
-	    read(*,"(a)") c200tmp
-	    call outgjf(c200tmp,10)
+        call outgjf_wrapper
+    else if (c200tmp=="pi") then
+        call outPSI4inp_wrapper
+    else if (c200tmp=="iu") then
+        write(*,*) "Input the index of the user-defined function you want to use, e.g. 5"
+        read(*,*) iuserfunc
+        write(*,*) "Done!"
     else
         read(c200tmp,*) isel
-	    if (isel==-11) then !Load a new file
-		    call dealloall
-		    call dealloall_org
-		    filename=""
-		    deallocate(fragatm,fragatmbackup)
-		    ifirstMultiwfn=0
-		    goto 10
 
 	    !!!---------------------------------------------------------------------------------------------
 	    !1!------- Show system structure and view isosurface of MOs or the grid data read from cube file
-	    else if (isel==0) then
+	    if (isel==0) then
 		    if (.not.(allocated(a).or.allocated(cubmat))) then
 			    write(*,*) "Error: Data needed by this function is not presented! Check your input flie!"
 			    write(*,*) "Press ENTER button to continue"
@@ -283,7 +286,7 @@ do while(.true.) !Main loop
 				    write(*,"(' Index of SOMO orbitals:',10i6)") (i,i=nint(nbelec+1),nint(naelec))
 			    end if
 		    end if
-		    if (ifiletype==7.or.ifiletype==8.or.ifiletype==14) then !cube file
+		    if (ifiletype==7.or.ifiletype==8) then !visualize grid data
 			    if (isilent==0) call drawisosurgui(1)
 		    else
 			    if (isilent==0) call drawmolgui
@@ -426,25 +429,33 @@ do while(.true.) !Main loop
 	    !200!!------------------- Misc and some unimportant functions, Part 2
 	    else if (isel==200) then
 		    call otherfunc2_main
+		
+		
+	    !!!---------------------------------------
+	    !200!!------------------- Misc and some unimportant functions, Part 3
+	    else if (isel==300) then
+		    call otherfunc3_main
 
 
 	    !!!---------------------------------------
 	    !1000!!------------------- Special functions
 	    else if (isel==1000) then
 		    write(*,*)
+            write(*,*) " ---------------------------- Special functions ----------------------------"
 		    write(*,*) "0 Return to main menu"
-		    write(*,"(a,3f12.6)") " 1 Set reference point, current(Bohr):",refx,refy,refz
-		    write(*,"(a,i6)") " 2 Set iuserfunc, current:",iuserfunc
-		    write(*,"(a,i6)") " 3 Set iskipnuc, current:",iskipnuc
+		    write(*,"(a,3f12.6,' Bohr')") " 1 Set reference point, current:",refx,refy,refz
+		    write(*,"(a,i5,a,i5)") " 2 Set iuserfunc, current:",iuserfunc,"            3 Set iskipnuc, current:",iskipnuc
 		    if (pleA==0D0.and.pleB==0D0.and.pleC==0D0.and.pleD==0D0) then
 			    write(*,"(a)") " 4 Set the plane for user-defined function 38 (Not defined)"
 		    else
 			    write(*,"(a)") " 4 Set the plane for user-defined function 38 (Defined)"
 		    end if
 		    write(*,"(a,1PE18.8)") " 5 Set global temporary variable, current:",globaltmp
-		    write(*,"(a,i3)") " 10 Set the number of threads, current:",nthreads
-		    write(*,*) "11 Reload settings.ini"
+		    write(*,"(a,f8.4,' a.u.')") " 6 Set delta for orbital-weighted Fukui function or DD, current:",orbwei_delta
+		    write(*,"(a,i3)") " 10 Set number of threads of parallel calculation, current:",nthreads
+		    write(*,*) "11 Reload settings.ini file"
             write(*,*) "12 Add a Bq atom to specific position"
+            write(*,*) "13 Convert bndmat.txt in current folder to Gaussian .gjf file with bond orders"
 		    write(*,*) "90 Calculate nuclear attractive energy between a fragment and an orbital"
 		    write(*,*) "91 Exchange orbital energies and occupations"
 		    write(*,*) "92 Calculate result of various kinetic energy functionals"
@@ -484,8 +495,13 @@ do while(.true.) !Main loop
 			    tmpval=dsqrt(pleA**2+pleB**2+pleC**2)
 			    write(*,"(' The unit vector normal to the plane is:',3f10.5)") pleA/tmpval,pleB/tmpval,pleC/tmpval
 		    else if (i==5) then
-			    write(*,*) "Input the value"
+			    write(*,*) "Input the value, e.g. 0.3"
 			    read(*,*) globaltmp
+			    write(*,*) "Done!"
+		    else if (i==6) then
+			    write(*,*) "Input the delta value, e.g. 0.1"
+			    read(*,*) orbwei_delta
+			    write(*,*) "Done!"
 		    else if (i==10) then
 			    write(*,*) "Input an integer, e.g. 8"
 			    read(*,*) nthreads
@@ -506,6 +522,39 @@ do while(.true.) !Main loop
 			            write(*,*) "Done!"
                     end if
                 end do
+		    else if (i==13) then
+                allocate(tmpmat(ncenter,ncenter))
+                inquire(file="bndmat.txt",exist=alive)
+	            if (alive==.false.) then
+	                write(*,*) "Cannot find the bndmat.txt in current folder!"
+                    cycle
+                end if
+                open(10,file="bndmat.txt",status="old")
+                read(10,*)
+                call loclabel(10,"***")
+                call readmatgau(10,tmpmat,0,"f14.8",6,5)
+                close(10)
+                open(10,file="gau.gjf",status="replace")
+                write(10,"(a,/,/,a,/)") "#P B3LYP/6-31G* geom=connectivity","Generated by Multiwfn"
+                netcharge=nint(sum(a%charge)-nelec)
+                if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
+                write(10,"(2i3)") netcharge,nint(naelec-nbelec)+1
+                do i=1,ncenter
+	                write(10,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+                end do
+                write(10,*)
+                if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
+                do iatm=1,ncenter
+                    write(10,"(i8)",advance="no") iatm
+                    do jatm=iatm+1,ncenter
+                        if (connmat(iatm,jatm)==0) cycle
+                        write(10,"(i8,f8.4)",advance="no") jatm,tmpmat(iatm,jatm)
+                    end do
+                    write(10,*)
+                end do
+                close(10)
+                deallocate(tmpmat)
+                write(*,*) "Done! gen.gjf has been generated in current folder"
 		    else if (i==90) then
 			    call attene_orb_fragnuc
 		    else if (i==91) then

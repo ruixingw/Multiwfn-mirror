@@ -10,7 +10,7 @@ integer*2,allocatable :: corpos(:,:,:) !corner position
 logical,allocatable :: ifbndcub(:,:,:) !if true, means this is a boundary cub
 integer,allocatable :: mergerelat(:),HirBecatm(:)
 integer tmpintarr3(3)
-character pdbfilename*200,c200tmp*200,filename_tmp*200,c400tmp*400,c80tmp*80,c2000tmp*2000,c10000tmp*10000,selectyn,grdfilename*200,char1tmp
+character pdbfilename*200,filename_tmp*200,c80tmp*80,c200tmp*200,c400tmp*400,c2000tmp*2000,c10000tmp*10000,selectyn,grdfilename*200,char1tmp
 real*8 fragsurarea(ncenter,3),fragsuravg(ncenter,3),fragsurvar(ncenter,3) !Area, average value and variance of each atom surface. 1,2,3 corresponds to all,positive,negative part
 real*8 fragsurmax(ncenter),fragsurmin(ncenter),fragsurchgsep(ncenter)
 integer surfrag(ncenter),ifatmfrag(ncenter) !User-defined fragment contain which atoms; ifatmfrag(iatm)=1/0 means iatm belong / doesn't belong to user-defined fragment
@@ -51,8 +51,8 @@ do while(.true.)
 	if (isurftype==6) write(*,"(a,i5,a)") " 1 Select the way to define surface, current: Becke surface, for",nHirBecatm," atoms"
 	if (isurftype==10) write(*,"(a,f9.5)") " 1 Select the way to define surface, current: Existing grid data, iso:",surfisoval
 	
-	if (imapfunc==-1) write(*,*) "2 Select mapped function, current: User-defined real space function"
-	if (imapfunc==0) write(*,*) "2 Select mapped function, current: A function loaded from external file"
+	if (imapfunc==-1) write(*,*) "2 Select mapped function, current: User-defined function"
+	if (imapfunc==0) write(*,*) "2 Select mapped function, current: Function from external file"
 	if (imapfunc==1) write(*,*) "2 Select mapped function, current: Electrostatic potential (ESP)"
 	if (imapfunc==2) write(*,*) "2 Select mapped function, current: Average local ionization energy (ALIE)"
 	if (imapfunc==3) write(*,"(a)") " 2 Select mapped function, current: Electrostatic potential from atomic charges"
@@ -68,26 +68,32 @@ do while(.true.)
 	
 	if (isurftype/=10) write(*,"(a,f10.6)") " 3 Spacing of grid points for generating molecular surface:",grdspc
 	write(*,*) "4 Advanced options"
-	if (ireadextmapval==0) write(*,*) "5 If load mapped function values from external file, current: No"
-	if (ireadextmapval==1) write(*,*) "5 If load mapped function values from external file, current: Scatter points"
-	if (ireadextmapval==2) write(*,*) "5 If load mapped function values from external file, current: Cubegen output"
-	if (ireadextmapval==3) write(*,*) "5 If load mapped function values from external file, current: Cube file"
-	
-	read(*,*) isel
+	if (ireadextmapval==0) write(*,*) "5 Loading mapped function values from external file, current: No"
+	if (ireadextmapval==1) write(*,*) "5 Loading mapped function values from external file, current: Vertices data"
+	if (ireadextmapval==2) write(*,*) "5 Loading mapped function values from external file, current: Cubegen output"
+	if (ireadextmapval==3) write(*,*) "5 Loading mapped function values from external file, current: Cube file"
+    write(*,*) "6 Start analysis without considering mapped function"
+    read(*,*) isel
+    
 	if (isel==-1) then
 		exit surfanaloop
 		
 	else if (isel==0) then
+        iskipmapfunc=0
+		exit
+        
+	else if (isel==6) then
+        iskipmapfunc=1
 		exit
 		
 	else if (isel==1) then !Select the way to define surface
-		write(*,*) "How to define the surface?"
+		write(*,*) "How to define the surface to be analyzed?"
 		write(*,*) "1 Isosurface of electron density"
 		write(*,*) "2 Isosurface of a specific real space function "
 		write(*,*) "5 Hirshfeld surface (isosurface of Hirshfeld weight) of a fragment"
 		write(*,*) "6 Becke surface (isosurface of Becke weight) of a fragment"
 		write(*,*) "10 Isosurface of a grid data loaded from external file"
-		if (allocated(cubmat)) write(*,*) "11: The isosurface of the grid data in memory"
+		if (allocated(cubmat)) write(*,*) "11 The isosurface of the grid data in memory"
 		read(*,*) isurftypetmp
 		if (isurftypetmp==1) then
 			isurftype=1
@@ -151,13 +157,13 @@ do while(.true.)
 		if (imapfunc==3) a%charge=nucchgbackup !If .chg file was loaded previously by option 3 shown below, so this time firstly recovery actual nuclear charges
 		write(*,*) "Select to real space function to be mapped on the molecular surface"
 		write(*,"(a,i3)") "-1 User-defined real space function, iuserfunc=",iuserfunc
-		write(*,*) "0 Certain function loaded from external file"
-		if (allocated(b)) write(*,*) "1 Electrostatic potential"
-		if (allocated(b)) write(*,*) "2 Average local ionization energy (ALIE)"
+		write(*,*) "0 Function from external file"
+		write(*,*) "1 Electrostatic potential (ESP)"
+		write(*,*) "2 Average local ionization energy (ALIE)"
 		write(*,*) "3 Electrostatic potential from atomic charges in a .chg file"
-		if (allocated(b)) write(*,*) "4 Local electron affinity"
-		if (allocated(b)) write(*,*) "5 Electron delocalization range function EDR(r;d)"	
-		if (allocated(b)) write(*,*) "6 Orbital overlap length function D(r) which maximizes EDR(r;d)"	
+		write(*,*) "4 Local electron affinity"
+		write(*,*) "5 Electron delocalization range function EDR(r;d)"	
+		write(*,*) "6 Orbital overlap length function D(r) which maximizes EDR(r;d)"	
 ! 		if (allocated(b)) write(*,*) "10 Pair density" !Rarely used by normal users, so comment it
 		if (allocated(b)) then
 			write(*,*) "11 Electron density"
@@ -289,7 +295,7 @@ do while(.true.)
 		write(*,*) "0 Do not load mapped function but directly calculate by Multiwfn"
 		write(*,*) "1 Load mapped function at all surface vertices from plain text file"
 		write(*,*) "2 Similar to 1, but specific for the case of using cubegen utility of Gaussian"
-		write(*,*) "3 Interpolate mapped function from a external cube file"
+		write(*,*) "3 Mapped function will be interpolated from an external cube file"
 		read(*,*) ireadextmapval
 	end if
 	
@@ -739,7 +745,6 @@ else
 	ncurredge=nsuredge
 end if
 
-
 !Check deviation of surface vertices from specified isovalue
 ! valtotdev=0D0
 ! valRMSD=0D0
@@ -783,9 +788,10 @@ do icyc=1,nsurtri
 	if (surtriang(icyc)%area>triareamax) triareamax=surtriang(icyc)%area
 	if (surtriang(icyc)%area<triareamin) triareamin=surtriang(icyc)%area
 end do
+
+if (iskipmapfunc==1) goto 10 !Skip dealing with mapped function
 ! write(*,"('Minimum and maximum facet area:',E18.10,f15.10,' Angstrom^2')") triareamin*b2a*b2a,triareamax*b2a*b2a  !debug info
 write(*,"(' Isosurface area:',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") surfareaall,surfareaall*b2a*b2a
-
 
 !Calculate mapped function at each surface vertex, save to survtx%value
 if (ireadextmapval==0) then !Directly calculate
@@ -886,7 +892,7 @@ if (ireadextmapval==0) then !Directly calculate
 	end if
 	call walltime(iwalltime2)
     if (ii<100) call showprog(100,100) !Guarantee that 100% must be printed
-	write(*,"(' Calculation of mapped function took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+	write(*,"(' Calculation of mapped function took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 
 else if (ireadextmapval==1) then !Load mapped function from external file
 	open(10,file="surfptpos.txt",status="replace")
@@ -896,7 +902,7 @@ else if (ireadextmapval==1) then !Load mapped function from external file
 		write(10,"(3f13.7)") survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z
 	end do
 	close(10)
-	write(*,"(/,a)") "The X/Y/Z coordinates of the surface vertices have been exported to surfptpos.txt in current folder, unit is in Bohr. &
+	write(*,"(/,a)") " The X/Y/Z coordinates of the surface vertices have been exported to surfptpos.txt in current folder, unit is in Bohr. &
 	Now you can use your favourite program to calculate mapped function values at this points"
 	write(*,"(/,a)") " Now input the path of the file containing calculated mapped function values. The data will be read in free format. The first row is the number of points, &
 	in following lines the 1/2/3/4 column should correspond to X,Y,Z and mapped function value, respectively. All units must be in a.u."
@@ -1035,7 +1041,7 @@ do i=1,nsurlocmin
 	if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
 		write(*,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 	else
-		write(*,"(a,i5,f18.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
+		write(*,"(a,i5,f19.7,3x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 	end if
 end do
 write(*,*)
@@ -1072,13 +1078,13 @@ do i=1,nsurlocmax
 	if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
 		write(*,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 	else
-		write(*,"(a,i5,f18.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
+		write(*,"(a,i5,f19.7,3x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 	end if
 end do
 
 
 !============ Perform statistic
-write(*,*)
+10 write(*,*)
 write(*,*) "      ================= Summary of surface analysis ================="
 write(*,*)
 totvalang3=totvol*b2a**3
@@ -1086,6 +1092,12 @@ totmass=sum(atmwei(a%index))
 densmass=totmass/avogacst*(1D24/totvalang3)
 write(*,"(' Volume:',f12.5,' Bohr^3  (',f10.5,' Angstrom^3)')") totvol,totvalang3
 write(*,"(' Estimated density according to mass and volume (M/V):',f10.4,' g/cm^3')") densmass
+
+if (iskipmapfunc==1) then !Only show surface area, do not print any quantity related to mapped function
+    write(*,"(' Overall surface area:      ',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") surfareaall,surfareaall*b2a*b2a
+    goto 20
+end if
+
 if (imapfunc==1.or.imapfunc==3) then !ESP or ESP from atomic charges
 	write(*,"(' Minimal value:',f13.5,' kcal/mol   Maximal value:',f13.5,' kcal/mol')") survtx(indsurfmin)%value*au2kcal,survtx(indsurfmax)%value*au2kcal
 else if (imapfunc==2.or.imapfunc==4) then !ALIE or LEA
@@ -1201,7 +1213,7 @@ if (imapfunc==1.or.imapfunc==3) then
 	iESPev=0
 	if (survtx(indsurfmin)%value*au2kcal<=-99.99D0.or.survtx(indsurfmax)%value*au2kcal>999.99D0) iESPev=1
 end if
-textheigh=30.0D0
+20 textheigh=30.0D0
 ratioatmsphere=1.0D0
 bondradius=0.2D0
 ishowatmlab=1
@@ -1273,7 +1285,7 @@ do while(.true.)
 				write(ides,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,&
 				survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 			else
-				write(ides,"(a,i5,f18.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
+				write(ides,"(a,i5,f19.7,3x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 			end if
 		end do
 		write(ides,*)
@@ -1292,7 +1304,7 @@ do while(.true.)
 				write(ides,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,&
 				survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 			else
-				write(ides,"(a,i5,f18.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
+				write(ides,"(a,i5,f19.7,3x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 			end if
 		end do
 		if (isel==0) then
@@ -1622,6 +1634,9 @@ do while(.true.)
 			write(*,"(5f12.4)") tmplow,tmphigh,(tmphigh+tmplow)/2D0,areatmp,areatmp/(surfareaall*b2a**2)*100
 		end do
 		write(*,"(' Sum:',31x,2f12.4)") areatmptot,areatmptot/(surfareaall*b2a**2)*100
+        write(*,*)
+        write(*,"(a)") " Citing below paper is recommended, in which the surface area analysis for mapped function was used for the first time"
+        write(*,*) "Sergio Manzetti, Tian Lu, J. Phys. Org. Chem., 26, 473 (2013)"
 		
 	else if (isel==10) then
 		write(*,*) "Input XYZ coordinate of the point (in Angstrom), e.g. 0.2,-4.3,1.66"
@@ -1673,7 +1688,6 @@ do while(.true.)
 			write(*,"(a,f12.6,a,f12.6,a)") " The closest distance to the point:",distmin," Bohr (",distmin*b2a," Angstrom)"
 			write(*,"(a,f12.6,a,f12.6,a)") " The farthest distance to the point:",distmax," Bohr (",distmax*b2a," Angstrom)"
 		end if
-		write(*,*)
 		
 	else if (isel==11.or.isel==12) then !Separate the properties of the whole molecular surface into atomic or fragment local surface
 		if (isel==11) then
@@ -2156,7 +2170,7 @@ do while(.true.)
 	else if (isel==0) then
 		write(*,*) "Calculating contact surface points..."
 		ifcontactvtx=0
-		do icyc=1,2 !The first time count how many contact point are there, the second time record information
+		do icyc=1,2 !The first time count how many contact point are there so that arrays can be allocated, the second time record information
 			if (icyc==2) allocate(surval1(ncontactvtx),surval2(ncontactvtx))
 			ncontactvtx=0
 			ncurrvtx=0
@@ -2192,9 +2206,23 @@ do while(.true.)
 				end if
 			end do
 		end do
-		write(*,"(' The number of contact surface points is',i10)") ncontactvtx
-		write(*,"(' The number of total Hirshfeld/Becke surface points is',i10)") ncurrvtx
-		write(*,"(' They occupy',f10.3,'% of total Hirshfeld/Becke surface points')") dfloat(ncontactvtx)/ncurrvtx*100D0
+        
+        arealoc=0
+        areaall=0D0
+        do itri=1,nsurtri
+	        if (elimtri(itri)==1) cycle
+	        areaall=areaall+surtriang(itri)%area
+            if (all(ifcontactvtx(surtriang(itri)%idx(:))==1)) arealoc=arealoc+surtriang(itri)%area
+        end do
+        arealoc=arealoc*b2a*b2a
+        areaall=areaall*b2a*b2a
+        write(*,*)
+		write(*,"(' The area of the local contact surface is',f10.3,' Angstrom^2')") arealoc
+		write(*,"(' The area of the total contact surface is',f10.3,' Angstrom^2')") areaall
+		write(*,"(' The local surface occupies',f8.2,'% of the total surface')") arealoc/areaall*100D0
+		!write(*,"(' The number of contact surface points is',i10)") ncontactvtx
+		!write(*,"(' The number of total Hirshfeld/Becke surface points is',i10)") ncurrvtx
+		!write(*,"(' They occupy',f10.3,'% of total Hirshfeld/Becke surface points')") dfloat(ncontactvtx)/ncurrvtx*100D0
 		
 ! 		rhigh=max(maxval(surval1),maxval(surval2)) !Automatically determines the axis range
 ! 		rlow=min(minval(surval1),minval(surval2))
@@ -2202,6 +2230,7 @@ do while(.true.)
 ! 		shift=range/10D0
 ! 		rlow=(rlow-shift)*b2a !All length variables in this part are in Angstrom
 ! 		rhigh=(rhigh+shift)*b2a
+        write(*,*)
 		write(*,*) "Calculating the distribution of surface vertices..."
 		call xypt2densmat(surval1*b2a,surval2*b2a,ncontactvtx,mat,nval,nval,rlow,rhigh,rlow,rhigh)
 		spc=(rhigh-rlow)/(nval-1)
@@ -2209,6 +2238,7 @@ do while(.true.)
 		clrhigh=maxval(mat)/2D0
 		do while(.true.)
 		    write(*,*)
+            write(*,*) "   ------------------------ Fingerprint map analysis ------------------------"
 			write(*,*) "-1 Return"
 			write(*,*) "0 Show fingerprint plot on screen"
 			write(*,*) "1 Save fingerprint plot to current folder"

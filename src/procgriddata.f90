@@ -127,12 +127,7 @@ do while(.true.)
 	else if (isel==-1) then
 		exit
 	else if (isel==0) then
-		write(*,*) "Input path of the new cube file, e.g. C:\Tree.cub"
-		read(*,"(a)") gridfilenew
-		open(10,file=gridfilenew,status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-		close(10)
-		write(*,*) "Done, new cube file has been outputted"
+        call outcube_wrapper
 	else if (isel==1) then
 		open(10,file="output.txt",status="replace")
 		write(*,*) "Outputting data, please wait..."

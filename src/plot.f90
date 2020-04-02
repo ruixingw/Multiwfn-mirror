@@ -58,7 +58,7 @@ else
 end if
 
 !For grd/cube/vti file (with no or 1 atom, which may be added by Multiwfn), determine displayed spatial scope purely by grid data scope
-if ( (ifiletype==7.and.(ncenter==0.or.ncenter==1)) .or.ifiletype==8.or.ifiletype==14) then
+if ( (ifiletype==7.and.(ncenter==0.or.ncenter==1)) .or.ifiletype==8) then
 	xlow=orgx
 	ylow=orgy
 	zlow=orgz
@@ -245,18 +245,27 @@ if (numatt>0.and.ishowatt==1) then
 		else !Negative basins
 			CALL MATOP3(0.3D0, 0.6D0, 1D0, 'diffuse') !light blue
 		end if
-		tmpsphrad=dsqrt(dx**2+dy**2+dz**2)/2D0
+        if (basinsphsize==0) basinsphsize=dsqrt(dx**2+dy**2+dz**2)/2D0 !Haven't been initialized
 		do iz=2,nz-1
 			do iy=2,ny-1
 				do ix=2,nx-1
 					if (gridbas(ix,iy,iz)==idrawbasinidx) then
-						tmpx=orgx+(ix-1)*dx
-						tmpy=orgy+(iy-1)*dy
-						tmpz=orgz+(iz-1)*dz
-						if (interbasgrid(ix,iy,iz)==.true.) CALL SPHE3D(tmpx,tmpy,tmpz,tmpsphrad,4,4)
-						if (idrawinternalbasin==1) then
-							if (ix==2.or.ix==nx-1.or.iy==2.or.iy==ny-1.or.iz==2.or.iz==nz-1) CALL QUAD3D(tmpx,tmpy,tmpz,dx,dy,dz)
-						end if
+					    tmpx=orgx+(ix-1)*dx
+				        tmpy=orgy+(iy-1)*dy
+			            tmpz=orgz+(iz-1)*dz
+                        if (ishowbasinmethod==1) then !Entire basin
+						    if (interbasgrid(ix,iy,iz)==.true.) CALL SPHE3D(tmpx,tmpy,tmpz,basinsphsize,4,4) !Show sphere of interbasin grids
+						    if (idrawinternalbasin==1) then !Draw quad at box boundary to shield internal region of basin
+							    if (ix==2.or.ix==nx-1.or.iy==2.or.iy==ny-1.or.iz==2.or.iz==nz-1) CALL QUAD3D(tmpx,tmpy,tmpz,dx,dy,dz)
+						    end if
+                        else if (ishowbasinmethod==2) then !Basin within vdW surface
+                            if (rhocub(ix,iy,iz)<0.001D0) cycle
+                            if (interbasgrid(ix,iy,iz)==.true.) then !Interbasin grid
+                                CALL SPHE3D(tmpx,tmpy,tmpz,basinsphsize,4,4)
+                            else !Internal grid in the basin
+                                if (idrawinternalbasin==1) CALL SPHE3D(tmpx,tmpy,tmpz,basinsphsize,4,4)
+                            end if
+                        end if
 					end if
 				end do
 			end do
@@ -469,8 +478,8 @@ end if
 if (isosur1style/=5) CALL ZBFFIN !Ending of Z-buffer
 
 !Draw atom name and index of atoms/CPs/paths/surface extremes/real attractors in 3D plot
-if (ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.ishowlocmaxlab==1.or.(ishowattlab==1.and.numatt>0)) then
-	textheighmod=textheigh+155*plot2abs**1.3D0 !Change text size according to molecule size
+if ((ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.ishowlocmaxlab==1.or.(ishowattlab==1.and.numatt>0)).and.textheigh>0) then
+    textheighmod=textheigh+155*plot2abs**1.3D0 !Change text size according to molecule size
 	call height(int(textheighmod))
 	if (ishowatmlab==1) then
 		call setRGB(atmlabclrR,atmlabclrG,atmlabclrB)
@@ -635,13 +644,18 @@ call center
 nysize=nint(2300*curvexyratio)
 call AXSLEN(2300,nysize)
 if (nysize>1800) call AXSLEN(nint(2300/(nysize/1800D0)),1800)
-if (ilog10y==0) call AXSSCL('lin','Y')
-if (ilog10y==1) call AXSSCL('log','Y')
+if (ilog10y==0) then
+    call AXSSCL('lin','Y')
+    CALL LABDIG(numdigliney,"Y")
+else if (ilog10y==1) then
+    call AXSSCL('log','Y')
+    call labels('log','Y')
+    CALL LABDIG(-1,"Y") !Do not show digit in Y
+end if
 if (ilenunit1D==1) CALL NAME('Position (Bohr)','X')
 if (ilenunit1D==2) CALL NAME('Position (Angstrom)','X')
 CALL NAME('Value (a.u.)','Y')
 CALL LABDIG(numdiglinex,"X")
-CALL LABDIG(numdigliney,"Y")
 CALL TICPOS("REVERS","XYZ")
 call ERRMOD("ALL","OFF")
 shifty=mod(curveymin,steplaby)
@@ -1478,7 +1492,7 @@ end module
 
 
 
-!---- Select color by index
+!---- Interface of selecting color by index
 subroutine selcolor(clrind)
 integer clrind
 write(*,*) "1  = Red        2  = Green"

@@ -7,7 +7,7 @@ character c2000tmp*2000
 do while(.true.)
 	write(*,*)
 	write(*,*) "           ================ Bond order analysis ==============="
-	if (allocated(CObasa)) then
+	if (allocated(b)) then
 		if (allocated(frag1)) then
 			write(*,*) "-1 Redefine fragment 1 and 2 for option 1,3,4,7,8"
 		else
@@ -209,12 +209,12 @@ if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	end do
 end if
 
-write(*,"(' The total bond order >=',f10.6)") bndordthres
+write(*,"(' Bond orders with absolute value >=',f10.6)") bndordthres
 itmp=0
 if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	do i=1,ncenter
 		do j=i+1,ncenter
-			if (bndmata(i,j)+bndmatb(i,j)>=bndordthres) then
+			if (abs(bndmata(i,j)+bndmatb(i,j))>=bndordthres) then
 				itmp=itmp+1
 				write(*,"(' #',i5,':',i5,a,i5,a,' Alpha: ',f10.6,' Beta:',f10.6,' Total:',f10.6)") &
 				itmp,i,'('//a(i)%name//')',j,'('//a(j)%name//')',bndmata(i,j),bndmatb(i,j),bndmata(i,j)+bndmatb(i,j)
@@ -230,7 +230,7 @@ end if
 itmp=0
 do i=1,ncenter
 	do j=i+1,ncenter
-		if (bndmattot(i,j)>=bndordthres) then
+		if (abs(bndmattot(i,j))>=bndordthres) then
 			itmp=itmp+1
 			write(*,"(' #',i5,':',5x,i5,a,i5,a,f14.8)") itmp,i,'('//a(i)%name//')',j,'('//a(j)%name//')',bndmattot(i,j)
 		end if
@@ -526,7 +526,7 @@ call loadDMNAO
 close(10)
 
 !Move information from NAO variables to common variables, so that multi-center bond order routines could be used
-ncenter=numNAOcen
+ncenter=ncenter_NAO
 if (allocated(basstart)) deallocate(basstart,basend)
 allocate(basstart(ncenter),basend(ncenter))
 basstart=NAOinit
@@ -867,7 +867,7 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	bndmattot=bndmata+bndmatb
 end if
 
-write(*,"(' The absolute value of bond order >=',f10.6)") bndordthres
+write(*,"(' Bond orders with absolute value >=',f10.6)") bndordthres
 itmp=0
 do i=1,ncenter
 	do j=i+1,ncenter
@@ -1110,7 +1110,7 @@ subroutine decompWibergNAO
 use defvar
 use NAOmod
 implicit real*8 (a-h,o-z)
-character*2 :: icenshname(100),jcenshname(100) !Record all shell type names in centers i and j
+character*3 :: icenshname(100),jcenshname(100) !Record all shell type names in centers i and j
 character c80tmp*80
 real*8,allocatable :: shcontri(:,:)
 
@@ -1133,19 +1133,19 @@ do while(.true.)
     
 	!Construct name list of all shells for iatm and jatm
 	numicensh=1
-	icenshname(1)=NAOshell(NAOinit(iatm))
+	icenshname(1)=NAOshname(NAOinit(iatm))
 	do ibas=NAOinit(iatm)+1,NAOend(iatm)
-		if (all(icenshname(1:numicensh)/=NAOshell(ibas))) then
+		if (all(icenshname(1:numicensh)/=NAOshname(ibas))) then
 			numicensh=numicensh+1
-			icenshname(numicensh)=NAOshell(ibas)
+			icenshname(numicensh)=NAOshname(ibas)
 		end if
 	end do
 	numjcensh=1
-	jcenshname(1)=NAOshell(NAOinit(jatm))
+	jcenshname(1)=NAOshname(NAOinit(jatm))
 	do jbas=NAOinit(jatm)+1,NAOend(jatm)
-		if (all(jcenshname(1:numjcensh)/=NAOshell(jbas))) then
+		if (all(jcenshname(1:numjcensh)/=NAOshname(jbas))) then
 			numjcensh=numjcensh+1
-			jcenshname(numjcensh)=NAOshell(jbas)
+			jcenshname(numjcensh)=NAOshname(jbas)
 		end if
 	end do
 	allocate(shcontri(numicensh,numjcensh))
@@ -1154,30 +1154,30 @@ do while(.true.)
 	!Calculate Wiberg bond order and output worthnoting components
 	bndord=0
 	write(*,*) "Contribution from NAO pairs that larger than printing threshold:"
-	if (iopshNAO==0) write(*,*) " Contri.  NAO   Center   NAO type            NAO   Center   NAO type"
+	if (iopshNAO==0) write(*,*) " Contri.  NAO   Center   NAO type             NAO   Center   NAO type"
 	if (iopshNAO==1) write(*,*) "Spin   Contri.  NAO   Center   NAO type          NAO   Center   NAO type"
 	do iNAO=NAOinit(iatm),NAOend(iatm)
 		do ish=1,numicensh !Find the belonging shell index within this atom for iNAO
-			if (NAOshell(iNAO)==icenshname(ish)) exit
+			if (NAOshname(iNAO)==icenshname(ish)) exit
 		end do
 		do jNAO=NAOinit(jatm),NAOend(jatm)
 			do jsh=1,numjcensh
-				if (NAOshell(jNAO)==jcenshname(jsh)) exit
+				if (NAOshname(jNAO)==jcenshname(jsh)) exit
 			end do
             if (iopshNAO==0) then !Closed shell
 			    contri=DMNAO(iNAO,jNAO)**2
 			    if (contri>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--- ',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri,&
-			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,0),NAOshell(iNAO),NAOtype(iNAO),&
-			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,0),NAOshell(jNAO),NAOtype(jNAO)
+			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,0),NAOshname(iNAO),NAOtype(iNAO),&
+			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,0),NAOshname(jNAO),NAOtype(jNAO)
             else !Open shell
                 contri1=2*DMNAOa(iNAO,jNAO)**2
-			    if (contri1>bndordthres) write(*,"(' Alpha',f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri1,&
-			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,1),NAOshell(iNAO),NAOtype(iNAO),&
-			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,1),NAOshell(jNAO),NAOtype(jNAO)
+			    if (contri1>bndordthres) write(*,"(' Alpha',f8.4,1x,i5,i5,'(',a,') ',a,'(',a,') ',a,'--',i5,i5,'(',a,') ',a,'(',a,') ',a)") contri1,&
+			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,1),NAOshname(iNAO),NAOtype(iNAO),&
+			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,1),NAOshname(jNAO),NAOtype(jNAO)
                 contri2=2*DMNAOb(iNAO,jNAO)**2
-			    if (contri2>bndordthres) write(*,"(' Beta ',f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri2,&
-			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,2),NAOshell(iNAO),NAOtype(iNAO),&
-			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,2),NAOshell(jNAO),NAOtype(jNAO)
+			    if (contri2>bndordthres) write(*,"(' Beta ',f8.4,1x,i5,i5,'(',a,') ',a,'(',a,') ',a,'--',i5,i5,'(',a,') ',a,'(',a,') ',a)") contri2,&
+			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,2),NAOshname(iNAO),NAOtype(iNAO),&
+			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,2),NAOshname(jNAO),NAOtype(jNAO)
                 contri=contri1+contri2
             end if
 			bndord=bndord+contri
@@ -1186,7 +1186,7 @@ do while(.true.)
 	end do
 	write(*,*)
 	write(*,*) "Contribution from NAO shell pairs that larger than printing threshold:"
-	write(*,*) " Contri.  Shell  Center  Type        Shell  Center  Type"
+	write(*,*) " Contri. Shell  Center   Type        Shell  Center   Type"
 	do ish=1,numicensh
 		do jsh=1,numjcensh
 			if (shcontri(ish,jsh)>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')    ',a,'   --- ',i5,i5,'(',a,')    ',a)") shcontri(ish,jsh),&

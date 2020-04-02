@@ -11,7 +11,7 @@ use defvar
 use util
 use function
 implicit real*8 (a-h,o-z)
-integer,parameter :: nfunc=7,nquant=7 !The number of real space function, the number of quantities to be calculated
+integer,parameter :: nfunc=8,nquant=7 !The number of real space function, the number of quantities to be calculated
 real*8 smat(ncenter,ncenter),Pvec(ncenter),atmBeckewei(radpot*sphpot),atmHirshwei(radpot*sphpot,ncenter)
 real*8 atmcontri(ncenter,0:nfunc,0:nquant)
 real*8 promol(radpot*sphpot),atomdens(radpot*sphpot,ncenter),selfdens(radpot*sphpot)
@@ -40,6 +40,7 @@ functionname(4)=" (tau-t_w)/t_TF"
 functionname(5)=" Xi part of SEDD"
 functionname(6)=" Theta part of DORI"
 functionname(7)=" Spin density"
+functionname(8)=" (tau-t_w)/t_w"
 quantityname(0)=" Function itself" !Special
 quantityname(1)=" Shannon entropy"
 quantityname(2)=" Fisher information"
@@ -101,6 +102,7 @@ do iatm=1,ncenter !! Cycle each atom
 	!index=5: Part of SEDD
 	!index=6: Part of DORI
 	!index=7: Spin density
+	!index=8: (tau-t_w)/t_w
 	funcref=0D0
 	promol=0D0
 	promolgrad=0D0
@@ -137,6 +139,7 @@ do iatm=1,ncenter !! Cycle each atom
 	!index=5: Part of SEDD
 	!index=6: Part of DORI
 	!index=7: Spin density
+	!index=8: (tau-t_w)/t_w
 	!$OMP parallel do shared(funcval,funcgrdn) private(ipt,arrtmp,arrtmp2,rho,gradrho,idir) num_threads(nthreads)
 	do ipt=1+iradcut*sphpot,radpot*sphpot
 		call valgradarrLSB(gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,arrtmp,arrtmp2,rho,gradrho)
@@ -326,11 +329,12 @@ end subroutine
 !slot=5: Xi part of SEDD
 !slot=6: Theta part of DORI
 !slot=7: Spin density
+!slot=8: (tau-t_w)/t_w
 subroutine valaryyLSB(x,y,z,valarr,rho,gradrho)
 use defvar
 use function
 implicit real*8 (a-h,o-z)
-integer,parameter :: nfunc=7
+integer,parameter :: nfunc=8
 real*8 x,y,z,wfnval(nmo),wfnderv(3,nmo),wfnhess(3,3,nmo),gradrho(3),hess(3,3),valarr(nfunc)
 real*8 gradrhoa(3),gradrhob(3),MOoccnow
 real*8 :: Fc=2.871234000D0 ! Fermi constant = (3/10)*(3*Pi^2)**(2/3) = 2.871234, 1/2.871234=0.34828
@@ -364,20 +368,23 @@ valarr(2)=rhogrdn/rho**(4D0/3D0)
 !der2rho/rho^(5/3)
 valarr(3)=der2rho/rho**(5D0/3D0)
 
-!(tau-t_w)/t_TF
+!4: (tau-t_w)/t_TF
+!8: (tau-t_w)/t_w
 D=0D0
 rhoa=0D0
 rhob=0D0
 gradrhoa=0D0
 gradrhob=0D0
+!Calculate actual kinetic energy (D), Thomas-Fermi kinetic energy (Dh), Weizsacker kinetic energy (t_w)
 if (wfntype==0.or.wfntype==3) then !spin-unpolarized case
 	do i=1,nmo
 		D=D+MOocc(i)*(sum(wfnderv(:,i)**2)) !Calculate actual kinetic term
-	end do		
-	Dh=Fc*rho**(5.0D0/3.0D0) !Thomas-Fermi uniform electron gas kinetic energy
+	end do
 	D=D/2.0D0
+	Dh=Fc*rho**(5.0D0/3.0D0) !Thomas-Fermi uniform electron gas kinetic energy
 	if (iKEDsel/=0) D=KED(x,y,z,iKEDsel) !Special case proposed by LSB, use other KED instead of exact KED
-	if (rho/=0D0) D=D-(sum(gradrho(:)**2))/rho/8D0
+    t_w=0
+	if (rho/=0D0) t_w=sum(gradrho(:)**2)/rho/8D0
 else if (wfntype==1.or.wfntype==2.or.wfntype==4) then !spin-polarized case
 	do i=1,nmo
 		MOoccnow=MOocc(i)
@@ -392,13 +399,17 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then !spin-polarized case
 		end if
 		D=D+MOocc(i)*(sum(wfnderv(:,i)**2)) !Calculate actual kinetic term
 	end do
-	Dh=Fc_pol*(rhoa**(5.0D0/3.0D0)+rhob**(5.0D0/3.0D0))
 	D=D/2.0D0
+	Dh=Fc_pol*(rhoa**(5.0D0/3.0D0)+rhob**(5.0D0/3.0D0))
 	if (iKEDsel/=0) D=KED(x,y,z,iKEDsel) !Special case proposed by LSB, use other KED instead of exact KED
-	if (rhoa/=0D0) D=D-(sum(gradrhoa(:)**2))/rhoa/8
-	if (rhob/=0D0) D=D-(sum(gradrhob(:)**2))/rhob/8
+    t_w_a=0
+	if (rhoa/=0D0) t_w_a=sum(gradrhoa(:)**2)/rhoa/8
+    t_w_b=0
+	if (rhob/=0D0) t_w_b=sum(gradrhob(:)**2)/rhob/8
+    t_w=t_w_a+t_w_b
 end if
-valarr(4)=D/Dh
+valarr(4)=(D-t_w)/Dh
+valarr(8)=(D-t_w)/t_w
 	
 !Xi part of SEDD
 tmp1_1=rho*(gradrho(1)*hess(1,1)+gradrho(2)*hess(1,2)+gradrho(3)*hess(1,3))
@@ -435,7 +446,7 @@ end subroutine
 subroutine valgradarrLSB(x,y,z,valarr,grdnarr,rho,gradrho)
 use defvar
 implicit real*8 (a-h,o-z)
-integer,parameter :: nfunc=7
+integer,parameter :: nfunc=8
 real*8 x,y,z,rho,gradrho(3),valarr(nfunc),grdnarr(nfunc),tmparr(3)
 real*8 xadd(nfunc),xmin(nfunc),yadd(nfunc),ymin(nfunc),zadd(nfunc),zmin(nfunc),grdxarr(nfunc),grdyarr(nfunc),grdzarr(nfunc)
 diff=5D-4
@@ -519,7 +530,7 @@ do iatm=1,ncenter !Cycle each atom
 	do i=1+iradcut*sphpot,radpot*sphpot
 		promol=sum(atmdens(i,:))
 		do jatm=1,ncenter
-			Hirshwei=atmdens(i,jatm)/promol !Hirshfeld weight of jatm at i point
+			if (promol/=0) Hirshwei=atmdens(i,jatm)/promol !Hirshfeld weight of jatm at i point
 			atmintval(jatm)=atmintval(jatm)+funcval(i)*Hirshwei*beckeweigrid(i)*gridatmorg(i)%value
 		end do
 	end do
@@ -555,7 +566,7 @@ real*8,allocatable :: potx(:),poty(:),potz(:),potw(:)
 type(content),allocatable :: gridatt(:) !Record x,y,z,weight of grids in trust radius
 integer att2atm(numrealatt) !The attractor corresponds to which atom. If =0, means this is a NNA
 integer walltime1,walltime2,radpotAIM,sphpotAIM
-integer,parameter :: nfunc=7,nquant=7 !The number of real space function, the number of quantities to be calculated
+integer,parameter :: nfunc=8,nquant=7 !The number of real space function, the number of quantities to be calculated
 real*8 arrtmp(nfunc),arrtmp2(nfunc),gradrho(3)
 character*40 functionname(0:nfunc),quantityname(0:nquant)
 real*8 atmcontri(ncenter,0:nfunc,0:nquant)
@@ -575,6 +586,7 @@ functionname(4)=" (tau-t_w)/t_TF"
 functionname(5)=" Xi part of SEDD"
 functionname(6)=" Theta part of DORI"
 functionname(7)=" Spin density"
+functionname(8)=" (tau-t_w)/t_w"
 quantityname(0)=" Function itself" !Special
 quantityname(1)=" Shannon entropy"
 quantityname(2)=" Fisher information"
@@ -696,6 +708,7 @@ do iatt=1,numrealatt !Cycle each attractors
 	!index=5: Part of SEDD
 	!index=6: Part of DORI
 	!index=7: Spin density
+	!index=8: (tau-t_w)/t_w
 	funcref=0D0
 	promol=0D0
 	promolgrad=0D0
@@ -998,7 +1011,7 @@ do iatt=1,numrealatt !Cycle each attractors
 		call valgradarrLSB(ptx,pty,ptz,arrtmp,arrtmp2,rho,gradrho)
 		funcval(ipt,0)=rho
 		funcgrdn(ipt,0)=dsqrt(sum(gradrho**2))
-		!Note: see word document for explicit expression of |der(rho/rho0)|
+		!Note: See Word document for explicit expression of |der(rho/rho0)|
 		funcval(ipt,1)=rho/promol(ipt)
 		funcgrdn(ipt,1)=0D0
 		do idir=1,3
@@ -1149,4 +1162,286 @@ write(*,"(' KED',i3,'(GR):          ',f20.10)") 23,intval(23)
 write(*,"(' KED',i3,'(GEA4):        ',f20.10)") 24,intval(24)
 write(*,*) "Press ENTER button to continue"
 read(*,*)
+end subroutine
+
+
+
+!!------- Calculate some quantities involved in Shubin's project in a plane
+!itype=1: Calculate the sum of atomic relative Shannon entropy (namely total relative Shannon entropy)
+!itype=2: Calculate the sum of x=[rhoA-rho0A]/rhoA
+!itype=3: Calculate the difference between total relative Shannon entropy and deformation density
+subroutine genentroplane(itype)
+use defvar
+use function
+implicit real*8 (a-h,o-z)
+integer itype
+real*8 planeprodens(ngridnum1,ngridnum2),planedens(ngridnum1,ngridnum2)
+if (allocated(planemat)) deallocate(planemat)
+allocate(planemat(ngridnum1,ngridnum2))
+planeprodens=0D0
+planemat=0D0
+!Calculate molecular density in the plane and store it to planedens
+!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planedens) schedule(dynamic) NUM_THREADS(nthreads)
+do i=1,ngridnum1
+	do j=1,ngridnum2
+		rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
+		rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
+		rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+		planedens(i,j)=fdens(rnowx,rnowy,rnowz)
+	end do
+end do
+!$OMP END PARALLEL DO
+do jatm=1,ncenter_org !Calculate promolecular density in the plane and store it to planeprodens
+	call dealloall
+	call readwfn(custommapname(jatm),1)
+	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planeprodens) schedule(dynamic) NUM_THREADS(nthreads)
+	do i=1,ngridnum1
+		do j=1,ngridnum2
+			rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
+			rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
+			rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+			planeprodens(i,j)=planeprodens(i,j)+fdens(rnowx,rnowy,rnowz)
+		end do
+	end do
+	!$OMP END PARALLEL DO
+end do
+!Calculate Hirshfeld weight, relative Shannon entropy and x=[rhoA-rho0A]/rhoA for each atom in the plane and accumulate them to planemat
+do jatm=1,ncenter_org !Cycle each atom, calculate its contribution in the plane
+	call dealloall
+	call readwfn(custommapname(jatm),1)
+	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz,rho0A,rhoA,tmpval) shared(planemat) schedule(dynamic) NUM_THREADS(nthreads)
+	do i=1,ngridnum1
+		do j=1,ngridnum2
+			rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
+			rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
+			rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+			rho0A=fdens(rnowx,rnowy,rnowz)
+			rhoA=planedens(i,j)*rho0A/planeprodens(i,j)
+			if (itype==1.or.itype==3) tmpval=rhoA*log(rhoA/rho0A) !Relative Shannon entropy
+			if (itype==2) tmpval=(rhoA-rho0A)/rhoA !x=[rhoA-rho0A]/rhoA
+			planemat(i,j)=planemat(i,j)+tmpval
+		end do
+	end do
+	!$OMP END PARALLEL DO
+end do
+call dealloall
+call readinfile(firstfilename,1) !Retrieve the first loaded file(whole molecule)
+if (itype==3) planemat=planemat-(planedens-planeprodens) !Diff between total relative Shannon entropy and deformation density
+end subroutine
+
+
+
+!!---------- Calculate g1, g2, g3 terms along a line, all of them rely on promolecular density calculated based on atom .wfn files
+subroutine g1g2g3line(orgx1D,orgy1D,orgz1D,transx,transy,transz)
+use defvar
+use function
+implicit real*8 (a-h,o-z)
+real*8 orgx1D,orgy1D,orgz1D,transx,transy,transz
+real*8 rho(num1Dpoints),derrho(3,num1Dpoints),hessrho(3,3,num1Dpoints),rho0(num1Dpoints),derrho0(3,num1Dpoints),hessrho0(3,3,num1Dpoints)
+real*8 ptxyz(3,num1Dpoints),tmparr(3),tmpmat(3,3)
+
+do ipt=1,num1Dpoints
+	curvex(ipt)=ipt*dsqrt(transx**2+transy**2+transz**2)
+	ptxyz(1,ipt)=orgx1D+(ipt-1)*transx
+	ptxyz(2,ipt)=orgy1D+(ipt-1)*transy
+	ptxyz(3,ipt)=orgz1D+(ipt-1)*transz
+end do
+
+!Calculate molecular density
+!$OMP parallel do shared(rho,derrho,hessrho) private(ipt) num_threads(nthreads)
+do ipt=1,num1Dpoints
+    call calchessmat_dens(2,ptxyz(1,ipt),ptxyz(2,ipt),ptxyz(3,ipt),rho(ipt),derrho(:,ipt),hessrho(:,:,ipt))
+end do
+!$OMP end parallel do
+
+call setpromol
+!Calculate promolecular density
+rho0=0
+derrho0=0
+hessrho0=0
+do ipro=1,ncustommap
+    filename=custommapname(ipro)
+	call dealloall
+	write(*,"(' Loading: ',a)") trim(filename)
+	call readinfile(filename,1)
+    !$OMP parallel do shared(rho0,derrho0,hessrho0) private(ipt,tmprho,tmparr,tmpmat) num_threads(nthreads)
+    do ipt=1,num1Dpoints
+        call calchessmat_dens(2,ptxyz(1,ipt),ptxyz(2,ipt),ptxyz(3,ipt),tmprho,tmparr,tmpmat)
+        rho0(ipt)=rho0(ipt)+tmprho
+        derrho0(:,ipt)=derrho0(:,ipt)+tmparr(:)
+        hessrho0(:,:,ipt)=hessrho0(:,:,ipt)+tmpmat(:,:)
+    end do
+    !$OMP end parallel do
+end do
+
+call dealloall
+write(*,"(' Reloading: ',a)") trim(firstfilename)
+call readinfile(firstfilename,1)
+
+!Calculate function values
+do ipt=1,num1Dpoints
+    rholapl=hessrho(1,1,ipt)+hessrho(2,2,ipt)+hessrho(3,3,ipt)
+    rholapl0=hessrho0(1,1,ipt)+hessrho0(2,2,ipt)+hessrho0(3,3,ipt)
+    if (iuserfunc==57) then
+        curvey(ipt)=rholapl*log(rho(ipt)/rho0(ipt))
+    else if (iuserfunc==58) then
+        curvey(ipt)=rho(ipt)*(rholapl/rho(ipt)-rholapl0/rho0(ipt))
+    else if (iuserfunc==59) then
+        xtmp=derrho(1,ipt)/rho(ipt)-derrho0(1,ipt)/rho0(ipt)
+        ytmp=derrho(2,ipt)/rho(ipt)-derrho0(2,ipt)/rho0(ipt)
+        ztmp=derrho(3,ipt)/rho(ipt)-derrho0(3,ipt)/rho0(ipt)
+        curvey(ipt)=rho(ipt)*(xtmp**2+ytmp**2+ztmp**2)
+    end if
+end do
+end subroutine
+
+
+
+!!---------- Calculate g1, g2, g3 terms in the plane, all of them rely on promolecular density calculated based on atom .wfn files
+subroutine g1g2g3plane
+use defvar
+use function
+implicit real*8 (a-h,o-z)
+real*8 rho(ngridnum1,ngridnum2),derrho(3,ngridnum1,ngridnum2),hessrho(3,3,ngridnum1,ngridnum2)
+real*8 rho0(ngridnum1,ngridnum2),derrho0(3,ngridnum1,ngridnum2),hessrho0(3,3,ngridnum1,ngridnum2)
+real*8 tmparr(3),tmpmat(3,3)
+
+!Calculate molecular density
+!$OMP parallel do shared(rho,derrho,hessrho) private(i,j,rnowx,rnowy,rnowz) num_threads(nthreads)
+do i=1,ngridnum1
+	do j=1,ngridnum2
+		rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
+		rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
+		rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+        call calchessmat_dens(2,rnowx,rnowy,rnowz,rho(i,j),derrho(:,i,j),hessrho(:,:,i,j))
+    end do
+end do
+!$OMP end parallel do
+
+call setpromol
+!Calculate promolecular density
+rho0=0
+derrho0=0
+hessrho0=0
+do ipro=1,ncustommap
+    filename=custommapname(ipro)
+	call dealloall
+	write(*,"(' Loading: ',a)") trim(filename)
+	call readinfile(filename,1)
+    !$OMP parallel do shared(rho,derrho,hessrho) private(i,j,rnowx,rnowy,rnowz,tmprho,tmparr,tmpmat) num_threads(nthreads)
+    do i=1,ngridnum1
+	    do j=1,ngridnum2
+		    rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
+		    rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
+		    rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+            call calchessmat_dens(2,rnowx,rnowy,rnowz,tmprho,tmparr,tmpmat)
+            rho0(i,j)=rho0(i,j)+tmprho
+            derrho0(:,i,j)=derrho0(:,i,j)+tmparr(:)
+            hessrho0(:,:,i,j)=hessrho0(:,:,i,j)+tmpmat(:,:)
+        end do
+    end do
+    !$OMP end parallel do
+end do
+
+call dealloall
+write(*,"(' Reloading: ',a)") trim(firstfilename)
+call readinfile(firstfilename,1)
+
+!Calculate function values
+do i=1,ngridnum1
+	do j=1,ngridnum2
+        rholapl=hessrho(1,1,i,j)+hessrho(2,2,i,j)+hessrho(3,3,i,j)
+        rholapl0=hessrho0(1,1,i,j)+hessrho0(2,2,i,j)+hessrho0(3,3,i,j)
+        if (iuserfunc==57) then
+            planemat(i,j)=rholapl*log(rho(i,j)/rho0(i,j))
+        else if (iuserfunc==58) then
+            planemat(i,j)=rho(i,j)*(rholapl/rho(i,j)-rholapl0/rho0(i,j))
+        else if (iuserfunc==59) then
+            xtmp=derrho(1,i,j)/rho(i,j)-derrho0(1,i,j)/rho0(i,j)
+            ytmp=derrho(2,i,j)/rho(i,j)-derrho0(2,i,j)/rho0(i,j)
+            ztmp=derrho(3,i,j)/rho(i,j)-derrho0(3,i,j)/rho0(i,j)
+            planemat(i,j)=rho(i,j)*(xtmp**2+ytmp**2+ztmp**2)
+        end if
+    end do
+end do
+end subroutine
+
+
+
+!!---------- Calculate g1, g2, g3 terms as grid data, all of them rely on promolecular density calculated based on atom .wfn files
+subroutine g1g2g3grid
+use defvar
+use function
+implicit real*8 (a-h,o-z)
+real*8 rho(nx,ny,nz),derrho(3,nx,ny,nz),rholapl(nx,ny,nz)
+real*8 rho0(nx,ny,nz),derrho0(3,nx,ny,nz),rholapl0(nx,ny,nz)
+real*8 tmparr(3),tmpmat(3,3)
+
+write(*,*) "Calculating electron density and derivatives for actual molecule..."
+!$OMP PARALLEL DO SHARED(rho,derrho,rholapl) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmpmat) schedule(dynamic) NUM_THREADS(nthreads)
+do k=1,nz
+	tmpz=orgz+(k-1)*dz
+	do j=1,ny
+		tmpy=orgy+(j-1)*dy
+		do i=1,nx
+			tmpx=orgx+(i-1)*dx
+            call calchessmat_dens(2,tmpx,tmpy,tmpz,rho(i,j,k),derrho(:,i,j,k),tmpmat)
+            rholapl(i,j,k)=tmpmat(1,1)+tmpmat(2,2)+tmpmat(3,3)
+        end do
+    end do
+end do
+!$OMP end parallel do
+
+write(*,*) "Calculating electron density and derivatives for promolecule..."
+call setpromol
+!Calculate promolecular density
+rho0=0
+derrho0=0
+rholapl0=0
+do ipro=1,ncustommap
+    filename=custommapname(ipro)
+	call dealloall
+	write(*,"(' Loading: ',a)") trim(filename)
+	call readinfile(filename,1)
+    !$OMP parallel do shared(rho0,derrho0,rholapl0) private(i,j,k,tmpx,tmpy,tmpz,tmprho,tmparr,tmpmat) num_threads(nthreads)
+    do k=1,nz
+	    tmpz=orgz+(k-1)*dz
+	    do j=1,ny
+		    tmpy=orgy+(j-1)*dy
+		    do i=1,nx
+			    tmpx=orgx+(i-1)*dx
+                call calchessmat_dens(2,tmpx,tmpy,tmpz,tmprho,tmparr,tmpmat)
+                rho0(i,j,k)=rho0(i,j,k)+tmprho
+                derrho0(:,i,j,k)=derrho0(:,i,j,k)+tmparr(:)
+                rholapl0(i,j,k)=rholapl0(i,j,k)+(tmpmat(1,1)+tmpmat(2,2)+tmpmat(3,3))
+            end do
+        end do
+    end do
+    !$OMP end parallel do
+end do
+
+call dealloall
+write(*,"(' Reloading: ',a)") trim(firstfilename)
+call readinfile(firstfilename,1)
+
+write(*,*) "Calculating final function values..."
+do k=1,nz
+	tmpz=orgz+(k-1)*dz
+	do j=1,ny
+		tmpy=orgy+(j-1)*dy
+		do i=1,nx
+			tmpx=orgx+(i-1)*dx
+            if (iuserfunc==57) then
+                cubmat(i,j,k)=rholapl(i,j,k)*log(rho(i,j,k)/rho0(i,j,k))
+            else if (iuserfunc==58) then
+                cubmat(i,j,k)=rho(i,j,k)*(rholapl(i,j,k)/rho(i,j,k)-rholapl0(i,j,k)/rho0(i,j,k))
+            else if (iuserfunc==59) then
+                xtmp=derrho(1,i,j,k)/rho(i,j,k)-derrho0(1,i,j,k)/rho0(i,j,k)
+                ytmp=derrho(2,i,j,k)/rho(i,j,k)-derrho0(2,i,j,k)/rho0(i,j,k)
+                ztmp=derrho(3,i,j,k)/rho(i,j,k)-derrho0(3,i,j,k)/rho0(i,j,k)
+                cubmat(i,j,k)=rho(i,j,k)*(xtmp**2+ytmp**2+ztmp**2)
+            end if
+        end do
+    end do
+end do
 end subroutine

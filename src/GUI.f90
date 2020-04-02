@@ -54,6 +54,7 @@ call wgapp(idisisosur1style,"Use transparent face",idisisosur1tpr)
 call wgapp(idisisosur1style,"Set color for face",idisisosur1solidclr)
 call wgapp(idisisosur1style,"Set color for mesh and points",idisisosur1meshptclr)
 call wgapp(idisisosur1style,"Set opacity for transparent face",idisisosur1opa)
+call wgapp(idisisosur1style,"Exchange positive and negative colors",idisisosur1invclr)
 CALL WGPOP(idiswindow," Isosur#2 style",idisisosur2style)
 call wgapp(idisisosur2style,"Use solid face",idisisosur2solid)
 call wgapp(idisisosur2style,"Use mesh",idisisosur2mesh)
@@ -85,8 +86,11 @@ CALL wgapp(idisotherset,"Use line style",idisuseline)
 CALL wgapp(idisotherset,"Toggle showing hydrogens",idisshowhydrogen)
 CALL wgapp(idisotherset,"Set atom highlighting",idishighlightatom)
 CALL WGPOP(idiswindow,"Tools",idistools)
+CALL wgapp(idistools,"Write settings to GUIsettings.ini",idiswriteGUIsetting)
+CALL wgapp(idistools,"Load settings from GUIsettings.ini",idisloadGUIsetting)
 CALL wgapp(idistools,"Measure geometry",idismeasure)
 CALL wgapp(idistools,"Batch plotting orbitals",idisbatchplot)
+CALL wgapp(idistools,"Select fragment",idisselfrag)
 if (imodlayout==2) call swgdrw(0.9D0) !Set height of drawing widget 0.9*width to make it fully shown
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
@@ -165,6 +169,7 @@ call SWGCBK(idisisosur1point,setisosur1point)
 call SWGCBK(idisisosur1solidmesh,setisosur1solidmesh)
 call SWGCBK(idisisosur1tpr,setisosur1tpr)
 call SWGCBK(idisisosur1solidclr,setisosur1solidclr)
+call SWGCBK(idisisosur1invclr,setisosur1invclr)
 call SWGCBK(idisisosur1meshptclr,setisosur1meshptclr)
 call SWGCBK(idisisosur1opa,setisosur1opa)
 call SWGCBK(idisisosur2solid,setisosur2solid) !Set style for isosur 2
@@ -194,7 +199,10 @@ call SWGCBK(idisuseline,setlinestyle)
 call SWGCBK(idisshowhydrogen,setshowhydrogen)
 call SWGCBK(idishighlightatom,sethighlightatom)
 call SWGCBK(idismeasure,measuregeom)
+call SWGCBK(idiswriteGUIsetting,writeGUIsetting)
+call SWGCBK(idisloadGUIsetting,loadGUIsetting)
 call SWGCBK(idisbatchplot,batchplot)
+call SWGCBK(idisselfrag,GUIselfrag)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -332,6 +340,7 @@ if (iallowsetstyle==1) then
 	call wgapp(idisisosur1style,"Use transparent face",idisisosur1tpr)
 	call wgapp(idisisosur1style,"Set color for face",idisisosur1solidclr)
 	call wgapp(idisisosur1style,"Set color for mesh and points",idisisosur1meshptclr)
+	call wgapp(idisisosur1style,"Exchange positive and negative colors",idisisosur1invclr)
 	call wgapp(idisisosur1style,"Set opacity for transparent face",idisisosur1opa)
 else if (iallowsetstyle==2) then
 	call WGPOP(idiswindow," Isosurface style",idisisosurallstyle)
@@ -407,6 +416,7 @@ if (iallowsetstyle==1) then
 	call SWGCBK(idisisosur1solidmesh,setisosur1solidmesh)
 	call SWGCBK(idisisosur1tpr,setisosur1tpr)
 	call SWGCBK(idisisosur1solidclr,setisosur1solidclr)
+	call SWGCBK(idisisosur1invclr,setisosur1invclr)
 	call SWGCBK(idisisosur1meshptclr,setisosur1meshptclr)
 	call SWGCBK(idisisosur1opa,setisosur1opa)
 else if (iallowsetstyle==2) then
@@ -662,6 +672,10 @@ CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL WGPOP(idiswindow,"Set basin drawing method",idissetdraw)
+CALL wgapp(idissetdraw,"Entire basin",idisshowbasinall)
+CALL wgapp(idissetdraw,"rho>0.001 region only",idisshowbasinvdw)
+CALL wgapp(idissetdraw,"Set sphere size for showing basins",idissetbasinsphsize)
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idiswindow,"VERT",idisright2) !Provide another frame for linux version
 CALL WGBAS(idisright,"VERT",idisOK)
@@ -726,7 +740,10 @@ if (imodlayout<=1) then
 end if
 call SWGCBK(idislabelsize,setlabelsize)
 call SWGCBK(idisattsize,setattsize)
-call SWGCBK(idisbasinplot,showbasinsel) 
+call SWGCBK(idisbasinplot,showbasinsel)
+call SWGCBK(idisshowbasinvdw,showbasinvdw)
+call SWGCBK(idisshowbasinall,showbasinall)
+call SWGCBK(idissetbasinsphsize,setbasinsphsize)
 CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 idrawbasinidx=-10 !Don't draw basins by default
@@ -1543,6 +1560,10 @@ end subroutine
 subroutine setbondcrit(id)
 integer,intent (in) :: id
 call GWGSCL(id,bondcrit)
+if (allocated(connmat)) then
+    write(*,*) "Note: Connectivity is unset since bonding criterion has been changed"
+    deallocate(connmat)
+end if
 call drawmol
 end subroutine
 
@@ -2028,6 +2049,30 @@ call drawmol
 CALL SWGWTH(20) !Recover default
 end subroutine
 
+!Exchange positive and negative colors for isosurface 1
+subroutine setisosur1invclr(id)
+integer,intent (in) :: id
+tmp1=clrRcub1same
+tmp2=clrGcub1same
+tmp3=clrBcub1same
+clrRcub1same=clrRcub1oppo
+clrGcub1same=clrGcub1oppo
+clrBcub1same=clrBcub1oppo
+clrRcub1oppo=tmp1
+clrGcub1oppo=tmp2
+clrBcub1oppo=tmp3
+tmp1=clrRcub1samemeshpt
+tmp2=clrGcub1samemeshpt
+tmp3=clrBcub1samemeshpt
+clrRcub1samemeshpt=clrRcub1oppomeshpt
+clrGcub1samemeshpt=clrGcub1oppomeshpt
+clrBcub1samemeshpt=clrBcub1oppomeshpt
+clrRcub1oppomeshpt=tmp1
+clrGcub1oppomeshpt=tmp2
+clrBcub1oppomeshpt=tmp3
+call drawmol
+end subroutine
+
 !Set color for mesh and points representation of isosurface 1
 subroutine setisosur1meshptclr(id)
 integer,intent (in) :: id
@@ -2252,6 +2297,38 @@ call SWGTXT(idisnpt,ngridstr)
 call drawmol
 end subroutine
 
+subroutine showbasinvdw(id)
+use basinintmod
+integer,intent (in) :: id
+ishowbasinmethod=2
+if (ifuncbasin==1.and..not.allocated(rhocub)) then
+    allocate(rhocub(nx,ny,nz))
+    rhocub=cubmat
+end if
+call saverhocub !Calculate electron density and store to rhocub if rhocub is not available
+call drawmol
+end subroutine
+
+subroutine showbasinall(id)
+use basinintmod
+integer,intent (in) :: id
+ishowbasinmethod=1
+call drawmol
+end subroutine
+
+subroutine setbasinsphsize(id)
+use basinintmod
+use defvar
+integer,intent (in) :: id
+character c80tmp*80
+if (basinsphsize==0) basinsphsize=dsqrt(dx**2+dy**2+dz**2)/2D0
+write(c80tmp,"(f6.3)") basinsphsize
+CALL SWGWTH(50)
+CALL swgtit("Set sphere size")
+call dwgtxt("Input size of spheres for showing basins, e.g. 0.1",c80tmp)
+read(c80tmp,*) basinsphsize
+call drawmol
+end subroutine
 
 
 !!----------- GUI for measuring geometry between 2/3/4 atoms
@@ -2334,6 +2411,70 @@ end subroutine
 
 
 
+
+!!!-------- Select a fragment in GUI
+subroutine GUIselfrag(id)
+use defvar
+use util
+integer,intent (in) :: id
+character c80tmp*80,c2000tmp*2000
+integer iffrag(ncenter)
+c80tmp=" "
+CALL SWGWTH(50)
+CALL swgtit("Select fragment")
+call dwgtxt("Input index of any atom in the fragment, e.g. 3",c80tmp)
+if (c80tmp==" ") return
+read(c80tmp,*) iatm
+if (iatm<1.or.iatm>ncenter) return
+call getfragatoms(iatm,iffrag)
+
+!Convert indices of the selected atoms to string
+c2000tmp=" "
+do iatm=1,ncenter
+    if (iffrag(iatm)==1) then
+        write(c80tmp,*) iatm
+        nsize=len_trim(adjustl(c80tmp))
+        if (c2000tmp/=" ") then
+            if (iffrag(iatm-1)==1) then !The index is contiguous, use - to connect to last one
+                if (iatm<ncenter) then
+                    if (iffrag(iatm+1)==1) cycle
+                end if
+                ntmp=len_trim(c2000tmp) !Modify last comma as -
+                c2000tmp(ntmp:ntmp)='-'
+            end if
+        end if
+        c2000tmp=trim(c2000tmp)//trim(adjustl(c80tmp))
+        if (any(iffrag(iatm+1:)==1)) write(c2000tmp(len_trim(c2000tmp)+1:),"(a)") ','
+    end if
+end do
+
+!Highlight atoms in the fragment
+if (allocated(highlightatomlist)) deallocate(highlightatomlist)
+allocate(highlightatomlist(count(iffrag==1)))
+nhigh=0
+do iatm=1,ncenter
+    if (iffrag(iatm)==1) then
+        nhigh=nhigh+1
+        highlightatomlist(nhigh)=iatm
+    end if
+end do
+call drawmol
+
+if (isys==1) then
+    CALL SWGWTH(50)
+    call dwgtxt("Indices of the atoms in the fragment",c2000tmp)
+else
+    write(*,"(/,' Indices of the atoms in the fragment:',/,a)") trim(c2000tmp)
+    CALL SWGWTH(50)
+    call dwgmsg("The atoms in the fragment have been highlighted, their indices have been shown in console window")
+end if
+deallocate(highlightatomlist)
+call drawmol
+end subroutine
+
+
+
+
 !!!-------- Plot a batch of orbitals
 subroutine batchplot(id)
 use defvar
@@ -2359,6 +2500,8 @@ CALL SWGWTH(20) !Recover default
 end subroutine
 
 
+
+
 !!!-------- Set highlighting for a batch of atoms
 subroutine sethighlightatom(id)
 use defvar
@@ -2378,5 +2521,152 @@ if (c2000tmp/=" ") then
 end if
 call drawmol
 end subroutine
+
+
+!!!-------- Write GUI setting to GUIsettings.ini current folder
+subroutine writeGUIsetting(id)
+use defvar
+integer,intent (in) :: id
+character*200 c200tmp
+call getenv("Multiwfnpath",c200tmp)
+if (c200tmp/=" ") then
+    c200tmp=trim(c200tmp)//"/GUIsettings.ini"
+    call dwgmsg("Settings have been written to GUIsettings.ini in the folder defined by ""Multiwfnpath"" environment variable")
+else
+    c200tmp="GUIsettings.ini"
+    call dwgmsg("Settings have been written to GUIsettings.ini in current folder")
+end if
+open(10,file=c200tmp,status="replace")
+write(10,*) "nprevorbgrid      ",nprevorbgrid
+write(10,*) "aug3D             ",aug3D
+write(10,*) "sur_value         ",sur_value
+write(10,*) "ishowhydrogen     ",ishowhydrogen
+write(10,*) "iatmlabtype3D     ",iatmlabtype3D
+write(10,*) "atmlabclrR        ",atmlabclrR
+write(10,*) "atmlabclrG        ",atmlabclrG
+write(10,*) "atmlabclrB        ",atmlabclrB
+write(10,*) "ienablelight1     ",ienablelight1
+write(10,*) "ienablelight2     ",ienablelight2
+write(10,*) "ienablelight3     ",ienablelight3
+write(10,*) "ienablelight4     ",ienablelight4
+write(10,*) "ienablelight5     ",ienablelight5
+write(10,*) "ishowatmlab       ",ishowatmlab
+write(10,*) "ishowaxis         ",ishowaxis
+write(10,*) "isosur1style      ",isosur1style
+write(10,*) "isosur2style      ",isosur2style
+write(10,*) "bondcrit          ",bondcrit
+write(10,*) "textheigh         ",textheigh
+write(10,*) "ratioatmsphere    ",ratioatmsphere
+write(10,*) "bondradius        ",bondradius
+write(10,*) "XVU               ",XVU
+write(10,*) "YVU               ",YVU
+write(10,*) "ZVU               ",ZVU
+write(10,*) "opacitycub1       ",opacitycub1
+write(10,*) "opacitycub2       ",opacitycub2
+write(10,*) "clrRcub1same      ",clrRcub1same
+write(10,*) "clrGcub1same      ",clrGcub1same
+write(10,*) "clrBcub1same      ",clrBcub1same
+write(10,*) "clrRcub1oppo      ",clrRcub1oppo
+write(10,*) "clrGcub1oppo      ",clrGcub1oppo
+write(10,*) "clrBcub1oppo      ",clrBcub1oppo
+write(10,*) "clrRcub2same      ",clrRcub2same
+write(10,*) "clrGcub2same      ",clrGcub2same
+write(10,*) "clrBcub2same      ",clrBcub2same
+write(10,*) "clrRcub2oppo      ",clrRcub2oppo
+write(10,*) "clrGcub2oppo      ",clrGcub2oppo
+write(10,*) "clrBcub2oppo      ",clrBcub2oppo
+write(10,*) "clrRcub1samemeshpt",clrRcub1samemeshpt
+write(10,*) "clrGcub1samemeshpt",clrGcub1samemeshpt
+write(10,*) "clrBcub1samemeshpt",clrBcub1samemeshpt
+write(10,*) "clrRcub1oppomeshpt",clrRcub1oppomeshpt
+write(10,*) "clrGcub1oppomeshpt",clrGcub1oppomeshpt
+write(10,*) "clrBcub1oppomeshpt",clrBcub1oppomeshpt
+write(10,*) "clrRcub2samemeshpt",clrRcub2samemeshpt
+write(10,*) "clrGcub2samemeshpt",clrGcub2samemeshpt
+write(10,*) "clrBcub2samemeshpt",clrBcub2samemeshpt
+write(10,*) "clrRcub2oppomeshpt",clrRcub2oppomeshpt
+write(10,*) "clrGcub2oppomeshpt",clrGcub2oppomeshpt
+write(10,*) "clrBcub2oppomeshpt",clrBcub2oppomeshpt
+close(10)
+end subroutine
+
+
+!!!-------- load GUI setting from GUIsettings.ini current folder
+subroutine loadGUIsetting(id)
+use defvar
+integer,intent (in) :: id
+character c30tmp*30,c200tmp*200
+logical alive1,alive2
+call getenv("Multiwfnpath",c200tmp)
+inquire(file=trim(c200tmp)//"/GUIsettings.ini",exist=alive1)
+if (alive1) then
+    open(10,file=trim(c200tmp)//"/GUIsettings.ini",status="old")
+else
+    inquire(file="GUIsettings.ini",exist=alive2)
+    if (alive2) open(10,file="GUIsettings.ini",status="old")
+end if
+if (alive1.or.alive2) then
+    read(10,*) c30tmp,nprevorbgrid
+    read(10,*) c30tmp,aug3D
+    read(10,*) c30tmp,sur_value
+    read(10,*) c30tmp,ishowhydrogen
+    read(10,*) c30tmp,iatmlabtype3D
+    read(10,*) c30tmp,atmlabclrR
+    read(10,*) c30tmp,atmlabclrG
+    read(10,*) c30tmp,atmlabclrB
+    read(10,*) c30tmp,ienablelight1
+    read(10,*) c30tmp,ienablelight2
+    read(10,*) c30tmp,ienablelight3
+    read(10,*) c30tmp,ienablelight4
+    read(10,*) c30tmp,ienablelight5
+    read(10,*) c30tmp,ishowatmlab
+    read(10,*) c30tmp,ishowaxis
+    read(10,*) c30tmp,isosur1style
+    read(10,*) c30tmp,isosur2style
+    read(10,*) c30tmp,bondcrit
+    read(10,*) c30tmp,textheigh
+    read(10,*) c30tmp,ratioatmsphere
+    read(10,*) c30tmp,bondradius
+    read(10,*) c30tmp,XVU
+    read(10,*) c30tmp,YVU
+    read(10,*) c30tmp,ZVU
+    read(10,*) c30tmp,opacitycub1
+    read(10,*) c30tmp,opacitycub2
+    read(10,*) c30tmp,clrRcub1same
+    read(10,*) c30tmp,clrGcub1same
+    read(10,*) c30tmp,clrBcub1same
+    read(10,*) c30tmp,clrRcub1oppo
+    read(10,*) c30tmp,clrGcub1oppo
+    read(10,*) c30tmp,clrBcub1oppo
+    read(10,*) c30tmp,clrRcub2same
+    read(10,*) c30tmp,clrGcub2same
+    read(10,*) c30tmp,clrBcub2same
+    read(10,*) c30tmp,clrRcub2oppo
+    read(10,*) c30tmp,clrGcub2oppo
+    read(10,*) c30tmp,clrBcub2oppo
+    read(10,*) c30tmp,clrRcub1samemeshpt
+    read(10,*) c30tmp,clrGcub1samemeshpt
+    read(10,*) c30tmp,clrBcub1samemeshpt
+    read(10,*) c30tmp,clrRcub1oppomeshpt
+    read(10,*) c30tmp,clrGcub1oppomeshpt
+    read(10,*) c30tmp,clrBcub1oppomeshpt
+    read(10,*) c30tmp,clrRcub2samemeshpt
+    read(10,*) c30tmp,clrGcub2samemeshpt
+    read(10,*) c30tmp,clrBcub2samemeshpt
+    read(10,*) c30tmp,clrRcub2oppomeshpt
+    read(10,*) c30tmp,clrGcub2oppomeshpt
+    read(10,*) c30tmp,clrBcub2oppomeshpt
+    close(10)
+    call drawmol
+    if (alive1) then
+        write(*,"(a)") " Settings have been loaded from the GUIsettings.ini in the folder defined by ""Multiwfnpath"""
+    else if (alive2) then
+        write(*,*) "Settings have been loaded from GUIsettings.ini in current folder"
+    end if
+else
+    call dwgmsg("Error: Cannot find GUIsettings.ini in either current folder or the folder defined by ""Multiwfnpath""")
+end if
+end subroutine
+
 
 end module

@@ -32,8 +32,9 @@ real*8 ctrval(1000) !Value of contour lines
 real*8,allocatable :: curvex(:),curvey(:),curveytmp(:) !For line plot
 real*8,allocatable :: planemat(:,:),planemattmp(:,:) !planemattmp is mainly used to draw contour line of a function on contour map of another function (e.g. vdw surface on ESP contour map)
 real*8,allocatable :: cubmat(:,:,:) !cubmat, store density/laplacian...3D-matrix
-real*8,allocatable :: cubmattmp(:,:,:) !For cube data exchanging, position of points must be identical to cubmat, so don't use type(content) for lowering memory consumption
 real*8,allocatable :: cubmatvec(:,:,:,:) !Used to store vector field
+real*8,allocatable :: cubmattmp(:,:,:),cubmattmp2(:,:,:) !For temporarily exchanging and storing grid data, with same size as cubmat
+real*8,allocatable :: rhocub(:,:,:) !Specifically store electron density grid data, with same size as cubmat
 real*8,allocatable :: gradd1(:,:),gradd2(:,:) !Gradient in direction1/2 for gradient line plot
 real*8,allocatable :: distmat(:,:) !Distance matrix, in Bohr
 character*200 filename,firstfilename !firstfilename is the filename loaded when Multiwfn boots up or in option -11 of main menu
@@ -41,7 +42,7 @@ character*80 extctrsetting,cmdarg2 !cmdarg is the parameter of booting multiwfn
 character,allocatable :: custommapname(:)*200,customop(:) !Custom operation for custom map/cube file
 logical alive
 integer :: ifragcontri=0,nfragatmnum=0,nfragatmnumbackup=0 !ifragcontri=1 if fragment has been defined by users
-integer,allocatable :: fragatm(:),fragatmbackup(:) !Store the index of atoms in fragment, has no relationship with frag1/frag2. fragatmbackup is used to backup fragatm during custom operation
+integer,allocatable :: fragatm(:),fragatmbackup(:) !Store the index of atoms in fragment, used in various routines like setpromol. has no relationship with frag1/frag2. fragatmbackup is used to backup fragatm during custom operation
 integer,allocatable :: frag1(:),frag2(:) !These two fragments are only used for bond order analysis/composition analysis etc., store index of basis functions or atoms. Their size just fit their content
 integer :: ncustommap=0,imodwfn=0 !if 1, means occupation number or orbital type or basis function information have been modified
 integer :: iorbsel=1 !Which orbital is selected, and its value will be calculated by fmo and calchessmat_mo
@@ -58,7 +59,7 @@ character*2 :: ind2name(0:nelesupp)=(/ "Bq","H ","He", &   !Bq(number 0) is ghos
 "Cs","Ba","La","Ce","Pr","Nd","Pm","Sm","Eu","Gd","Tb","Dy","Ho","Er","Tm","Yb","Lu", & !55~71
 "Hf","Ta","W ","Re","Os","Ir","Pt","Au","Hg","Tl","Pb","Bi","Po","At","Rn", & !72~86
 "Fr","Ra","Ac","Th","Pa","U ","Np","Pu","Am","Cm","Bk","Cf","Es","Fm","Md","No","Lr", & !87~103
-"Rf","Db","Sg","Bh","Hs","Mt","Ds","Rg","Cn","Ut","Fl","Up","Lv","Us","Uo","Un","Ux",("??",i=121,nelesupp) /) !104~all  Such as Uuo/Uup is replaced by Uo/Up
+"Rf","Db","Sg","Bh","Hs","Mt","Ds","Rg","Cn","Nh","Fl","Mc","Lv","Ts","Og","Un","Ux",("??",i=121,nelesupp) /) !104~all. Name is in line with NIST periodic table. Such as Uun is replaced by Un
 character*2 :: ind2name_up(0:nelesupp)=(/ "BQ","H ","HE", & !Same as ind2name, but all characters are upper case, to cater to .pdb file
 "LI","BE","B ","C ","N ","O ","F ","NE", & !3~10
 "NA","MG","AL","SI","P ","S ","CL","AR", & !11~18
@@ -179,9 +180,9 @@ real*8 :: atmwei(0:nelesupp)=(/ 0D0,1.00794D0,4.0026D0,6.941D0,9.01218D0,10.811D
  
 !Series of Lebedev-Laikov routines
 integer :: Lebelist(32)=(/ 6,14,26,38,50,74,86,110,146,170,194,230,266,302,350,434,590,770,974,1202,1454,1730,2030,2354,2702,3074,3470,3890,4334,4802,5294,5810 /)
-integer :: fact(0:10)=(/ 1,1,2,6,24,120,720,5040,40320,362880,3628800 /) ! Store factorials from 0~10 
-integer :: isphergau=0 !By default, all basis functions are cartesian type, =1 means spherical (but some of them can be still cartesian type)
-character*5 :: GTFtype2name(-32:56)=(/ & !The definition of such as G-4, H+5 can be found in http://sobereva.com/97
+integer :: fact(0:10)=(/ 1,1,2,6,24,120,720,5040,40320,362880,3628800 /) ! Store factorials from 0 to 10 
+integer :: isphergau=0 !By default, all basis functions are Cartesian type, =1 means spherical (but some of them can still be Cartesian type)
+character*5 :: GTFtype2name(-32:56)=(/ & !Definition of such as G-4, H+5 can be found in http://sobereva.com/97
 "H 0  ","H+1  ","H-1  ","H+2  ","H-2  ","H+3  ","H-3  ","H+4  ","H-4  ","H+5  ","H-5  ", & !-32:-22
 "G 0  ","G+1  ","G-1  ","G+2  ","G-2  ","G+3  ","G-3  ","G+4  ","G-4  ", & !-21:-13
 "F 0  ","F+1  ","F-1  ","F+2  ","F-2  ","F+3  ","F-3  ","D 0  ","D+1  ","D-1  ","D+2  ","D-2  ", & !-12:-6,-5:-1
@@ -189,17 +190,20 @@ character*5 :: GTFtype2name(-32:56)=(/ & !The definition of such as G-4, H+5 can
 "XXX  ","YYY  ","ZZZ  ","XXY  ","XXZ  ","YYZ  ","XYY  ","XZZ  ","YZZ  ","XYZ  ", & !f 11~20
 "ZZZZ ","YZZZ ","YYZZ ","YYYZ ","YYYY ","XZZZ ","XYZZ ","XYYZ ","XYYY ","XXZZ ","XXYZ ","XXYY ","XXXZ ","XXXY ","XXXX ", & !g 21~35
 "ZZZZZ","YZZZZ","YYZZZ","YYYZZ","YYYYZ","YYYYY","XZZZZ","XYZZZ","XYYZZ","XYYYZ","XYYYY","XXZZZ","XXYZZ","XXYYZ","XXYYY","XXXZZ","XXXYZ","XXXYY","XXXXZ","XXXXY","XXXXX" /) !h 36~56
+!I shell (not supported yet): ZZZZZZ, YZZZZZ, YYZZZZ, YYYZZZ, YYYYZZ, YYYYYZ, YYYYYY, XZZZZZ, XYZZZZ, XYYZZZ, XYYYZZ, XYYYYZ, XYYYYY, &
+!XXZZZZ, XXYZZZ, XXYYZZ, XXYYYZ, XXYYYY, XXXZZZ, XXXYZZ, XXXYYZ, XXXYYY, XXXXZZ, XXXXYZ, XXXXYY, XXXXXZ, XXXXXY, XXXXXX
 character*5 :: type2ang(56)=(/ &
 "S    ","P    ","P    ","P    ","D    ","D    ","D    ","D    ","D    ","D    ", & !0~10
 "F    ","F    ","F    ","F    ","F    ","F    ","F    ","F    ","F    ","F    ", & !f 11~20
 "G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ","G    ", & !g 21~35
 "H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    ","H    " /) !h 36~56
-!Here s,p,d sequences are identical to .wfn, .wfx, .fch, .molden  !Note: Sequence in .fch = sequence in Gaussian
+!The order of spherical basis functions are the same for all kinds of files, however, the order of Cartesian ones may be different in different cases
+!Here s,p,d sequences are identical to .wfn, .wfx, .fch, .molden  !Note: Sequence in .fch = sequence in Gaussian (the printed basis functions via pop=full)
 !Here f sequence is identical to .wfn, .wfx, but not identical to .fch and .molden
 !Here g sequence is identical to .fch, .wfn does not support higher than f function, not identical to .wfx and .molden
 !here h sequence is identical to .wfx and .fch, .molden doesn't support h
 !Notice: The .wfn produced by G09 B.01 and later supports g and h, the definition is identical to here, and thus can be normally loaded
-!Overall, spd: Multiwfn=wfn=wfx=fch=molden   f: Multiwfn=wfn=wfx!=fch=molden   g: Multiwfn=fch!=wfx=molden=Molden2AIM   h: Multiwfn=wfx=fch
+!Overall, spd: Multiwfn=wfn=wfx=fch=molden   f: Multiwfn=wfn=wfx!=(fch=molden)   g: Multiwfn=fch!=(wfx=molden=Molden2AIM)   h: Multiwfn=wfx=fch
 integer :: type2ix(56)=(/ 0, 1,0,0, 2,0,0,1,1,0, 3,0,0,2,2,0,1,1,0,1, 0,0,0,0,0,1,1,1,1,2,2,2,3,3,4, 0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,3,3,3,4,4,5 /)
 integer :: type2iy(56)=(/ 0, 0,1,0, 0,2,0,1,0,1, 0,3,0,1,0,2,2,0,1,1, 0,1,2,3,4,0,1,2,3,0,1,2,0,1,0, 0,1,2,3,4,5,0,1,2,3,4,0,1,2,3,0,1,2,0,1,0 /)
 integer :: type2iz(56)=(/ 0, 0,0,1, 0,0,2,0,1,1, 0,0,3,0,1,1,0,2,2,1, 4,3,2,1,0,3,2,1,0,2,1,0,1,0,0, 5,4,3,2,1,0,4,3,2,1,0,3,2,1,0,2,1,0,1,0,0 /)
@@ -211,19 +215,20 @@ integer :: shtype2nbas(-5:5)=(/ 11,9,7,5,4,1,3,6,10,15,21 /)
 !-------- Variables for wfn information(_org means using for backuping the first loaded molecule)
 integer :: ibasmode=0 !0/1 = GTO/STO is used in current wavefunction
 integer :: nmo=0,nprims=0,ncenter=0,ncenter_org=0,nmo_org=0,nprims_org=0 !Number of orbitals, primitive functions, nuclei
-integer :: idxHOMO=0 !For fch and molden, record the index of original HOMO, this will be used to calculate linear response kernel for pi-electrons
-integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13, vti=14, gro=15
-integer :: wfntype=0 !0/1/2/3/4 means R/U/ROHF /R/U-Post-HF wavefunction
+integer :: idxHOMO=0,idxHOMOb=0 !For fch and molden (or may be others), record the index of alpha and beta HOMO (idxHOMOb>nbasis), etc.
+integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd/dx/vti=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13, mwfn=14, gro=15
+integer :: wfntype=0 !0/1/2= R/U/RO single determinant wavefunction, 3/4=R/U multiconfiguration wavefunction
 real*8 :: totenergy=0,virialratio=2,nelec=0,naelec=0,nbelec=0
+integer :: loadmulti=-99,loadcharge=-99 !Spin multiplicity and net charge, loaded directly from input file (e.g. from .gjf or .xyz), only utilized in rare cases. -99 means unloaded
 !-------- Variables for nuclei & GTF & Orbitals
 type(atomtype),allocatable :: a(:),a_org(:),a_tmp(:)
 type(primtype),allocatable :: b(:),b_org(:),b_tmp(:)
-integer,allocatable :: connmat(:,:) !Connectivity matrix. Could be loaded from .mol/mol2 file using readmol/readmol2 or readmolconn routine, can also be generated via genconnmat
 real*8,allocatable :: MOocc(:),MOocc_org(:),MOene(:),MOene_org(:) !Occupation number & energy of orbital
 integer,allocatable :: MOtype(:) !The type of orbitals, (alpha&beta)=0/alpha=1/beta=2, not read from .wfn directly
-character*4,allocatable :: MOsym(:) !The symmetry of orbitals, meaningful when .molden/.gms is used since it sometimes records irreducible representation
+character*10 :: orbtypename(0:2)=(/ "Alpha&Beta","Alpha","Beta" /)
+character*4,allocatable :: MOsym(:) !The symmetry of orbitals, meaningful when .mwfn/molden/gms is used
 real*8,allocatable :: CO(:,:),CO_org(:,:),CO_tmp(:,:) !Coefficient matrix of primitive basis functions, including both normalization and contraction coefficients
-                                                      !Note: Row/column of CO denote MO/GTF respectively, in contrary to convention
+!Note: Row/column of CO denote MO/GTF respectively, in contrary to convention
 !-------- Describe inner electron density in EDF section
 type(primtype),allocatable :: b_EDF(:)
 real*8,allocatable :: CO_EDF(:)
@@ -250,6 +255,11 @@ real*8,allocatable,target :: CObasa_org(:,:),CObasb_org(:,:)
 real*8,allocatable,target :: Ptot(:,:),Palpha(:,:),Pbeta(:,:) !Density matrix of total/alpha/beta, for wfntype==0.or.wfntype==3, only Ptot is filled, for others, all of Ptot,Palpha and Pbeta are filled
 real*8,allocatable :: Palpha_org(:,:),Pbeta_org(:,:) !Backup P, e.g. for Wiberg bond order calculation
 ! real*8,allocatable :: twoPDM(:) !Store two-particle density matrix by one-dimension array, Not use currently
+
+!-------- Connectivity matrix
+!Loaded from .mol/mol2 using readmol/readmol2 or readmolconn (from mol), value is formal bond order; can also be guessed via genconnmat, value is 1/0 (connected, not connected)
+!Special: ar (aromatic) in mol2 is load as 4, am (nitrogen in piptide bond) in mol2 is read as 1, "un = unknown", "nc = not connected" and "du = dummy" are read as 0
+integer,allocatable :: connmat(:,:) !Diagonal terms are always zero
 
 !-------- Energy related arrays and matrices
 real*8,allocatable :: FmatA(:,:),FmatB(:,:) !Fock matrix of total/alpha and beta spin
@@ -303,7 +313,8 @@ real*8 :: atm3Dclr(0:nelesupp,3) !Colors of the atom spheres shown in 3D plots, 
 
 !Plotting Internal parameter
 integer :: imodlayout=0,plotwinsize3D=90,ishowhydrogen=1
-integer :: idrawbasinidx=0,idrawinternalbasin=0 !Draw which basin. If draw interal part of the basin
+integer :: idrawbasinidx=0 !Draw which basin
+integer :: idrawinternalbasin=0 !=1 Draw internal part of the basin, =0 Only draw boundary grids
 integer :: ifixorbsign=0 !if 1, during generating orbital isosurface by drawmolgui, most part will always be positive (namely if sum(cubmat)<0 or sum(cubmattmp)<0, the data sign will be inverted)
 integer :: iatom_on_plane=0,iatom_on_plane_far=0,ibond_on_plane=0,plesel,IGRAD_ARROW=0,ILABEL_ON_CONTOUR,ncontour
 integer :: ictrlabsize=20,ivdwctrlabsize=0,iwidthvdwctr=10,iwidthposctr=1,iwidthnegctr=1,iwidthgradline=1,iclrindbndlab
@@ -354,7 +365,7 @@ integer :: isys=1 !Windows
 integer :: isys=2 !Linux/MacOS
 #endif
 integer :: igenDbas=0,igenMagbas=0,igenP=1,iwfntmptype=1,outmedinfo=0,intmolcust=0,isilent=0,idelvirorb=1
-integer :: ifchprog=1,iloadascart=0,maxloadexc=0,iprintLMOorder=0,iMCBOtype=0
+integer :: ifchprog=1,iloadascart=0,iloadGaugeom=0,maxloadexc=0,iprintLMOorder=0,iMCBOtype=0
 integer :: iuserfunc=0,iDFTxcsel=84,iKEDsel=0,ispheratm=1,ishowchgtrans=0,SpherIVgroup=0,MCvolmethod=2,readEDF=1,isupplyEDF=2,ishowptESP=1,imolsurparmode=1
 integer :: NICSnptlim=8000
 real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0,espprecutoff=0D0
@@ -363,9 +374,9 @@ integer*8 :: ompstacksize=200000000
 character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="",orca_2mklpath*200="",cubegendenstype*80="SCF"
 !About function calculation, external or internal parameters
 integer :: RDG_addminimal=1,ELF_addminimal=1,num1Dpoints=3000,atomdenscut=1,nprevorbgrid=120000,paircorrtype=3,pairfunctype=1,srcfuncmode=1
-integer :: ELFLOL_type=0,ipolarpara=0,iALIEdecomp=0,iskipnuc=0
+integer :: ELFLOL_type=0,ipolarpara=0,iALIEdecomp=0,iskipnuc=0,ivdwprobe=6
 integer :: nKEDmax=24
-real*8 :: laplfac=1D0,uservar=0
+real*8 :: laplfac=1D0,uservar=0,orbwei_delta=0.1D0
 real*8 :: RDG_maxrho=0.05D0,RDGprodens_maxrho=0.1D0,aug1D=1.5D0,aug2D=4.5D0,aug3D=6.0D0,radcut=10.0D0
 real*8 :: refx=0D0,refy=0D0,refz=0D0
 real*8 :: pleA=0D0,pleB=0D0,pleC=0D0,pleD=0D0 !!ABCD of the plane defined by main function 1000, used for special aims
@@ -459,13 +470,15 @@ integer,allocatable :: elimvtx(:),elimtri(:)
 end module
 
 
-!---------- Module for basin integral
+!---------- Module for basin analysis
 module basinintmod
 integer vec26x(26),vec26y(26),vec26z(26)
 real*8 len26(26)
 real*8 :: valcritclus=0.005D0
-integer ifuncbasin !Which function is used to partition the basin
+integer ifuncbasin !Which real space function is calculated as grid data to partition the basin
 integer :: mergeattdist=5
+real*8 :: basinsphsize=0 !Size of spheres for showing basins
+integer :: ishowbasinmethod=1 !=1 Show entire basin in GUI, =2: Only show rho>0.001 region
 integer*2,allocatable :: gridbas(:,:,:) !Each grid belongs to which basin(attractor). -2=Boundary grids -1=Traveled to boundary grid, 0=Unassigned, x=basin index
 integer numatt !The number of crude attractors after near-grid method
 integer numrealatt !The number of actual attractors (the ones left after clustering)
@@ -484,19 +497,27 @@ end module
 !For NAOset, NAOocc, NAOene, the second index is spin, 0/1/2=total/alpha/beta. For other NAO related arrays, they are independent of spin
 module NAOmod
 integer iopshNAO !0: Closed shell, 1: Open shell (total, alpha and beta are respectively analyzed). This variable is set during loadNAOinfo
+integer ncenter_NAO !The number of centers in involved in NAO analysis, usually equals to ncenter
+character*2,allocatable :: atmname_NAO(:) !Name of centers in involved in NAO analysis, e.g. C, H, O, usually equals to a%name
+!NAO information
 integer numNAO !The number of NAOs
-integer numNAOcen !The number of centers in involved in NAO analysis, usually equals to ncenter
-integer,allocatable :: NAOinit(:),NAOend(:) !size of numNAOcen. Initial and ending indices of NAOs of atoms
-integer,allocatable :: NAOcen(:) !size of numNAO. Attributed center of NAOs
-character,allocatable :: NAOcenname(:)*2 !size of numNAO. The center name loaded from NPA output, e.g. C, H, O
+integer,allocatable :: NAOinit(:),NAOend(:) !size of ncenter_NAO. Initial and ending indices of NAOs of atoms
+integer,allocatable :: NAOcen(:) !size of numNAO. Center index of NAOs belong to
+character,allocatable :: NAOcenname(:)*2 !size of numNAO. The element name loaded from NPA output, e.g. C, H, O
 character,allocatable :: NAOset(:,:)*3  !(numNAO,0:2). Set of NAOs attributed to. i.e. Cor, Val, Ryd (Case sensitive!)
-character,allocatable :: NAOshell(:)*2  !size of numNAO. Shell name that NAOs attributed to, e.g. 2S, 3p, 3d
+character,allocatable :: NAOshname(:)*3  !size of numNAO. Shell name that NAOs attributed to, e.g. 2s, 3p, 3d
 character,allocatable :: NAOtype(:)*7 !size of numNAO. Type name of NAOs. e.g. px, dx2y2
 real*8,allocatable :: NAOocc(:,:),NAOene(:,:) !size of numNAO. Occupation and energy (a.u.) of NAOs
-real*8,allocatable :: DMNAO(:,:),DMNAOa(:,:),DMNAOb(:,:) !size of (numNAO,numNAO) (I found in rare case is (nbasis,nbasis)). Density matrix of total electrons, alpha electrons and beta electrons
+!Shell information for NAOs
+integer numNAOsh !Number of NAO shells
+integer,allocatable :: bassh_NAO(:) !NAO basis index to shell index
+integer,allocatable :: shcen_NAO(:) !NAO shell index to atom index
+character,allocatable :: shname_NAO(:)*3 !NAO shell index to shell name (e.g. 2s, 3p, 3d)
+character,allocatable :: shset_NAO(:,:)*3 !NAO shell index to shell set, i.e. Cor, Val, Ryd (Case sensitive!). 0/1/2=total/alpha/beta
 !In the following matrices, "nbasis" and NBsUse are the number of basis functions before and after linear dependency elimination, respectively
+!Note that AONAO does not distinguish spin, because NAO orbitals are always generated using total density matrix
+real*8,allocatable :: DMNAO(:,:),DMNAOa(:,:),DMNAOb(:,:) !size of (numNAO,numNAO) (I found in rare case is (nbasis,nbasis)). Density matrix of total electrons, alpha electrons and beta electrons
 real*8,allocatable :: NAOMO(:,:) !size of (numNAO,NBsUse). (i,r) is coeff. of NAO i in MO r. If numNAO<nbasis, the gap is filled by blank. For open shell, this records alpha part.
 real*8,allocatable :: NAOMOb(:,:) !NAOMO for beta part
-real*8,allocatable :: AONAO(:,:) !size of (nbasis,numNAO). 
-!Note that AONAO does not distinguish spin, because NAO orbitals are always generated using total density matrix
+real*8,allocatable :: AONAO(:,:) !size of (nbasis,numNAO)
 end module

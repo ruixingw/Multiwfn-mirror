@@ -7,11 +7,12 @@ do while(.true.)
 	write(*,*) "              ============ Other functions (Part 1) ============ "
 	write(*,*) "0 Return"
 	write(*,*) "1 Draw scatter graph between two functions and generate their cube files"
-	write(*,"(a)") " 2 Export various files (.pdb/.xyz/.wfn/.wfx/.molden/.fch/.47...) or generate input file of quantum chemistry programs"
+	write(*,"(a)") " 2 Export various files (mwfn/pdb/xyz/wfn/wfx/molden/fch/47/mkl...) or generate input file of quantum chemistry programs"
 	write(*,*) "3 Calculate molecular van der Waals Volume"
 	write(*,*) "4 Integrate a function in whole space"
 	write(*,*) "5 Show overlap integral between alpha and beta orbitals"
 	write(*,*) "6 Monitor SCF convergence process of Gaussian"
+    !write(*,*) "7 empty"
 	write(*,*) "8 Generate Gaussian input file with initial guess from fragment wavefunctions"
 	write(*,*) "9 Evaluate interatomic connectivity and atomic coordination number"
 ! 	write(*,*) "10 Generate spherically averaged atomic radial density" !Rarely used, so, hidden
@@ -21,6 +22,7 @@ do while(.true.)
 	write(*,*) "14 Calculate LOLIPOP (LOL Integrated Pi Over Plane)"
 	write(*,*) "15 Calculate intermolecular orbital overlap"
     write(*,*) "16 Calculate various quantities in conceptual density functional theory (CDFT)"
+    !write(*,*) "17 empty"
 	write(*,*) "18 Yoshizawa's electron transport route analysis"
 	write(*,*) "19 Generate promolecular .wfn file from fragment wavefunctions"
 	write(*,*) "20 Calculate Hellmann-Feynman forces"
@@ -28,8 +30,8 @@ do while(.true.)
 	write(*,*) "22 Detect pi orbitals, set occupation numbers and calculate pi composition"
 	write(*,*) "23 Fit function distribution to atomic value"
 	write(*,*) "24 Obtain NICS_ZZ value for non-planar or tilted system"
-
 	read(*,*) isel
+
 	if (isel==0) then
 		return
 	else if (isel==1) then
@@ -37,36 +39,12 @@ do while(.true.)
 	else if (isel==2) then
 		call outfile
 	else if (isel==3) then
-		if (MCvolmethod==1) then
-			write(*,*) "100*2^i points will be used to evaluate the volume by Monte Carlo method"
-			write(*,*) "The volume is defined as superposition of vdW sphere of atoms"
-			do while(.true.)
-				write(*,*)
-				write(*,*) "Please input i, generally 10 is recommended, big system requires bigger i"
-				write(*,*) "Input 0 can return"
-				read(*,*) pointexp
-				if (pointexp==0) exit
-				call calcvolume(1,pointexp,0D0,1D0)
-			end do
-		else if (MCvolmethod==2) then
-			write(*,*) "100*2^i points will be used to evaluate the volume by Monte Carlo method."
-			write(*,"(a)") " The volume is defined as the region encompassed by the isosurface of density equals to x, &
-			The box used in Monte Carlo procedure will be enlarged by k multiples vdW radius in each side."
-			write(*,"(a)") " Hint: For evaluating the volume encompassed by 0.001 isosurface of density for small molecule, &
-						we suggest you input 9,0.001,1.7"
-			do while(.true.)
-				write(*,*)
-				write(*,*) "Please input i,x,k (Input 0,0,0 can return)"
-				read(*,*) pointexp,tmpisoval,enlarbox
-				if (pointexp==0.and.tmpisoval==0.and.enlarbox==0) exit
-				call calcvolume(2,pointexp,tmpisoval,enlarbox)
-			end do
-		end if
+        call molvol_MC
 	else if (isel==4) then
 		if (ispecial/=1) then
 			call selfunc_interface(1,ifunc)
 			call intfunc(ifunc)
-		else if (ispecial==1) then
+		else if (ispecial==1) then !For LSB
 			call intfunc(1)
 		end if
 	else if (isel==-4) then
@@ -171,9 +149,11 @@ end subroutine
 !! ----------- Output new file
 subroutine outfile
 use defvar
+use util
 implicit real*8 (a-h,o-z)
 character c200tmp*200,c200tmp2*200
 write(*,*) "0 Return"
+write(*,*) "                Export system to various formats of files:"
 if (ifiletype==4) then !Used to convert .chg file to .pqr file
 	write(*,*) "1 Output current structure and atomic charges to .pqr file"
 	write(*,*) "-1 Output current structure and atomic charges to .pdb file"
@@ -188,49 +168,42 @@ write(*,*) "6 Output current wavefunction as Molden input file (.molden)"
 write(*,*) "7 Output current wavefunction as .fch file"
 write(*,*) "8 Output current wavefunction as .47 file"
 write(*,*) "9 Output current wavefunction as old Molekel input file (.mkl)"
-if (allocated(CObasa)) then
-    write(*,*) "10 Output current system and wavefunction to Gaussian input file"
-else
-    write(*,*) "10 Output current system to Gaussian input file"
-end if
-if (allocated(CObasa)) then
-    write(*,*) "11 Output current system and wavefunction to GAMESS-US input file"
-else
-    write(*,*) "11 Output current system to GAMESS-US input file"
-end if
-write(*,*) "12 Output current system to ORCA input file"
-write(*,*) "13 Output current system to NWChem input file"
-write(*,*) "14 Output current system to MOPAC input file"
-write(*,*) "15 Output current system to PSI input file"
-write(*,*) "16 Output current system to MRCC input file"
-write(*,*) "17 Output current system to CFOUR input file"
-write(*,*) "18 Output current system to Molpro input file"
-write(*,*) "19 Output current system to Dalton input file"
-write(*,*) "20 Output current system to Molcas input file"
-if (allocated(cubmat)) write(*,*) "30 Output current grid data to .vti file"
 write(*,*) "31 Output current structure to .cml file"
+write(*,*) "32 Output current wavefunction as .mwfn file"
+if (allocated(cubmat)) then
+    write(*,*) "35 Output current grid data to Gaussian-type .cub file"
+    write(*,*) "36 Output current grid data to .vti file"
+end if
+write(*,*) "             Generate input file of quantum chemistry codes:"
+if (allocated(CObasa)) then
+    write(*,*) "10 Gaussian"
+else
+    write(*,*) "10 Gaussian (with/without initial guess of wavefunction)"
+end if
+if (allocated(CObasa)) then
+    write(*,*) "11 GAMESS-US"
+else
+    write(*,*) "11 GAMESS-US (with/without initial guess of wavefunction)"
+end if
+write(*,*) "12 ORCA               13 NWChem"
+write(*,*) "14 MOPAC              15 PSI4"
+write(*,*) "16 MRCC               17 CFOUR"
+write(*,*) "18 Molpro             19 Dalton"
+write(*,*) "20 Molcas             21 Q-Chem"
 read(*,*) isel
 
 if (isel==0) then
 	return
 else if (isel==1) then
 	if (ifiletype==4) then
-		write(*,*) "Input path for exporting file, e.g. C:\ltwd.pqr"
-		read(*,"(a)") c200tmp
-		call outpqr(c200tmp,10)
+		call outpqr_wrapper
 	else
-		write(*,*) "Input path for exporting file, e.g. C:\ltwd.pdb"
-		read(*,"(a)") c200tmp
-		call outpdb(c200tmp,10)
+	    call outpdb_wrapper
 	end if
-else if (isel==-1.and.ifiletype==4) then
-	write(*,*) "Input path for exporting file, e.g. C:\ltwd.pdb"
-	read(*,"(a)") c200tmp
-	call outpdb(c200tmp,10)
+else if (ifiletype==4.and.isel==-1) then
+	call outpdb_wrapper
 else if (isel==2) then
-	write(*,*) "Input path for exporting file, e.g. C:\ltwd.xyz"
-	read(*,"(a)") c200tmp
-	call outxyz(c200tmp,10)
+	call outxyz_wrapper
 else if (isel==3) then
 	write(*,*) "Input path for exporting file, e.g. C:\ltwd.chg"
 	read(*,"(a)") c200tmp
@@ -238,6 +211,8 @@ else if (isel==3) then
 else if (isel==4) then
 	if (.not.allocated(b)) then
 		write(*,*) "Error: The input file you used does not contain GTF information!"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 	else
 		write(*,*) "Input path for exporting file, e.g. C:\ltwd.wfx"
 		read(*,"(a)") c200tmp
@@ -247,6 +222,8 @@ else if (isel==4) then
 else if (isel==5) then
 	if (.not.allocated(b)) then
 		write(*,*) "Error: The input file you used does not contain GTF information!"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 	else
 		write(*,*) "Input path for exporting file, e.g. C:\ltwd.wfn"
 		read(*,"(a)") c200tmp
@@ -255,26 +232,25 @@ else if (isel==5) then
 	end if
 else if (isel==6) then
 	if (.not.allocated(CObasa)) then
-		write(*,*) "Error: This function works only when input file contains basis function information"
+		write(*,"(a)") " Error: This function works only when input file contains basis function information"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 	else
-		write(*,*) "Input path for exporting file, e.g. C:\ltwd.molden"
-		read(*,"(a)") c200tmp
-		write(*,*) "Exporting, please wait..."
-		call outmolden(c200tmp,10)
-		write(*,*) "Exporting Molden input file finished!"
+        call outmolden_wrapper
 	end if
 else if (isel==7) then
 	if (.not.allocated(CObasa)) then
-		write(*,*) "Error: This function works only when input file contains basis function information"
+		write(*,"(a)") " Error: This function works only when input file contains basis function information"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 	else
-		write(*,*) "Input path for exporting file, e.g. C:\ltwd.fch"
-		read(*,"(a)") c200tmp
-		write(*,*) "Exporting, please wait..."
-		call outfch(c200tmp,10,1)
+        call outfch_wrapper
 	end if
 else if (isel==8) then
 	if (.not.allocated(CObasa)) then
-		write(*,*) "Error: This function works only when input file contains basis function information"
+		write(*,"(a)") " Error: This function works only when input file contains basis function information"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 	else
 		write(*,*) "Input path for exporting file, e.g. C:\ltwd.47"
 		read(*,"(a)") c200tmp
@@ -283,7 +259,9 @@ else if (isel==8) then
 	end if
 else if (isel==9) then
 	if (.not.allocated(CObasa)) then
-		write(*,*) "Error: This function works only when input file contains basis function information"
+		write(*,"(a)") " Error: This function works only when input file contains basis function information"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 	else
 		write(*,*) "Input path for exporting file, e.g. C:\ltwd.mkl"
 		read(*,"(a)") c200tmp
@@ -292,29 +270,25 @@ else if (isel==9) then
 		write(*,*) "Exporting .mkl file finished!"
 	end if
 else if (isel==10) then
-	write(*,*) "Input path for generating file, e.g. C:\ltwd.gjf"
-	read(*,"(a)") c200tmp
-	call outgjf(c200tmp,10)
+	call outgjf_wrapper
 else if (isel==11) then
 	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
 	call outGAMESSinp(c200tmp,10)
 else if (isel==12) then
-	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
-	read(*,"(a)") c200tmp
-	call outORCAinp(c200tmp,10)
+    write(*,*) "Hint: You can also input ""oi"" in the main menu to enter this function"
+    write(*,*)
+	call outORCAinp_wrapper
 else if (isel==13) then
 	write(*,*) "Input path for generating file, e.g. C:\ltwd.nw"
 	read(*,"(a)") c200tmp
 	call outNWCheminp(c200tmp,10)
 else if (isel==14) then
-	write(*,*) "Input path for generating file, e.g. C:\ltwd.mop"
-	read(*,"(a)") c200tmp
-	call outMOPACinp(c200tmp,10)
+	call outMOPACinp_wrapper
 else if (isel==15) then
-	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
-	read(*,"(a)") c200tmp
-	call outPSIinp(c200tmp,10)
+    write(*,*) "Hint: You can also input ""pi"" in the main menu to enter this function"
+    write(*,*)
+	call outPSI4inp_wrapper
 else if (isel==16) then
 	c200tmp="MINP"
 	call outMRCCinp(c200tmp,10)
@@ -336,14 +310,22 @@ else if (isel==20) then
 	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
 	call outmolcasinp(c200tmp,10)
-else if (isel==30) then
-	write(*,*) "Input path for exporting file, e.g. C:\ltwd.vti"
+else if (isel==21) then
+	write(*,*) "Input path for generating file, e.g. C:\ltwd.inp"
 	read(*,"(a)") c200tmp
-	call outvti(c200tmp,10)
+	call outQcheminp(c200tmp,10)
 else if (isel==31) then
 	write(*,*) "Input path for exporting file, e.g. C:\ltwd.cml"
 	read(*,"(a)") c200tmp
 	call outcml(c200tmp,10,0)
+else if (isel==32) then
+    call outmwfn_wrapper
+else if (isel==35) then
+    call outcube_wrapper
+else if (isel==36) then
+	write(*,*) "Input path for exporting file, e.g. C:\ltwd.vti"
+	read(*,"(a)") c200tmp
+	call outvti(c200tmp,10)
 end if
 end subroutine
 
@@ -486,7 +468,7 @@ do while (.true.)
 	if (isel==-2.or.isel==-3) then
 		write(*,"(a)") " Input lower and upper limit of the range of "//trim(f1name)//", e.g. 0.5,2.3"
 		read(*,*) rlower,rupper
-		write(*,"(a)") " Input the expected value of "//trim(f2name)
+		write(*,"(a)") " Input the expected value of "//trim(f2name)//", e.g. 100"
 		read(*,*) rsetfunc2
 		if (isel==-2) then
 			where (scatterx<=rupper.and.scatterx>=rlower) scattery=rsetfunc2
@@ -552,7 +534,7 @@ do while (.true.)
 	else if (isel==7) then
 		exchangedata=cubmat
 		cubmat=cubmattmp
-	 	write(*,*) "Input the value of isosurface, e.g. 0.02"
+	 	write(*,*) "Input the value of isosurface, e.g. 0.5"
 		read(*,*) sur_value
 		call drawisosurgui(1)
 		cubmat=exchangedata
@@ -1853,6 +1835,36 @@ end subroutine
 
 
 
+!!!------------ Interface of calculateing molecular volume by Monte Carlo method
+subroutine molvol_MC
+use defvar
+implicit real*8 (a-h,o-z)
+if (MCvolmethod==1) then
+	write(*,*) "100*2^i points will be used to evaluate the volume by Monte Carlo method"
+	write(*,*) "The volume is defined as superposition of vdW sphere of atoms"
+	do while(.true.)
+		write(*,*)
+		write(*,*) "Please input i, generally 10 is recommended, big system requires bigger i"
+		write(*,*) "Input 0 can return"
+		read(*,*) pointexp
+		if (pointexp==0) exit
+		call calcvolume(1,pointexp,0D0,1D0)
+	end do
+else if (MCvolmethod==2) then
+	write(*,*) "100*2^i points will be used to evaluate the volume by Monte Carlo method."
+	write(*,"(a)") " The volume is defined as the region encompassed by the isosurface of density equals to x, &
+	The box used in Monte Carlo procedure will be enlarged by k multiples vdW radius in each side."
+	write(*,"(a)") " Hint: For evaluating the volume encompassed by 0.001 isosurface of density for small molecule, &
+				we suggest you input 9,0.001,1.7"
+	do while(.true.)
+		write(*,*)
+		write(*,*) "Please input i,x,k (Input 0,0,0 can return)"
+		read(*,*) pointexp,tmpisoval,enlarbox
+		if (pointexp==0.and.tmpisoval==0.and.enlarbox==0) exit
+		call calcvolume(2,pointexp,tmpisoval,enlarbox)
+	end do
+end if
+end subroutine
 !!!------------ Calculate molecular volume by Monte Carlo method
 !If isoval == 0, then evaluate volume by approximate method, if >0, evaluate the volume based on rho
 !imethod=1: Use superposition of vdW sphere to define vdW region, =2: use isosurface of electron density to define it
@@ -1939,7 +1951,10 @@ real*8,allocatable :: BirdN(:)
 character C200inp*200
 
 if (all(HOMArefbond==-1D0)) then !If =-1, means missing reference value
-	write(*,*) "Note: Default parameters are taken from J. Chem. Inf. Comput. Sci.,33,70"
+	HOMArefbond(5,6)=1.4235D0
+	HOMArefbond(6,5)=HOMArefbond(5,6)
+	HOMArefbond(5,7)=1.402D0
+	HOMArefbond(7,5)=HOMArefbond(5,7)
 	HOMArefbond(6,6)=1.388D0
 	HOMArefbond(6,7)=1.334D0
 	HOMArefbond(7,6)=HOMArefbond(6,7)
@@ -1952,6 +1967,10 @@ if (all(HOMArefbond==-1D0)) then !If =-1, means missing reference value
 	HOMArefbond(7,7)=1.309D0
 	HOMArefbond(7,8)=1.248D0
 	HOMArefbond(8,7)=HOMArefbond(7,8)
+	HOMAsigma(5,6)=104.507D0
+	HOMAsigma(6,5)=HOMAsigma(5,6)
+	HOMAsigma(5,7)=72.03D0
+	HOMAsigma(7,5)=HOMAsigma(5,7)
 	HOMAsigma(6,6)=257.7D0
 	HOMAsigma(6,7)=93.52D0
 	HOMAsigma(7,6)=HOMAsigma(6,7)
@@ -1966,7 +1985,10 @@ if (all(HOMArefbond==-1D0)) then !If =-1, means missing reference value
 	HOMAsigma(8,7)=HOMAsigma(7,8)
 end if
 if (all(Birda==-1D0)) then !If =-1, means missing reference value
-	write(*,*) "Note: Default a and b parameters are taken from Tetrahedron,57,5715"
+	Birda(5,7)=7.72D0
+	Birda(7,5)=Birda(5,7)
+	Birdb(5,7)=2.16D0
+	Birdb(7,5)=Birdb(5,7)
 	Birda(6,6)=6.80D0
 	Birdb(6,6)=1.71D0
 	Birda(6,7)=6.48D0
@@ -2005,7 +2027,7 @@ do while(.true.)
 	if (isel==-1) then
 		exit
 	else if (isel==0) then
-		write(*,*) "Current reference bond length (in Angstrom) and sigma paramters:"
+		write(*,*) "Current reference bond length (Angstrom) and sigma parameters:"
 		do iref=1,nelesupp
 			do jref=iref,nelesupp
 				if (HOMArefbond(iref,jref)/=-1) write(*,"(' ',a,a,a,a,2f12.4)") ind2name(iref),'-',ind2name(jref),':',HOMArefbond(iref,jref),HOMAsigma(iref,jref)
@@ -2062,14 +2084,15 @@ do while(.true.)
 		end do
 	
 	else if (isel==2) then
-		write(*,*) "Current a and b paramters:"
+	    write(*,*) "Note: Default a and b parameters are taken from Tetrahedron, 57, 5715 (2001)"
+		write(*,*) "Current a and b parameters:"
 		do iref=1,nelesupp
 			do jref=iref,nelesupp
 				if (Birda(iref,jref)/=-1) write(*,"(' ',a,a,a,a,2f12.5)") ind2name(iref),'- ',ind2name(jref),':',Birda(iref,jref),Birdb(iref,jref)
 			end do
 		end do
 		write(*,*)
-		write(*,*) "Current reference V paramters:"	
+		write(*,*) "Current reference V parameters:"	
 		do itmp=1,size(BirdVref)
 			if (BirdVref(itmp)==-1) cycle
 			write(*,"(i4,' centers, value:',f10.4)") itmp,BirdVref(itmp)
@@ -2097,7 +2120,7 @@ do while(.true.)
 				Birdanow=Birda(iatmeleidx,jatmeleidx)
 				Birdbnow=Birdb(iatmeleidx,jatmeleidx)
 				if (Birdanow==-1D0) then
-					write(*,"(' Error: Missing a and b parameter for ',a,'-',a)") ind2name(iatmeleidx),ind2name(jatmeleidx)
+					write(*,"(' Error: Missing a and b parameters for ',a,'-',a)") ind2name(iatmeleidx),ind2name(jatmeleidx)
 					exit
 				end if
 				BirdN(iidx)=Birdanow/(distmat(iatm,jatm)*b2a)**2-Birdbnow
@@ -2113,15 +2136,15 @@ do while(.true.)
 			write(*,*)
 		end do
 	else if (isel==3) then
-		write(*,*) "Current a and b paramters:"
+		write(*,*) "Current a and b parameters:"
 		do iref=1,nelesupp
 			do jref=iref,nelesupp
 				if (Birda(iref,jref)/=-1) write(*,"(' ',a,a,a,a,2f12.5)") ind2name(iref),'- ',ind2name(jref),':',Birda(iref,jref),Birdb(iref,jref)
 			end do
 		end do
 		do while(.true.)
-			write(*,*) "Input two element indices and a and b parameter"
-			write(*,"(a)") " e.g. 6,7,6.941,2.205 means set a and b parameter for C-N to 6.941 and 2.205 respectively"
+			write(*,*) "Input two element indices and a and b parameters"
+			write(*,"(a)") " e.g. 6,7,6.941,2.205 means set a and b parameters for C-N to 6.941 and 2.205 respectively"
 			write(*,*) "(Input q can return)"
 			read(*,"(a)") C200inp
 			if (C200inp(1:1)=='q'.or.C200inp(1:1)=='Q') exit
@@ -2133,7 +2156,7 @@ do while(.true.)
 			write(*,*) "Done!"
 		end do
 	else if (isel==4) then
-		write(*,*) "Current reference V paramters:"	
+		write(*,*) "Current reference V parameters:"	
 		do itmp=1,size(BirdVref)
 			if (BirdVref(itmp)==-1) cycle
 			write(*,"(i4,' centers, value:',f10.4)") itmp,BirdVref(itmp)
@@ -2648,6 +2671,11 @@ if (.not.allocated(b)) then
 	read(*,*)
 	return
 end if
+write(*,*)
+write(*,"(a)") " Note: Please not only cite Multiwfn original paper but also cite below paper, in which the algorithm of this module &
+is very detailedly described and many interesting research examples are given:"
+write(*,*) "Tian Lu, Qinxue Chen, Theor. Chem. Acc., 139, 25 (2020)"
+write(*,*)
 write(*,*) "Choose current situation:"
 write(*,*) "-1: Orbitals are in localized form (e.g. LMO, NBO)"
 write(*,"(a)") "  0: Orbitals are in delocalized form (e.g. MO, natural orbital, NTO). The system must be exactly planar"
@@ -3029,7 +3057,7 @@ if (c1000==" ") then
     tmpx=sum(a(tmparr)%x)/ntmp
     tmpy=sum(a(tmparr)%y)/ntmp
     tmpz=sum(a(tmparr)%z)/ntmp
-    write(*,"(' The ring center is',3f12.4,' Angstrom')") tmpx*b2a,tmpy*b2a,tmpz*b2a
+    write(*,"(' The ring center is',3f12.5,' Angstrom')") tmpx*b2a,tmpy*b2a,tmpz*b2a
 end if
 write(*,*)
 write(*,"(a)") " The X,Y,Z coordinate of the points below and above 1 Angstrom of the plane from the point you defined, respectively:"
@@ -4043,33 +4071,54 @@ end subroutine
 subroutine CDFT
 use defvar
 use GUI
+use function
+use util
 implicit real*8 (a-h,o-z)
 character keywords*200,c200tmp*200,gjfname*200,selectyn
-integer charge(3),spin(3) !Charge and spin multiplicity for N,N+1,N-1 states
+integer charge(4),spin(4) !Charge and spin multiplicity for N,N+1,N-1 states
+integer :: iwcubic=0
 real*8 atmchg(ncenter,3) !Hirshfeld charges of N,N+1,N-1 states
-real*8 ene(3),E_HOMO(3) !Energy and E_HOMO of N,N+1,N-1 states
+real*8 ene(4),E_HOMO(4) !Energy and E_HOMO of N,N+1,N-1 states
 real*8 atmfneg(ncenter),atmfpos(ncenter),atmf0(ncenter),atmCDD(ncenter)
-real*8 atmsneg(ncenter),atmspos(ncenter),atms0(ncenter),atmelectphi(ncenter),atmnucleophi(ncenter)
-real*8 nucleophi
-real*8,allocatable :: rhoN(:,:,:),rhoNp1(:,:,:),rhoNn1(:,:,:)
-logical alivewfn(3)
+real*8 atmsneg(ncenter),atmspos(ncenter),atms0(ncenter),atmelectphi(ncenter),atmnucleophi(ncenter),atmwcubic(ncenter)
+real*8 nucleophi,expterm(nmo)
+real*8,allocatable :: rhoN(:,:,:),rhoNp1(:,:,:),rhoNn1(:,:,:),OW_fpos(:,:,:),OW_fneg(:,:,:)
+real*8 OWfposgrid(radpot*sphpot),OWfneggrid(radpot*sphpot),promol(radpot*sphpot),tmpdens(radpot*sphpot),selfdens(radpot*sphpot),wfnval(nmo)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+logical alivewfn(4)
 cubfac=1D0
 
 do while(.true.)
     write(*,*)
     write(*,*) "---- Calculate various quantities in conceptual density functional theory ----"
+    if (iwcubic==0) write(*,*) "-1 Toggle calculating w_cubic electrophilicity index by option 2, current: No"
+    if (iwcubic==1) write(*,*) "-1 Toggle calculating w_cubic electrophilicity index by option 2, current: Yes"
     write(*,*) "0 Return"
-    write(*,*) "1 Generate .wfn files for N, N+1, N-1 electrons states"
-    write(*,*) "2 Calculate various quantitative indices"
+    if (iwcubic==0) write(*,*) "1 Generate .wfn files for N, N+1, N-1 electrons states"
+    if (iwcubic==1) write(*,*) "1 Generate .wfn files for N, N+1, N-1, N-2 electrons states"
+    if (iwcubic==0) write(*,*) "2 Calculate various quantitative indices"
+    if (iwcubic==1) write(*,*) "2 Calculate various quantitative indices including w_cubic"
     write(*,*) "3 Calculate grid data of Fukui function and dual descriptor"
+    write(*,"(a,f7.4,' a.u.')") " 4 Set delta in orbital-weighted (OW) calculation, current:",orbwei_delta
+    write(*,*) "5 Print current orbital weights used in orbital-weighted (OW) calculation"
+    write(*,*) "6 Calculate condensed OW Fukui function and OW dual descriptor"
+    write(*,*) "7 Calculate grid data of OW Fukui function and OW dual descriptor"
     read(*,*) isel
     
-    if (isel==2.or.isel==3) then
+    if (isel==-1) then
+        if (iwcubic==1) then
+            iwcubic=0
+        else
+            iwcubic=1
+        end if
+    else if (isel==2.or.isel==3) then
         inquire(file="N.wfn",exist=alivewfn(1))
         inquire(file="N+1.wfn",exist=alivewfn(2))
         inquire(file="N-1.wfn",exist=alivewfn(3))
+        if (iwcubic==1) inquire(file="N-2.wfn",exist=alivewfn(3))
         if (any(alivewfn==.false.)) then
-            write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn and N-1.wfn must all be presented in current folder!"
+            if (iwcubic==0) write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn and N-1.wfn must all be presented in current folder!"
+            if (iwcubic==1) write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn, N-1.wfn and N-2.wfn must all be presented in current folder!"
             write(*,*) "Press ENTER button to cancel current analysis"
             read(*,*)
             cycle
@@ -4100,25 +4149,34 @@ do while(.true.)
         keywords="#P "//trim(c200tmp)//" out=wfn nosymm"
         
         write(*,*) "Input the net charge and spin multiplicity for N electrons state, e.g. 0 1"
-        write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2) and (1 2) will be employed for N, N+1 and N-1 states, respectively"
+        if (iwcubic==0) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2) and (1 2) will be employed for N, N+1 and N-1 states, respectively"
+        if (iwcubic==1) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2), (1 2) and (2,1) will be employed for N, N+1, N-1 and N-2 states, respectively"
         read(*,"(a)") c200tmp
         if (c200tmp==" ") then
             charge(1)=0;spin(1)=1
             charge(2)=-1;spin(2)=2
             charge(3)=1;spin(3)=2
+            charge(4)=2;spin(4)=1
         else
             read(c200tmp,*) charge(1),spin(1)
             write(*,*) "Input the net charge and spin multiplicity for N+1 electrons state, e.g. -1 2"
             read(*,*) charge(2),spin(2)
             write(*,*) "Input the net charge and spin multiplicity for N-1 electrons state, e.g. 1 2"
             read(*,*) charge(3),spin(3)
+            if (iwcubic==1) then
+                write(*,*) "Input the net charge and spin multiplicity for N-2 electrons state, e.g. 2 1"
+                read(*,*) charge(4),spin(4)
+            end if
         end if
         
         !Generate .gjf for N, N+1, N-1 states
-        do istate=1,3
+        nstates=3
+        if (iwcubic==1) nstates=4
+        do istate=1,nstates
             if (istate==1) gjfname="N.gjf"
             if (istate==2) gjfname="N+1.gjf"
             if (istate==3) gjfname="N-1.gjf"
+            if (istate==4) gjfname="N-2.gjf"
             write(*,*) "Generating "//trim(gjfname)//"..."
         
             open(10,file=gjfname)
@@ -4144,6 +4202,7 @@ do while(.true.)
             if (istate==1) write(10,"(a)") "N.wfn"
             if (istate==2) write(10,"(a)") "N+1.wfn"
             if (istate==3) write(10,"(a)") "N-1.wfn"
+            if (istate==4) write(10,"(a)") "N-2.wfn"
             write(10,*)
             write(10,*)
             close(10)
@@ -4175,8 +4234,21 @@ do while(.true.)
             else
                 write(*,"(a,/)") " The task has failed! Please manually check N-1.gjf and N-1.out"
             end if
-            if (isuccess1*isuccess2*isuccess3==1) then
-                write(*,"(a)") " Since N.wfn, N+1.wfn and N-1.wfn have been successfully generated, now you can use option 2 or 3 to start the analysis"
+            if (iwcubic==1) then
+                call runGaussian("N-2.gjf",isuccess4)
+                if (isuccess4==1) then
+                    call delfile("N-2.gjf N-2.out")
+                    write(*,"(a,/)") " Now current folder should contain N-2.wfn"
+                else
+                    write(*,"(a,/)") " The task has failed! Please manually check N-2.gjf and N-2.out"
+                end if
+            end if
+            if (iwcubic==0.and.isuccess1*isuccess2*isuccess3==1) then
+                write(*,"(a)") " Since N.wfn, N+1.wfn and N-1.wfn have been successfully generated, &
+                now you can use option 2 or 3 to start the analysis"
+            else if (iwcubic==1.and.isuccess1*isuccess2*isuccess3*isuccess4==1) then
+                write(*,"(a)") " Since N.wfn, N+1.wfn, N-1.wfn and N-2.wfn have been successfully generated, &
+                now you can use option 2 or 3 to start the analysis"
             else
                 write(*,"(a)") " Since one or more .wfn file was not successfully generated, the analysis cannot be conducted currently"
             end if
@@ -4206,11 +4278,18 @@ do while(.true.)
         write(*,*) "Calculating Hirshfeld charges for N-1 electrons state..."
         call genHirshfeld(atmchg(:,3))
         call dealloall
+        !N-2 electrons
+        if (iwcubic==1) then
+            call readinfile("N-2.wfn",1)
+            ene(4)=totenergy
+            E_HOMO(4)=maxval(MOene)
+            call dealloall
+        end if
         write(*,*) "Loading the file initially loaded after booting up Multiwfn..."
         call readinfile(firstfilename,1)
         write(*,*)
         
-        VIP=ene(3)-ene(1)
+        VIP=ene(3)-ene(1) !E(N-1) - E(N)
         VEA=ene(1)-ene(2)
         elenegMul=(VIP+VEA)/2D0
         chempot=-elenegMul
@@ -4230,6 +4309,16 @@ do while(.true.)
         atmelectphi(:)=atmfpos(:)*electphi !e*Hartree
         atmnucleophi(:)=atmfneg(:)*nucleophi !e*Hartree
         
+        if (iwcubic==1) then
+            !Calculate terms specific for w_cubic
+            VIP2=ene(4)-ene(3) !E(N-2) - E(N-1)
+            c_miu=(-2*VEA-5*VIP+VIP2)/6
+            c_eta=hardness
+            c_gamma=2*VIP-VIP2-VEA
+            w_cubic=c_miu**2/(2*c_eta)*(1+c_miu*c_gamma/3/c_eta**2)
+            atmwcubic(:)=atmfpos(:)*w_cubic !e*Hartree
+        end if
+        
         open(10,file="CDFT.txt",status="replace")
         write(10,"(a)") " Note: the E(HOMO) of TCE used for evaluating nucleophilicity index is the value evaluated at B3LYP/6-31G* level"
         write(10,*)
@@ -4245,6 +4334,14 @@ do while(.true.)
         do iatm=1,ncenter
             write(10,"(i6,'(',a')',2f25.5)") iatm,a(iatm)%name,atmelectphi(iatm)*au2eV,atmnucleophi(iatm)*au2eV
         end do
+        if (iwcubic==1) then
+            write(10,*)
+            write(10,*) "Condensed local cubic electrophilicity index (e*eV)"
+            write(10,*) "    Atom              Value"
+            do iatm=1,ncenter
+                write(10,"(i6,'(',a')',f19.5)") iatm,a(iatm)%name,atmwcubic(iatm)*au2eV
+            end do
+        end if
         write(10,*)
         write(10,"(a)") " Condensed local softnesses (Hartree*e) and relative electrophilicity/nucleophilicity (dimensionless)"
         write(10,*) "    Atom         s-          s+          s0        s+/s-       s-/s+"
@@ -4261,6 +4358,7 @@ do while(.true.)
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N+1):",E_HOMO(2),E_HOMO(2)*au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N-1):",E_HOMO(3),E_HOMO(3)*au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical IP:",VIP,VIP*au2eV
+        if (iwcubic==1) write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical second IP:",VIP2,VIP2*au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical EA:",VEA,VEA*au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Mulliken electronegativity: ",elenegMul,elenegMul*au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Chemical potential:         ",chempot,chempot*au2eV
@@ -4268,6 +4366,7 @@ do while(.true.)
         write(10,"(a,f12.6,' Hartree^-1,',f10.4,' eV^-1')") " Softness:",softness,softness/au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Electrophilicity index:",electphi,electphi*au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Nucleophilicity index: ",nucleophi,nucleophi*au2eV
+        if (iwcubic==1) write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Cubic electrophilicity index (w_cubic):",w_cubic,w_cubic*au2eV
         close(10)
         write(*,*) "Done! Data have been outputted to CDFT.txt in current folder!"
         
@@ -4339,6 +4438,190 @@ do while(.true.)
                 end if
             end if
         end do
+    end if
+    
+    if (isel==5.or.isel==6.or.isel==7) then
+        if (.not.allocated(CObasa)) then
+            write(*,"(a)") " Error: Only mwfn/fch/molden/gms file can be used for this function. Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        if (wfntype/=0) then
+            write(*,"(a)") " Error: Only closed-shell single-determinant wavefunction is supported by this function. Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+    end if
+    
+    !Calculate orbital-weighted functions
+    if (isel==4) then
+        write(*,*) "Input delta parameter, e.g. 0.015 (in Hartree)"
+        read(*,*) orbwei_delta
+        
+    else if (isel==5.or.isel==6) then
+        idxHOMO=nint(naelec) !It is assumed that the occupation has not been altered
+        idxLUMO=idxHOMO+1
+        chempot=(MOene(idxHOMO)+MOene(idxLUMO))/2
+        do imo=1,nmo
+            expterm(imo)=exp( -((chempot-MOene(imo))/orbwei_delta)**2 )
+        end do
+        denomin_pos=sum(expterm(idxLUMO:nmo))
+        denomin_neg=sum(expterm(1:idxHOMO))
+        if (isel==5) then !Show orbital weights
+            write(*,"(' HOMO energy:',f12.6,' a.u.',f12.3,' eV')") MOene(idxHOMO),MOene(idxHOMO)*au2eV
+            write(*,"(' LUMO energy:',f12.6,' a.u.',f12.3,' eV')") MOene(idxLUMO),MOene(idxLUMO)*au2eV
+            write(*,"(' Chemical potential:',f12.6,' a.u.',f12.3,' eV')") chempot,chempot*au2eV
+            write(*,"(' Delta parameter:   ',f12.6,' a.u.',f12.3,' eV')") orbwei_delta,orbwei_delta*au2eV
+            write(*,"(a)") " The ""E_diff"" in below output denotes difference between orbital energy with respect to chemical potential"
+            write(*,*)
+            write(*,*) "10 Highest weights in orbital-weighted f+"
+            do imo=idxLUMO,min(nmo,idxHOMO+9)
+                weithis=expterm(imo)/denomin_pos
+                if (imo==idxLUMO) then
+                    write(*,"(' Orbital',i6,' (LUMO  )   Weight:',f7.2,' %   E_diff:',f10.3,' eV')") imo,weithis*100,(MOene(imo)-chempot)*au2eV
+                else
+                    write(*,"(' Orbital',i6,' (LUMO+',i1,')   Weight:',f7.2,' %   E_diff:',f10.3,' eV')") imo,imo-idxLUMO,weithis*100,(MOene(imo)-chempot)*au2eV
+                end if
+            end do
+            write(*,*)
+            write(*,*) "10 Highest weights in orbital-weighted f-"
+            do imo=idxHOMO,max(1,idxHOMO-9),-1
+                weithis=expterm(imo)/denomin_neg
+                if (imo==idxHOMO) then
+                    write(*,"(' Orbital',i6,' (HOMO  )   Weight:',f7.2,' %   E_diff:',f10.3,' eV')") imo,weithis*100,(MOene(imo)-chempot)*au2eV
+                else
+                    write(*,"(' Orbital',i6,' (HOMO',i2,')   Weight:',f7.2,' %   E_diff:',f10.3,' eV')") imo,imo-idxHOMO,weithis*100,(MOene(imo)-chempot)*au2eV
+                end if
+            end do
+        else if (isel==6) then !Calculate condensed values
+            if (iautointgrid==1) then
+                ioldsphpot=sphpot
+                ioldradpot=radpot
+                oldradcut=radcut
+                radpot=30
+                sphpot=302
+                radcut=15
+            end if
+            write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+            write(*,*)
+            write(*,*) " Atom index        OW f+          OW f-          OW f0          OW DD"
+            call gen1cintgrid(gridatmorg,iradcut)
+            sumpos=0
+            sumneg=0
+            do iatm=1,ncenter
+	            gridatm%value=gridatmorg%value !Weight in this grid point
+	            gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	            gridatm%y=gridatmorg%y+a(iatm)%y
+	            gridatm%z=gridatmorg%z+a(iatm)%z
+	            !Calculate orbital weighted f+ and f- at various atomic grids
+                OWfposgrid=0
+                OWfneggrid=0
+	            !$OMP parallel do shared(OWfposgrid,OWfneggrid) private(ipt,imo,wfnval) num_threads(nthreads)
+	            do ipt=1,radpot*sphpot
+                    call orbderv(1,1,nmo,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,wfnval)
+                    do imo=idxLUMO,nmo
+                        OWfposgrid(ipt)=OWfposgrid(ipt)+expterm(imo)/denomin_pos*wfnval(imo)**2
+                    end do
+                    do imo=1,idxHOMO
+                        OWfneggrid(ipt)=OWfneggrid(ipt)+expterm(imo)/denomin_neg*wfnval(imo)**2
+                    end do
+	            end do
+	            !$OMP end parallel do
+	            !Calculate free atomic density to obtain promolecule density
+	            promol=0D0
+	            do jatm=1,ncenter
+		            !$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
+		            do ipt=1,radpot*sphpot
+			            tmpdens(ipt)=calcatmdens(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,0)
+		            end do
+		            !$OMP end parallel do
+		            promol=promol+tmpdens
+		            if (jatm==iatm) selfdens=tmpdens
+	            end do
+	            !Now we have needed data in hand, calculate integral
+                OW_condfpos=0
+                OW_condfneg=0
+	            do ipt=1,radpot*sphpot
+		            if (promol(ipt)/=0D0) then
+                        wei=selfdens(ipt)/promol(ipt)*gridatm(ipt)%value
+			            OW_condfpos = OW_condfpos + wei*OWfposgrid(ipt)
+			            OW_condfneg = OW_condfneg + wei*OWfneggrid(ipt)
+		            end if
+	            end do
+                OW_condDD=OW_condfpos-OW_condfneg
+                OW_condfzero=(OW_condfpos+OW_condfneg)/2
+                sumpos=sumpos+OW_condfpos
+                sumneg=sumneg+OW_condfneg
+                write(*,"(i6,'(',a')',4f15.5)") iatm,a(iatm)%name,OW_condfpos,OW_condfneg,OW_condfzero,OW_condDD
+            end do
+            write(*,"(' Sum of orbital weighted f+',f12.6)") sumpos
+            write(*,"(' Sum of orbital weighted f-',f12.6)") sumneg
+            if (iautointgrid==1) then
+                sphpot=ioldsphpot
+                radpot=ioldradpot
+                radcut=oldradcut
+            end if
+        end if
+        
+    else if (isel==7) then
+        if (allocated(cubmat)) deallocate(cubmat)
+        aug3Dold=aug3D
+        aug3D=3 !Commonly 3 Bohr extension distance is adequate
+        call setgrid(1,inouse)
+        aug3D=aug3Dold
+        allocate(OW_fpos(nx,ny,nz),OW_fneg(nx,ny,nz),cubmat(nx,ny,nz))
+        iolduserfunc=iuserfunc
+        write(*,*) "Calculating grid data of orbital-weighted f+..."
+        iuserfunc=95
+        call savecubmat(100,0,0)
+        OW_fpos=cubmat
+        write(*,*)
+        write(*,*) "Calculating grid data of orbital-weighted f-..."
+        iuserfunc=96
+        call savecubmat(100,0,0)
+        OW_fneg=cubmat
+        iuserfunc=iolduserfunc
+        
+        sur_value=0.001D0
+        do while(.true.)
+            write(*,*)
+            write(*,"(' -1 Set the value multiplied to all grid data, current:',f12.6)") cubfac
+            write(*,*) "0 Return"
+            write(*,*) "1 Visualize isosurface of orbital-weighted f+"
+            write(*,*) "2 Visualize isosurface of orbital-weighted f-"
+            write(*,*) "3 Visualize isosurface of orbital-weighted f0"
+            write(*,*) "4 Visualize isosurface of orbital-weighted dual descriptor"
+            write(*,*) "5 Export grid data of orbital-weighted f+ as OW_f+.cub"
+            write(*,*) "6 Export grid data of orbital-weighted f- as OW_f-.cub"
+            write(*,*) "7 Export grid data of orbital-weighted f0 as OW_f0.cub"
+            write(*,*) "8 Export grid data of orbital-weighted dual descriptor as OW_DD.cub"
+            read(*,*) isel2
+            if (isel2==-1) then
+                write(*,*) "Input the value, e.g. 0.325"
+                read(*,*) cubfac
+            else if (isel2==0) then
+                deallocate(OW_fpos,OW_fneg)
+                exit
+            else
+                if (isel2==1.or.isel2==5) cubmat=OW_fpos
+                if (isel2==2.or.isel2==6) cubmat=OW_fneg
+                if (isel2==3.or.isel2==7) cubmat=(OW_fpos+OW_fneg)/2
+                if (isel2==4.or.isel2==8) cubmat=OW_fpos-OW_fneg
+                cubmat=cubmat*cubfac
+                if (isel2<=4) then
+		            call drawisosurgui(1)
+                else
+                    if (isel2==5) open(10,file="OW_f+.cub",status="replace")
+                    if (isel2==6) open(10,file="OW_f-.cub",status="replace")
+                    if (isel2==7) open(10,file="OW_f0.cub",status="replace")
+                    if (isel2==8) open(10,file="OW_DD.cub",status="replace")
+                    call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+                    close(10)
+                    write(*,*) "Exporting finished!"
+                end if
+            end if
+        end do
+        
     end if
 end do
     

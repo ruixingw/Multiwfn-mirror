@@ -18,7 +18,7 @@ use defvar
 implicit real*8 (a-h,o-z)
 
 do while(.true.)
-	write(*,"(/,a,/)") " If present module is used in your work, citing this paper along with Multiwfn original paper is highly recommended: &
+	write(*,"(/,a,/)") " If this module is used in your work, citing this paper along with Multiwfn original paper is highly recommended: &
 	Tian Lu, Feiwu Chen, Calculation of Molecular Orbital Composition, Acta Chim. Sinica, 69, 2393-2406 (2011)"
 	write(*,*) "      ================ Orbital composition analysis ==============="
 	write(*,*) "-10 Return"
@@ -53,12 +53,12 @@ do while(.true.)
 		if (icompana==3) call orballcomp_MMPA(3)
 	else if (icompana==4.or.icompana==5.or.icompana==6) then
 		if (.not.allocated(frag1)) then
-			write(*,*) "Please use function -1 to define fragment #1"
-			write(*,*)
+			write(*,*) "Please use option -1 to define fragment 1"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
 			cycle
 		end if
-		if (.not.allocated(frag2).and.(icompana==4.or.icompana==5)) &
-		write(*,*) "Note: Fragment 2 was not be defined"
+		if (.not.allocated(frag2).and.(icompana==4.or.icompana==5)) write(*,*) "Note: Fragment 2 was not be defined"
 		write(*,*)
 		if (icompana==4) call orbfragcomp_MMPA(1)
 		if (icompana==5) call orbfragcomp_MMPA(2)
@@ -360,14 +360,12 @@ character orbtype*2
 ovpfrg12=0D0
 ovpfrg12_1=0D0
 if (isel==1.or.isel==2) then
-	write(*,*)
-	write(*,"(a)") "Note:"
-	write(*,"(a)") """c^2"" means the square of coefficients of all basis functions within fragment 1"
-	write(*,"(a)") """Int.cross"" means cross term within fragment 1"
-	write(*,"(a,/)") """Ext.cross"" means the fragment 1 part of the total cross term between fragment 1 and all other basis functions"
-	write(*,"('Orb# Type  Energy   Occ         c^2      Int.cross    Ext.cross     Total')")
+	write(*,"(a)") " ""c^2"": The square of coefficients of all basis functions within fragment 1"
+	write(*,"(a)") " ""Int.cross"": Cross term within fragment 1"
+	write(*,"(a,/)") " ""Ext.cross"": The fragment 1 part of the total cross term between fragment 1 and all other basis functions"
+	write(*,"(' Orb#  Type  Ene(a.u.)    Occ        c^2     Int.cross    Ext.cross     Total')")
 else if (isel==3) then
-	write(*,"('Orb# Type  Energy   Occ         Composition')")
+	write(*,"(' Orb#   Type   Energy(a.u.)     Occ       Composition')")
 end if
 
 do imo=1,nmo
@@ -416,20 +414,20 @@ do imo=1,nmo
 	if (MOtype(imo)==0) orbtype="AB"
 	if (MOtype(imo)==1) orbtype="A "
 	if (MOtype(imo)==2) orbtype="B "
-	if (isel==1.or.isel==2) write(*,"(i5,1x,a,f9.3,f7.3,f12.3,'%',f12.3,'%',f12.3,'%',f12.3,'%')") &
+	if (isel==1.or.isel==2) write(*,"(i6,2x,a,f12.4,f9.5,f10.3,' %',f10.3,' %',f10.3,' %',f10.3,' %')") &
 	imo,orbtype,MOene(imo),MOocc(imo),floc*100,crossint*100,crossext*100,(floc+crossint+crossext)*100
-	if (isel==3) write(*,"(i5,1x,a,f9.3,f7.3,f18.6,'%')") imo,orbtype,MOene(imo),MOocc(imo),floc*100
+	if (isel==3) write(*,"(i6,5x,a,f16.5,f11.5,f14.5,' %')") imo,orbtype,MOene(imo),MOocc(imo),floc*100
 end do
 
 if (isel/=3.and.allocated(frag2)) then !Print cross term between fragment 1 and 2
 	write(*,*)
 	write(*,*) "Cross term between fragment 1 and 2 and their individual parts:"
-	write(*,"('Orb# Type  Energy   Occ      Frag1 part     Frag2 part       Total')")
+	write(*,"(' Orb#  Type   Ene(a.u.)   Occ       Frag.1 part     Frag.2 part        Total')")
 	do imo=1,nmo
 		if (MOtype(imo)==0) orbtype="AB"
 		if (MOtype(imo)==1) orbtype="A "
 		if (MOtype(imo)==2) orbtype="B "
-		write(*,"(i5,1x,a,f9.3,f7.3,f14.4,'%',f14.4,'%',f14.4,'%')") &
+		write(*,"(i6,2x,a,f12.4,f9.5,f14.4,' %',f14.4,' %',f14.4,' %')") &
 		imo,orbtype,MOene(imo),MOocc(imo),ovpfrg12_1(imo)*100,(ovpfrg12(imo)-ovpfrg12_1(imo))*100,ovpfrg12(imo)*100
 	end do
 end if
@@ -445,6 +443,7 @@ use defvar
 implicit real*8 (a-h,o-z)
 real*8 basloc(nbasis),bascross(nbasis),bastot(nbasis)
 real*8,pointer :: tmpmat(:,:)
+real*8 atmcomp(ncenter)
 integer imethod
 character orbtype*10
 do while(.true.)
@@ -466,14 +465,14 @@ do while(.true.)
 		write(*,*)
 	else
 		write(*,*)
-		write(*,"(' Threshold of absolute value:  >',f12.6,'%')") compthres
+		write(*,"(' Threshold of absolute value:  >',f10.5,' %')") compthres
 		if (MOtype(ishowmo)==0) orbtype="Alpha&Beta"
 		if (MOtype(ishowmo)==1) orbtype="Alpha     "
 		if (MOtype(ishowmo)==2) orbtype="Beta      "
 		if (ishowmo<=nbasis) tmpmat=>CObasa
 		if (ishowmo>nbasis) tmpmat=>CObasb
-		write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") ishowmo,MOene(ishowmo),MOocc(ishowmo),orbtype
-		if (imethod==1.or.imethod==2) write(*,"('  Basis Type    Atom    Shell     Local       Cross term      Total   ')")
+		write(*,"(' Orbital:',i6,'  Energy(a.u.):',f14.6,'  Occ:',f10.6,'  Type: ',a)") ishowmo,MOene(ishowmo),MOocc(ishowmo),orbtype
+		if (imethod==1.or.imethod==2) write(*,"('  Basis Type    Atom    Shell      Local       Cross term        Total')")
 		if (imethod==3) write(*,"('  Basis Type    Atom    Shell   Composition')")
 		if (ishowmo>nbasis) ishowmo=ishowmo-nbasis !For wfntype==1.or.wfntype==4, change to #beta for CObasb
 		if (imethod==3) allsqr=sum(tmpmat(:,ishowmo)**2)
@@ -496,20 +495,21 @@ do while(.true.)
 			end if
 			bastot(ibas)=basloc(ibas)+bascross(ibas)
 			if (abs(bastot(ibas))*100>compthres) then
-				if (imethod==1.or.imethod==2) write(*,"(i6,3x,a,i5,a,i5,f13.5,'%',f13.5,'%',f13.5,'%')") ibas,GTFtype2name(bastype(ibas)),bascen(ibas),'('//a(bascen(ibas))%name//')',&
+				if (imethod==1.or.imethod==2) write(*,"(i6,3x,a,i5,a,i5,f13.5,' %',f13.5,' %',f13.5,' %')") ibas,GTFtype2name(bastype(ibas)),bascen(ibas),'('//a(bascen(ibas))%name//')',&
 				basshell(ibas),basloc(ibas)*100,bascross(ibas)*100,bastot(ibas)*100
-				if (imethod==3) write(*,"(i6,3x,a,i5,a,i5,f13.5,'%')") ibas,GTFtype2name(bastype(ibas)),bascen(ibas),'('//a(bascen(ibas))%name//')',&
+				if (imethod==3) write(*,"(i6,3x,a,i5,a,i5,f13.5,' %')") ibas,GTFtype2name(bastype(ibas)),bascen(ibas),'('//a(bascen(ibas))%name//')',&
 				basshell(ibas),bastot(ibas)*100
 			end if
 		end do
 		aboveloc=sum(basloc(:),abs(bastot)*100>compthres)*100
 		abovecross=sum(bascross(:),abs(bastot)*100>compthres)*100
-		if (imethod==1.or.imethod==2) write(*,"(' Sum up those listed above: ',f13.5,'%',f13.5,'%',f13.5,'%')") aboveloc,abovecross,aboveloc+abovecross
-		if (imethod==1.or.imethod==2) write(*,"(' Sum up all basis functions:',f13.5,'%',f13.5,'%',f13.5,'%')") sum(basloc(:))*100,sum(bascross(:))*100,sum(bastot(:))*100
-		if (imethod==3) write(*,"(' Sum up those listed above: ',f13.5,'%')") sum(bastot(:),abs(bastot)*100>compthres)*100
-		if (imethod==3) write(*,"(' Sum up all basis functions:',f13.5,'%')") sum(bastot(:))*100
+		if (imethod==1.or.imethod==2) write(*,"(' Sum up those listed above: ',f13.5,' %',f13.5,' %',f13.5,' %')") aboveloc,abovecross,aboveloc+abovecross
+		if (imethod==1.or.imethod==2) write(*,"(' Sum up all basis functions:',f13.5,' %',f13.5,' %',f13.5,' %')") sum(basloc(:))*100,sum(bascross(:))*100,sum(bastot(:))*100
+		if (imethod==3) write(*,"(' Sum up those listed above: ',f13.5,' %')") sum(bastot(:),abs(bastot)*100>compthres)*100
+		if (imethod==3) write(*,"(' Sum up all basis functions:',f13.5,' %')") sum(bastot(:))*100
 		write(*,*)
-		write(*,"(' Composition of each shell, threshold of absolute value:  >',f12.6,'%')") compthres
+		write(*,"(' Composition of each shell, threshold of absolute value:  >',f12.6,' %')") compthres
+        s_comp=0;p_comp=0;d_comp=0;f_comp=0;g_comp=0;h_comp=0
 		do i=1,nshell
 			shellcom=0D0
 			do j=1,nbasis
@@ -518,16 +518,27 @@ do while(.true.)
 					iatm=bascen(j)
 				end if
 			end do
-			if (abs(shellcom)*100>compthres) write(*,"(' Shell',i6,' Type: ',a,'    in atom',i5,'(',a,') :',f14.5,'%')") i,shtype2name(shtype(i)),iatm,a(iatm)%name,shellcom*100
+			if (abs(shellcom)*100>compthres) write(*,"(' Shell',i6,' Type: ',a,'    in atom',i5,'(',a,') :',f12.5,' %')") i,shtype2name(shtype(i)),iatm,a(iatm)%name,shellcom*100
+            if (shtype(i)==0) s_comp=s_comp+shellcom
+            if (shtype(i)==1) p_comp=p_comp+shellcom
+            if (abs(shtype(i))==2) d_comp=d_comp+shellcom
+            if (abs(shtype(i))==3) f_comp=f_comp+shellcom
+            if (abs(shtype(i))==4) g_comp=g_comp+shellcom
+            if (abs(shtype(i))==5) h_comp=h_comp+shellcom
 		end do
+		write(*,*)
+		write(*,*) "Composition of different types of shells (%):"
+        write(*,"(' s:',f8.3,'  p:',f8.3,'  d:',f8.3,'  f:',f8.3,'  g:',f8.3,'  h:',f8.3)") s_comp*100,p_comp*100,d_comp*100,f_comp*100,g_comp*100,h_comp*100
 		write(*,*)
 		write(*,*) "Composition of each atom:"
 		do i=1,ncenter
-			write(*,"(' Atom',i6,'(',a,') :',f12.6,'%')") i,a(i)%name,sum(bastot(basstart(i):basend(i)))*100
+            atmcomp(i)=sum(bastot(basstart(i):basend(i)))*100
+			write(*,"(' Atom',i6,'(',a,') :',f12.5,' %')") i,a(i)%name,atmcomp(i)
 		end do
+        write(*,"(/,' Orbital delocalization index:',f8.2)") sum(atmcomp**2)/100
 		if (allocated(frag1)) then
 			write(*,*)
-			write(*,"(' Composition of the fragment:',f12.6,'%')") sum(bastot(frag1(:)))*100
+			write(*,"(' Composition of the fragment:',f12.5,' %')") sum(bastot(frag1(:)))*100
 		end if
 		write(*,*)
 	end if
@@ -585,8 +596,9 @@ type(content) gridorg(radpot*sphpot),gridatm(radpot*sphpot)
 real*8 resultvec(ncenter)
 real*8 allpotx(ncenter,radpot*sphpot),allpoty(ncenter,radpot*sphpot),allpotz(ncenter,radpot*sphpot),allpotw(ncenter,radpot*sphpot)
 real*8 tmpdens(radpot*sphpot),selfdens(radpot*sphpot),promol(radpot*sphpot),orbval(nmo),orbcomp(ncenter,nmo)
-integer,allocatable :: fragorbcomp(:)
-character orbtype*10,c2000tmp*2000
+real*8 atmcomp(ncenter)
+integer,allocatable :: idxarr(:)
+character c2000tmp*2000
 real*8,external :: fdens_rad
 
 if (iautointgrid==1) then
@@ -609,7 +621,7 @@ end do
 
 !allpotw combines Becke multi-center integration weight with Becke/Hirshfeld/Hirshfeld-I weight
 allpotw=0D0
-write(*,"(i6,' quadrature points are used for each atom to compute orbital composition')") radpot*sphpot
+write(*,"(i6,' quadrature points are used for each atom to compute orbital compositions')") radpot*sphpot
 write(*,"(a)") " Note: You can manually define the number of radial and angular points by &
 setting ""iautointgrid"" in settings.ini to 0 and setting ""radpot"" and ""sphpot"""
 call walltime(iwalltime1)
@@ -701,22 +713,25 @@ else if (itype==2) then !Becke partition
 end if
 
 call walltime(iwalltime2)
-write(*,"(' Done! Initialization step took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+write(*,"(' Done! Initialization step took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 write(*,*)
 
+if (allocated(frag1)) deallocate(frag1)
 do while(.true.)
+    write(*,*)
 	write(*,*) "Now input the orbital index to print orbital composition, e.g. 5"
 	write(*,"(a)") " You can also input:"
-	if (.not.allocated(fragorbcomp)) then
+	if (.not.allocated(frag1)) then
 	    write(*,"(a,i6)") " -9: Define fragment, current: undefined"
 	else
-    	write(*,"(a,i6)") " -9: Redefine fragment, current number of atoms:",size(fragorbcomp)
+    	write(*,"(a,i6)") " -9: Redefine fragment, current number of atoms:",size(frag1)
     end if
 	write(*,"(a)") "  0: Return"
 	write(*,"(a)") " -1: Print basic information of all orbitals"
-	write(*,"(a)") " -2: Print atom contribution to a range of orbitals"
-	write(*,"(a)") " -3: Print fragment contribution to a range of orbitals"
+	write(*,"(a)") " -2: Print atom contribution to a batch of orbitals"
+	write(*,"(a)") " -3: Print fragment contribution to a batch of orbitals"
 	write(*,"(a)") " -4: Export composition of every atom in every orbital to orbcomp.txt"
+	write(*,"(a)") " -5: Print orbital delocalization index (ODI) for a batch of orbitals"
 	read(*,*) ishowmo
 	if (ishowmo>nmo) then
 		write(*,"(' Error: Orbital index should within the range of 1 to',i6,/)") nmo
@@ -727,35 +742,44 @@ do while(.true.)
 	        sphpot=nsphpotold
             radcut=radcutold
         end if
+        if (allocated(frag1)) deallocate(frag1)
 		exit
 	else if (ishowmo==-1) then !Show all orbital information
 		do i=1,nmo
-			if (MOtype(i)==0) orbtype="Alpha&Beta"
-			if (MOtype(i)==1) orbtype="Alpha     "
-			if (MOtype(i)==2) orbtype="Beta      "
-			write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") i,MOene(i),MOocc(i),orbtype
+			write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") i,MOene(i),MOocc(i),orbtypename(MOtype(i))
 		end do
 	else if (ishowmo==-2.or.ishowmo==-3) then !Print atom/fragment contribution to specific range of orbitals
-		if ((.not.allocated(fragorbcomp)).and.ishowmo==-3) then
-			write(*,*) "Error: You must defined the fragment first!"
+		if ((.not.allocated(frag1)).and.ishowmo==-3) then
+			write(*,*) "Error: You must define the fragment by option -9 first!"
 			write(*,*)
 			cycle
 		end if
 		if (ishowmo==-2) then
 			write(*,*) "Input atom index, e.g. 4"
 			read(*,*) iatm
+            if (iatm>ncenter) then
+                write(*,*) "Error: The atom index exceeded upper limit!"
+                cycle
+            end if
 		end if
-		write(*,*) "Input orbital range, e.g. 20,25 means from 20 to 25"
-		read(*,*) iorbbeg,iorbend
-		if (iorbbeg<=0) iorbbeg=1
-		if (iorbend>nmo) iorbend=nmo
+        write(*,*) "Input orbital indices, e.g. 3-10,13,18"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,ntmp)
+        if (allocated(idxarr)) deallocate(idxarr)
+        allocate(idxarr(ntmp))
+        call str2arr(c2000tmp,ntmp,idxarr)
+        if (any(idxarr>nmo)) then
+            write(*,*) "Error: One or more orbital indices exceeded upper limit!"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        
 		write(*,"(' Orb#    Type       Ene(a.u.)     Occ    Composition    Population')")
 		pop=0D0
-		do imo=iorbbeg,iorbend
-			if (MOtype(imo)==0) orbtype="Alpha&Beta"
-			if (MOtype(imo)==1) orbtype="Alpha     "
-			if (MOtype(imo)==2) orbtype="Beta      "
-			if (ishowmo==-2) then !Calculate only on atom
+		do idx=1,ntmp
+            imo=idxarr(idx)
+			if (ishowmo==-2) then !Calculate only one atom
 				tmp=0D0
 				!$OMP parallel shared(tmp) private(ipot,value,tmpprivate) num_threads(nthreads)
 				tmpprivate=0D0
@@ -770,10 +794,10 @@ do while(.true.)
 				tmp=tmp+tmpprivate
 				!$OMP end CRITICAL
 				!$OMP end parallel
-			else if (ishowmo==-3) then
+			else if (ishowmo==-3) then !Calculate fragment
 				tmp=0D0
-				do itmp=1,nfragorbcomp
-					iatm=fragorbcomp(itmp)
+				do itmp=1,nfrag1
+					iatm=frag1(itmp)
 					!$OMP parallel shared(tmp) private(ipot,value,tmpprivate) num_threads(nthreads)
 					tmpprivate=0D0
 					!$OMP do schedule(dynamic)
@@ -789,10 +813,11 @@ do while(.true.)
 					!$OMP end parallel
 				end do
 			end if
-			write(*,"(i5,1x,a,f13.4,f9.3,f11.3,'%',f15.6)") imo,orbtype,MOene(imo),MOocc(imo),tmp*100,MOocc(imo)*tmp
+			write(*,"(i5,1x,a,f13.4,f9.3,f11.3,' %',f15.6)") imo,orbtypename(MOtype(imo)),MOene(imo),MOocc(imo),tmp*100,MOocc(imo)*tmp
 			pop=pop+MOocc(imo)*tmp
 		end do
-		if (iorbend-iorbbeg>0) write(*,"(a,f12.6)") " Population of this atom in these orbitals:",pop
+		if (ishowmo==-2) write(*,"(a,f12.6)") " Population of this atom in these orbitals:",pop
+		if (ishowmo==-3) write(*,"(a,f12.6)") " Population of this fragment in these orbitals:",pop
 		
 	else if (ishowmo==-4) then !Export composition of every atom in every orbital to orbcomp.txt in current folder
 		write(*,*) "Calculating, please wait..."
@@ -816,32 +841,77 @@ do while(.true.)
 		end do
 		close(10)
 		write(*,*) "Done! orbcomp.txt has been exported to current folder"
-	
+        
+	else if (ishowmo==-5) then !Print orbital delocalization index (ODI) for a range of orbitals
+        write(*,*) "Input orbital indices, e.g. 3-10,13,18"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,ntmp)
+        if (allocated(idxarr)) deallocate(idxarr)
+        allocate(idxarr(ntmp))
+        call str2arr(c2000tmp,ntmp,idxarr)
+        if (any(idxarr>nmo)) then
+            write(*,*) "Error: One or more orbital indices exceeded upper limit!"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        write(*,*) "Please wait..."
+		orbcomp=0
+        imax=maxval(idxarr)
+        imin=minval(idxarr)
+		!$OMP parallel do shared(orbcomp) private(iatm,ipot,orbval) num_threads(nthreads) schedule(dynamic)
+		do iatm=1,ncenter
+			do ipot=1+iradcut*sphpot,radpot*sphpot
+				if (allpotw(iatm,ipot)<1D-8) cycle !May lose 0.001% accuracy
+				call orbderv(1,imin,imax,allpotx(iatm,ipot),allpoty(iatm,ipot),allpotz(iatm,ipot),orbval)
+				orbcomp(iatm,imin:imax)=orbcomp(iatm,imin:imax)+orbval(imin:imax)**2*allpotw(iatm,ipot)
+			end do
+		end do
+		!$OMP end parallel do
+        if (allocated(frag1)) write(*,*) "ODI of the whole system:"
+        do idx=1,ntmp
+            imo=idxarr(idx)
+            orbcomp(:,imo)=orbcomp(:,imo)/sum(orbcomp(:,imo)) !Normalize
+            odi=sum((orbcomp(:,imo)*100)**2)/100
+            write(*,"(' Orb:',i5,'  E(a.u.):',f14.6,'  Occ:',f8.4,'  Type: ',a,'  ODI:',f7.2)") &
+            imo,MOene(imo),MOocc(imo),orbtypename(MOtype(imo)),odi
+        end do
+        if (allocated(frag1)) then
+            write(*,*)
+            write(*,*) "ODI of the fragment you defined:"
+            do idx=1,ntmp
+                imo=idxarr(idx)
+                fragcomp=sum(orbcomp(frag1(:),imo))
+                odi=sum((orbcomp(frag1(:),imo)*100/fragcomp)**2)/100
+                write(*,"(' Orb:',i5,'  E(a.u.):',f14.6,'  Occ:',f8.4,'  Type: ',a,'  ODI:',f7.2)") &
+                imo,MOene(imo),MOocc(imo),orbtypename(MOtype(imo)),odi
+            end do
+        end if
+    
 	else if (ishowmo==-9) then !Define fragment
-	    if (allocated(fragorbcomp)) then
+	    if (allocated(frag1)) then
 			write(*,*) "Atoms in current fragment:"
-			write(*,"(13i6)") fragorbcomp
-			write(*,"(a)") " Input 0 to keep unchanged, or redefine fragment, e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
+			write(*,"(13i6)") frag1
+			write(*,"(a)") " Input 0 to keep unchanged, or redefine fragment, &
+            e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
 		else
-			write(*,"(a)") " Input atomic indices to define fragment. e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
+			write(*,"(a)") " Input atomic indices to define fragment. &
+            e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
 		end if
 		read(*,"(a)") c2000tmp
 		if (c2000tmp(1:1)=='0') then
 		    continue
 		else if (c2000tmp(1:1)==" ") then
-		    deallocate(fragorbcomp)
+		    deallocate(frag1)
 		else
-			if (allocated(fragorbcomp)) deallocate(fragorbcomp)
-			call str2arr(c2000tmp,nfragorbcomp)
-			allocate(fragorbcomp(nfragorbcomp))
-			call str2arr(c2000tmp,nfragorbcomp,fragorbcomp)
+			if (allocated(frag1)) deallocate(frag1)
+			call str2arr(c2000tmp,nfrag1)
+			allocate(frag1(nfrag1))
+			call str2arr(c2000tmp,nfrag1,frag1)
 		end if
 	    
-	else
-		if (MOtype(ishowmo)==0) orbtype="Alpha&Beta"
-		if (MOtype(ishowmo)==1) orbtype="Alpha     "
-		if (MOtype(ishowmo)==2) orbtype="Beta      "
-		write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") ishowmo,MOene(ishowmo),MOocc(ishowmo),orbtype
+	else !Print composition for an orbital
+		write(*,"(' Orbital:',i5,'  Energy(a.u.):',f14.6,'  Occ:',f10.5,'  Type: ',a)") ishowmo,MOene(ishowmo),MOocc(ishowmo),orbtypename(MOtype(ishowmo))
 		write(*,*) "Please wait..."
 		accum=0D0
 		do iatm=1,ncenter
@@ -862,17 +932,21 @@ do while(.true.)
 			accum=accum+tmp
 			resultvec(iatm)=tmp
 		end do
-		write(*,"(' The sum of contributions before normalization',11x,f12.6,'%',/)") accum*100
-		if (allocated(fragorbcomp)) then
-		    fragresult=sum(resultvec(fragorbcomp))
-		end if
+		write(*,"(' The sum of contributions before normalization',11x,f12.6,' %',/)") accum*100
 		write(*,*) "Contributions after normalization:"
 		do iatm=1,ncenter
-			write(*,"(' Atom',i6,'(',a,') :',f11.3,'%')") iatm,a(iatm)%name,resultvec(iatm)/accum*100
+            atmcomp(iatm)=resultvec(iatm)/accum*100
+			write(*,"(' Atom',i6,'(',a,') :',f11.3,' %')") iatm,a(iatm)%name,atmcomp(iatm)
 		end do
-		if (allocated(fragorbcomp)) write(*,"(/,' Fragment contribution:',f11.3,'%')") fragresult/accum*100
+        orbdeloc=sum(atmcomp**2)/100
+        write(*,"(/,' Orbital delocalization index:',f8.2)") orbdeloc
+		if (allocated(frag1)) then
+		    fragcomp=sum(atmcomp(frag1))
+            write(*,"(/,' Fragment contribution:',f11.3,'%')") fragcomp
+            orbdeloc=sum((atmcomp(frag1(:))/(fragcomp/100))**2)/100
+            write(*,"(' Orbital delocalization index of the fragment:',f8.2)") orbdeloc
+        end if
 	end if
-	write(*,*)
 end do
 end subroutine
 
@@ -1006,11 +1080,13 @@ use defvar
 use NAOmod
 use util
 implicit real*8 (a-h,o-z)
-integer :: ioutmode=1
+integer :: ioutmode=3
 integer :: ispinmode=0 !The spin under study. 0/1/2 = closed shell/alpha/beta
-integer,allocatable :: fragidx(:),termtmp(:)
+integer,allocatable :: fragidx(:),termtmp(:),tmparr(:)
 character :: c80tmp*80,c200*200,c3tmp*3
 real*8 :: outcrit=0.5D0
+character c2000tmp*2000
+real*8,allocatable :: atmcomp(:),shcomp(:)
 
 open(10,file=filename,status="old")
 
@@ -1048,12 +1124,13 @@ do while(.true.)
 	write(*,*)
     write(*,*) "------- Orbital composition analysis based on natural atomic orbitals -------"
 	write(*,*) "-10 Return"
-	write(*,*) "-1 Define fragment (for option 1)"
+	write(*,*) "-1 Define fragment for option 1"
 	write(*,*) " 0 Show composition of an orbital"
-	write(*,*) " 1 Show fragment contribution in a range of orbitals"
-	if (ioutmode==0) write(*,"(a)") "  2 Select output mode (for option 0), current: Show all NAOs"
-	if (ioutmode==1) write(*,"(a)") "  2 Select output mode (for option 0), current: Only show core and valence NAOs"
-	if (ioutmode==2) write(*,"(a,f6.2,'%')") "  2 Select output mode (for option 0), current: Show NAOs whose contributions are >",outcrit
+	write(*,*) " 1 Show fragment contribution to a batch of orbitals"
+	if (ioutmode==0) write(*,"(a)") "  2 Select output mode for option 0, current: All terms"
+	if (ioutmode==1) write(*,"(a)") "  2 Select output mode for option 0, current: Non-Rydberg terms"
+	if (ioutmode==2) write(*,"(a,f6.2,'%')") "  2 Select output mode for option 0, current: All terms with contribution >",outcrit
+	if (ioutmode==3) write(*,"(a,f6.2,'%')") "  2 Select output mode for option 0, current: Non-Rydberg terms with contribution >",outcrit
 	if (ispinmode==1) write(*,*) " 3 Switch spin type, current: Alpha"
 	if (ispinmode==2) write(*,*) " 3 Switch spin type, current: Beta"
 	read(*,*) isel
@@ -1102,8 +1179,8 @@ do while(.true.)
                 do iNAO=1,numNAO
                     c3tmp=" "
                     if (any(fragidx(1:ifragend)==iNAO)) c3tmp=" * "
-                    write(*,"(a,i7,3x,a5,i5,5x,a7,1x,a3,'( ',a,')',f12.5,f14.5)") &
-                    c3tmp,iNAO,NAOcenname(iNAO),NAOcen(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshell(iNAO),NAOocc(iNAO,ispinmode),NAOene(iNAO,ispinmode)
+                    write(*,"(a,i7,3x,a5,i5,5x,a7,1x,a3,'(',a,')',f12.5,f14.5)") &
+                    c3tmp,iNAO,NAOcenname(iNAO),NAOcen(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshname(iNAO),NAOocc(iNAO,ispinmode),NAOene(iNAO,ispinmode)
                 end do
 			else if (index(c200,"list")/=0) then
 				write(*,*) "NAO indices in current fragment:"
@@ -1116,21 +1193,21 @@ do while(.true.)
                     write(*,*) "      NAO#   Atom&Index    Type   Set&Shell    Occupancy   Energy (a.u.)"
                     do idx=1,ifragend
                         iNAO=fragidx(idx)
-                        write(*,"(a,i7,3x,a5,i5,5x,a7,1x,a3,'( ',a,')',f12.5,f14.5)") &
-                        "   ",iNAO,NAOcenname(iNAO),NAOcen(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshell(iNAO),NAOocc(iNAO,ispinmode),NAOene(iNAO,ispinmode)
+                        write(*,"(a,i7,3x,a5,i5,5x,a7,1x,a3,'(',a,')',f12.5,f14.5)") &
+                        "   ",iNAO,NAOcenname(iNAO),NAOcen(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshname(iNAO),NAOocc(iNAO,ispinmode),NAOene(iNAO,ispinmode)
                     end do
 				end if
 				
 			else if (c200(1:2)=="a ".or.c200(1:2)=="s ".or.c200(1:2)=="b ".or.c200(1:2)=="db".or.c200(1:2)=="da") then
 				call str2arr(c200(3:),nterm,termtmp)
 				if (c200(1:2)=="a ".or.c200(1:2)=="da") then !Check sanity of the input
-					if (any(termtmp(1:nterm)<=0).or.any(termtmp(1:nterm)>numNAOcen)) then
-						write(*,*) "ERROR: Atom index exceeded valid range! Ignoring..."
+					if (any(termtmp(1:nterm)<=0).or.any(termtmp(1:nterm)>ncenter_NAO)) then
+						write(*,*) "Error: Atom index exceeded valid range! Ignoring..."
 						cycle
 					end if
 				else if (c200(1:2)=="b ".or.c200(1:2)=="db") then
 					if (any(termtmp(1:nterm)<=0).or.any(termtmp(1:nterm)>numNAO)) then
-						write(*,*) "ERROR: NAO index exceeded valid range! Ignoring..."
+						write(*,*) "Error: NAO index exceeded valid range! Ignoring..."
 						cycle
 					end if
 				end if
@@ -1190,11 +1267,15 @@ do while(.true.)
 		if (ifragend==0) then
 			write(*,*) "Error: You have not defined fragment or the fragment is empty!"
 		else
-			write(*,*) "Input orbital range to be outputted  e.g. 1,10"
-			write(*,"(a,i7)") " Note: Should within   1 to",numorb
-			read(*,*) iorblow,iorbhigh
-			if (iorbhigh<iorblow.or.iorblow<=0.or.iorbhigh>numorb) then
-				write(*,*) "Error: The range you inputted is invalid!"
+			write(*,*) "Input orbital indices, for which the composition will be printed"
+            write(*,*) "For example 3,5-8,15-20"
+            read(*,"(a)") c2000tmp
+            if (allocated(tmparr)) deallocate(tmparr)
+            call str2arr(c2000tmp,ntmp)
+            allocate(tmparr(ntmp))
+            call str2arr(c2000tmp,ntmp,tmparr)
+			if (any(tmparr<=0).or.any(tmparr>numorb)) then
+				write(*,*) "Error: The range of orbital indices is invalid!"
 				cycle
 			else
 				exit
@@ -1202,12 +1283,13 @@ do while(.true.)
 		end if
 		
 	else if (isel==2) then
-		write(*,*) "0 Show all NAOs"
-		write(*,*) "1 Only show core and valence NAOs"
-		write(*,*) "2 Show NAOs whose contribution is larger than specified criteria"
+		write(*,*) "0 Show all NAOs/shells"
+		write(*,*) "1 Show non-Rydberg NAOs/shells"
+		write(*,*) "2 Show NAOs/shells whose contributions are larger than specific criterion"
+		write(*,"(a)") " 3 Show non-Rydberg NAOs/shells whose contributions are larger than specific criterion"
 		read(*,*) ioutmode
-		if (ioutmode==2) then
-			write(*,*) "Input criteria in percentage, e.g. 0.5"
+		if (ioutmode==2.or.ioutmode==3) then
+			write(*,*) "Input printing criterion in %, e.g. 0.5"
 			read(*,*) outcrit
 		end if
 		
@@ -1222,54 +1304,84 @@ end do
 
 !Start analysis
 if (isel==0) then !Analyze one orbital
+    allocate(atmcomp(ncenter_NAO),shcomp(numNAOsh))
 	do while(.true.)
-		write(*,*) "Analyze which orbital? (Input 0 can return)"
+		write(*,*) "Input the index of the orbital to be analyzed. e.g. 5"
+        write(*,*) "Input 0 can return"
 		read(*,*) iorboutcomp
 		if (iorboutcomp==0) then
+            if (allocated(atmcomp)) deallocate(atmcomp,shcomp)
             exit
-		else if (iorboutcomp<0.or.iorboutcomp>numorb) then
-			write(*,"(a,i7)") "Error: The orbital index should between  1 and",numorb
+		else if (iorboutcomp<=0.or.iorboutcomp>numorb) then
+			write(*,"(a,i7)") " Error: The orbital index should between  1 and",numorb
 			cycle
 		end if
 		
-		write(*,*)
-		if (ioutmode==2) write(*,"(a,f6.2,a)") "Note: All NAOs whose contribution <=",outcrit,"% will be ignored"
-		if (ispinmode==1) write(*,*) "Below are composition of alpha orbitals"
-		if (ispinmode==2) write(*,*) "Below are composition of beta orbitals"
-		write(*,*) "   NAO#   Center   Label      Type      Composition"
-		sumcomp=0D0
+		if (ioutmode==2) write(*,"(a,f6.2,a)") " Note: All NAOs/shells whose contributions <=",outcrit," % will not be printed"
+		if (ioutmode==3) write(*,"(a,f6.2,a)") " Note: All Rydberg NAOs/shells or contributions <=",outcrit," % will not be printed"
+		if (ispinmode==1) write(*,"(a,i6)") " Below are composition of alpha orbitals",iorboutcomp
+		if (ispinmode==2) write(*,"(a,i6)") " Below are composition of beta orbitals",iorboutcomp
+        write(*,*)
+		write(*,*) "   NAO#   Center   Label      Type    Composition"
+        shcomp=0D0
+        atmcomp=0D0
+        Corcomp=0D0
+        Valcomp=0D0
+        Rydcomp=0D0
 		do iNAO=1,numNAO
 			tmpcomp=NAOMO(iNAO,iorboutcomp)**2*100
             if (ispinmode==2) tmpcomp=NAOMOb(iNAO,iorboutcomp)**2*100 !Use beta MO instead
-			if (ioutmode==1.and.NAOset(iNAO,ispinmode)=="Ryd") cycle !skip Ryd
-			if (ioutmode==2.and.tmpcomp<=outcrit) cycle
-			write(*,"( i8,i5,'(',a,')',4x,a,2x,a,'(',a,')',f14.6,'%' )") iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshell(iNAO),tmpcomp
-			sumcomp=sumcomp+tmpcomp
+            if (NAOset(iNAO,ispinmode)=="Cor") Corcomp=Corcomp+tmpcomp
+            if (NAOset(iNAO,ispinmode)=="Val") Valcomp=Valcomp+tmpcomp
+            if (NAOset(iNAO,ispinmode)=="Ryd") Rydcomp=Rydcomp+tmpcomp
+            shcomp(bassh_NAO(iNAO))=shcomp(bassh_NAO(iNAO))+tmpcomp
+            atmcomp(NAOcen(iNAO))=atmcomp(NAOcen(iNAO))+tmpcomp
+			if ((ioutmode==1.or.ioutmode==3).and.NAOset(iNAO,ispinmode)=="Ryd") cycle !Skip showing Rydberg
+			if ((ioutmode==2.or.ioutmode==3).and.tmpcomp<outcrit) cycle !Skip showing too small terms
+			write(*,"(i8,i5,'(',a,')',4x,a,2x,a,'(',a,')',f10.3,' %' )") &
+            iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOtype(iNAO),NAOset(iNAO,ispinmode),NAOshname(iNAO),tmpcomp
 		end do
-		write(*,"(' Summing up the compositions listed above:',f14.6,'%')") sumcomp
-		if (ioutmode==1) write(*,"( ' Rydberg composition:',f14.6,'%')") 100D0-sumcomp
 		write(*,*)
-		write(*,*) "Condensed above result to atoms:"
+		write(*,*) "Condensed NAO terms to shells:"
+        s_comp=0;p_comp=0;d_comp=0;f_comp=0;g_comp=0;h_comp=0
+        do ish=1,numNAOsh
+            icen=shcen_NAO(ish)
+            if (index(shname_NAO(ish),'s')/=0) s_comp=s_comp+shcomp(ish)
+            if (index(shname_NAO(ish),'p')/=0) p_comp=p_comp+shcomp(ish)
+            if (index(shname_NAO(ish),'d')/=0) d_comp=d_comp+shcomp(ish)
+            if (index(shname_NAO(ish),'f')/=0) f_comp=f_comp+shcomp(ish)
+            if (index(shname_NAO(ish),'g')/=0) g_comp=g_comp+shcomp(ish)
+            if (index(shname_NAO(ish),'h')/=0) h_comp=h_comp+shcomp(ish)
+            if ((ioutmode==1.or.ioutmode==3).and.shset_NAO(ish,ispinmode)=="Ryd") cycle !Skip showing Rydberg
+			if ((ioutmode==2.or.ioutmode==3).and.shcomp(ish)<outcrit) cycle !Skip showing too small terms
+            write(*,"('   Atom:',i6,'(',a,')  Shell:',i6,'(',a,1x,a,')',f10.3,' %' )") &
+            icen,atmname_NAO(shcen_NAO(ish)),ish,shname_NAO(ish),shset_NAO(ish,ispinmode),shcomp(ish)
+        end do
+        write(*,*)
+		write(*,*) "Composition of different types of shells (%):"
+        write(*,"(' s:',f8.3,'  p:',f8.3,'  d:',f8.3,'  f:',f8.3,'  g:',f8.3,'  h:',f8.3)") s_comp,p_comp,d_comp,f_comp,g_comp,h_comp
+		write(*,*)
+		write(*,*) "Condensed NAO terms to atoms:"
 		write(*,*) "  Center   Composition"
-		do icen=1,numNAOcen
-			sumcomp=0D0
-			do iNAO=NAOinit(icen),NAOend(icen)
-				tmpcomp=NAOMO(iNAO,iorboutcomp)**2*100
-                if (ispinmode==2) tmpcomp=NAOMOb(iNAO,iorboutcomp)**2*100 !Use beta MO instead
-				if (ioutmode==1.and.NAOset(iNAO,ispinmode)=="Ryd") cycle !skip Ryd
-				if (ioutmode==2.and.tmpcomp<=outcrit) cycle	
-				sumcomp=sumcomp+tmpcomp
-			end do
-			write(*,"( i6,'(',a,')',f12.6,'%' )") icen,NAOcenname(icen),sumcomp
+		do icen=1,ncenter_NAO
+            if ((ioutmode==2.or.ioutmode==3).and.atmcomp(icen)<outcrit) cycle
+			write(*,"(i6,'(',a,')',f10.3,' %' )") icen,atmname_NAO(icen),atmcomp(icen)
 		end do
+		write(*,*)
+		write(*,"(' Core composition:   ',f10.3,' %')") Corcomp
+		write(*,"(' Valence composition:',f10.3,' %')") Valcomp
+		write(*,"(' Rydberg composition:',f10.3,' %')") Rydcomp
+		write(*,*)
+        write(*,"(' Orbital delocalization index:',f8.2)") sum(atmcomp(:)**2)/100
 		write(*,*)
 	end do
     
 else if (isel==1) then !Show fragment contribution in a range of orbitals
 	if (ispinmode==1) write(*,*) "Below are composition of alpha orbitals"
 	if (ispinmode==2) write(*,*) "Below are composition of beta orbitals"
-	write(*,*) "  Orb.#         Core        Valence      Rydberg       Total"
-	do imo=iorblow,iorbhigh
+	write(*,*) " Orb.#       Core      Valence     Rydberg      Total"
+	do imoidx=1,ntmp
+        imo=tmparr(imoidx)
 		sumcompcor=0D0
 		sumcompval=0D0
 		sumcompryd=0D0
@@ -1282,13 +1394,14 @@ else if (isel==1) then !Show fragment contribution in a range of orbitals
 			if (NAOset(iNAO,ispinmode)=="Ryd") sumcompryd=sumcompryd+tmpcomp
 		end do
 		sumcomptot=sumcompcor+sumcompval+sumcompryd
-		write(*,"(i6,5x,4(f12.6,'%'))") imo,sumcompcor,sumcompval,sumcompryd,sumcomptot
+		write(*,"(i6,3x,4(f10.3,' %'))") imo,sumcompcor,sumcompval,sumcompryd,sumcomptot
 	end do
 end if
 
 end do NAOcompmaincyc
 
 end subroutine
+
 
 
 
@@ -1302,9 +1415,12 @@ real*8 oxdstat(ncenter),atmcomp(ncenter,nmo)
 integer,allocatable :: fragLOBA(:)
 character c2000tmp*2000
 
-write(*,*) "Citation: Phys. Chem. Chem. Phys., 11, 11297-11304 (2009)"
-write(*,*)
 call gen_orbatmcomp_space(1,atmcomp,1,nmo,0,0)
+write(*,*)
+write(*,*) "Citation: Phys. Chem. Chem. Phys., 11, 11297 (2009)"
+write(*,"(a)") " Hint: If you want to make Multiwfn output attribution of LMOs, &
+you can set ""outmedinfo"" in settings.ini to 1 before booting up Multiwfn"
+write(*,*)
 
 nfragLOBA=0
 do while(.true.)
@@ -1334,8 +1450,11 @@ do while(.true.)
 		thres=thres/100
 		do iatm=1,ncenter
 			do imo=1,nmo
-				if (atmcomp(iatm,imo)>thres) oxdstat(iatm)=oxdstat(iatm)-MOocc(imo)
- 				!if (MOocc(imo)>0.and.compval>thres) write(*,"(' Orbital',i4,' belongs to atom',i4)") imo,iatm
+                if (MOocc(imo)==0) cycle
+				if (atmcomp(iatm,imo)>thres) then
+                    oxdstat(iatm)=oxdstat(iatm)-MOocc(imo)
+ 				    if (outmedinfo==1) write(*,"(f8.4' electrons in LMO',i6,' are attributed to atom',i6)") MOocc(imo),imo,iatm
+                end if
 			end do
 			write(*,"(' Oxidation state of atom',i4,'(',a,') :',i3)") iatm,a(iatm)%name,nint(oxdstat(iatm))
 		end do
@@ -1348,7 +1467,10 @@ do while(.true.)
 			end do
 			do imo=1,nmo
 				compval=sum(atmcomp(fragLOBA(:),imo))
-				if (compval>thres) oxdfrag=oxdfrag-MOocc(imo)
+				if (compval>thres) then
+                    oxdfrag=oxdfrag-MOocc(imo)
+                    if (outmedinfo==1) write(*,"(f8.4' electrons in LMO',i6,' are attributed to the defined fragment')") MOocc(imo),imo
+                end if
 			end do
 			write(*,"(' Oxidation state of the fragment:',i4)") nint(oxdfrag)
 		end if

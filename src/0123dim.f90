@@ -215,122 +215,126 @@ write(*,"(' Translation vector in X,Y,Z:',3f10.5,' Norm:',f9.5,' Bohr')") transx
 write(*,"(' Number of points:',i10)") npointcurve
 icustom=0
 
-do while(.true.)
-	if (.not.(ipromol==1.and.icustom==0)) then !Calculate property for whole system. However for promolecular case at initial step, skip it
-		!Use cubegen to calculate ESP
-		alive=.false.
-		if (cubegenpath/=" ".and.ifiletype==1.and.isel==12) then
-			inquire(file=cubegenpath,exist=alive)
-			if (alive==.false.) then
-				write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
-				the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
-			end if
-		end if
-		if (alive.and.ifiletype==1.and.isel==12) then !Use cubegen to calculate ESP
-			write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
-			now Multiwfn directly invokes cubegen to calculate electrostatic potential"
+if (isel==100.and.(iuserfunc==57.or.iuserfunc==58.or.iuserfunc==59)) then !Calculate g1,g2,g3 terms defined by Shubin, they rely on rho_0
+    call g1g2g3line(orgx1D,orgy1D,orgz1D,transx,transy,transz)
+else !Common case
+    do while(.true.)
+	    if (.not.(ipromol==1.and.icustom==0)) then !Calculate property for whole system. However for promolecular case at initial step, skip it
+		    !Use cubegen to calculate ESP
+		    alive=.false.
+		    if (cubegenpath/=" ".and.ifiletype==1.and.isel==12) then
+			    inquire(file=cubegenpath,exist=alive)
+			    if (alive==.false.) then
+				    write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
+				    the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
+			    end if
+		    end if
+		    if (alive.and.ifiletype==1.and.isel==12) then !Use cubegen to calculate ESP
+			    write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
+			    now Multiwfn directly invokes cubegen to calculate electrostatic potential"
 			
-			!Generate cubegen input file
-			open(10,file="cubegenpt.txt",status="replace")
-			do ipt=1,npointcurve
-				rnowx=orgx1D+(ipt-1)*transx
-				rnowy=orgy1D+(ipt-1)*transy
-				rnowz=orgz1D+(ipt-1)*transz
-				curvex(ipt)=ipt*transr
-				write(10,"(3f16.8)") rnowx*b2a,rnowy*b2a,rnowz*b2a
-			end do
-			close(10)
-			ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
-			if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
+			    !Generate cubegen input file
+			    open(10,file="cubegenpt.txt",status="replace")
+			    do ipt=1,npointcurve
+				    rnowx=orgx1D+(ipt-1)*transx
+				    rnowy=orgy1D+(ipt-1)*transy
+				    rnowz=orgz1D+(ipt-1)*transz
+				    curvex(ipt)=ipt*transr
+				    write(10,"(3f16.8)") rnowx*b2a,rnowy*b2a,rnowz*b2a
+			    end do
+			    close(10)
+			    ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
+			    if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
 			
-            filename_tmp=filename
-			if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
-			write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
-			""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
-			write(*,"(a)") " Running: "//trim(c400tmp)
-			call system(c400tmp)
-			if (index(filename,".chk")/=0) call delfile(filename_tmp)
+                filename_tmp=filename
+			    if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
+			    write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
+			    """"//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
+			    write(*,"(a)") " Running: "//trim(c400tmp)
+			    call system(c400tmp)
+			    if (index(filename,".chk")/=0) call delfile(filename_tmp)
 			
-			!Load ESP data from cubegen resulting file
-			open(10,file="ESPresult.cub",status="old")
-			do iskip=1,6+ncenter
-				read(10,*)
-			end do
-			do ipt=1,npointcurve
-				read(10,*) rnouse,rnouse,rnouse,curvey(ipt)
-			end do
-			close(10)
+			    !Load ESP data from cubegen resulting file
+			    open(10,file="ESPresult.cub",status="old")
+			    do iskip=1,6+ncenter
+				    read(10,*)
+			    end do
+			    do ipt=1,npointcurve
+				    read(10,*) rnouse,rnouse,rnouse,curvey(ipt)
+			    end do
+			    close(10)
 			
-			!Delete intermediate files
-			if (isys==1) then
-				call system("del cubegenpt.txt ESPresult.cub nouseout /Q")
-			else
-				call system("rm cubegenpt.txt ESPresult.cub nouseout -f")
-			end if
+			    !Delete intermediate files
+			    if (isys==1) then
+				    call system("del cubegenpt.txt ESPresult.cub nouseout /Q")
+			    else
+				    call system("rm cubegenpt.txt ESPresult.cub nouseout -f")
+			    end if
 		
-		else !Normal case, use internal code to calculate data
-			!$OMP parallel do shared(curvex,curvey) private(ipt,rnowx,rnowy,rnowz) num_threads(nthreads)
-			do ipt=1,npointcurve  !Calculate data for line plot
-				rnowx=orgx1D+(ipt-1)*transx
-				rnowy=orgy1D+(ipt-1)*transy
-				rnowz=orgz1D+(ipt-1)*transz
-				curvex(ipt)=ipt*transr
-				if (isel==111) then
-					curvey(ipt)=beckewei(rnowx,rnowy,rnowz,iatmbecke1,iatmbecke2)
-				else
-					curvey(ipt)=calcfuncall(isel,rnowx,rnowy,rnowz)
-				end if
-			end do
-			!$OMP end parallel do
-		end if
-	end if
+		    else !Normal case, use internal code to calculate data
+			    !$OMP parallel do shared(curvex,curvey) private(ipt,rnowx,rnowy,rnowz) num_threads(nthreads)
+			    do ipt=1,npointcurve  !Calculate data for line plot
+				    rnowx=orgx1D+(ipt-1)*transx
+				    rnowy=orgy1D+(ipt-1)*transy
+				    rnowz=orgz1D+(ipt-1)*transz
+				    curvex(ipt)=ipt*transr
+				    if (isel==111) then
+					    curvey(ipt)=beckewei(rnowx,rnowy,rnowz,iatmbecke1,iatmbecke2)
+				    else
+					    curvey(ipt)=calcfuncall(isel,rnowx,rnowy,rnowz)
+				    end if
+			    end do
+			    !$OMP end parallel do
+		    end if
+	    end if
 	
-	if (ncustommap==0) then !Normal case
-		exit
-	else !Custom operation or deformation/promolecular property
-		if (icustom==0) then !First time
-			if (ipromol==0) then !Backup the whole property as curveytmp
-				curveytmp=curvey
-			else !Initial data for promolecular property is clearly zero
-				curveytmp=0
-			end if
-		else !Not first time
-			if (customop(icustom)=='+') curveytmp=curveytmp+curvey
-			if (customop(icustom)=='-') curveytmp=curveytmp-curvey
-			if (customop(icustom)=='x'.or.customop(icustom)=='*') curveytmp=curveytmp*curvey
-			if (customop(icustom)=='/') curveytmp=curveytmp/curvey
-		end if
-		if (icustom/=ncustommap) then !Not the last time
-			icustom=icustom+1
-			filename=custommapname(icustom)
-			call dealloall
-			write(*,"(' Loading: ',a)") trim(filename)
-			call readinfile(filename,1)
-			!Generate temporary fragatm
-			if (allocated(fragatm)) deallocate(fragatm)
-			nfragatmnum=ncenter
-			allocate(fragatm(nfragatmnum))
-			forall (iatm=1:nfragatmnum) fragatm(iatm)=iatm
-			!Input the MO index for current file. Since the MO index may be not the same as the first loaded one
-			if (isel==4) then
-				write(*,"(' Input the index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
-				read(*,*) iorbsel
-			end if
-		else !Last time
-			curvey=curveytmp
-			call dealloall
-			write(*,"(' Reloading: ',a)") trim(firstfilename)
-			call readinfile(firstfilename,1)
-			!Recovery user-defined fragatm from the backup
-			deallocate(fragatm)
-			nfragatmnum=nfragatmnumbackup
-			allocate(fragatm(nfragatmnum))
-			fragatm=fragatmbackup
-			exit
-		end if
-	end if
-end do
-
+	    if (ncustommap==0) then !Normal case
+		    exit
+	    else !Custom operation or deformation/promolecular property
+		    if (icustom==0) then !First time
+			    if (ipromol==0) then !Backup the whole property as curveytmp
+				    curveytmp=curvey
+			    else !Initial data for promolecular property is clearly zero
+				    curveytmp=0
+			    end if
+		    else !Not first time
+			    if (customop(icustom)=='+') curveytmp=curveytmp+curvey
+			    if (customop(icustom)=='-') curveytmp=curveytmp-curvey
+			    if (customop(icustom)=='x'.or.customop(icustom)=='*') curveytmp=curveytmp*curvey
+			    if (customop(icustom)=='/') curveytmp=curveytmp/curvey
+		    end if
+		    if (icustom/=ncustommap) then !Not the last time
+			    icustom=icustom+1
+			    filename=custommapname(icustom)
+			    call dealloall
+			    write(*,"(' Loading: ',a)") trim(filename)
+			    call readinfile(filename,1)
+			    !Generate temporary fragatm
+			    if (allocated(fragatm)) deallocate(fragatm)
+			    nfragatmnum=ncenter
+			    allocate(fragatm(nfragatmnum))
+			    forall (iatm=1:nfragatmnum) fragatm(iatm)=iatm
+			    !Input the MO index for current file. Since the MO index may be not the same as the first loaded one
+			    if (isel==4) then
+				    write(*,"(' Input the index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
+				    read(*,*) iorbsel
+			    end if
+		    else !Last time
+			    curvey=curveytmp
+			    call dealloall
+			    write(*,"(' Reloading: ',a)") trim(firstfilename)
+			    call readinfile(firstfilename,1)
+			    !Recovery user-defined fragatm from the backup
+			    deallocate(fragatm)
+			    nfragatmnum=nfragatmnumbackup
+			    allocate(fragatm(nfragatmnum))
+			    fragatm=fragatmbackup
+			    exit
+		    end if
+	    end if
+    end do
+end if
+    
 write(*,"(' Minimal/Maximum value:',2E16.8)") minval(curvey),maxval(curvey)
 write(*,"(' Summing up all values:',E18.8,'  Integration value:',E18.8)") sum(curvey),sum(curvey)*transr
 exty=(maxval(curvey)-minval(curvey))/10
@@ -392,7 +396,7 @@ do while(.true.)
 			rnowx=orgx1D+(ipt-1)*transx
 			rnowy=orgy1D+(ipt-1)*transy
 			rnowz=orgz1D+(ipt-1)*transz
-			write(10,"(4f12.6,1PE18.10)") rnowx*b2a,rnowy*b2a,rnowz*b2a,curvex(ipt)*b2a,curvey(ipt)
+			write(10,"(4f12.6,1PE20.10E3)") rnowx*b2a,rnowy*b2a,rnowz*b2a,curvex(ipt)*b2a,curvey(ipt)
 		end do
 		close(10)
 		write(*,*) "Data have been exported to line.txt in current folder"
@@ -414,7 +418,7 @@ do while(.true.)
 			icurve_vertlinex=0
 		end if
 	else if (isel==5) then
-		write(*,*) "Input the ratio value, e.g. 0.6"
+		write(*,*) "Input the ratio, e.g. 0.6"
 		read(*,*) curvexyratio
 	else if (isel==6) then
 		numlocmin=0
@@ -1070,8 +1074,11 @@ else !Start calculation of plane data
 	else if (ifuncsel==503) then !Calculate difference between total relative Shannon entropy and deformation density 
 		call genentroplane(3)
 		ncustommap=0
-	else
-	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planemat,d1add,d1min,d2add,d2min) schedule(dynamic) NUM_THREADS(nthreads)
+    else if (ifuncsel==100.and.(iuserfunc==57.or.iuserfunc==58.or.iuserfunc==59)) then !Calculate g1,g2,g3 terms defined by Shubin, they rely on rho_0
+        call g1g2g3plane
+		ncustommap=0
+	else !Common case
+	    !$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planemat,d1add,d1min,d2add,d2min) schedule(dynamic) NUM_THREADS(nthreads)
 		do i=1,ngridnum1
 			do j=1,ngridnum2
 				rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
@@ -1091,7 +1098,7 @@ else !Start calculation of plane data
 				end if
 			end do
 		end do
-	!$OMP END PARALLEL DO
+	    !$OMP END PARALLEL DO
 	end if
 
 	401	if (ncustommap/=0) then !Calculate data for custom map
@@ -1183,7 +1190,7 @@ else !Start calculation of plane data
 	end if
 	
 	call walltime(iwalltime2)
-	write(*,"(' Calculation took up wall clock time',i8,'s')") iwalltime2-iwalltime1
+	write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 end if
 	
 write(*,*) "The minimum of data:",minval(planemat)
@@ -1246,7 +1253,7 @@ else if (ifuncsel==111.or.ifuncsel==112) then !Becke/Hirshfeld weight
 	drawuplim=1D0
 else if (ifuncsel==100.and.iuserfunc==20) then !DORI
 	drawlowlim=0D0
-	drawuplim=1D0
+	drawuplim=1D00
 else !Including ifuncsel==100
 	drawlowlim=0.0D0
 	drawuplim=5.0D0
@@ -1472,6 +1479,8 @@ do while(.true.)
 		write(*,*) "Input a value, e.g. 0.3"
 		read(*,*) scaleval
 		planemat=planemat*scaleval
+        gradd1=gradd1*scaleval
+        gradd2=gradd2*scaleval
 		write(*,*) "Done!"
 	else if (i==-6) then
 		open(10,file="plane.txt",status="replace")
@@ -1481,9 +1490,9 @@ do while(.true.)
 				rnowy=orgy2D+i*v1y+j*v2y
 				rnowz=orgz2D+i*v1z+j*v2z
 				if (plesel==4.or.plesel==5.or.plesel==6.or.plesel==7) then
-					write(10,"(5f10.5,1PE18.10)") rnowx*b2a,rnowy*b2a,rnowz*b2a,i*d1*b2a,j*d2*b2a,planemat(i+1,j+1)
+					write(10,"(5f10.5,1PE20.10E3)") rnowx*b2a,rnowy*b2a,rnowz*b2a,i*d1*b2a,j*d2*b2a,planemat(i+1,j+1)
 				else !Plane is vertical, the coordinate in a direction is zero
-					write(10,"(3f10.5,1PE18.10)") rnowx*b2a,rnowy*b2a,rnowz*b2a,planemat(i+1,j+1)
+					write(10,"(3f10.5,1PE20.10E3)") rnowx*b2a,rnowy*b2a,rnowz*b2a,planemat(i+1,j+1)
 				end if
 			end do
 		end do
@@ -1896,7 +1905,7 @@ if (igridsel==100) then !Calculate value on a set of points loaded from external
 		extpt(iextpt,4)=calcfuncall(ifuncsel,extpt(iextpt,1),extpt(iextpt,2),extpt(iextpt,3))
 	end do
 	!$OMP END PARALLEL DO
-501	if (ncustommap/=0) then !cycling will stop when all the file have been dealed
+501	if (ncustommap/=0) then !Cycling will stop when all the file have been dealed
 		if (icustom==0) then
 	!Note: For promolecular property, x,y,z hasn't been saved in extpt at first time, while after calculation of atoms, extpt already has %x,%y,%z
 			extpttmp(:)=extpt(:,4) !first time
@@ -1940,7 +1949,7 @@ if (igridsel==100) then !Calculate value on a set of points loaded from external
 	end if
 	
 	call walltime(iwalltime2)
-	write(*,"(' Calculation is finished, took up wall clock time',i9,'s')") iwalltime2-iwalltime1
+	write(*,"(' Calculation is finished, took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 	
 	write(*,"(a)") " Output the points with function values to which file? e.g. C:\ltwd.txt"
 	read(*,"(a)") c200tmp
@@ -1972,8 +1981,8 @@ else !Calculate grid data
 			end do
 		end do
 	else if (ifuncsel==112) then !Hirshfeld weight
-		ncustommap=0
 		call genhirshcubewei(tmparrint,size(tmparrint),iHirshdenstype)
+		ncustommap=0
 	else if (ifuncsel==120) then !Calculate and output three components of Steric force to plain text file
 		open(20,file="stericforce.txt",status="replace")
 		do k=1,nz
@@ -1990,10 +1999,17 @@ else !Calculate grid data
 		end do
 		close(20)
 		write(*,*) "Done, the results have been outputted to stericforce.txt in current folder"
-		write(*,"(a)") " Columns 1,2,3 correspond to X,Y,Z coordinates, 4,5,6 correspond to steric force component in X,Y,Z. The last column denotes magnitude of steric force"
+		write(*,"(a)") " Columns 1,2,3 correspond to X,Y,Z coordinates, 4,5,6 correspond to &
+        steric force component in X,Y,Z. The last column denotes magnitude of steric force"
 		write(*,*)
 		read(*,*)
-	else !Common cases
+	else if (ifuncsel==112) then !Hirshfeld weight
+		call genhirshcubewei(tmparrint,size(tmparrint),iHirshdenstype)
+		ncustommap=0
+    else if (ifuncsel==100.and.(iuserfunc==57.or.iuserfunc==58.or.iuserfunc==59)) then !Calculate g1,g2,g3 terms defined by Shubin, they rely on rho_0
+        call g1g2g3grid
+		ncustommap=0
+	else !Common case
 		cubmat=0D0
 		icustom=0
 		if (ipromol==1) goto 511 !Calculate promolecular property, so skip the first time calculation (namely for the whole system)
@@ -2045,9 +2061,7 @@ else !Calculate grid data
 	outcubfile="griddata.cub" !General name
 	if (ifuncsel==1) then
 		outcubfile="density.cub"
-		dipx=0
-		dipy=0
-		dipz=0
+		dipx=0;dipy=0;dipz=0
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
@@ -2061,11 +2075,11 @@ else !Calculate grid data
 		dipy=sum(a%charge*a%y)+dipy*dx*dy*dz
 		dipz=sum(a%charge*a%z)+dipz*dx*dy*dz
 		write(*,*)
-		write(*,*) "System dipole moment in a.u. (e/Bohr) and Debye, respectively:"
-		write(*,"(' X component is',2f12.6)") dipx,dipx*8.47835281D-30*2.99792458D+29
-		write(*,"(' Y component is',2f12.6)") dipy,dipy*8.47835281D-30*2.99792458D+29
-		write(*,"(' Z component is',2f12.6)") dipz,dipz*8.47835281D-30*2.99792458D+29
-		write(*,"(' Total magnitude is',2f12.6)") dsqrt(dipx**2+dipy**2+dipz**2),dsqrt(dipx**2+dipy**2+dipz**2)*8.47835281D-30*2.99792458D+29
+		write(*,*) "Electric dipole moment estimated by integrating electron density"
+		write(*,"(' X component:    ',f12.6,' a.u.',f12.6,' Debye')") dipx,dipx*au2debye
+		write(*,"(' Y component:    ',f12.6,' a.u.',f12.6,' Debye')") dipy,dipy*au2debye
+		write(*,"(' Z component:    ',f12.6,' a.u.',f12.6,' Debye')") dipz,dipz*au2debye
+		write(*,"(' Total magnitude:',f12.6,' a.u.',f12.6,' Debye')") dsqrt(dipx**2+dipy**2+dipz**2),dsqrt(dipx**2+dipy**2+dipz**2)*au2debye
 		write(*,*)
 	else if (ifuncsel==2) then
 		outcubfile="gradient.cub"
@@ -2124,10 +2138,10 @@ else !Calculate grid data
 
 	temp=minval(cubmat)
 	call findvalincub(cubmat,temp,i,j,k)
-	write(*,"(' The minimum is',E16.8,' at',3f10.5,' (Bohr)')") temp,orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz
+	write(*,"(' The minimum is',E16.8,' at',3f10.5,' Bohr')") temp,orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz
 	temp=maxval(cubmat)
 	call findvalincub(cubmat,temp,i,j,k)
-	write(*,"(' The maximum is',E16.8,' at',3f10.5,' (Bohr)')") temp,orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz
+	write(*,"(' The maximum is',E16.8,' at',3f10.5,' Bohr')") temp,orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz
 	write(*,"(' Summing up all value and multiply differential element:')") 
 	write(*,*) sum(cubmat)*dx*dy*dz
 	write(*,"(' Summing up positive value and multiply differential element:')")
@@ -2181,7 +2195,7 @@ else !Calculate grid data
 			do i=1,nx
 				do j=1,ny
 					do k=1,nz
-						write(10,"(3f12.6,2x,1PE15.8)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
+						write(10,"(3f12.6,2x,1PE18.8E3)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
 					end do
 				end do
 			end do

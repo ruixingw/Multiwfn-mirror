@@ -1,11 +1,15 @@
 # A script to calculate RESP charge based on Gaussian and Multiwfn
 # Written by Tian Lu (sobereva@sina.com), 2019-Apr-17
-# Example usage: RESP.sh H2O.xyz 0 1
+# You should properly modify content to use proper calculation level and solvent
+# Example:
+# Calculating neutral singlet molecule: RESP.sh H2O.xyz
+# Calculating anionic singlet molecule: RESP.sh ani.pdb -1 1
 
 #!/bin/bash
 
 keyword_opt="# B3LYP/def2SVP em=GD3BJ scrf(solvent=water) opt"
-keyword_SP="# B3LYP/def2TZVP em=GD3BJ scrf(solvent=water) pop=CHELPG IOp(6/33=2,6/42=6)"
+keyword_SP="# B3LYP/def2TZVP em=GD3BJ scrf(solvent=water) pop=MK IOp(6/33=2,6/42=6)"
+Gaussian=g09
 
 export inname=$1
 filename=${inname%.*}
@@ -31,7 +35,7 @@ Multiwfn $1 > /dev/null << EOF
 2
 tmp.xyz
 0
--10
+q
 EOF
 
 cat << EOF > gau.gjf
@@ -47,9 +51,10 @@ cat << EOF >> gau.gjf
 
 
 EOF
+rm tmp.xyz
 
 echo Running optimization task via Gaussian...
-g09 < gau.gjf > gau.out
+$Gaussian < gau.gjf > gau.out
 
 cat << EOF > gau.gjf
 %chk=gau.chk
@@ -58,8 +63,26 @@ $keyword_SP geom=allcheck guess=read
 
 EOF
 
+$Gaussian < gau.gjf > gau.out
+
+if grep -Fq "Normal termination" gau.out
+then
+	echo Done!
+else
+	echo The task has failed! Exit the script...
+	exit 1
+fi
+
 echo Running single point task via Gaussian...
-g09 < gau.gjf > gau.out
+$Gaussian < gau.gjf > gau.out
+
+if grep -Fq "Normal termination" gau.out
+then
+	echo Done!
+else
+	echo The task has failed! Exit the script...
+	exit 1
+fi
 
 echo Running formchk...
 formchk gau.chk> /dev/null
@@ -74,10 +97,10 @@ gau.out
 y
 0
 0
--10
+q
 EOF
 
-rm -r tmp.xyz gau.gjf gau.fchk gau.chk gau.out
+rm gau.gjf gau.fchk gau.chk gau.out
 chgname=${1//$suffix/chg}
 mv gau.chg $chgname
 

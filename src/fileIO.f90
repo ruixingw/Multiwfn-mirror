@@ -11,6 +11,8 @@ if (thisfilename(inamelen-2:inamelen)=="fch".or.thisfilename(inamelen-3:inamelen
 .or.thisfilename(inamelen-3:inamelen)=="FCH".or.thisfilename(inamelen-3:inamelen)=="FChk"&
 .or.thisfilename(inamelen-3:inamelen)=="FCHK") then
 	call readfch(thisfilename,infomode)
+else if (thisfilename(inamelen-3:inamelen)=="mwfn") then
+    call readmwfn(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="wfn".or.thisfilename(inamelen-2:inamelen)=="WFN") then
 	call readwfn(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="wfx".or.thisfilename(inamelen-2:inamelen)=="WFX") then
@@ -29,6 +31,8 @@ else if (thisfilename(inamelen-2:inamelen)=="grd") then
 	call readgrd(thisfilename,infomode,0)
 else if (thisfilename(inamelen-2:inamelen)=="vti") then
 	call readvti(thisfilename,infomode,0)
+else if (thisfilename(inamelen-1:inamelen)=="dx") then
+	call readdx(thisfilename,infomode,0)
 else if (thisfilename(inamelen-2:inamelen)=="gro") then
 	call readgro(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="cub".or.thisfilename(inamelen-3:inamelen)=="cube") then
@@ -60,6 +64,7 @@ else if (thisfilename(inamelen-2:inamelen)=="chk") then
 		read(*,*)
 		stop
 	else
+        fchname=thisfilename
 		call chk2fch(fchname)
 		inquire(file=fchname,exist=alive)
 		if (alive) then
@@ -98,6 +103,7 @@ else if (thisfilename(inamelen-2:inamelen)=="gbw") then
 		read(*,*)
 		stop
 	else
+        moldenname=thisfilename
 		call gbw2molden(moldenname)
 		inquire(file=moldenname,exist=alive)
 		if (alive) then
@@ -110,8 +116,9 @@ else if (thisfilename(inamelen-2:inamelen)=="gbw") then
 			stop
 		end if
 	end if
-else
+else !Plain text file
 	ifiletype=0
+    call loadGaugeom(10,thisfilename)
 end if
 
 !Determine how to supply EDF information for the file containing GTF information when pseudopotential basis set is involved
@@ -129,25 +136,98 @@ end if
 end subroutine
 
 
-!!-------- Convert chk to fch/fchk via formchk, return the path of generated (may be failed) .fch/fchk file
+!!------ Check if a file is a Gaussian output file, if yes and iloadGaugeom==1, then load the final geometry
+subroutine loadGaugeom(ifileid,gaufilename)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character gaufilename*200,c80tmp*80,locstr*40
+open(ifileid,file=gaufilename,status="old")
+call outputprog(ifileid,iprog)
+if (iprog==1) then
+    if (iloadGaugeom==1) then
+        write(*,*) "Trying to load geometry from this file..."
+        do itime=1,2
+            if (itime==1) then
+                locstr="Input orientation:"
+            else
+                locstr="Standard orientation:"
+            end if
+            nskip=0
+            do while(.true.)
+                call loclabel(ifileid,locstr,ifound,0)
+                if (ifound==0) exit
+                nskip=nskip+1
+                read(ifileid,*)
+            end do
+            if (nskip>0) then
+                call loclabel(ifileid,locstr,ifound)
+                call skiplines(ifileid,5)
+                ncenter=0
+                do while(.true.)
+                    read(ifileid,"(a)") c80tmp
+                    if (index(c80tmp,"----")/=0) exit
+                    ncenter=ncenter+1
+                end do
+                if (allocated(a)) deallocate(a)
+                allocate(a(ncenter))
+                rewind(ifileid)
+                do iload=1,nskip
+                    call loclabel(ifileid,locstr,ifound,0)
+                    read(ifileid,*)
+                end do
+                call skiplines(ifileid,4)
+                do iatm=1,ncenter
+                    read(ifileid,*) inouse,a(iatm)%index,inouse,a(iatm)%x,a(iatm)%y,a(iatm)%z
+                    a(iatm)%name=ind2name(a(iatm)%index)
+                end do
+                a%charge=a%index !Incompatible with ECP case
+                a%x=a%x/b2a
+                a%y=a%y/b2a
+                a%z=a%z/b2a
+                write(*,*) "Geometry (final, input orientation) has been loaded from this file"
+                exit
+            else
+                if (itime==1) then
+                    write(*,"(a)") " Note: Unable to load geometry in input orientation, trying to load geometry in standard orientation instead"
+                    rewind(ifileid)
+                else if (itime==2) then
+                    write(*,*) "Warning: Failed to load geometry from this file"
+                end if
+            end if
+        end do
+        !Load electrons
+        call loclabel(ifileid," alpha electrons")
+        read(ifileid,"(a)") c80tmp
+        read(c80tmp,*) naelec
+        read(c80tmp(24:),*) nbelec
+        nelec=naelec+nbelec
+        write(*,"(a,3i8)") " Number of total/alpha/beta electrons:",nint(naelec),nint(nbelec),nint(nelec)
+    else
+        write(*,"(a)") " This file seems to be a Gaussian output file. If you set ""iloadGaugeom"" in settings.ini to 1, &
+        then Multiwfn will load geometry (final, input orientation) as well number of electrons from this file"
+    end if
+end if
+close(ifileid)
+end subroutine
+
+
+!!-------- Convert inputted chk file to fch/fchk via formchk, return the path of generated (may be failed) .fch/fchk file
 subroutine chk2fch(fchname)
 use defvar
 implicit real*8 (a-h,o-z)
-character*200 fchname,c200tmp
-inamelen=len_trim(filename)
+character*200 fchname,c200tmp,fchnamenew
+itmp=index(fchname,'.',back=.true.)
 if (isys==1) then
-	c200tmp=trim(formchkpath)//' "'//trim(filename)//'" > NUL'
+    fchnamenew=fchname(:itmp)//"fch"
+	c200tmp=trim(formchkpath)//' "'//trim(fchname)//'" "'//trim(fchnamenew)//'" > NUL'
 else
-	c200tmp=trim(formchkpath)//' "'//trim(filename)//'" > /dev/null'
+    fchnamenew=fchname(:itmp)//"fchk"
+	c200tmp=trim(formchkpath)//' "'//trim(fchname)//'" "'//trim(fchnamenew)//'" > /dev/null'
 end if
 write(*,"(a)") " Running: "//trim(c200tmp)
 call system(trim(c200tmp))
-fchname=filename
-if (isys==1) then
-	fchname(inamelen-2:inamelen)="fch"
-else
-	fchname(inamelen-2:inamelen+1)="fchk"
-end if
+fchname=fchnamenew
 end subroutine
 
 
@@ -156,21 +236,21 @@ subroutine gbw2molden(gbwname)
 use defvar
 implicit real*8 (a-h,o-z)
 character*200 gbwname,c200tmp
-inamelen=len_trim(filename)
-ico=index(filename,'.',back=.true.)
+inamelen=len_trim(gbwname)
+ico=index(gbwname,'.',back=.true.)
 if (isys==1) then
-	c200tmp=trim(orca_2mklpath)//' "'//trim(filename(:ico-1))//'" -molden > NUL'
+	c200tmp=trim(orca_2mklpath)//' "'//trim(gbwname(:ico-1))//'" -molden > NUL'
 else
-	c200tmp=trim(orca_2mklpath)//' "'//trim(filename(:ico-1))//'" -molden > /dev/null'
+	c200tmp=trim(orca_2mklpath)//' "'//trim(gbwname(:ico-1))//'" -molden > /dev/null'
 end if
 write(*,"(a)") " Running: "//trim(c200tmp)
 call system(trim(c200tmp))
-gbwname=trim(filename(:ico))//"molden.input"
+gbwname=trim(gbwname(:ico))//"molden.input"
 end subroutine
 
 
 !!-----------------------------------------------------------------
-!!------------------------- Read gaussian formatted check file
+!!------------------------- Read Gaussian formatted check file
 !Some temporary arrays, including shelltype, shell2atom, shellcon, primexp, concoeff will be stored to corresponding global arrays after some revisions
 !infomode=0 means output info, =1 silent
 subroutine readfch(name,infomode)
@@ -208,7 +288,6 @@ conv7f10ftr=transpose(conv7f10f)
 conv9g15gtr=transpose(conv9g15g)
 conv11h21htr=transpose(conv11h21h)
 
-if (infomode==0.and.ifchprog==2) write(*,*) "Note: This fch file is regarded as produced by Q-Chem!"
 open(10,file=name,access="sequential",status="old")
 read(10,"(a)") fchtitle
 if (infomode==0) write(*,*) "Loading various information of the wavefunction"
@@ -223,7 +302,10 @@ if (isaveNO==1.and.infomode==0) write(*,*) "The file contains natural orbitals i
 read(10,"(a)") c80
 if (c80(11:11)=="R") wfntype=0
 if (c80(11:11)=="U") wfntype=1
-if (c80(11:12)=="RO") wfntype=2
+if (c80(11:12)=="RO") then
+    wfntype=2
+    if (c80(13:13)=='3') wfntype=0 !RO3LYP means R form of O3LYP
+end if
 call loclabel(10,'Number of electrons')
 read(10,"(49x,f12.0)") nelec
 read(10,"(49x,f12.0)") naelec
@@ -253,8 +335,8 @@ read(10,"(6i12)") tmparrint
 if (any(tmparrint==0).and.infomode==0) then
 	write(*,*)
 	write(*,*) "Ghost atoms (Bq) are found in this file. Do you want to load them? (y/n)"
-	write(*,"(a)") " Note: If all Bq atoms have corresponding basis functions, then they should be loaded. &
-	However, if no basis functions are assigned to them, in general they should not be loaded, otherwise problems or crashes may occur &
+	write(*,"(a)") " Note: If all Bq atoms have corresponding basis functions, then they can be safely loaded. &
+	However, if some of them do not have basis functions, in general they should not be loaded, otherwise problems or crashes may occur &
 	when performing analyses based on wavefunction"
 	read(*,*) selectyn
 	if (selectyn=='n'.or.selectyn=='N') ncenter=count(tmparrint/=0)
@@ -280,7 +362,7 @@ if (infomode==0) write(*,"(' The highest angular moment basis functions is ',a)"
 isphergau=0
 if (any(shelltype<=-2)) isphergau=1
 if (any(abs(shelltype)>5).and.infomode==0) then
-	write(*,"(a)") " Error: GTFs with angular moment higher h are found, while Multiwfn currently only support up to h. Press Enter button to exit"
+	write(*,"(a)") " Error: GTFs with angular moment higher than h are found, while Multiwfn currently only supports up to h. Press Enter button to exit"
 	read(*,*)
 	stop
 end if
@@ -332,14 +414,21 @@ if (wfntype==0.or.wfntype==2.or.wfntype==3) then !Restricted/restricted open-she
 		MOtype(nbelec+1:naelec)=1
 	end if
 	call loclabel(10,'Alpha Orbital Energies',ifound) 
-	if (ifound==0) call loclabel(10,'orbital energies') !PSI4 since 1.2 uses "orbital energies" for closed-shell cases
+	if (ifound==0) call loclabel(10,'orbital energies',ifound) !PSI4 since 1.2 uses "orbital energies" for closed-shell cases
+    if (ifound==0) then
+        write(*,"(a)") " Error: Unable to find orbital information from your input file! If the file was produced by ONIOM calculation, &
+        note that the file cannot be used since this task does not store orbitals into the file"
+        write(*,*) "Press ENTER button to exit"
+        read(*,*)
+        stop
+    end if
 	read(10,*)
 	read(10,"(5(1PE16.8))") (MOene(i),i=1,nindbasis)
 	call loclabel(10,'Alpha MO coefficients',ifound)
 	if (ifound==0) call loclabel(10,'MO coefficients') !PSI4 since 1.2 uses "MO coefficients" for closed-shell cases
 	read(10,*)
 	read(10,"(5(1PE16.8))") ((amocoeff(imo,ibasis),ibasis=1,nbasis),imo=1,nindbasis)
-else if (wfntype==1.or.wfntype==4) then !Unrestricted wavefunction, open-shell post-HF wavefunction
+else if (wfntype==1.or.wfntype==4) then !Unrestricted single-determinant or multiconfiguration wavefunction
 	!Note that PSI4 since 1.2 uses lower case, this has been taken into account
 	nmo=2*nbasis
 	allocate(MOene(nmo))
@@ -480,7 +569,7 @@ do i=1,nshell !cycle each shell
 		do l=1,shellcon(i) !cycle each GTF in each basis in each shell
 			b(k)%exp=primexp(iexp+l-1)
 			tnormgau=normgau(b(k)%type,b(k)%exp)  !!!Normalization coefficient of GTFs
-			if (ifchprog==2) tnormgau=1D0 !In the .fch file of Q-chem, normalization factor of GTF has already been multiplied into contraction coefficient of GTFs
+			if (ifchprog==2) tnormgau=1D0 !In the .fch file of old version of Q-chem (may be older than 5.0), normalization factor of GTF has already been multiplied into contraction coefficient of GTFs
 			temp=concoeff(iexp+l-1)  !!!Contraction coefficient of GTFs
 			if (shelltype(i)==-1.and.j/=1) temp=SPconcoeff(iexp+l-1)
 			primconnorm(k)=temp*tnormgau !Combines contraction and normalization coefficient
@@ -556,7 +645,7 @@ if (isphergau==1) then
 		end if
 		isphergau=0
 		
-	else !Commonly case, transform to spherical harmonic functions
+	else !Common case, transform to spherical functions
 		if (infomode==0) write(*,*) "Back converting basis function information from Cartesian to spherical type..."
 		!Map cartesian overlap matrix to spherical
 		allocate(sbas5D(nbasis5D,nbasis5D))
@@ -749,20 +838,15 @@ if (infomode==0) then
 		write(*,"(' Orbitals from',i6,' to',i6,' are doubly occupied')") 1,nint(nbelec)
 		write(*,"(' Orbitals from',i6,' to',i6,' are singly occupied')") nint(nbelec)+1,nint(naelec)
 	else if (wfntype==3) then
-		write(*,"(' This is a restricted post-HF wavefunction')")
+		write(*,"(' This is a restricted multiconfiguration wavefunction')")
 	else if (wfntype==4) then
-		write(*,"(' This is an unrestricted post-HF wavefunction')")
+		write(*,"(' This is an unrestricted multiconfiguration wavefunction')")
 		write(*,"(' Orbitals from ',i6,' to',i6,' are alpha, from',i6,' to',i6,' are beta')") 1,nbasis,nbasis+1,nmo
 	end if
 	write(*,"(' Title line of this file: ',a)") trim(fchtitle)
 end if
 
-!Find out index of HOMO, will be used in some cases, only for RHF
-if (wfntype==0) then
-	do idxHOMO=nmo,1,-1
-		if (nint(MOocc(idxHOMO))==2D0) exit
-	end do
-end if
+call getHOMOidx !Find out index of HOMO, will be used in some cases
 end subroutine
 
 
@@ -801,19 +885,12 @@ call gensphcartab(1,conv5d6d,conv7f10f,conv9g15g,conv11h21h)
 
 open(10,file=fchfilename,access="sequential",status="old")
 
-! if (.not.allocated(a)) then !Hasn't loaded some information before
-! 	call loclabel(10,'Atomic numbers')
-! 	read(10,"(49x,i12)") ncenter
-! 	allocate(a(ncenter))
-! 	read(10,"(6i12)") (a(i)%index,i=1,ncenter)
-! 	a%name=ind2name(a%index)
-	call loclabel(10,'Nuclear charges') !If ECP was used, nuclear charge /= atomic number
-	read(10,*)
-	read(10,"(5(1PE16.8))") (a(i)%charge,i=1,ncenter)
-	call loclabel(10,'Current cartesian coordinates')
-	read(10,*)
-	read(10,"(5(1PE16.8))") (a(i)%x,a(i)%y,a(i)%z,i=1,ncenter)
-! end if
+call loclabel(10,'Nuclear charges') !If ECP was used, nuclear charge /= atomic number
+read(10,*)
+read(10,"(5(1PE16.8))") (a(i)%charge,i=1,ncenter)
+call loclabel(10,'Current cartesian coordinates')
+read(10,*)
+read(10,"(5(1PE16.8))") (a(i)%x,a(i)%y,a(i)%z,i=1,ncenter)
 
 call loclabel(10,'Shell types')
 read(10,"(49x,i12)") nshell
@@ -845,7 +922,9 @@ if (index(c80,"P(S=P) Contraction coefficients")/=0) then
 	read(10,"(5(1PE16.8))") (SPconcoeff(i),i=1,nprimshell)
 end if
 
-if (allocated(MOene)) deallocate(MOene,MOocc,MOtype)
+if (allocated(MOene)) deallocate(MOene)
+if (allocated(MOocc)) deallocate(MOocc)
+if (allocated(MOtype)) deallocate(MOtype)
 allocate(MOene(nmo),MOocc(nmo),MOtype(nmo))
 MOene=0D0
 MOocc=orbocc
@@ -1031,14 +1110,24 @@ do while(.true.)
 		if (ifound==0) then
 			tmpname_up=adjustl(tmpname)
 			call strlc2uc(tmpname_up)
-			do j=1,nelesupp
-				if (ind2name_up(j)==tmpname_up(1:1)//' ' .or. ind2name_up(j)==tmpname_up(1:2) .or. & !Recognize e.g. C, N11, Li
-				((ichar(tmpname_up(1:1))<=57).and.ind2name_up(j)==tmpname_up(2:2)//' ')) then !Recognize such as 1H5*
-					a(i)%index=j
+            ifound=0
+			do j=1,nelesupp !Recognize e.g. CL1, Li
+                if (ind2name_up(j)==tmpname_up(1:2)) then
+                    a(i)%index=j
 					ifound=1
 					exit
-				end if
-			end do
+                end if
+            end do
+            if (ifound==0) then
+			    do j=1,nelesupp
+				    if (ind2name_up(j)==tmpname_up(1:1)//' ' .or.  & !Recognize e.g. C, N11, Li
+				    ((ichar(tmpname_up(1:1))<=57).and.ind2name_up(j)==tmpname_up(2:2)//' ')) then !Recognize such as 1H5*
+					    a(i)%index=j
+					    ifound=1
+					    exit
+				    end if
+			    end do
+            end if
 		end if
 		if (ifound==0) then
 			write(*,"(3a)") " Warning: Found unknown element """,tmpname,""" , assume it is carbon"
@@ -1077,6 +1166,16 @@ if (iopen==1) open(10,file=name,access="sequential",status="old")
 ncenter=0
 read(10,*) ncenter
 read(10,"(a)") titleline
+itmp=index(titleline,'spinmulti')
+if (itmp/=0) then
+    read(titleline(itmp+9:),*) loadmulti
+    write(*,"(' Spin multiplicity:',i4)") loadmulti
+end if
+itmp=index(titleline,'charge')
+if (itmp/=0) then
+    read(titleline(itmp+6:),*) loadcharge
+    write(*,"(' Net charge:',i4)") loadcharge
+end if
 if (allocated(a)) deallocate(a)
 allocate(a(ncenter))
 do i=1,ncenter
@@ -1111,7 +1210,7 @@ a%z=a%z/b2a
 a%charge=a%index
 a%name=ind2name(a%index)
 if (infomode==0) then
-	write(*,"(a)") titleline
+	write(*,"(' Title line: ',a)") trim(titleline)
 	write(*,"(' Totally',i8,' atoms')") ncenter
 end if
 end subroutine
@@ -1186,7 +1285,7 @@ use util
 implicit real*8 (a-h,o-z)
 integer infomode
 character(len=*) name
-character c200tmp*200
+character c40tmp*40,c200tmp*200
 ifiletype=12
 open(10,file=name,status="old")
 iskip=0 !How many lines before charge and multiplicity line
@@ -1201,8 +1300,8 @@ read(10,*) netcharge,multi
 
 ncenter=0
 do while(.true.)
-	read(10,"(a)") c200tmp
-	if (c200tmp==" ") exit
+	read(10,"(a)",iostat=ierror) c200tmp
+	if (c200tmp==" ".or.ierror/=0) exit
 	ncenter=ncenter+1
 end do
 
@@ -1215,7 +1314,7 @@ end do
 read(10,*)
 
 do i=1,ncenter
-	read(10,*,iostat=ierror) a(i)%name,a(i)%x,a(i)%y,a(i)%z
+	read(10,*,iostat=ierror) a(i)%name,c40tmp
 	if (ierror/=0) then
 		write(*,"(a)") " Error: Unable to load atom information. The input file is too complicated &
         or Z-matrix is used, Multiwfn does not support these cases"
@@ -1223,9 +1322,16 @@ do i=1,ncenter
 		read(*,*)
 		stop
 	end if
-	if (iachar(a(i)%name(1:1))>=48.and.iachar(a(i)%name(1:1))<=57) then
+    backspace(10)
+    if (index(c40tmp,'.')/=0) then !Didn't use 0 and -1 after atom name to indicate freeze status
+	    read(10,*) a(i)%name,a(i)%x,a(i)%y,a(i)%z
+    else
+        read(10,*) a(i)%name,inouse,a(i)%x,a(i)%y,a(i)%z
+    end if
+	if (iachar(a(i)%name(1:1))>=48.and.iachar(a(i)%name(1:1))<=57) then !Use element index
 		read(a(i)%name,*) a(i)%index
 	else
+        if (a(i)%name(2:2)=='(') a(i)%name(2:2)=" " !Compatible with the case e.g. H(iso=2), H(fragment=1)
 		call lc2uc(a(i)%name(1:1)) !Convert to upper case
 		call uc2lc(a(i)%name(2:2)) !Convert to lower case
         if (a(i)%name(1:2)=='X ') then !Dummy atom will be finally recognized as Bq
@@ -1373,6 +1479,10 @@ do ibond=1,nbond
 	read(10,*) inouse,i,j,c80tmp
 	if (c80tmp=="ar".or.c80tmp=="Ar") then
 		ntmp=4
+	else if (c80tmp=="am") then
+		ntmp=1
+	else if (c80tmp=="un".or.c80tmp=="nc".or.c80tmp=="du") then
+		ntmp=0
 	else
 		read(c80tmp,*) ntmp
 	end if
@@ -1445,7 +1555,7 @@ bastype2func(415)=21 !ZZZZ
 !Conversion relationship used below can be found in http://sobereva.com/97
 !Used to convert coefficient matrix from 5D to 6D
 !5D sequence in .31: 255   252   253   254   251
-!namely -0.5*XX-0.5*YY+ZZ, XZ, YZ, ¡Ì3/2*(XX-YY), XY
+!namely -0.5*XX-0.5*YY+ZZ, XZ, YZ, âˆš3/2*(XX-YY), XY
 !to 6D: XX,XY,XZ,YY,YZ,ZZ, namely 201~206, the indexes are consecutive
 conv5d6d(1,1)=-0.5D0
 conv5d6d(4,1)=-0.5D0
@@ -2091,6 +2201,113 @@ end subroutine
 
 
 
+
+!!-----------------------------------------------------------------
+!!----------- Load .dx file (may be generated by volmap plugin in VMD)
+!!infomode=0 means output dx details, =1 not
+!ionlygrid=1 means only read grid data, but do not perturb any other variables, =0 means do all
+subroutine readdx(dxname,infomode,ionlygrid)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character(len=*) dxname
+character c80tmp*80
+integer infomode,ionlygrid
+type(content) maxv,minv
+
+open(10,file=dxname,access="sequential",status="old")
+call loclabel(10,"counts")
+read(10,"(a)") c80tmp
+itmp=index(c80tmp,"counts")
+read(c80tmp(itmp+6:),*) nx,ny,nz
+call loclabel(10,"origin")
+read(10,*) c80tmp,orgx,orgy,orgz
+orgx=orgx/b2a
+orgy=orgy/b2a
+orgz=orgz/b2a
+call loclabel(10,"delta")
+read(10,*) c80tmp,gridvec1(:)
+read(10,*) c80tmp,gridvec2(:)
+read(10,*) c80tmp,gridvec3(:)
+gridvec1=gridvec1/b2a
+gridvec2=gridvec2/b2a
+gridvec3=gridvec3/b2a
+dx=gridvec1(1)
+dy=gridvec2(2)
+dz=gridvec3(3)
+endx=orgx+dx*(nx-1) !endx,y,z are global array in defvar
+endy=orgy+dy*(ny-1)
+endz=orgz+dz*(nz-1)
+
+allocate(cubmat(nx,ny,nz))
+if (infomode==0) then
+	write(*,"(' Translation vectors in X/Y/Z (Bohr):',3f12.6)") dx,dy,dz
+	write(*,"(' The range of x is from ',f12.6,' to ',f12.6,' Bohr,' i5,' points')") ,orgx,endx,nx
+	write(*,"(' The range of y is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgy,endy,ny
+	write(*,"(' The range of z is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgz,endz,nz
+	write(*,"(' Total number of grid points:',i10)") nx*ny*nz
+	write(*,"(' This grid data will take up at least',i6,' MB memory')") nx*ny*nz*8*4/1024/1024
+end if
+write(*,*)
+write(*,*) "Loading grid data, please wait..."
+call loclabel(10,"object 3")
+read(10,*)
+read(10,*) (((cubmat(i,j,k),k=1,nz),j=1,ny),i=1,nx)
+write(*,*) "Done!"
+write(*,*)
+ifiletype=8
+close(10)
+
+!Perform statistic
+maxv%value=cubmat(1,1,1)
+maxv%x=orgx
+maxv%y=orgy
+maxv%z=orgz
+minv%value=cubmat(1,1,1)
+minv%x=orgx
+minv%y=orgy
+minv%z=orgz
+sumuppos=0.0D0
+sumupneg=0.0D0
+do k=1,nz
+	do j=1,ny
+		do i=1,nx
+			if (cubmat(i,j,k)>0) sumuppos=sumuppos+cubmat(i,j,k)
+			if (cubmat(i,j,k)<0) sumupneg=sumupneg+cubmat(i,j,k)
+			if (cubmat(i,j,k)>maxv%value) then
+				maxv%value=cubmat(i,j,k)
+				maxv%x=orgx+(i-1)*dx
+				maxv%y=orgy+(j-1)*dy
+				maxv%z=orgz+(k-1)*dz
+			end if
+			if (cubmat(i,j,k)<minv%value) then
+				minv%value=cubmat(i,j,k)
+				minv%x=orgx+(i-1)*dx
+				minv%y=orgy+(j-1)*dy
+				minv%z=orgz+(k-1)*dz
+			end if
+		end do
+	end do
+end do
+
+if (infomode==0) then
+	fminivol=dx*dy*dz
+	write(*,"(' The minimum value:',E16.8,' at',3f12.6,' Bohr')") minv%value,minv%x,minv%y,minv%z
+	write(*,"(' The maximum value:',E16.8,' at',3f12.6,' Bohr')") maxv%value,maxv%x,maxv%y,maxv%z
+	write(*,"(' Differential element:',f15.10,' Bohr^3')") fminivol
+	write(*,"(' Summing up positive value in grid file:  ',f30.10)") sumuppos
+	write(*,"(' After multiplied by differential element:',f30.10)") sumuppos*fminivol
+	write(*,"(' Summing up negative value in grid file:  ',f30.10)") sumupneg
+	write(*,"(' After multiplied by differential element:',f30.10)") sumupneg*fminivol
+	write(*,"(' Summing up all value in grid file:       ',f30.10)") sumuppos+sumupneg
+	write(*,"(' After multiplied by differential element:',f30.10)") (sumuppos+sumupneg)*fminivol
+end if
+
+end subroutine
+
+
+
+
 !!-----------------------------------------------------------------
 !!----------- Load Dmol3 .grd file, see format description in Material Studio help file
 !infomode=0 means output grd details, =1 not
@@ -2232,7 +2449,7 @@ if (allocated(cubmattmp)) deallocate(cubmattmp)
 allocate(cubmattmp(nx,ny,nz))
 write(*,*)
 write(*,*) "Loading data, please wait..."
-do k=1,nz   !a(x,y,z)
+do k=1,nz
 	do j=1,ny
 		do i=1,nx
 			read(10,*) cubmattmp(i,j,k)
@@ -2246,8 +2463,8 @@ end subroutine
 
 
 
-!!------------------------------------------------
-!!----------- Load vti file, which can be yielded by ParaView and GIMIC. The code was adapted from readgrd
+!!---------------------------------------------------------------------
+!!----------- Load vti file, which can be yielded by ParaView and GIMIC
 !infomode=0 means output grd details, =1 not
 !ionlygrid=1 means only read grid data, but do not perturb any other variables, =0 means do all
 subroutine readvti(vtiname,infomode,ionlygrid)
@@ -2258,7 +2475,7 @@ character(len=*) vtiname
 character c1000tmp*1000
 integer infomode,ionlygrid
 type(content) maxv,minv
-if (ionlygrid==0) ifiletype=14
+if (ionlygrid==0) ifiletype=8
 open(10,file=vtiname,status="old")
 
 call loclabel(10,"<ImageData")
@@ -2540,11 +2757,11 @@ else if (sum(MOocc)==nmo.and.all(int(MOocc)==MOocc)) then
 		MOtype(i:nmo)=2 !beta
 	end if
 else if (any(MOocc/=int(MOocc))) then
-	if (nint(maxval(MOocc))==2) then !maximum occupation close to 2, so considered as restricted Post-HF wavefunction
+	if (nint(maxval(MOocc))==2) then !maximum occupation close to 2, so considered as restricted multiconfiguration wavefunction
 		wfntype=3
 		MOtype=0
 	else
-		wfntype=4 !This is unrestricted Post-HF wavefunction
+		wfntype=4 !This is unrestricted multiconfiguration wavefunction
 		if (ifoundmospin==0) then
 			MOtype=0
 			do i=2,nmo
@@ -2585,7 +2802,7 @@ if (ifoundmospin==1.and.(wfntype==1.or.wfntype==4)) then
 	MOocc=tmpMOocc
 	MOene=tmpMOene
 	MOtype=tmpMOtype
-	write(*,*) "Note: Sequence of orbitals has been sorted according to spin-type"
+	write(*,*) "Note: Sequence of orbitals has been sorted according to spin type"
 	deallocate(tmpCO,tmpMOocc,tmpMOene,tmpMOtype)
 end if
 
@@ -2596,11 +2813,11 @@ if (infomode==0) then
 	write(*,"(' Total/Alpha/Beta electrons:',3f12.4)") nelec,naelec,nbelec
 	write(*,"(' Net charge:',f12.5,'    Expected multiplicity:',i5)") sum(a(:)%charge)-nelec,nint(naelec-nbelec)+1
 	write(*,"(' The number of orbitals:',i6,',  Atoms:',i7,',  GTFs:',i7)") nmo,ncenter,nprims
-	if (wfntype==0) write(*,"(' This is restricted closed-shell single-determinant wavefunction')")
-	if (wfntype==1) write(*,"(' This is unrestricted single-determinant wavefunction')")
-	if (wfntype==2) write(*,"(' This is restricted open-shell wavefunction')")
-	if (wfntype==3) write(*,"(' This is closed-shell post-HF wavefunction')")
-	if (wfntype==4) write(*,"(' This is open-shell post-HF wavefunction')")
+	if (wfntype==0) write(*,"(' This is a restricted closed-shell single-determinant wavefunction')")
+	if (wfntype==1) write(*,"(' This is an unrestricted single-determinant wavefunction')")
+	if (wfntype==2) write(*,"(' This is a restricted open-shell wavefunction')")
+	if (wfntype==3) write(*,"(' This is a restricted multiconfiguration wavefunction')")
+	if (wfntype==4) write(*,"(' This is an unrestricted multiconfiguration wavefunction')")
 	if (wfntype==1.or.wfntype==4) then
 		do i=1,nmo
 			if (MOtype(i)==2) exit
@@ -2775,8 +2992,8 @@ if (infomode==0) then
 	if (wfntype==0) write(*,"(' This is restricted closed-shell single-determinant wavefunction')")
 	if (wfntype==1) write(*,"(' This is unrestricted single-determinant wavefunction')")
 	if (wfntype==2) write(*,"(' This is restricted open-shell wavefunction')")
-	if (wfntype==3) write(*,"(' This is closed-shell post-HF wavefunction')")
-	if (wfntype==4) write(*,"(' This is open-shell post-HF wavefunction')")
+	if (wfntype==3) write(*,"(' This is restricted multiconfiguration wavefunction')")
+	if (wfntype==4) write(*,"(' This is unrestricted multiconfiguration wavefunction')")
 	if (wfntype==1.or.wfntype==4) then
 		do i=1,nmo
 			if (MOtype(i)==2) exit
@@ -2944,7 +3161,7 @@ use defvar
 use util
 implicit real*8 (a-h,o-z)
 character(len=*) name
-character c80*80,c80tmp*80,symtmp*4
+character c80*80,c80tmp*80,symtmp*10
 integer,allocatable :: shelltype(:),shellcon(:),shell2atom(:) !The definition of shelltype is identical to .fch
 integer :: s2f(-5:5,21)=0 !Give shell type & orbital index to get functype
 real*8,allocatable :: primexp(:),concoeff(:)
@@ -3312,7 +3529,7 @@ do while(.true.)
 		iMOa=iMOa+1
 		MOocc(iMOa)=occtmp
 		MOene(iMOa)=enetmp
-		MOsym(iMOa)=symtmp
+        call corrsymlab(MOsym(iMOa),symtmp) !Purify symmetry label to meet standard
 		do while(.true.) !This loading way is compatible with Dalton and .molden by all other programs
 			read(10,*,iostat=ierror) itmp,tmpval
 			if (ierror/=0) then
@@ -3325,7 +3542,7 @@ do while(.true.)
 		iMOb=iMOb+1
 		MOocc(nbasis+iMOb)=occtmp
 		MOene(nbasis+iMOb)=enetmp
-		MOsym(nbasis+iMOb)=symtmp
+        call corrsymlab(MOsym(nbasis+iMOb),symtmp) !Purify symmetry label to meet standard
 		do while(.true.)
 			read(10,*,iostat=ierror) itmp,tmpval
 			if (ierror/=0) then
@@ -3390,15 +3607,20 @@ if (icfour==1) then
 		ibasis=ibasis+shtype2nbas(shelltype(ishell))
 	end do	
 end if
-!xtb ignore inner core orbitals, therefore the nuclear charge of atoms must be substracted by number of core electrons
+!xtb ignore core orbitals (including subvalence ones), therefore the nuclear charge of atoms must be substracted by number of core electrons
 if (ixtb==1) then
 	do i=1,ncenter
 		if (a(i)%index>2.and.a(i)%index<=10) a(i)%charge=a(i)%charge-2
-		if (a(i)%index>10.and.a(i)%index<=18) a(i)%charge=a(i)%charge-10
-		if (a(i)%index>18.and.a(i)%index<=36) a(i)%charge=a(i)%charge-18
-		if (a(i)%index>36.and.a(i)%index<=54) a(i)%charge=a(i)%charge-36
-		if (a(i)%index>54.and.a(i)%index<=86) a(i)%charge=a(i)%charge-54
-		if (a(i)%index>86) a(i)%charge=a(i)%charge-86
+		if (a(i)%index>=11.and.a(i)%index<=18) a(i)%charge=a(i)%charge-10 !Na~Ar
+		if (a(i)%index>=19.and.a(i)%index<=29) a(i)%charge=a(i)%charge-18 !K~Cu
+		if (a(i)%index>=30.and.a(i)%index<=36) a(i)%charge=a(i)%charge-28 !Zn~Kr
+		if (a(i)%index>=37.and.a(i)%index<=47) a(i)%charge=a(i)%charge-36 !Rb~Ag
+		if (a(i)%index>=48.and.a(i)%index<=54) a(i)%charge=a(i)%charge-46 !Cd~Xe
+		if (a(i)%index==55.and.a(i)%index==56) a(i)%charge=a(i)%charge-54 !Cs~Ba
+		if (a(i)%index>=57.and.a(i)%index<=71) a(i)%charge=3 !La~Lu. I have confirmed this by practical calculation
+		if (a(i)%index>=72.and.a(i)%index<=79) a(i)%charge=a(i)%charge-68 !Hf~Au
+		if (a(i)%index>=80.and.a(i)%index<=86) a(i)%charge=a(i)%charge-78 !Hg~Rn
+        !GFN-xTB only supports up to 86
 	end do
 end if
 
@@ -3739,8 +3961,8 @@ if (iorca==0) then !For ORCA with angular moment >f, warning has already been sh
 		write(*,"( ' Deviation of Tr(S*P) to the total number of electrons:',f12.6)") devtmp
 		write(*,"(/,a)") " Warning: The wavefunction loaded is problematic! That means this Molden input file cannot be well supported by Multiwfn. &
 		I strongly suggest you use Molden2AIM program to standardize this file before loading into Multiwfn. Please check Section 5.1 of the manual for detail"
-		write(*,"(a)") " If you really want to proceed, press ENTER button, but notice that the result will not be correct"
-		read(*,*)
+		!write(*,"(a)") " If you really want to proceed, press ENTER button, but notice that the result will not be correct"
+		!read(*,*)
 	end if
 end if
 
@@ -3751,41 +3973,56 @@ if (infomode==0) then
 	write(*,"(' Net charge:',f12.5,'      Expected multiplicity:',i5)") sum(a(:)%charge)-nelec,nint(naelec-nbelec)+1
 	write(*,"(' Atoms:',i7,',  Basis functions:',i7,',  GTFs:',i7)") ncenter,nbasis,nprims
 	if (wfntype==0) then
-		write(*,"(' This is restricted single-determinant wavefunction')")
+		write(*,"(' This is a restricted single-determinant wavefunction')")
 		write(*,"(' Orbitals from 1 to',i6,' are occupied')") nint(nelec/2)
 	else if (wfntype==1) then
-		write(*,"(' This is unrestricted single-determinant wavefunction')")
+		write(*,"(' This is an unrestricted single-determinant wavefunction')")
 		write(*,"(' Orbitals from ',i6,' to',i6,' are alpha, from',i6,' to',i6,' are occupied')") 1,nbasis,1,nint(naelec)
 		write(*,"(' Orbitals from ',i6,' to',i6,' are beta,  from',i6,' to',i6,' are occupied')") nbasis+1,nmo,nbasis+1,nbasis+nint(nbelec)
 	else if (wfntype==2) then
-		write(*,"(' This is restricted open-shell wavefunction')")
+		write(*,"(' This is a restricted open-shell wavefunction')")
 		write(*,"(' Orbitals from',i6,' to',i6,' are doubly occupied')") 1,nint(nbelec)
 		write(*,"(' Orbitals from',i6,' to',i6,' are singly occupied')") nint(nbelec)+1,nint(naelec)
 	else if (wfntype==3) then
-		write(*,"(' This is restricted post-HF wavefunction')")
+		write(*,"(' This is a restricted multiconfiguration wavefunction')")
 	else if (wfntype==4) then
-		write(*,"(' This is unrestricted open-shell wavefunction')")
+		write(*,"(' This is an unrestricted multiconfiguration wavefunction')")
 		write(*,"(' Orbitals from ',i6,' to',i6,' are alpha, from',i6,' to',i6,' are beta')") 1,nbasis,nbasis+1,nmo
 	end if
 end if
 
-!Find out index of HOMO, will be used in some cases, only for RHF
-if (wfntype==0) then
-	do idxHOMO=nmo,1,-1
-		if (nint(MOocc(idxHOMO))==2D0) exit
-	end do
-end if
+call getHOMOidx !Find out index of HOMO, will be used in some cases
 
 tmpnet=sum(a%charge)-nelec
 if (tmpnet>18.and.any(a%index>18)) then
     write(*,"(/,a)") " !! Warning! Warning! Warning! Warning! Warning! Warning! Warning! Warning !!"
     write(*,"(a,i5,a)") " The net charge of this system is quite large (",nint(tmpnet),")! Probably ECP is employed while you &
     forgot to modify the atomic indices in [atoms] field of the .molden file to actual nuclear charges, in this case some &
-    analysis results will be problematic! Please check ""Molden"" part of Section 2.3 of Multiwfn manual to understand why and how to modify the file"
+    analysis results will be problematic! Please check ""Molden"" part of Section 2.5 of Multiwfn manual to understand why and how to modify the file"
     write(*,*) "Press ENTER button to continue"
     read(*,*)
 end if
 
+end subroutine
+
+!--- Purify symmetry label to meet Multiwfn standard, used by readmolden. e.g. 61a1g --> A1g
+subroutine corrsymlab(symnew,symorg)
+use util
+implicit real*8 (a-h,o-z)
+character(len=*) symorg,symnew
+symorg=adjustl(symorg)
+do i=1,len_trim(symorg)
+    itmp=ichar(symorg(i:i))
+    if ((itmp>=65.and.itmp<=90).or.(itmp>=97.and.itmp<=122)) exit
+end do
+symnew=" "
+symnew=trim(symorg(i:))
+itmp=ichar(symnew(1:1))
+if (itmp>=97.and.itmp<=122) call lc2uc(symnew(1:1)) !To upper case
+do i=2,len_trim(symnew)
+    itmp=ichar(symnew(i:i))
+    if (itmp>=65.and.itmp<=90) call uc2lc(symnew(i:i)) !To lower case
+end do
 end subroutine
 
 
@@ -4196,31 +4433,25 @@ if (infomode==0) then
 	write(*,"(' Net charge:',f12.5,'      Expected multiplicity:',i5)") sum(a(:)%charge)-nelec,nint(naelec-nbelec)+1
 	write(*,"(' Atoms:',i7,',  Basis functions:',i7,',  GTFs:',i7)") ncenter,nbasis,nprims
 	if (wfntype==0) then
-		write(*,"(' This is restricted single-determinant wavefunction')")
+		write(*,"(' This is a restricted single-determinant wavefunction')")
 		write(*,"(' Orbitals from 1 to',i6,' are occupied')") nint(nelec/2)
 	else if (wfntype==1) then
-		write(*,"(' This is unrestricted single-determinant wavefunction')")
+		write(*,"(' This is an unrestricted single-determinant wavefunction')")
 		write(*,"(' Orbitals from ',i6,' to',i6,' are alpha, from',i6,' to',i6,' are occupied')") 1,nbasis,1,nint(naelec)
 		write(*,"(' Orbitals from ',i6,' to',i6,' are beta,  from',i6,' to',i6,' are occupied')") nbasis+1,nmo,nbasis+1,nbasis+nint(nbelec)
 	else if (wfntype==2) then
-		write(*,"(' This is restricted open-shell wavefunction')")
+		write(*,"(' This is a restricted open-shell wavefunction')")
 		write(*,"(' Orbitals from',i6,' to',i6,' are doubly occupied')") 1,nint(nbelec)
 		write(*,"(' Orbitals from',i6,' to',i6,' are singly occupied')") nint(nbelec)+1,nint(naelec)
 	else if (wfntype==3) then
-		write(*,"(' This is restricted post-HF wavefunction')")
+		write(*,"(' This is a restricted multiconfiguration wavefunction')")
 	else if (wfntype==4) then
-		write(*,"(' This is unrestricted open-shell wavefunction')")
+		write(*,"(' This is an unrestricted multiconfiguration wavefunction')")
 		write(*,"(' Orbitals from ',i6,' to',i6,' are alpha, from',i6,' to',i6,' are beta')") 1,nbasis,nbasis+1,nmo
 	end if
 end if
 
-!Find out index of HOMO, will be used in some cases, only for RHF
-if (wfntype==0) then
-	do idxHOMO=nmo,1,-1
-		if (nint(MOocc(idxHOMO))==2D0) exit
-	end do
-end if
-
+call getHOMOidx !Find out index of HOMO, will be used in some cases
 end subroutine
 
 !----- A routine used to read GAMESS-US LCAO matrix. One should first move pointer to the line containing "EIGENVECTORS"
@@ -4276,6 +4507,19 @@ end subroutine
 
 
 
+
+!!---------- Interface of outputting pdb file
+subroutine outpdb_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for outputting pdb file, e.g. C:\ltwd.pdb"
+write(*,"(a)") " If press ENTER button directly, the system will be exported to "//trim(c200tmp)//".pdb in current folder"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".pdb"
+call outpdb(outname,10)
+end subroutine
 !!---------- Output current coordinate to pdb file
 subroutine outpdb(outpdbname,ifileid)
 use defvar
@@ -4293,6 +4537,18 @@ write(*,*) "Exporting pdb file finished!"
 end subroutine
 
 
+!!---------- Interface of outputting pqr file
+subroutine outpqr_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for outputting pqr file, e.g. C:\ltwd.pqr"
+write(*,"(a)") " If press ENTER button directly,the system will be exported to "//trim(c200tmp)//".pqr in current folder"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".pqr"
+call outpqr(outname,10)
+end subroutine
 !!---------- Output current coordinate and atomic charges to pqr file
 subroutine outpqr(outpqrname,ifileid)
 use defvar
@@ -4311,6 +4567,18 @@ write(*,"(a)") " This file contains atomic charges that originally recorded in y
 end subroutine
 
 
+!!---------- Interface of outputting xyz file
+subroutine outxyz_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for outputting xyz file, e.g. C:\ltwd.xyz"
+write(*,"(a)") " If press ENTER button directly,the system will be exported to "//trim(c200tmp)//".xyz in current folder"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".xyz"
+call outxyz(outname,10)
+end subroutine
 !!---------- Output current coordinate to xyz file
 subroutine outxyz(outxyzname,ifileid)
 use defvar
@@ -4386,30 +4654,53 @@ write(*,*) "Exporting chg file finished!"
 end subroutine
 
 
+
+!!---------- Interface of outputting Gaussian input file
+subroutine outgjf_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for generating Gaussian input file, e.g. C:\ltwd.gjf"
+write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".gjf"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".gjf"
+call outgjf(outname,10)
+end subroutine
 !!---------- Output current coordinate to Gaussian input file
 subroutine outgjf(outgjfname,ifileid)
 use defvar
 character(len=*) outgjfname
 character selectyn
+
 selectyn='n'
 if (allocated(CObasa).and.wfntype<=2) then
     write(*,"(a)") " Do you also want to write current wavefunction as initial guess into the .gjf file? (y/n)"
     read(*,*) selectyn
 end if
 open(ifileid,file=outgjfname,status="replace")
-if (selectyn=='y') then
+if (selectyn=='y'.or.selectyn=='Y') then
     write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G* guess=cards","Generated by Multiwfn"
 else
     write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G*","Generated by Multiwfn"
 end if
-netcharge=nint(sum(a%charge)-nelec)
-if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
-write(ifileid,"(2i2)") netcharge,nint(naelec-nbelec)+1
+if (loadcharge==-99) then !Not loaded from input file
+    netcharge=nint(sum(a%charge)-nelec)
+    if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
+else
+    netcharge=loadcharge
+end if
+if (loadmulti==-99) then !Not loaded from input file
+    multi=nint(naelec-nbelec)+1
+else
+    multi=loadmulti
+end if
+write(ifileid,"(2i3)") netcharge,multi
 do i=1,ncenter
 	write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
 end do
 if (selectyn=='y') then
-    write(ifileid,"(/,'5(E16.9)',/,'-1')")
+    write(ifileid,"(/,'(5E16.9)',/,'-1')")
     do i=1,nbasis
 	    if (wfntype==0.or.wfntype==2) write(ifileid,"('! Orbital:',i6,' Occ:',f10.6)") i,MOocc(i)
 	    if (wfntype==1) write(ifileid,"('! Alpha orbital:',i6,' Occ:',f10.6)") i,MOocc(i)
@@ -4505,39 +4796,58 @@ write(*,"(a)") " Exporting GAMESS-US input file finished! It corresponds to sing
 end subroutine
 
 
+!!---------- Interface of outputting ORCA input file
+subroutine outORCAinp_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for generating ORCA input file, e.g. C:\ltwd.inp"
+write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".inp"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".inp"
+call outORCAinp(outname,10)
+end subroutine
 !!---------- Output current coordinate to ORCA input file
 subroutine outORCAinp(outname,ifileid)
 use defvar
+use util
 character(len=*) outname
-character keyword*200,c200tmp*200,solvname*30
-integer :: itask=1,idiffuse=0
+character keyword*200,c80tmp*80,c200tmp*200,solvname*30,c2000tmp*2000
+integer :: itask=1,idiffuse=0,frozenatm(ncenter),CPfrag1(ncenter),CPfrag2(ncenter)
+integer :: maxcore=1000
+nprocs=nthreads
 isolv=0
+nfrozenatm=0
 write(*,"(a)") " Note: The generated keywords are at least compatible with ORCA 4.2"
 do while(.true.)
     write(*,*)
+    write(*,"(a,i4,a,i6,a)") " -10 Set computational resources, core:",nprocs," memory/core:",maxcore," MB"
+    if (itask==2.or.itask==4.or.itask==5) write(*,"(a,', current:',i6' atoms')") " -3 Set atom freeze in the optimization",nfrozenatm
     if (idiffuse==1) write(*,*) "-2 Toggle adding diffuse functions, current: Yes"
     if (idiffuse==0) write(*,*) "-2 Toggle adding diffuse functions, current: No"
-    if (isolv==1) write(*,*) "-1 Toggle employing SMD solvation model, current: Yes, "//trim(solvname)
-    if (isolv==0) write(*,*) "-1 Toggle employing SMD solvation model, current: No"
+    if (isolv==0) write(*,*) "-1 Toggle employing implicit solvation model, current: No"
+    if (isolv==1) write(*,*) "-1 Toggle employing implicit solvation model, current: SMD, "//trim(solvname)
+    if (isolv==2) write(*,*) "-1 Toggle employing implicit solvation model, current: CPCM, "//trim(solvname)
     if (itask==1) write(*,*) "0 Select task, current: Single point"
     if (itask==2) write(*,*) "0 Select task, current: Optimizing minimum"
     if (itask==3) write(*,*) "0 Select task, current: Frequency analysis"
     if (itask==4) write(*,*) "0 Select task, current: Optimizing minimum + Frequency"
     if (itask==5) write(*,*) "0 Select task, current: Optimizing TS + Frequency"
     if (itask==6) write(*,*) "0 Select task, current: Molecular Dynamics"
+    if (itask==7) write(*,*) "0 Select task, current: Binding energy with counterpoise correction"
     write(*,*) "1 B97-3c"
     write(*,*) "2 RI-BLYP-D3(BJ)/def2-TZVP"
-    write(*,*) "3 RI-B3LYP-D3(BJ)/def2-TZVP(-f)"
-    write(*,*) "4 RI-B3LYP-D3(BJ)/def2-TZVP"
+    write(*,*) "3 RI-B3LYP-D3(BJ)/def2-TZVP(-f)     4 RI-B3LYP-D3(BJ)/def2-TZVP"
     write(*,*) "5 RI-wB97M-V/def2-TZVP"
-    write(*,*) "6 RI-PWPB95-D3(BJ)/def2-TZVPP"
-    write(*,*) "7 RI-PWPB95-D3(BJ)/def2-QZVPP"
+    write(*,*) "6 RI-PWPB95-D3(BJ)/def2-TZVPP       7 RI-PWPB95-D3(BJ)/def2-QZVPP"
     write(*,*) "8 DLPNO-CCSD(T)/cc-pVTZ with normalPNO and RIJK"
-    write(*,*) "9 DLPNO-CCSD(T)/cc-pVTZ with tightPNO"
+    write(*,*) "9 DLPNO-CCSD(T)/cc-pVTZ with tightPNO and RIJK"
     write(*,*) "10 CCSD(T)/cc-pVTZ"
     write(*,*) "11 CCSD(T)-F12/cc-pVDZ-F12 with RI"
-    write(*,*) "12 CCSD(T)/CBS with help of MP2 (cc-pVTZ->QZ extrapolation)"
-    write(*,*) "13 CCSD(T)/CBS (cc-pVTZ->QZ extrapolation)"
+    write(*,*) "12 Approximated CCSD(T)/CBS with help of MP2 (cc-pVTZ->QZ extrapolation)"
+    if (idiffuse==0) write(*,*) "13 DLPNO-CCSD(T)/CBS with tightPNO and RIJK (def2-TZVPP->QZVPP extrapolation)"
+    write(*,*) "14 CCSD(T)/CBS (cc-pVTZ->QZ extrapolation)"
     write(*,*) "20 sTD-DFT based on RI-wB97X-D3/def2-SV(P) orbitals"
     write(*,*) "21 TDA-DFT RI-PBE0/def2-SV(P) with riints_disk (much faster than 22)"
     write(*,*) "22 TDDFT RI-PBE0/def2-SV(P)"
@@ -4551,24 +4861,41 @@ do while(.true.)
         write(*,*) "4 Optimization + Frequency"
         write(*,*) "5 Optimization for transition state + Frequency"
         write(*,*) "6 Molecular dynamics"
+        write(*,*) "7 Binding energy with counterpoise correction"
         read(*,*) itask
+        if (itask==7) then
+            write(*,*) "Input indices of the atoms in fragment 1, e.g. 3,6-10,14"
+            read(*,"(a)") c2000tmp
+            call str2arr(c2000tmp,nCPfrag1,CPfrag1)
+            write(*,*) "Input indices of the atoms in fragment 2, e.g. 1,2,4,5,11-13"
+            read(*,"(a)") c2000tmp
+            call str2arr(c2000tmp,nCPfrag2,CPfrag2)
+        end if
     else if (ilevel==-1) then
-        if (isolv==1) then
+        if (isolv/=0) then
             isolv=0
         else
-            isolv=1
-            write(*,*) "Input name of solvent, e.g. ethanol"
+            write(*,"(a)") " Input name of solvent for SMD solvation model, e.g. ethanol. The full list of available solvents can be found in ""The SMD Solvation Model"" of ORCA manual"
             write(*,*) "If press ENTER button directly, water will be employed as solvent"
-            write(*,*) "To customize a solvent for CPCM model, input ""c"""
+            write(*,*) "If you want to use CPCM solvation model or use custom solvent, input ""c"""
             read(*,"(a)") solvname
+            isolv=1
             if (solvname==" ") then
                 solvname="water"
             else if (solvname=='c') then
-                write(*,*) "Input dielectic constant, e.g. 80"
-                read(*,*) diecons
-                write(*,*) "Input refractive index, e.g. 1.33"
-                write(*,*) "If actual value is known, usually 1.33 is a good approximation"
-                read(*,*) refrac
+                isolv=2
+                write(*,"(a)") " Input name of one of supported solvents: Water, Acetone, Acetonitrile, Ammonia, &
+                Benzene, CCl4, CH2Cl2, Chloroform, Cyclohexane, DMF, DMSO, Ethanol, Hexane, Methanol, Octanol, Pyridine, THF, Toluene"
+                write(*,*) "If you want to defined custom solvent, input ""c"""
+                read(*,*) solvname
+                if (solvname=="c") then
+                    write(*,*) "Input dielectic constant, e.g. 80"
+                    read(*,*) diecons
+                    write(*,*) "Input refractive index, e.g. 1.8"
+                    write(*,*) "If actual value is known, usually 1.33 is an acceptable approximation"
+                    read(*,*) refrac
+                    solvname="custom"
+                end if
             end if
         end if
     else if (ilevel==-2) then
@@ -4577,6 +4904,20 @@ do while(.true.)
         else
             idiffuse=1
         end if
+    else if (ilevel==-3) then
+        write(*,*) "Input the atoms to be frozen during optimization, e.g. 3,5-10,13,15"
+        write(*,"(a)") " Note: The index starts from 1 (Multiwfn convention) rather than 0 (ORCA convention)"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,nfrozenatm,frozenatm)
+    else if (ilevel==-10) then
+        write(*,*) "Input number of cores, e.g. 12"
+        write(*,"(' If press ENTER button directly, current value',i4,' will be unchanged')") nprocs
+        read(*,"(a)") c80tmp
+        if (c80tmp/=" ") read(c80tmp,*) nprocs
+        write(*,*) "Input usable memory per core, e.g. 1000 (in MB)"
+        write(*,"(' If press ENTER button directly, current value',i6,' will be unchanged')") maxcore
+        read(*,"(a)") c80tmp
+        if (c80tmp/=" ") read(c80tmp,*) maxcore
     else
         exit
     end if
@@ -4591,11 +4932,12 @@ if (idiffuse==0) then
     if (ilevel==6) c200tmp="! PWPB95 D3 def2-TZVPP def2/J def2-TZVPP/C RIJCOSX grid4 gridx4 tightSCF" !When RIJCOSX or RIJK is used, the MP2 will also use RI by default
     if (ilevel==7) c200tmp="! PWPB95 D3 def2-QZVPP def2/J def2-QZVPP/C RIJCOSX grid4 gridx4 tightSCF"
     if (ilevel==8) c200tmp="! DLPNO-CCSD(T) normalPNO RIJK cc-pVTZ cc-pVTZ/JK cc-pVTZ/C tightSCF"
-    if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO cc-pVTZ cc-pVTZ/C tightSCF"
+    if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO RIJK cc-pVTZ cc-pVTZ/JK cc-pVTZ/C tightSCF"
     if (ilevel==10) c200tmp="! CCSD(T) cc-pVTZ tightSCF"
-    if (ilevel==11) c200tmp="! CCSD(T)-F12/RI cc-pVDZ-F12 cc-pVDZ-F12-CABS cc-pVTZ/C"
+    if (ilevel==11) c200tmp="! CCSD(T)-F12/RI cc-pVDZ-F12 cc-pVDZ-F12-CABS cc-pVTZ/C tightSCF"
     if (ilevel==12) c200tmp="! ExtrapolateEP2(3/4,cc,MP2) tightSCF"
-    if (ilevel==13) c200tmp="! CCSD(T) Extrapolate(3/4,cc) tightSCF"
+    if (ilevel==13) c200tmp="! DLPNO-CCSD(T) Extrapolate(3/4,def2) RIJK def2/JK tightSCF"
+    if (ilevel==14) c200tmp="! CCSD(T) Extrapolate(3/4,cc) tightSCF"
     if (ilevel==20) c200tmp="! wB97X-D3 def2-SV(P) def2/J RIJCOSX"
     if (ilevel==21) c200tmp="! PBE0 def2-SV(P) def2/J def2-SVP/C RIJCOSX grid4 gridx4 tightSCF"
     if (ilevel==22) c200tmp="! PBE0 def2-SV(P) def2/J RIJCOSX grid4 gridx4 tightSCF"
@@ -4610,11 +4952,13 @@ else
     if (ilevel==6) c200tmp="! PWPB95 D3 ma-def2-TZVPP autoaux RIJCOSX grid4 gridx4 tightSCF" !When RIJCOSX or RIJK is used, the MP2 will also use RI by default
     if (ilevel==7) c200tmp="! PWPB95 D3 ma-def2-QZVPP autoaux RIJCOSX grid4 gridx4 tightSCF"
     if (ilevel==8) c200tmp="! DLPNO-CCSD(T) normalPNO RIJK aug-cc-pVTZ aug-cc-pVTZ/JK aug-cc-pVTZ/C tightSCF"
-    if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO aug-cc-pVTZ aug-cc-pVTZ/C tightSCF"
+    if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO RIJK aug-cc-pVTZ aug-cc-pVTZ/JK aug-cc-pVTZ/C tightSCF"
     if (ilevel==10) c200tmp="! CCSD(T) aug-cc-pVTZ tightSCF"
     if (ilevel==11) c200tmp="! CCSD(T)-F12/RI cc-pVDZ-F12 cc-pVDZ-F12-CABS cc-pVTZ/C"
     if (ilevel==12) c200tmp="! ExtrapolateEP2(3/4,aug-cc,MP2) tightSCF"
-    if (ilevel==13) c200tmp="! CCSD(T) Extrapolate(3/4,aug-cc) tightSCF"
+    !This is unavailable when diffuse function is requested
+    !if (ilevel==13) c200tmp="! DLPNO-CCSD(T) Extrapolate(3/4,def2) RIJK def2/JK tightSCF
+    if (ilevel==14) c200tmp="! CCSD(T) Extrapolate(3/4,aug-cc) tightSCF"
     if (ilevel==20) c200tmp="! wB97X-D3 ma-def2-SV(P) autoaux RIJCOSX"
     if (ilevel==21) c200tmp="! PBE0 ma-def2-SV(P) autoaux RIJCOSX grid4 gridx4 tightSCF"
     if (ilevel==22) c200tmp="! PBE0 ma-def2-SV(P) autoaux RIJCOSX grid4 gridx4 tightSCF"
@@ -4622,72 +4966,122 @@ else
     if (ilevel==24) c200tmp="! EOM-CCSD aug-cc-pVTZ tightSCF"
     
     if (ilevel==1.or.ilevel==11) then
-        write(*,*) "Warning: Diffuse functions cannot be added to this level!"
+        write(*,*) "Error: Diffuse functions cannot be added to this level!"
         write(*,*) "Press ENTER button to return"
         read(*,*)
         return
     end if
 end if
 
-if (itask==1) then !SP
-    keyword=trim(c200tmp)//" noautostart miniprint nopop"
-else if (itask==2) then !opt task uses tightSCF by default
-    keyword=trim(c200tmp)//" opt noautostart miniprint nopop"
+if (itask==7.and.isolv/=0) then
+    write(*,*) "Error: It is meaningless to perform counterpoise calculation with solvation model!"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
+
+!Generate keywords
+if (itask==2) then !opt task uses tightSCF by default
+    keyword=trim(c200tmp)//" opt"
     if (ilevel==22.and.idiffuse==0) keyword=trim(keyword)//" def2-SVP/C" !RI-TDDFT opt must use /C
 else if (itask==3) then !freq
     if (index(c200tmp,"tightSCF")==0) then
-        keyword=trim(c200tmp)//" freq tightSCF noautostart miniprint nopop"
+        keyword=trim(c200tmp)//" freq tightSCF"
     else
-        keyword=trim(c200tmp)//" freq noautostart miniprint nopop"
+        keyword=trim(c200tmp)//" freq"
     end if
 else if (itask==4) then !opt freq
     if (index(c200tmp,"tightSCF")==0) then
-        keyword=trim(c200tmp)//" opt freq tightSCF noautostart miniprint nopop"
+        keyword=trim(c200tmp)//" opt freq tightSCF"
     else
-        keyword=trim(c200tmp)//" opt freq noautostart miniprint nopop"
+        keyword=trim(c200tmp)//" opt freq"
     end if
     if (ilevel==22.and.idiffuse==0) keyword=trim(keyword)//" def2-SVP/C" !RI-TDDFT opt must use /C
 else if (itask==5) then !optTS
     if (index(c200tmp,"tightSCF")==0) then
-        keyword=trim(c200tmp)//" optTS freq tightSCF noautostart miniprint nopop"
+        keyword=trim(c200tmp)//" optTS freq tightSCF"
     else
-        keyword=trim(c200tmp)//" optTS freq noautostart miniprint nopop"
+        keyword=trim(c200tmp)//" optTS freq"
     end if
     if (ilevel==22.and.idiffuse==0) keyword=trim(keyword)//" def2-SVP/C" !RI-TDDFT opt must use /C
-else if (itask==6) then !MD
-    keyword=trim(c200tmp)//" MD noautostart miniprint nopop"
+else
+    keyword=trim(c200tmp)
 end if
+keyword=trim(keyword)//" noautostart miniprint nopop"
 
-open(ifileid,file=outname,status="replace")
-write(ifileid,"(a)") trim(keyword)
 netcharge=nint(sum(a%charge)-nelec)
 if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
-write(ifileid,"(a)") "%maxcore 1000"
-write(ifileid,"('%pal nprocs',i3,' end')") nthreads
-if (isolv==1) then
+
+open(ifileid,file=outname,status="replace")
+
+!Counterpoise task is a special case. Directly write input file and return
+if (itask==7) then
+    write(ifileid,"('%pal nprocs',i4,' end')") nprocs
+    write(ifileid,"(/,a)") trim(keyword)
+    write(ifileid,"(a,i6)") "%maxcore",maxcore
+    write(ifileid,"('* xyz',2i4)") netcharge,nint(naelec-nbelec)+1
+    do i=1,ncenter
+	    write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+    end do
+    write(ifileid,*) "*"
+    do itime=1,2
+        write(ifileid,"(/,a)") "$new_job"
+        write(ifileid,"(a)") trim(keyword)//" Pmodel" !Use Pmodel to regenerate new initial guess rather than use the previous wavefunction
+        write(ifileid,"(a,i6)") "%maxcore",maxcore
+        write(ifileid,"('* xyz',2i4)") netcharge,nint(naelec-nbelec)+1
+        do i=1,ncenter
+	        if ((itime==1.and.any(CPfrag2==i)).or.(itime==2.and.any(CPfrag1==i))) then
+                write(ifileid,"(a,':',1x,3f14.8)") trim(a(i)%name),a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+            else
+                write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+            end if
+        end do
+        write(ifileid,*) "*"
+    end do
+    close(ifileid)
+    write(*,"(a)") " Exporting ORCA input file finished!"
+    write(*,"(a)") " If you run it, single point task will be carried out three times, and correspondingly, the ""FINAL SINGLE POINT ENERGY"" &
+    data will be printed three times (EAB, EA and EB in turn), the binding energy after counterpoise correction should be &
+    manually calculated as EAB-EA-EB. In addition, please check charge and spin multiplicity to ensure that the setting is appropriate"
+    return
+end if
+
+!Start to write input file for normal cases
+write(ifileid,"(a)") trim(keyword)
+write(ifileid,"(a,i6)") "%maxcore",maxcore
+write(ifileid,"('%pal nprocs',i4,' end')") nprocs
+!Write solvation model information
+if (isolv==2.and.solvname/="custom") then
+    write(ifileid,"(a)")"! CPCM("//trim(solvname)//")"
+else if (isolv>0) then
     write(ifileid,"(a)") "%cpcm"
-    if (solvname=='c') then
-        write(ifileid,"(a,f8.2)") "epsilon",diecons
-        write(ifileid,"(a,f8.2)") "refrac",refrac
-    else
+    if (isolv==1) then
         write(ifileid,"(a)") "smd true"
         write(ifileid,"(a)") 'SMDsolvent "'//trim(solvname)//'"'
+    else if (isolv==2) then
+        write(ifileid,"(a,f8.2)") "epsilon",diecons
+        write(ifileid,"(a,f8.2)") "refrac",refrac
     end if
     write(ifileid,"(a)") "end"
 end if
+
+!Write task specific information
 if (itask==5) then !Calculate Hessian for optTS
     write(ifileid,"(a)") "%geom Calc_Hess true end"
 else if (itask==6) then !MD
     write(ifileid,"(a)") "%md"
     write(ifileid,"(a)") "#restart ifexists  # Continue MD by reading [basename].mdrestart if it exists. In this case ""initvel"" should be commented"
-    write(ifileid,"(a)") " timestep 0.5_fs  # This stepsize is usually very safe"
-    write(ifileid,"(a)") " initvel 298.15_K  # Assign velocity to atoms according to temperature"
-    write(ifileid,"(a)") " thermostat berendsen 298.15_K timecon 50.0_fs  # Target temperature and coupling time constant"
-    write(ifileid,"(a)") " dump position stride 1 format xyz filename ""pos.xyz""  # Dump position every frame"
-    write(ifileid,"(a)") " dump force stride 1 format xyz filename ""force.xyz""  # Dump force every frame"
-    write(ifileid,"(a)") " dump velocity stride 1 format xyz filename ""vel.xyz""  # Dump velocity every frame"
     write(ifileid,"(a)") "#minimize  # Do minimization prior to MD simulation"
-    write(ifileid,"(a)") " run 500  # Number of MD steps"
+    write(ifileid,"(a)") " timestep 0.5_fs  # This stepsize is very safe"
+    write(ifileid,"(a)") " initvel 100_K  # Assign velocity to atoms according to temperature"
+    write(ifileid,"(a)") " thermostat berendsen 298.15_K timecon 30.0_fs  # Target temperature and coupling time constant"
+    write(ifileid,"(a)") " dump position stride 1 format xyz filename ""pos.xyz""  # Dump position every ""stride"" steps"
+    write(ifileid,"(a)") "#dump force stride 1 format xyz filename ""force.xyz""  # Dump force every ""stride"" steps"
+    write(ifileid,"(a)") "#dump velocity stride 1 format xyz filename ""vel.xyz""  # Dump velocity every ""stride"" steps"
+    write(ifileid,"(a)") "#dump gbw stride 20 filename ""wfn""  # Dump wavefunction to ""wfn[step].gbw"" files every ""stride"" steps"
+    write(c80tmp,*) ncenter-1
+    write(ifileid,"(a)") " constraint add center 0.."//trim(adjustl(c80tmp))//"  # Fix center of mass at initial position"
+    write(ifileid,"(a)") " run 2000  # Number of MD steps"
     write(ifileid,"(a)") "end"
 end if
 if (ilevel==20) then
@@ -4713,13 +5107,25 @@ else if (ilevel==24) then
     write(ifileid,"(a)") "nroots 3"
     write(ifileid,"(a)") "end"
 end if
+
+!Set frozen
+if ((itask==2.or.itask==4.or.itask==5).and.nfrozenatm>0) then
+    write(ifileid,"(a)") "%geom Constraints"
+    do ifr=1,nfrozenatm
+        write(ifileid,"('{ C',i7,' C }')") frozenatm(ifr)-1
+    end do
+    write(ifileid,"(a)") "end"
+    write(ifileid,"(a)") "end"
+end if
+
+!Write geometry
 write(ifileid,"('* xyz',2i4)") netcharge,nint(naelec-nbelec)+1
 do i=1,ncenter
 	write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
 end do
 write(ifileid,*) "*"
 close(ifileid)
-write(*,"(a)") " Exporting ORCA input file finished! You should properly check it and modify keywords"
+write(*,"(a)") " ORCA input file has been exported to "//trim(outname)//", You should properly check it and modify keywords"
 end subroutine
 
 
@@ -4749,55 +5155,351 @@ write(*,"(a)") " Exporting NWChem input file finished! It corresponds to single 
 end subroutine
 
 
+!!---------- Interface of outputting MOPAC input file
+subroutine outMOPACinp_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for generating MOPAC input file, e.g. C:\ltwd.mop"
+write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".mop"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".mop"
+call outMOPACinp(outname,10)
+end subroutine
 !!---------- Output current coordinate to MOPAC input file
 subroutine outMOPACinp(outname,ifileid)
 use defvar
+use util
 character(len=*) outname
-character multistr*80,chargestr*10
+character multistr*80,chargestr*10,c80tmp*80,c2000tmp*2000,keyword*80
+integer :: itask=2,isolv=0,ifopt(ncenter),frozenatm(ncenter),iMOZYME=0
+real*8 :: eps
+write(*,"(a)") " Note: You can select an option with positive index to generate input file with corresponding level, &
+other options can be used to change various calculation setting"
+
+ifopt(:)=1
+do while(.true.)
+    write(*,*)
+    if (itask==2) write(*,"(a,', current:',i6' atoms')") " -3 Set atom freeze in the optimization",count(ifopt==0)
+    if (iMOZYME==0) write(*,*) "-2 Toggle employing MOZYME to accelerate calculation, current: No"
+    if (iMOZYME==1) write(*,*) "-2 Toggle employing MOZYME to accelerate calculation, current: Yes"
+    if (isolv==1) write(*,"(a,f8.2)") " -1 Toggle employing COSMO solvation model, current: Yes, eps=",eps
+    if (isolv==0) write(*,*) "-1 Toggle employing COSMO solvation model, current: No"
+    if (itask==1) write(*,*) " 0 Select task, current: Single point"
+    if (itask==2) write(*,*) " 0 Select task, current: Optimizing minimum"
+    if (itask==3) write(*,*) " 0 Select task, current: Frequency analysis"
+    write(*,*) " 1 PM6"
+    write(*,*) " 2 PM6-DH+"
+    write(*,*) " 3 PM6-D3H4"
+    write(*,*) " 4 PM7"
+    read(*,*) isel
+    
+    if (isel>0) then
+        exit
+    else if (isel==0) then
+        write(*,*) "1 Single point"
+        write(*,*) "2 Optimizing minimum"
+        write(*,*) "3 Frequency analysis"
+        read(*,*) itask
+    else if (isel==-1) then
+        if (isolv==0) then
+            write(*,*) "Input dielectric constant, e.g. 60.2"
+            write(*,"(a)") " Note: If you press ENTER button directly, water (eps=78.3553) will be employed as solvent"
+            read(*,"(a)") c80tmp
+            if (c80tmp==" ") then
+                eps=78.3553
+            else
+                read(c80tmp,*) eps
+            end if
+            isolv=1
+        else
+            isolv=0
+        end if
+    else if (isel==-2) then
+        if (iMOZYME==0) then
+            iMOZYME=1
+        else
+            iMOZYME=0
+        end if
+    else if (isel==-3) then
+        write(*,*) "Input the atoms to be frozen during optimization, e.g. 3,5-10,13,15"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,ntmp,frozenatm)
+        ifopt(frozenatm(1:ntmp))=0
+    end if
+end do
+
 open(ifileid,file=outname,status="replace")
+
+if (isel==1) keyword="PM6"
+if (isel==2) keyword="PM6-DH+"
+if (isel==3) keyword="PM6-D3H4"
+if (isel==4) keyword="PM7"
+if (iMOZYME==1) keyword=trim(keyword)//" MOZYME"
+
+if (itask==1) then
+    ifopt=0
+else if (itask==2) then
+    keyword=trim(keyword)//" PRNT=2"
+else if (itask==3) then
+    keyword=trim(keyword)//" FORCE LET"
+end if
+
+if (isolv==1) then
+    write(c80tmp,"(f12.4)") eps
+    keyword=trim(keyword)//" eps="//adjustl(trim(c80tmp))
+end if
+
 netcharge=nint(sum(a%charge)-nelec)
 if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
 write(chargestr,"(i4)") netcharge
 chargestr=adjustl(chargestr)
 multival=nint(naelec-nbelec)+1
+
 if (multival==1) then
-	write(ifileid,"(a,a)") "PM7 precise charge=",trim(chargestr)
+	keyword=trim(keyword)//" precise charge="//trim(chargestr)
 else
 	if (multival==2) multistr="doublet"
 	if (multival==3) multistr="triplet"
 	if (multival==4) multistr="quartet"
 	if (multival==5) multistr="quintet"
 	if (multival==6) multistr="sextet"
-	write(ifileid,"(a,a,1x,a)") "PM7 precise UHF charge=",trim(chargestr),multistr
+    keyword=trim(keyword)//" precise UHF charge="//trim(chargestr)//' '//multistr
 end if
+
+write(ifileid,"(a)") trim(keyword)
 write(ifileid,"(a)") "molecule"
 write(ifileid,"(a)") "All coordinates are Cartesian"
+
 do i=1,ncenter
-	write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+	write(ifileid,"(a,1x,f14.8,i2,f14.8,i2,f14.8,i2)") a(i)%name,a(i)%x*b2a,ifopt(i),a(i)%y*b2a,ifopt(i),a(i)%z*b2a,ifopt(i)
 end do
-write(*,"(a)") " Exporting MOPAC input file finished! It corresponds to geometry optimization task at PM7 level"
-end subroutine
 
-
-
-!!---------- Output current coordinate to PSI input file
-subroutine outPSIinp(outname,ifileid)
-use defvar
-character(len=*) outname
-open(ifileid,file=outname,status="replace")
-netcharge=nint(sum(a%charge)-nelec)
-if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
-write(ifileid,"(a)") "molecule mol {"
-write(ifileid,"(2i4)") netcharge,nint(naelec-nbelec)+1
-do i=1,ncenter
-	write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
-end do
-write(ifileid,"(a)") "}"
-write(ifileid,"(a)") "set basis cc-pVDZ"
-write(ifileid,"(a)") "energy('b3lyp')"
 close(ifileid)
-write(*,"(a)") " Exporting PSI input file finished! It corresponds to single point task at B3LYP/cc-pVDZ level"
+write(*,*) "Exporting MOPAC input file finished!"
 end subroutine
+
+
+
+!!---------- Interface of outputting PSI4 input file
+subroutine outPSI4inp_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for generating PSI4 input file, e.g. C:\ltwd.inp"
+write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".inp"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".inp"
+call outPSI4inp(outname,10)
+end subroutine
+!!---------- Output current coordinate to PSI4 input file
+subroutine outPSI4inp(outname,ifileid)
+use defvar
+use util
+character(len=*) outname
+integer ifileid,atmlist1(ncenter),atmlist2(ncenter),ioutfch
+character c2000tmp*2000,taskstr*80,methodstr*20
+ioutfch=0
+
+write(*,*)
+write(*,*) "0 Return"
+write(*,*) "1 Intermolecular SAPT energy decomposition task"
+write(*,*) "2 Single point energy or excitation energy task"
+write(*,*) "3 Optimization task"
+read(*,*) isel
+if (isel==0) return
+
+open(ifileid,file=outname,status="replace")
+write(ifileid,"('memory 4 GB')")
+
+if (isel==1) then
+    write(*,*) "1 Bronze (sSAPT0/jun-cc-pVDZ)"
+    write(*,*) "2 Silver (SAPT2+/aug-cc-pVDZ)"
+    write(*,*) "3 Gold (SAPT2+(3)dMP2/aug-cc-pVTZ)"
+    write(*,*) "10 SAPT0/aug-cc-pVDZ with explicit charge-transfer energy"
+    write(*,*) "11 SAPT2+(3)/aug-cc-pVTZ with explicit charge-transfer energy"
+    read(*,*) isel2
+    
+    write(*,*) "Input indices of the atoms in fragment 1, e.g. 3,8-15,20 "
+    read(*,"(a)") c2000tmp
+    call str2arr(c2000tmp,nlist1,atmlist1)
+    write(*,*) "Input indices of the atoms in fragment 2, e.g. 3,8-15,20 "
+    read(*,"(a)") c2000tmp
+    call str2arr(c2000tmp,nlist2,atmlist2)
+    
+    write(ifileid,"(a)")
+    write(ifileid,"(a)") "molecule dimer {"
+    write(ifileid,"(a)") "0 1"
+    do idx=1,nlist1
+        iatm=atmlist1(idx)
+	    write(ifileid,"(a,1x,3f14.8)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+    end do
+    write(ifileid,"(a)") "--"
+    write(ifileid,"(a)") "0 1"
+    do idx=1,nlist2
+        iatm=atmlist2(idx)
+	    write(ifileid,"(a,1x,3f14.8)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+    end do
+    write(ifileid,"(a)") "}"
+    write(ifileid,"(a)")
+    write(ifileid,"(a)") "set {"
+    write(ifileid,"(a)") "    scf_type DF"
+    write(ifileid,"(a)") "    freeze_core True"
+    if (isel2==1) write(ifileid,"(a)") "    basis jun-cc-pVDZ"
+    if (isel2==2) write(ifileid,"(a)") "    basis aug-cc-pVDZ"
+    if (isel2==3) write(ifileid,"(a)") "    basis aug-cc-pVTZ"
+    if (isel2==10) write(ifileid,"(a)") "    basis aug-cc-pVDZ"
+    if (isel2==11) write(ifileid,"(a)") "    basis aug-cc-pVTZ"
+    write(ifileid,"(a)") "}"
+    write(ifileid,"(a)")
+    if (isel2==1) write(ifileid,"(a)") "energy('sapt0')"
+    if (isel2==2) write(ifileid,"(a)") "energy('sapt2+')"
+    if (isel2==3) write(ifileid,"(a)") "energy('sapt2+(3)dmp2')"
+    if (isel2==10) write(ifileid,"(a)") "energy('sapt0-ct')"
+    if (isel2==11) write(ifileid,"(a)") "energy('sapt2+(3)-ct')"
+    write(*,"(a)") " Exporting PSI4 input file finished! Note that charge of spin multiplicity &
+    of the fragments are assumed to be 0 and 1, respectively"
+
+else if (isel==2.or.isel==3) then !Single point, optimization
+    !Note: At least for PSI 1.3.2, only DF-CCSD(T) gradient can use frozen core
+    do while(.true.)
+        write(*,*)
+        if (isel==2) then
+            if (ioutfch==0) write(*,*) "-1 Toggle outputting .fch file, current: No"
+            if (ioutfch==1) write(*,*) "-1 Toggle outputting .fch file, current: Yes"
+        end if
+        write(*,*) "                         Select a calculation level:"
+        if (isel==2) then !SP
+            write(*,*) " 1 BLYP-D3(BJ)/def2-SVP with density fitting"
+            write(*,*) " 2 B3LYP-D3(BJ)/def2-SVP with density fitting"
+            write(*,*) " 3 PBEh-3c with density fitting"
+            write(*,*) " 4 M06-2X/def2-TZVP with density fitting"
+            write(*,*) " 5 PWPB95-D3(BJ)/cc-pVTZ with density fitting and frozen core"
+            write(*,*) " 9 MP2/cc-pVTZ with density fitting and frozen core"
+            write(*,*) "10 CCSD(T)/cc-pVTZ with frozen core"
+            write(*,*) "11 CCSD(T)/cc-pVTZ with density fitting and frozen core"
+            write(*,*) "12 Full-CI/cc-pVDZ"
+            write(*,*) "19 ADC(2)/cc-pVTZ with frozen core"
+            write(*,*) "20 EOM-CC2/cc-pVTZ with frozen core"
+            write(*,*) "21 EOM-CCSD/cc-pVTZ with frozen core"
+            write(*,*) "22 EOM-CC3/cc-pVTZ with frozen core"
+        else if (isel==3) then !opt
+            write(*,*) " 1 BLYP-D3(BJ)/def2-SVP with density fitting"
+            write(*,*) " 2 B3LYP-D3(BJ)/def2-SVP with density fitting"
+            write(*,*) " 3 PBEh-3c with density fitting"
+            write(*,*) " 4 M06-2X/def2-TZVP with density fitting"
+            write(*,*) " 5 PWPB95-D3(BJ)/cc-pVTZ with density fitting and frozen core (Numer. grad.)"
+            write(*,*) " 9 MP2/cc-pVTZ with density fitting and frozen core"
+            write(*,*) "10 CCSD(T)/cc-pVTZ without frozen core"
+            write(*,*) "11 CCSD(T)/cc-pVTZ with density fitting and frozen core"
+            write(*,*) "12 Full-CI/cc-pVDZ (Numerical gradient)"
+            !write(*,*) "19 ADC(2)/cc-pVTZ with frozen core" !opt has not been supported, even numerical gradient
+            write(*,*) "20 EOM-CC2/cc-pVTZ with frozen core (Numer. grad.)"
+            write(*,*) "21 EOM-CCSD/cc-pVTZ" !EOM-CCSD gradient doesn't support frozen core
+            write(*,*) "22 EOM-CC3/cc-pVTZ with frozen core (Numer. grad.)"
+        end if
+        read(*,*) isel2
+        if (isel2==-1) then
+            if (ioutfch==0) then
+                ioutfch=1
+            else
+                ioutfch=0
+            end if
+        else
+            exit
+        end if
+    end do
+    
+    netcharge=nint(sum(a%charge)-nelec)
+    if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
+    multi=nint(naelec-nbelec)+1
+    
+    !Write molecular geometry
+    write(ifileid,"(a)") "molecule mol {"
+    write(ifileid,"(2i4)") netcharge,multi
+    do iatm=1,ncenter
+	    write(ifileid,"(a,1x,3f14.8)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+    end do
+    if (isel2==20.or.isel2==21.or.isel==22) write(ifileid,"(a)") "symmetry c1" !For EOM- calculation, assumed to be nosymm
+    write(ifileid,"(a)") "}"
+    
+    !Set basis set and various settings
+    write(ifileid,*)
+    write(ifileid,"(a)") "set {"
+    if (isel2==1.or.isel2==2) then
+        write(ifileid,"(2x,a)") "basis def2-SVP"
+    else if (isel2==4) then
+        write(ifileid,"(2x,a)") "basis def2-TZVP"
+    else if (isel2==5.or.isel2==9) then
+        write(ifileid,"(2x,a)") "basis cc-pVTZ"
+        write(ifileid,"(2x,a)") "freeze_core true"
+        write(ifileid,"(2x,a)") "scf_type df"
+    else if (isel2==10.or.isel2==11) then
+        write(ifileid,"(2x,a)") "basis cc-pVTZ"
+        if (.not.(isel==3.and.isel2==10)) write(ifileid,"(2x,a)") "freeze_core true" !Regular CCSD(T) cannot use FC
+        if (isel2==11) then
+            write(ifileid,"(2x,a)") "scf_type df"
+            write(ifileid,"(2x,a)") "cc_type df"
+        end if
+    else if (isel2==12) then
+        write(ifileid,"(2x,a)") "basis cc-pVDZ"
+        write(ifileid,"(2x,a)") "#NUM_ROOTS 3"
+    else if (isel2==20.or.isel2==21.or.isel2==22) then
+        write(ifileid,"(2x,a)") "basis cc-pVTZ"
+        if (.not.(isel==3.and.isel2==21)) write(ifileid,"(2x,a)") "freeze_core true"
+        write(ifileid,"(2x,a)") "ROOTS_PER_IRREP [3]"
+    end if
+    if (multi>1) write(ifileid,"(2x,a)") "reference uhf"
+    write(ifileid,"(a)") "}"
+    
+    !Method
+    write(ifileid,*)
+    if (isel==2) taskstr="energy"
+    if (isel==3) taskstr="opt"
+    if (isel2==1) then
+        methodstr="blyp-d3bj"
+    else if (isel2==2) then
+        methodstr="b3lyp-d3bj"
+    else if (isel2==3) then
+        methodstr="pbeh3c"
+    else if (isel2==4) then
+        methodstr="m06-2x"
+    else if (isel2==5) then
+        methodstr="pwpb95-d3bj"
+    else if (isel2==9) then
+        methodstr="mp2"
+    else if (isel2==10.or.isel2==11) then
+        methodstr="ccsd(t)"
+    else if (isel2==12) then
+        methodstr="fci"
+    else if (isel2==20) then
+        methodstr="eom-cc2"
+    else if (isel2==21) then
+        methodstr="eom-ccsd"
+    else if (isel2==22) then
+        methodstr="eom-cc3"
+    end if
+    if (ioutfch==0) then
+        write(ifileid,"(a)") trim(taskstr)//"('"//trim(methodstr)//"')"
+    else if (ioutfch==1) then
+        if (isel2<5) then
+            write(ifileid,"(a)") "energy, wfn = "//trim(taskstr)//"('"//trim(methodstr)//"', return_wfn=True)"
+        else
+            write(ifileid,"(a)") "grad, wfn = gradient"//"('"//trim(methodstr)//"', return_wfn=True)"
+        end if
+        write(ifileid,"(a)") "fchk_writer = psi4.FCHKWriter(wfn)"
+        itmp=index(outname,'.',back=.true.)
+        if (itmp==0) itmp=len_trim(outname)+1
+        write(ifileid,"(a)") "fchk_writer.write('"//outname(:itmp-1)//".fch')"
+    end if
+    write(*,"(a)") " Exporting PSI4 input file finished!"
+end if
+
+close(ifileid)
+end subroutine
+
 
 
 !!---------- Output current coordinate to MRCC input file
@@ -4898,6 +5600,31 @@ write(*,"(a)") " Exporting Molcas input file finished! It corresponds to single 
 end subroutine
 
 
+!!---------- Output current coordinate to Q-Chem input file
+subroutine outQcheminp(outname,ifileid)
+use defvar
+character(len=*) outname
+open(ifileid,file=outname,status="replace")
+netcharge=nint(sum(a%charge)-nelec)
+multi=nint(naelec-nbelec)+1
+write(ifileid,"(a)") "$molecule"
+write(ifileid,"(2i4)") netcharge,multi
+do i=1,ncenter
+	write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+end do
+write(ifileid,"(a)") "$end"
+write(ifileid,*)
+write(ifileid,"(a)") "$rem"
+write(ifileid,"(a)") "GUI 2    !Generate .fch file"
+write(ifileid,"(a)") "EXCHANGE B3LYP"
+write(ifileid,"(a)") "BASIS 6-31G*"
+write(ifileid,"(a)") "DFT_D D3_BJ"
+write(ifileid,"(a)") "$end"
+close(ifileid)
+write(*,"(a)") " Exporting Q-Chem input file finished! It corresponds to single point task at B3LYP-D3(BJ)/6-31G* level"
+end subroutine
+
+
 !!---------- Output current coordinate to Dalton input file (.dal and .mol)
 !When symmetry is used, the number of atomtypes may not be consistent with the number of elements, such as O3.
 !Therefore, for simplicity, we do not use symmetry (i.e. Nosymmetry), and thus assign atomtypes as the number of elements
@@ -4918,7 +5645,6 @@ if (dalname/=" ") then
 	write(ifileid,"(a)") "**END OF INPUT"
 	close(ifileid)
 end if
-! write(*,*) sum(a%charge),nelec,nEDFelec,netcharge
 
 open(ifileid,file=molname,status="replace")
 write(ifileid,"(a)") "ATOMBASIS"
@@ -4958,6 +5684,23 @@ end subroutine
 
 
 
+
+!!---------- Interface of outputting Gaussian-type .cub file
+subroutine outcube_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path of the new cube file, e.g. C:\Tree.cub"
+write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".cub"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".cub"
+write(*,*) "Exporting, please wait..."
+open(10,file=outname,status="replace")
+call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+close(10)
+write(*,*) "Done, cube file has been outputted"
+end subroutine
 !!!-------- Output 3D matrix with property to a cube file. fileid must be opened before invoking this routine, and close it after that
 !Example of calling: outcube(holegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 subroutine outcube(matrix,numx,numy,numz,org_x,org_y,org_z,trans1,trans2,trans3,fileid)
@@ -4990,7 +5733,7 @@ where (abs(matrix)<=1D-99) matrix=0D0 !Diminish too small value, otherwise the s
 !write(*,*) "Exporting cube file, please wait..."
 do i=1,numx
 	do j=1,numy
-		write(fileid,"(6(1PE13.5))",advance="no") matrix(i,j,1:numz)
+		write(fileid,"(6(1PE14.5E3))",advance="no") matrix(i,j,1:numz)
 		write(fileid,*)
 	end do
 end do
@@ -5265,6 +6008,20 @@ end subroutine
 
 
 
+!!--------------- Interface of outputting .molden file
+subroutine outmolden_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for generating .molden file, e.g. C:\sunshine\riko.molden"
+write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".molden"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".molden"
+write(*,*) "Exporting, please wait..."
+call outmolden(outname,10)
+write(*,*) "Exporting Molden input file finished!"
+end subroutine
 !!!------------------------- Output current wavefunction to Molden input file
 subroutine outmolden(outname,ifileid)
 use defvar
@@ -5313,7 +6070,6 @@ if (any(shtype==-4)) write(ifileid,"('[9G]')") !Default is Cartesian G
 if (any(shtype==-5)) write(ifileid,"('[11H]')") !Default is Cartesian H
 write(ifileid,"(a)") "[MO]"
 if (wfntype==0.or.wfntype==2.or.wfntype==3) then !Close shell
-! 	write(*,*) nmo
 	do imo=1,nmo
 		write(ifileid,"('Ene=',f16.8)") MOene(imo)
 		write(ifileid,"('Spin= Alpha')")
@@ -5467,7 +6223,19 @@ end subroutine
 
 
 
-!!!------------------------- Output current wavefunction to .fch file
+!!--------------- Interface of outputting .fch file
+subroutine outfch_wrapper
+use util
+use defvar
+character*200 outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for outputting .fch file, e.g. C:\sunshine\riko.fch"
+write(*,"(a)") " If press ENTER button directly, the system will be exported to "//trim(c200tmp)//".fch in current folder"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".fch"
+call outfch(outname,10,1)
+end subroutine
+!!!--------------- Output current wavefunction to .fch file
 !informode=1: print prompt message, =0: do not print
 subroutine outfch(outname,ifileid,infomode)
 use defvar
@@ -5766,6 +6534,648 @@ end subroutine
 
 
 
+!!!------------ Interface of outputting .mwfn file
+subroutine outmwfn_wrapper
+use defvar
+use util
+character*200 outname,c200tmp
+integer iexp
+if (.not.allocated(CObasa)) then
+	write(*,"(a)") " Error: This function works only when input file contains basis function information"
+    write(*,*) "Press ENTER button to continue"
+    read(*,*)
+else
+    call path2filename(filename,c200tmp)
+	write(*,*) "Input path for exporting file, e.g. C:\ltwd.mwfn"
+    write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".mwfn"
+	read(*,"(a)") outname
+    if (outname==" ") outname=trim(c200tmp)//".mwfn"
+    write(*,*) "0 Only export wavefunction"
+    write(*,*) "1 Export both wavefunction and density matrix"
+    write(*,*) "2 Export wavefunction, density matrix and overlap matrix"
+    read(*,*) iexp
+	write(*,*) "Exporting, please wait..."
+	call outmwfn(outname,10,iexp)
+	write(*,*) "Exporting .mwfn file finished!"
+end if
+end subroutine
+!!!------------ Output current wavefunction to .mwfn file
+!ifileid is the file id that can be used during outputting
+!iprint=0: Do not print any matrix, =1: Print density matrix, =2: Print density matrix and overlap matrix
+!informode=1: Output prompt message, =0: Do not Output
+subroutine outmwfn(outname,ifileid,iprint)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character(len=*) outname
+integer ifileid,infomode
+open(ifileid,file=outname,status="replace")
+write(ifileid,"(a)") "# Generated by Multiwfn" !Comment
+write(ifileid,"('Wfntype=',i4)") wfntype
+write(ifileid,"('Charge=',f10.6)") nint(sum(a%charge)-nelec)
+write(ifileid,"('Naelec=',f10.6)") naelec
+write(ifileid,"('Nbelec=',f10.6)") nbelec
+write(ifileid,"('E_tot=',1PE16.8)") totenergy
+write(ifileid,"('VT_ratio=',f12.8)") virialratio
+
+write(ifileid,"(/,a)") "# Atom information"
+write(ifileid,"('Ncenter=',i8)") ncenter
+write(ifileid,"('$Centers')")
+do icen=1,ncenter
+    write(ifileid,"(i6,1x,a,i4,f6.1,3f16.8)") icen,a(icen)%name,a(icen)%index,a(icen)%charge,a(icen)%x*b2a,a(icen)%y*b2a,a(icen)%z*b2a
+end do
+
+nindbasis=0
+do imo=1,nbasis
+    if (any(CObasa(:,imo)/=0)) then
+        nindbasis=nindbasis+1
+        cycle
+    end if
+end do
+
+write(ifileid,"(/,a)") "# Basis function information"
+write(ifileid,"('Nbasis=    ',i8)") nbasis
+write(ifileid,"('Nindbasis= ',i8)") nindbasis
+write(ifileid,"('Nprims=    ',i8)") nprims
+write(ifileid,"('Nshell=    ',i8)") nshell
+write(ifileid,"('Nprimshell=',i8)") nprimshell
+write(ifileid,"('$Shell types')")
+write(ifileid,"(25i3)") shtype(:)
+write(ifileid,"('$Shell centers')")
+write(ifileid,"(10i8)") shcen(:)
+write(ifileid,"('$Shell contraction degrees')")
+write(ifileid,"(20i4)") shcon(:)
+write(ifileid,"('$Primitive exponents')")
+write(ifileid,"(5(1PE16.8))") primshexp(:)
+write(ifileid,"('$Contraction coefficients')")
+write(ifileid,"(5(1PE16.8))") primshcoeff(:)
+
+if (wfntype==0.or.wfntype==3) then
+    write(ifileid,"(/,a)") "# Orbital information (nindbasis orbitals)"
+else
+    write(ifileid,"(/,a)") "# Orbital information (2*nindbasis orbitals)"
+end if
+irealorb=0
+do imo=1,nmo
+    if (any(CO(imo,:)/=0)) then
+        irealorb=irealorb+1
+        write(ifileid,*)
+        write(ifileid,"('Index=',i10)") irealorb
+	    write(ifileid,"('Type=',i2)") MOtype(imo)
+	    write(ifileid,"('Energy=',1PE16.8)") MOene(imo)
+	    write(ifileid,"('Occ=',f10.6)") MOocc(imo)
+	    if (allocated(MOsym)) then
+            if (MOsym(imo)/=" ") then
+                write(ifileid,"('Sym=',1x,a)") MOsym(imo)
+            else
+               write(ifileid,"('Sym= ?')")
+            end if
+        else
+            write(ifileid,"('Sym= ?')")
+        end if
+        write(ifileid,"('$Coeff')")
+        if (MOtype(imo)<=1) then !Spatial or alpha orbital
+		    write(ifileid,"(5(1PE16.8))") CObasa(:,imo)
+        else
+		    write(ifileid,"(5(1PE16.8))") CObasb(:,imo-nbasis)
+        end if
+    end if
+end do
+
+if (iprint>=1) then
+    write(ifileid,"(/,a)") "# Various matrices"
+    if (wfntype==0.or.wfntype==3) then
+        write(ifileid,"(/,'$Total density matrix, dim=',2i5,'  lower= 1')") nbasis,nbasis !nbasis*(nbasis+1)/2 elements
+        write(ifileid,"(5(1PE16.8))") ((Ptot(i,j),j=1,i),i=1,nbasis)
+    else
+        write(ifileid,"(/,'$Alpha density matrix, dim=',2i5,'  lower= 1')") nbasis,nbasis !nbasis*(nbasis+1)/2 elements
+        write(ifileid,"(5(1PE16.8))") ((Palpha(i,j),j=1,i),i=1,nbasis)
+        write(ifileid,"(/,'$Beta density matrix, dim=',2i5,'  lower= 1')") nbasis,nbasis !nbasis*(nbasis+1)/2 elements
+        write(ifileid,"(5(1PE16.8))") ((Pbeta(i,j),j=1,i),i=1,nbasis)
+    end if
+    if (iprint==2) then
+        write(ifileid,"(/,'$Overlap matrix, dim=',2i5,'  lower= 1')") nbasis,nbasis !nbasis*(nbasis+1)/2 elements
+        write(ifileid,"(5(1PE16.8))") ((Sbas(i,j),j=1,i),i=1,nbasis)
+    end if
+end if
+close(ifileid)
+end subroutine
+
+
+
+
+
+
+!!!------------ Read wavefunction from .mwfn file
+!infomode=0 means output info, =1 silent
+subroutine readmwfn(name,infomode)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character(len=*) name
+!Temporary arrays used in process data
+integer,allocatable :: shelltype(:),shell2atom(:),shellcon(:)
+real*8,allocatable :: primexp(:),concoeff(:),amocoeff(:,:),bmocoeff(:,:)
+integer :: s2f(-5:5,21)=0
+real*8 conv5d6d(6,5),conv7f10f(10,7),conv9g15g(15,9),conv11h21h(21,11)
+real*8 conv5d6dtr(5,6),conv7f10ftr(7,10),conv9g15gtr(9,15),conv11h21htr(11,21)
+character selectyn,c80tmp*80
+!For backing up spherical basis functions
+integer,allocatable :: shelltype5D(:),MOtype5D(:)
+real*8,allocatable :: CObasa5D(:,:),CObasb5D(:,:),Sbas5D(:,:),Dbas5D(:,:,:),Magbas5D(:,:,:),MOocc5D(:),MOene5D(:),CO5D(:,:)
+real*8,external :: normgau
+
+ifiletype=14
+imodwfn=0
+s2f(-5,1:11)=(/ -32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22 /)
+s2f(-4,1:9)=(/ -21,-20,-19,-18,-17,-16,-15,-14,-13 /)
+s2f(-3,1:7)=(/ -12,-11,-10,-9,-8,-7,-6 /)
+s2f(-2,1:5)=(/ -5,-4,-3,-2,-1 /)
+s2f(-1,1:4)=(/ 1,2,3,4 /)
+s2f(0,1)=1
+s2f(1,1:3)=(/ 2,3,4 /)
+s2f(2,1:6)=(/ 5,6,7,8,9,10 /)
+s2f(3,1:10)=(/ 11,12,13,17,14,15,18,19,16,20 /) !Note: The sequence of f functions in Multiwfn is not identical to .fch, so convert here. While spdgh are identical
+s2f(4,1:15)=(/ 21,22,23,24,25,26,27,28,29,30,31,32,33,34,35 /)
+s2f(5,1:21)=(/ 36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56 /)
+call gensphcartab(1,conv5d6d,conv7f10f,conv9g15g,conv11h21h)
+conv5d6dtr=transpose(conv5d6d)
+conv7f10ftr=transpose(conv7f10f)
+conv9g15gtr=transpose(conv9g15g)
+conv11h21htr=transpose(conv11h21h)
+
+open(10,file=name,status="old")
+if (infomode==0) write(*,*) "Loading various information of the wavefunction"
+
+call loclabel(10,'Wfntype=')
+read(10,*) c80tmp,wfntype
+!call loclabel(10,'Charge=') !This information is not explicitly used by Multiwfn
+!read(10,*) c80tmp,Charge
+call loclabel(10,'Naelec=')
+read(10,*) c80tmp,naelec
+call loclabel(10,'Nbelec=')
+read(10,*) c80tmp,nbelec
+nelec=naelec+nbelec
+call loclabel(10,'E_tot=',ifound,maxline=100)
+totenergy=0
+if (ifound==1) read(10,*) c80tmp,totenergy
+call loclabel(10,'VT_ratio=',ifound,maxline=100)
+virialratio=0
+if (ifound==1) read(10,*) c80tmp,virialratio
+
+!Load atom information
+call loclabel(10,'Ncenter=')
+read(10,*) c80tmp,ncenter
+allocate(a(ncenter))
+call loclabel(10,'$Centers');read(10,*)
+do icen=1,ncenter
+    read(10,*) inouse,a(icen)%name,a(icen)%index,a(icen)%charge,a(icen)%x,a(icen)%y,a(icen)%z
+end do
+if (any(a%index==0).and.infomode==0) then
+	write(*,*)
+	write(*,*) "One or more dummy atoms (X) are found. Do you want to load them? (y/n)"
+	write(*,"(a)") " Note: If all of them have corresponding basis functions, then they can be safely loaded. &
+	However, if some of them do not have basis functions, in general they should not be loaded, otherwise &
+    problems or crashes may occur when performing analyses based on wavefunction"
+	read(*,*) selectyn
+	if (selectyn=='n'.or.selectyn=='N') then
+        ncenter=count(a%index/=0)
+        deallocate(a);allocate(a(ncenter))
+        call loclabel(10,'$Centers');read(10,*)
+        icen=0
+        do while(icen<=ncenter)
+            read(10,*) inouse,c80tmp,itest
+            if (itest/=0) then
+                icen=icen+1
+                backspace(10)
+                read(10,*) inouse,a(icen)%name,a(icen)%index,a(icen)%charge,a(icen)%x,a(icen)%y,a(icen)%z
+            end if
+        end do
+    end if
+end if
+a%x=a%x/b2a
+a%y=a%y/b2a
+a%z=a%z/b2a
+
+!Load basis function information
+if (infomode==0) write(*,*) "Loading basis and primitive shell information..."
+call loclabel(10,'Nbasis=')
+read(10,*) c80tmp,nbasis
+call loclabel(10,'Nindbasis=')
+read(10,*) c80tmp,nindbasis
+call loclabel(10,'Nprims=')
+read(10,*) c80tmp,nprims
+call loclabel(10,'Nshell=')
+read(10,*) c80tmp,nshell
+call loclabel(10,'Nprimshell=')
+read(10,*) c80tmp,nprimshell
+allocate(shelltype(nshell),shell2atom(nshell),shellcon(nshell))
+call loclabel(10,'$Shell types');read(10,*)
+read(10,*) shelltype
+call loclabel(10,'$Shell centers');read(10,*)
+read(10,*) shell2atom
+call loclabel(10,'$Shell contraction degrees');read(10,*)
+read(10,*) shellcon
+allocate(primexp(nprimshell),concoeff(nprimshell))
+call loclabel(10,'$Primitive exponents');read(10,*)
+read(10,*) primexp
+call loclabel(10,'$Contraction coefficients');read(10,*)
+read(10,*) concoeff
+
+!Copy information from local arrays to global arrays
+allocate(shtype(nshell),shcen(nshell),shcon(nshell),primshexp(nprimshell),primshcoeff(nprimshell))
+shtype=shelltype
+shcen=shell2atom
+shcon=shellcon
+primshexp=primexp
+primshcoeff=concoeff
+
+!Multiwfn allows Cartesian and spherical basis functions mixed together. If any basis function is spherical, then isphergau=1
+!Only the spherical ones will be treated specially
+if (infomode==0) write(*,"(' The highest angular moment basis functions is ',a)") shtype2name(maxval(abs(shelltype))) 
+isphergau=0
+if (any(shelltype<=-2)) isphergau=1
+if (any(abs(shelltype)>5).and.infomode==0) then
+	write(*,"(a)") " Error: GTFs with angular moment higher than h are found, while Multiwfn currently only supports up to h. Press Enter button to exit"
+	read(*,*)
+	stop
+end if
+
+!Load orbital information
+!Note: Some basis maybe removed by linear dependence checking, hence the number of orbitals (nindbasis or 2*nindbasis) may be less than nbasis
+!The information of those undefined orbitals (i.e. whose index is between nindbasis+1 and nbasis) are all set to zero
+if (infomode==0) write(*,*) "Loading orbitals..."
+if (wfntype==0.or.wfntype==2.or.wfntype==3) then !Restricted closed-shell or restricted open-shell
+	nmo=nbasis
+	allocate(amocoeff(nmo,nbasis))
+    amocoeff=0
+    norbload=nindbasis
+    ires=1
+else !Unrestricted open-shell wavefunction
+    nmo=2*nbasis
+	allocate(amocoeff(nbasis,nbasis),bmocoeff(nbasis,nbasis))
+    amocoeff=0;bmocoeff=0
+    norbload=2*nindbasis
+    ires=0
+end if
+allocate(MOene(nmo),MOocc(nmo),MOtype(nmo),MOsym(nmo))
+MOtype=0
+MOocc=0
+MOene=0
+MOsym="?"
+call loclabel(10,'Index=         1')
+iaorb=0;iborb=0
+do iorb=1,norbload
+    if (iorb>1) read(10,*)
+    read(10,*) !Skip index line
+    read(10,*) c80tmp,itype
+    if (ires==1) then
+        MOtype(iorb)=itype
+        read(10,*) c80tmp,MOene(iorb)
+        read(10,*) c80tmp,MOocc(iorb)
+        read(10,*) c80tmp,MOsym(iorb)
+        read(10,*)
+        read(10,*) amocoeff(:,iorb)
+    else
+        if (itype==1) then
+            iaorb=iaorb+1
+            MOtype(iaorb)=itype
+            read(10,*) c80tmp,MOene(iaorb)
+            read(10,*) c80tmp,MOocc(iaorb)
+            read(10,*) c80tmp,MOsym(iaorb)
+            read(10,*)
+            read(10,*) amocoeff(:,iaorb)
+        else if (itype==2) then
+            iborb=iborb+1
+            MOtype(nbasis+iborb)=itype
+            read(10,*) c80tmp,MOene(nbasis+iborb)
+            read(10,*) c80tmp,MOocc(nbasis+iborb)
+            read(10,*) c80tmp,MOsym(nbasis+iborb)
+            read(10,*)
+            read(10,*) bmocoeff(:,iborb)
+        end if
+    end if
+end do
+
+close(10)
+
+!!!!!! Loading have finished, now generate basis function information
+
+!Backup spherical basis information (some of them may be Cartesian ones) with 5D suffix (of course, may be actually 7f, 9g, 11h...),
+!convert them to Cartesian type temporarily to assign GTF information and calculate various integral matrices,
+!at final stage recovery them back, namely get Sbas, Dbas, Ptot... in spherical basis functions
+if (isphergau==1) then
+	allocate(shelltype5D(nshell))
+	shelltype5D=shelltype
+	where (shelltype<=-2) shelltype=-shelltype !Convert to Cartesian type
+	nbasis5D=nbasis
+	nbasis=0
+	do i=1,nshell
+		nbasis=nbasis+shtype2nbas(shelltype(i))
+	end do
+end if
+
+!Allocate space for arrays
+allocate(b(nprims),CO(nmo,nprims),basshell(nbasis),bascen(nbasis),bastype(nbasis),primstart(nbasis),&
+primend(nbasis),primconnorm(nprims),basstart(ncenter),basend(ncenter))
+!Fill CObasa and CObasb
+if (isphergau==0) then
+	allocate(CObasa(nbasis,nbasis))
+	CObasa=amocoeff
+	if (ires==0) then
+		allocate(CObasb(nbasis,nbasis))
+		CObasb=bmocoeff
+	end if
+else if (isphergau==1) then
+	allocate(CObasa(nbasis,nbasis),CObasa5D(nbasis5D,nbasis5D))
+	CObasa5D=amocoeff
+	CObasa=0D0
+	if (ires==0) then
+		allocate(CObasb(nbasis,nbasis),CObasb5D(nbasis5D,nbasis5D))
+		CObasb5D=bmocoeff
+		CObasb=0D0
+	end if
+	!Map 5D coefficient to 6D coefficient
+	ipos5D=1
+	ipos6D=1
+	do ish=1,nshell
+		ishtyp5D=shelltype5D(ish)
+		ishtyp6D=shelltype(ish)
+		numshorb5D=shtype2nbas(ishtyp5D)
+		numshorb6D=shtype2nbas(ishtyp6D)
+		if (ishtyp5D>=-1) then !S or P or other Cartesian shells
+			CObasa(ipos6D:ipos6D+numshorb6D-1,1:nbasis5D)=CObasa5D(ipos5D:ipos5D+numshorb5D-1,:)
+			if (ires==0) CObasb(ipos6D:ipos6D+numshorb6D-1,1:nbasis5D)=CObasb5D(ipos5D:ipos5D+numshorb5D-1,:)			
+		else if (ishtyp5D==-2) then
+			!5D->6D
+			CObasa(ipos6D:ipos6D+5,1:nbasis5D)=matmul(conv5d6d,CObasa5D(ipos5D:ipos5D+4,:))
+			if (ires==0) CObasb(ipos6D:ipos6D+5,1:nbasis5D)=matmul(conv5d6d,CObasb5D(ipos5D:ipos5D+4,:))
+		else if (ishtyp5D==-3) then
+			!7F->10F
+			CObasa(ipos6D:ipos6D+9,1:nbasis5D)=matmul(conv7f10f,CObasa5D(ipos5D:ipos5D+6,:))
+			if (ires==0) CObasb(ipos6D:ipos6D+9,1:nbasis5D)=matmul(conv7f10f,CObasb5D(ipos5D:ipos5D+6,:))
+		else if (ishtyp5D==-4) then
+			!9G->15G
+			CObasa(ipos6D:ipos6D+14,1:nbasis5D)=matmul(conv9g15g,CObasa5D(ipos5D:ipos5D+8,:))
+			if (ires==0) CObasb(ipos6D:ipos6D+14,1:nbasis5D)=matmul(conv9g15g,CObasb5D(ipos5D:ipos5D+8,:))
+		else if (ishtyp5D==-5) then
+			!11H->21H
+			CObasa(ipos6D:ipos6D+20,1:nbasis5D)=matmul(conv11h21h,CObasa5D(ipos5D:ipos5D+10,:))
+			if (ires==0) CObasb(ipos6D:ipos6D+20,1:nbasis5D)=matmul(conv11h21h,CObasb5D(ipos5D:ipos5D+10,:))
+		end if
+		ipos5D=ipos5D+numshorb5D
+		ipos6D=ipos6D+numshorb6D
+	end do
+end if
+
+if (infomode==0) write(*,*) "Converting basis function information to GTF information..."
+!Distribute exponent, functype to every GTF and generate CO(:,:) from amocoeff/bmocoeff
+!Fill: b,basshell,bascen,bastype,co,primstart,primend,primconnorm
+k=1 !Current position of GTF
+iexp=1
+ibasis=1 !Current position of basis function
+!Note: Below commented with !!! means the line associated to setting basis information
+do i=1,nshell !Cycle each shell
+	b(k:k+shellcon(i)*shtype2nbas(shelltype(i))-1)%center=shell2atom(i)
+	basshell(ibasis:ibasis+shtype2nbas(shelltype(i))-1)=i !!!Set basis attributed to which shell
+	bascen(ibasis:ibasis+shtype2nbas(shelltype(i))-1)=shell2atom(i) !!!Set basis attributed to which center
+	do j=1,shtype2nbas(shelltype(i)) !Cycle each basis(orbital) in each shell
+		b(k:k+shellcon(i)-1)%type=s2f(shelltype(i),j)
+		bastype(ibasis)=s2f(shelltype(i),j) !!!Set basis type
+		primstart(ibasis)=k !!!From where the GTFs attributed to ibasis'th basis
+		primend(ibasis)=k+shellcon(i)-1 !!!To where the GTFs attributed to ibasis'th basis
+		do l=1,shellcon(i) !Cycle each GTF in each basis in each shell
+			b(k)%exp=primexp(iexp+l-1)
+			tnormgau=normgau(b(k)%type,b(k)%exp)  !!!Normalization coefficient of GTFs
+			temp=concoeff(iexp+l-1)  !!!Contraction coefficient of GTFs
+			primconnorm(k)=temp*tnormgau !Combines contraction and normalization coefficient
+			do imo=1,nmo
+				if (ires==1) then !R or RO
+					CO(imo,k)=CObasa(ibasis,imo)*temp*tnormgau
+				else !U
+					if (isphergau==1) then
+						if (imo<=nbasis5D) CO(imo,k)=CObasa(ibasis,imo)*temp*tnormgau
+						if (imo>nbasis5D) CO(imo,k)=CObasb(ibasis,imo-nbasis5D)*temp*tnormgau
+					else
+						if (imo<=nbasis) CO(imo,k)=CObasa(ibasis,imo)*temp*tnormgau
+						if (imo>nbasis) CO(imo,k)=CObasb(ibasis,imo-nbasis)*temp*tnormgau
+					end if
+				end if
+			end do
+			k=k+1
+		end do
+		ibasis=ibasis+1
+	end do
+	iexp=iexp+shellcon(i)
+end do
+
+!Generate overlap matrix and dipole moment integral matrix for Cartesian Gaussian basis functions
+if (infomode==0) write(*,*) "Generating overlap matrix..."
+allocate(Sbas(nbasis,nbasis))
+call genSbas
+if (igenDbas==1) then
+	if (infomode==0) write(*,*) "Generating electric dipole moment integral matrix..."
+	allocate(Dbas(3,nbasis,nbasis))
+	call genDbas
+end if
+if (igenMagbas==1) then
+	if (infomode==0) write(*,*) "Generating magnetic dipole moment integral matrix..."
+	allocate(Magbas(3,nbasis,nbasis))
+	call genMagbas
+end if
+
+!Convert information from Cartesian basis to spherical basis
+if (isphergau==1) then
+	if (iloadasCart==1) then !For special purpose, keep Cartesian basis functions, e.g. converting spherical .fch/.molden to .47 file
+		!Currently nbasis and dimension of all matrix (except for CO) correspond to full Cartesian case, but nmo &
+		!and related arrays as well as CO still correspond to spherical harmonic case and thus need to be "expanded", the MO energies are artifically set to 100
+		allocate(MOocc5D(nmo),MOene5D(nmo),MOtype5D(nmo),CO5D(nmo,nprims))
+		MOocc5D=MOocc
+		MOene5D=MOene
+		MOtype5D=MOtype
+		CO5D=CO
+		deallocate(MOocc,MOene,MOtype,CO)
+		if (ires==1) then
+            nmo=nbasis !R, RO
+		else
+            nmo=2*nbasis !U
+        end if
+		allocate(MOocc(nmo),MOene(nmo),MOtype(nmo),CO(nmo,nprims))
+		MOocc=0
+		MOene=100
+		CO=0
+		if (ires==1) then !R, RO
+			MOtype=0
+			MOocc(1:nbasis5D)=MOocc5D
+			MOene(1:nbasis5D)=MOene5D
+			MOtype(1:nbasis5D)=MOtype5D
+			CO(1:nbasis5D,:)=CO5D
+		else !U
+			MOtype(:nbasis)=1
+			MOtype(nbasis+1:)=2
+			MOocc(:nbasis5D)=MOocc5D(:nbasis5D)
+			MOocc(nbasis+1:nbasis+nbasis5D)=MOocc5D(nbasis5D+1:)
+			MOene(:nbasis5D)=MOene5D(:nbasis5D)
+			MOene(nbasis+1:nbasis+nbasis5D)=MOene5D(nbasis5D+1:)
+			MOtype(:nbasis5D)=MOtype5D(:nbasis5D)
+			MOtype(nbasis+1:nbasis+nbasis5D)=MOtype5D(nbasis5D+1:)
+			CO(:nbasis5D,:)=CO5D(:nbasis5D,:)
+			CO(nbasis+1:nbasis+nbasis5D,:)=CO5D(nbasis5D+1:,:)
+		end if
+		isphergau=0
+		
+	else !Common case, transform to spherical basis
+		if (infomode==0) write(*,*) "Back converting basis function information from Cartesian to spherical type..."
+		!Map cartesian overlap matrix to spherical
+		allocate(sbas5D(nbasis5D,nbasis5D))
+		if (igenDbas==1) allocate(Dbas5D(3,nbasis5D,nbasis5D))
+		if (igenMagbas==1) allocate(Magbas5D(3,nbasis5D,nbasis5D))
+		ipos5D=1
+		ipos6D=1
+		do ish=1,nshell
+			ishtyp5D=shelltype5D(ish)
+			ishtyp6D=shelltype(ish)
+			numshorb5D=shtype2nbas(ishtyp5D)
+			numshorb6D=shtype2nbas(ishtyp6D)
+			!Now contract columns of Sbas
+			if (ishtyp5D>=-1) sbas(:,ipos5D:ipos5D+numshorb5D-1)=sbas(:,ipos6D:ipos6D+numshorb6D-1) !S, P, SP or other Cartesian shells
+			if (ishtyp5D==-2) sbas(:,ipos5D:ipos5D+numshorb5D-1)=matmul(sbas(:,ipos6D:ipos6D+numshorb6D-1),conv5d6d)
+			if (ishtyp5D==-3) sbas(:,ipos5D:ipos5D+numshorb5D-1)=matmul(sbas(:,ipos6D:ipos6D+numshorb6D-1),conv7f10f)
+			if (ishtyp5D==-4) sbas(:,ipos5D:ipos5D+numshorb5D-1)=matmul(sbas(:,ipos6D:ipos6D+numshorb6D-1),conv9g15g)
+			if (ishtyp5D==-5) sbas(:,ipos5D:ipos5D+numshorb5D-1)=matmul(sbas(:,ipos6D:ipos6D+numshorb6D-1),conv11h21h)
+			!Now contract rows of Sbas
+			if (ishtyp5D>=-1) sbas(ipos5D:ipos5D+numshorb5D-1,:)=sbas(ipos6D:ipos6D+numshorb6D-1,:) !S, P, SP or other Cartesian shells
+			if (ishtyp5D==-2) sbas(ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv5d6dtr,sbas(ipos6D:ipos6D+numshorb6D-1,:))
+			if (ishtyp5D==-3) sbas(ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv7f10ftr,sbas(ipos6D:ipos6D+numshorb6D-1,:))
+			if (ishtyp5D==-4) sbas(ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv9g15gtr,sbas(ipos6D:ipos6D+numshorb6D-1,:))
+			if (ishtyp5D==-5) sbas(ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv11h21htr,sbas(ipos6D:ipos6D+numshorb6D-1,:))
+			
+			if (igenDbas==1) then
+				do idir=1,3
+					!Now contract columns of Dbas
+					if (ishtyp5D>=-1) Dbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=Dbas(idir,:,ipos6D:ipos6D+numshorb6D-1) !S, P, SP or other Cartesian shells
+					if (ishtyp5D==-2) Dbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Dbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv5d6d)
+					if (ishtyp5D==-3) Dbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Dbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv7f10f)
+					if (ishtyp5D==-4) Dbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Dbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv9g15g)
+					if (ishtyp5D==-5) Dbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Dbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv11h21h)
+					!Now contract rows of Dbas
+					if (ishtyp5D>=-1) Dbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=Dbas(idir,ipos6D:ipos6D+numshorb6D-1,:) !S, P, SP or other Cartesian shells
+					if (ishtyp5D==-2) Dbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv5d6dtr,Dbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+					if (ishtyp5D==-3) Dbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv7f10ftr,Dbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+					if (ishtyp5D==-4) Dbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv9g15gtr,Dbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+					if (ishtyp5D==-5) Dbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv11h21htr,Dbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+				end do
+			end if
+			if (igenMagbas==1) then
+				do idir=1,3
+					!Now contract columns of Magbas
+					if (ishtyp5D>=-1) Magbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=Magbas(idir,:,ipos6D:ipos6D+numshorb6D-1) !S, P, SP or other Cartesian shells
+					if (ishtyp5D==-2) Magbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Magbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv5d6d)
+					if (ishtyp5D==-3) Magbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Magbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv7f10f)
+					if (ishtyp5D==-4) Magbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Magbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv9g15g)
+					if (ishtyp5D==-5) Magbas(idir,:,ipos5D:ipos5D+numshorb5D-1)=matmul(Magbas(idir,:,ipos6D:ipos6D+numshorb6D-1),conv11h21h)
+					!Now contract rows of Magbas
+					if (ishtyp5D>=-1) Magbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=Magbas(idir,ipos6D:ipos6D+numshorb6D-1,:) !S, P, SP or other Cartesian shells
+					if (ishtyp5D==-2) Magbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv5d6dtr,Magbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+					if (ishtyp5D==-3) Magbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv7f10ftr,Magbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+					if (ishtyp5D==-4) Magbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv9g15gtr,Magbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+					if (ishtyp5D==-5) Magbas(idir,ipos5D:ipos5D+numshorb5D-1,:)=matmul(conv11h21htr,Magbas(idir,ipos6D:ipos6D+numshorb6D-1,:))
+				end do
+			end if
+			ipos5D=ipos5D+numshorb5D
+			ipos6D=ipos6D+numshorb6D
+		end do
+		sbas5D=sbas(1:nbasis5D,1:nbasis5D)
+		if (igenDbas==1) Dbas5D=Dbas(:,1:nbasis5D,1:nbasis5D)
+		if (igenMagbas==1) Magbas5D=Magbas(:,1:nbasis5D,1:nbasis5D)
+
+		!Recover spherical Gaussian basis function information
+		nbasis=nbasis5D
+		shelltype=shelltype5D
+		ibasis=1
+		do i=1,nshell
+			basshell(ibasis:ibasis+shtype2nbas(shelltype(i))-1)=i
+			bascen(ibasis:ibasis+shtype2nbas(shelltype(i))-1)=shell2atom(i)
+			do j=1,shtype2nbas(shelltype(i))
+				bastype(ibasis)=s2f(shelltype(i),j)
+				ibasis=ibasis+1
+			end do
+		end do
+		deallocate(CObasa)
+		allocate(CObasa(nbasis,nbasis))
+		CObasa=CObasa5D
+		if (ires==0) then
+			deallocate(CObasb)
+			allocate(CObasb(nbasis,nbasis))
+			CObasb=CObasb5D
+		end if
+		deallocate(sbas)
+		allocate(sbas(nbasis,nbasis))
+		sbas=sbas5D
+		if (igenDbas==1) then
+			deallocate(Dbas)
+			allocate(Dbas(3,nbasis,nbasis))
+			Dbas=Dbas5D
+		end if
+		if (igenMagbas==1) then
+			deallocate(Magbas)
+			allocate(Magbas(3,nbasis,nbasis))
+			Magbas=Magbas5D
+		end if
+	end if
+end if
+
+!Generate basstart and basend
+nowcen=0
+indcen=0
+basstart=0 !X atom without basis function will have 0 for basstart and basend
+basend=0
+do ibasis=1,nbasis
+	if (bascen(ibasis)/=nowcen) then
+		nowcen=bascen(ibasis)
+		indcen=indcen+1
+		basstart(indcen)=ibasis
+		if (indcen/=1) basend(indcen-1)=ibasis-1
+	end if
+end do
+basend(ncenter)=nbasis
+
+!Generate one-particle density matrix for basis functions
+if (igenP==1) then
+	if (infomode==0) write(*,*) "Generating density matrix based on orbitals and occupation ..."
+	call genP
+end if
+
+!Output summary of present wavefunction
+if (infomode==0) then
+	write(*,*)
+	write(*,"(' Total/Alpha/Beta electrons:',3f12.4)") nelec,naelec,nbelec
+	write(*,"(' Net charge:',f12.5,'      Expected multiplicity:',i5)") sum(a(:)%charge)-nelec,nint(naelec-nbelec)+1
+	write(*,"(' Atoms:',i7,',  Basis functions:',i7,',  GTFs:',i7)") ncenter,nbasis,nprims
+	write(*,"(' Total energy:',f21.12,' Hartree,   Virial ratio:',f12.8)") totenergy,virialratio
+	if (wfntype==0) then
+		write(*,"(' This is a restricted single-determinant wavefunction')")
+		write(*,"(' Orbitals from 1 to',i6,' are occupied')") nint(nelec/2)
+	else if (wfntype==1) then
+		write(*,"(' This is an unrestricted single-determinant wavefunction')")
+		write(*,"(' Orbitals from ',i6,' to',i6,' are alpha, from',i6,' to',i6,' are occupied')") 1,nbasis,1,nint(naelec)
+		write(*,"(' Orbitals from ',i6,' to',i6,' are beta,  from',i6,' to',i6,' are occupied')") nbasis+1,nmo,nbasis+1,nbasis+nint(nbelec)
+	else if (wfntype==2) then
+		write(*,"(' This is a restricted open-shell wavefunction')")
+		write(*,"(' Orbitals from',i6,' to',i6,' are doubly occupied')") 1,nint(nbelec)
+		write(*,"(' Orbitals from',i6,' to',i6,' are singly occupied')") nint(nbelec)+1,nint(naelec)
+	else if (wfntype==3) then
+		write(*,"(' This is a restricted multiconfiguration wavefunction')")
+	else if (wfntype==4) then
+		write(*,"(' This is an unrestricted multiconfiguration wavefunction')")
+		write(*,"(' Orbitals from ',i6,' to',i6,' are alpha, from',i6,' to',i6,' are beta')") 1,nbasis,nbasis+1,nmo
+	end if
+end if
+
+call getHOMOidx !Find out index of HOMO, will be used in some cases
+end subroutine
+
+
 
 
 
@@ -5829,6 +7239,8 @@ call loclabel(20,'iKEDsel=',ifound)
 if (ifound==1) read(20,*) c80tmp,iKEDsel
 call loclabel(20,'uservar=',ifound)
 if (ifound==1) read(20,*) c80tmp,uservar
+call loclabel(20,'ivdwprobe=',ifound)
+if (ifound==1) read(20,*) c80tmp,ivdwprobe
 call loclabel(20,'paircorrtype=',ifound)
 if (ifound==1) read(20,*) c80tmp,paircorrtype
 call loclabel(20,'pairfunctype=',ifound)
@@ -5917,6 +7329,8 @@ call loclabel(20,'igenMagbas=',ifound)
 if (ifound==1) read(20,*) c80tmp,igenMagbas
 call loclabel(20,'iloadasCart=',ifound)
 if (ifound==1) read(20,*) c80tmp,iloadasCart
+call loclabel(20,'iloadGaugeom=',ifound)
+if (ifound==1) read(20,*) c80tmp,iloadGaugeom
 call loclabel(20,'maxloadexc=',ifound)
 if (ifound==1) read(20,*) c80tmp,maxloadexc
 call loclabel(20,'iprintLMOorder=',ifound)

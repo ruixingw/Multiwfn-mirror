@@ -298,7 +298,7 @@ if (imethod==2) then !PM with lowdin. Back convert CObas from orthonormal basis 
 end if
 
 call walltime(iwalltime2)
-write(*,"(/,' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
+write(*,"(/,' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
 
 
 !Print orbital energies, sort orbitals according to energies

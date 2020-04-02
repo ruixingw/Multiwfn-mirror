@@ -2,16 +2,15 @@ OPT = -O2 -qopenmp -qopenmp-link=static -threads -qopt-matmul -msse3 -diag-disab
 #Options in the next line is for debugging purpose
 #OPT = -O0 -qopenmp -diag-disable 8290,8291,6371 -threads -qopenmp-link=static -debug all -g -traceback -check all -fstack-protector -fpp -mkl -static-intel
 
-#LIB = ./dislin_d-11.0.a -lXm -lGL #Works for CentOS 6.1
-LIB = ./dislin_d-11.0.a -lXm -lXt -lX11 -lGL #Works for CentOS 7.2
+LIB = ./dislin_d-11.0.a -lXm -lXt -lX11 -lGL #Works for CentOS 7.x
 FC = ifort
 EXE = Multiwfn
 
 objects = define.o util.o plot.o Bspline.o sym.o function.o GUI.o sub.o integral.o Lebedev-Laikov.o \
 DFTxclib.o edflib.o fileIO.o spectrum.o DOS.o Multiwfn.o 0123dim.o LSB.o \
 population.o orbcomp.o bondorder.o topology.o excittrans.o otherfunc.o \
-otherfunc2.o surfana.o procgriddata.o AdNDP.o fuzzy.o CDA.o basin.o \
-orbloc.o visweak.o EDA.o atmraddens.o NAONBO.o
+otherfunc2.o otherfunc3.o surfana.o procgriddata.o AdNDP.o fuzzy.o CDA.o basin.o \
+orbloc.o visweak.o EDA.o atmraddens.o NAONBO.o minpack.o
 
 default : $(objects) 
 	$(FC) $(OPT) $(objects) $(LIB) -o $(EXE)
@@ -66,6 +65,10 @@ edflib.o : edflib.f90
 atmraddens.o : atmraddens.f90
 	$(FC) $(OPT) -c atmraddens.f90
 
+minpack.o : minpack.f90
+	$(FC) $(OPT) -c minpack.f90
+	
+
 #Others
 
 sub.o : sub.f90 $(modules)
@@ -112,6 +115,9 @@ otherfunc.o : otherfunc.f90 $(modules)
 
 otherfunc2.o : otherfunc2.f90 $(modules)
 	$(FC) $(OPT) -c otherfunc2.f90
+
+otherfunc3.o : otherfunc3.f90 $(modules)
+	$(FC) $(OPT) -c otherfunc3.f90
 
 surfana.o : surfana.f90 $(modules)
 	$(FC) $(OPT) -c surfana.f90

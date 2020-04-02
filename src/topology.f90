@@ -342,7 +342,8 @@ do while(.true.)
 					write(10,"('TER')")
 				end do
 				close(10)
-				write(*,*) "Done, path information have been saved to paths.pdb in current folder"
+				write(*,"(a)") " Done, paths have been saved to paths.pdb in current folder. Each atom in this file &
+                corresponds to a point in the paths. Residue index corresponds path index"
 				
 			else if (isel2==7) then
 				call plotpathprop
@@ -1677,7 +1678,7 @@ end subroutine
 
 
 
-!!!----------- Find critical points from initial guess at X,Y,Z
+!!!----------- Find critical points from initial guess at X,Y,Z using Newton method
 !ifunc is index of real space functions
 !If ilowcrit==1, use lower critiera, because for heavy atoms, cusp of electron density at nuclear position is very sharp hence hard to locate by default criteria
 !ishowsearchlevel=0/1/2/3:  Print none/minor/some/all detail. Notice that in parallel mode, the outputted details are messed up
@@ -1716,7 +1717,7 @@ do i=1,topomaxcyc
 		end if
 		exit
 	end if
-	disp=-matmul(invmat(hess,3),grad)
+	disp=-matmul(invmat(hess,3),grad) !Displacement
 	coord=coord+CPstepscale*disp
 	disperr=dsqrt(sum(disp**2))
 	graderr=dsqrt(sum(grad**2))

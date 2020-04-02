@@ -9,7 +9,7 @@ use plot
 use util
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: weight(:) !Weight of various system for plotting mixed spectrum
-real*8,allocatable :: dataxall(:,:),strall(:,:),FWHMall(:,:) !Transition data loaded from multiple files. The first index corresponds to system index
+real*8,allocatable :: dataxall(:,:),dataxall_org(:,:),strall(:,:),FWHMall(:,:) !Transition data loaded from multiple files. The first index corresponds to system index
 integer,allocatable :: numdataall(:) !numdata is maximum length of numdataall
 character*80,allocatable :: mollegend(:) 
 real*8,allocatable :: linexall(:,:),lineyall(:,:) !Array used to draw discrete lines for all systems. The first index corresponds to system index
@@ -17,7 +17,7 @@ real*8,allocatable :: curveyall(:,:) !The first index corresponds to system inde
 integer,allocatable :: tmparr(:)
 real*8,allocatable :: indcurve(:,:) !Y value of curve of each individual band
 integer,allocatable :: indband2idx(:),idx2indband(:) !Used to map individual band index
-character c200tmp*200,c200tmp2*200,strfmt*10,selectyn,graphformat_old*4,c2000tmp*2000
+character c80tmp*80,c200tmp*200,c200tmp2*200,strfmt*10,selectyn,graphformat_old*4,c2000tmp*2000
 character clegend*2000 !Buffer for showing legends
 integer :: icurveclr=1,ilineclr=5 !Default: Red for curve, black for discrete lines
 integer :: thk_curve=3,thk_weighted=8,thk_legend=2,thk_discrete=1,thk_axis=1,thk_grid=1 !thickness
@@ -36,10 +36,10 @@ integer :: extmaxlabelshiftX=-16,extmaxlabelshiftY=20,extminlabelshiftX=20,extmi
 
 if (ifiletype/=0) then !Foolish users always do foolish things
 	if (ifiletype==1) then
-		write(*,"(a)") " Error! As a Gaussian user, you must use output file (.out/.log) as input file for this function! &
+		write(*,"(a)") " Error: As a Gaussian user, you must use output file (.out/.log) as input file for this function! &
 		The .fch does not contain information needed for plotting spectrum"
 	else
-		write(*,*) " Error! The type of input file is wrong for plotting spectrum purpose!"
+		write(*,*) " Error: The type of input file is wrong for plotting spectrum purpose!"
 	end if
 	write(*,*) "Press ENTER button to return"
 	read(*,*)
@@ -48,14 +48,14 @@ end if
 
 !**** Spectrum types: 1=IR  2=Raman (or pre-resonance Raman)  3=UV-Vis  4=ECD  5=VCD  6=ROA
 !
-!Definition of units:  iunitx =0 cm^-1, =1 eV, =2 nm, =3 1000cm^-1
-!For vibrational spectrum, cm^-1 is always used, and used as internal unit; For electronic spectrum, eV (internal unit), nm, 1000cm^-1 can be used 
+!Definition of units:  iunitx =0 cm^-1, =1 eV, =2 nm, =3 1000 cm^-1
+!For vibrational spectrum, cm^-1 is always used, and used as internal unit; For electronic spectrum, eV (internal unit), nm, 1000 cm^-1 can be used 
 !Note: For nm unit, we still store all data and FWHM in eV, and generate curve as usual in eV. Only at final stage, we scale the curve to get the one in nm
-!If we choose 1000cm^-1, we immediately convert all data and FWHM into 1000cm^-1 before generating curve.
+!If we choose 1000 cm^-1, we immediately convert all data and FWHM into 1000 cm^-1 before generating curve.
 !When unit is changed, we reset lower and upper limit to auto rather than convert them to current unit to avoid problems.
 !
 !IR may use esu^2*cm^2 or km/mol as Y-axis unit, the data is always recorded in km/mol
-!Unit conversion: 1eV=8.0655447*1000cm^-1    (1240.7011/nm)eV    (1240.7011/eV)nm     1esu^2*cm^2=2.5066km/mol
+!Unit conversion: 1eV=8.0655447*1000 cm^-1    (1240.7011/nm)eV    (1240.7011/eV)nm     1esu^2*cm^2=2.5066km/mol
 
 !! Initialize variables
 gauweigh=0.5D0 !Gaussian weight used in Pseudo-Voigt broadening
@@ -66,7 +66,8 @@ orgy1=0;endy1=0;stepy1=0;orgy2=0;endy2=0;stepy2=0 !Temporarily used for scale le
 isavepic=0
 ishowline=1
 ishowgrid=1
-ishowlevel=0
+ishowlevel=0 !=1 means using spikes to indicate transition levels at bottom of the graph
+iexportlevel=0
 ishowtotal=1 !If showing weighted spectrum
 idegen=0
 iweisyscurve=0
@@ -97,12 +98,12 @@ else if (ispectrum==1) then
 	scalecurve=100D0
 else if (ispectrum==3) then
 !1 unit oscillator strength can be broadened to 28700 area (X:eV Y:L/mol/cm)
-!1 unit oscillator strength can be broadened to 1D0/4.32D-6 area (X:1000cm^-1 Y:L/mol/cm)
+!1 unit oscillator strength can be broadened to 1D0/4.32D-6 area (X:1000 cm^-1 Y:L/mol/cm)
 !Their relationship: 1/(4.32D-9)/8065.5447=28700  1eV=8.0655447*1000*cm^-1 
 !4.32D-9 can be found from Swizard manual (see also Review in C.C. vol.20 p168)
 !The result is consistent with Gaussview
 	if (iunitx==1.or.iunitx==2) scalecurve=28700 !nm,eV, both are recorded as eV internally
-	if (iunitx==3) scalecurve=1D0/4.32D-6 !1000cm^-1
+	if (iunitx==3) scalecurve=1D0/4.32D-6 !1000 cm^-1
 end if
 
 
@@ -150,7 +151,7 @@ if (index(filename,"multiple.txt")/=0) then !Multiple file list with weights is 
 			write(*,"(' Loading ',a,'    Weight:',f7.4)") trim(c200tmp),weight(i)
 		end if
 		call loadtransdata(ispectrum,trim(c200tmp),numdata) !Data are loaded into datax,str,FWHM in global memory
-		if (i==1) allocate(dataxall(nsystem,numdata),strall(nsystem,numdata),FWHMall(nsystem,numdata),numdataall(nsystem))
+		if (i==1) allocate(dataxall(nsystem,numdata),dataxall_org(nsystem,numdata),strall(nsystem,numdata),FWHMall(nsystem,numdata),numdataall(nsystem))
 		if (numdata>size(dataxall,2)) then !Because we need to allocate enough slots, while the number of slots is allocated when loading the first file
 			write(*,*)
 			write(*,"(' The number of transitions in this file:',i6)") numdata
@@ -177,13 +178,14 @@ else !Only one system
 	allocate(weight(1))
 	weight=1D0
 	call loadtransdata(ispectrum,filename,numdata)
-	allocate(dataxall(nsystem,numdata),strall(nsystem,numdata),FWHMall(nsystem,numdata),numdataall(nsystem))
+	allocate(dataxall(nsystem,numdata),dataxall_org(nsystem,numdata),strall(nsystem,numdata),FWHMall(nsystem,numdata),numdataall(nsystem))
 	dataxall(1,:)=datax
 	strall(1,:)=str
 	FWHMall(1,:)=FWHM
 	numdataall(1)=numdata
 end if
 
+dataxall_org=dataxall !Used to backup original data, because dataxall will be changed when setting scale factor
 
 !! Allocate arrays properly
 ! curvey in global array is used to record weighted curve
@@ -197,7 +199,9 @@ allocate(linexall(nsystem,3*numdata),lineyall(nsystem,3*numdata))
 
 !! Main interface
 do while(.true.)
+    write(*,"(/,a)") " Hint: You can input ""s"" to save current plotting settings to a file, or input ""l"" to load settings from a file"
 	write(*,*)
+    write(*,*) "               ================ Plot spectrum ==============="
 	write(*,*) "-4 Set format of saved graphical file, current: "//graphformat
 	write(*,*) "-3 Return to main menu"
 	write(*,*) "-2 Export transition data to plain text file"
@@ -208,9 +212,9 @@ do while(.true.)
 	if (iusersetX==0) write(*,*) "3 Set lower and upper limit of X-axis, current: Auto"
 	if (iusersetX==1) write(*,"(a,f12.5,a,f12.5)") " 3 Set lower and upper limit of X-axis, current:",xlow," to",xhigh
 	if (iusersetY1==0) write(*,*) "4 Set left Y-axis, current: Auto"
-	if (iusersetY1==1) write(*,"(' 4 Set left Y-axis, current low:',f12.3,' high:',f12.3,' step:',f11.3)") orgy1,endy1,stepy1
+	if (iusersetY1==1) write(*,"(' 4 Set left Y-axis, current: low:',f12.3,' up:',f12.3,' step:',f11.3)") orgy1,endy1,stepy1
 	if (iusersetY2==0) write(*,*) "5 Set right Y-axis, current: Auto"
-	if (iusersetY2==1) write(*,"(' 5 Set right Y-axis, current low:',f10.4,' high:',f10.4,' step:',f10.4)") orgy2,endy2,stepy2
+	if (iusersetY2==1) write(*,"(' 5 Set right Y-axis, current: low:',f12.3,' up:',f12.3,' step:',f11.3)") orgy2,endy2,stepy2
 	if (ibroadfunc==1) write(*,*) "6 Select broadening function, current: Lorentzian"
 	if (ibroadfunc==2) write(*,*) "6 Select broadening function, current: Gaussian"
 	if (ibroadfunc==3) write(*,*) "6 Select broadening function, current: Pseudo-Voigt"
@@ -220,12 +224,12 @@ do while(.true.)
 	end do
 	if (imol==nsystem+1) then
 		if (iunitx==0) then
-			write(*,"(a,f20.5,' cm^-1')") " 8 Input full width at half maximum (FWHM), current:",FWHMall(1,1)
+			write(*,"(a,f10.5,' cm^-1')") " 8 Input full width at half maximum (FWHM), current:",FWHMall(1,1)
 		else if (iunitx==1.or.iunitx==2) then
 			!FWHM cannot be defined for nm, since it is not a linear unit, so what inputted is eV
-			write(*,"(a,f20.5,' eV')") " 8 Input full width at half maximum (FWHM), current:",FWHMall(1,1)
+			write(*,"(a,f10.5,' eV')") " 8 Input full width at half maximum (FWHM), current:",FWHMall(1,1)
 		else if (iunitx==3) then
-			write(*,"(a,f17.5,' 1000cm^-1')") " 8 Input full width at half maximum (FWHM), current:",FWHMall(1,1)
+			write(*,"(a,f10.5,' 1000 cm^-1')") " 8 Input full width at half maximum (FWHM), current:",FWHMall(1,1)
 		end if
 	else
 		write(*,*) "8 Set FWHM for all transitions, current: Loaded from input file"
@@ -238,7 +242,7 @@ do while(.true.)
 	else if (ispectrum==3.or.ispectrum==4) then !UV-Vis or ECD allows using different energy units
 		if (iunitx==1) write(*,*) "10 Set the unit of excitation energy, current: eV"
 		if (iunitx==2) write(*,*) "10 Set the unit of excitation energy, current: nm"
-		if (iunitx==3) write(*,*) "10 Set the unit of excitation energy, current: 1000cm^-1"
+		if (iunitx==3) write(*,*) "10 Set the unit of excitation energy, current: 1000 cm^-1"
 	end if
 	if (ibroadfunc==3) write(*,"(a,f10.5)") " 11 Set Gaussian-weighting coefficient, current:",gauweigh
 	write(*,"(a,f12.6)") " 12 Set shift value in X, current:",shiftx
@@ -246,11 +250,11 @@ do while(.true.)
 		write(*,*) "13 Set colors of curve and discrete lines"
 	end if
 	if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then
-		write(*,*) "14 Multiply the vibrational frequencies by a factor"
+		write(*,*) "14 Set scale factor for vibrational frequencies"
 	else if (ispectrum==3.or.ispectrum==4) then
-		write(*,*) "14 Multiply the transition energies by a factor"
+		write(*,*) "14 Set scale factor for transition energies"
 	end if
-	if (nsystem==1) write(*,*) "15 Output contribution of individual transition to the spectrum"
+	if (nsystem==1) write(*,*) "15 Output contribution of individual transitions to the spectrum"
 	if (.not.(nsystem>1.and.all(weight==1))) write(*,*) "16 Set status of showing labels of spectrum minima and maxima"
 	if (ishowgrid==1) write(*,*) "17 Toggle showing dashed grid lines, current: ON"
 	if (ishowgrid==0) write(*,*) "17 Toggle showing dashed grid lines, current: OFF"
@@ -284,7 +288,131 @@ do while(.true.)
 	end if
 	write(*,*) "22 Set thickness of curves/lines/texts/axes/grid"
     if (nsystem==1) write(*,*) "23 Set status of showing spikes to indicate transition levels"
-	read(*,*) isel
+	read(*,"(a)") c80tmp
+    
+    if (index(c80tmp,'s')/=0) then
+        write(*,"(a)") " Input file path for saving plotting settings, e.g. C:\Bang_Dream\RAS.dat"
+        write(*,"(a)") " Note: If you press ENTER button directly, status will be saved to spectrum.dat in current folder"
+        read(*,"(a)") c200tmp
+        if (c200tmp==" ") c200tmp="spectrum.dat"
+        open(10,file=c200tmp,status="replace")
+        write(10,*) icurveclr
+        write(10,*) ilineclr
+        write(10,*) thk_curve
+        write(10,*) thk_weighted
+        write(10,*) thk_legend
+        write(10,*) thk_discrete
+        write(10,*) thk_axis
+        write(10,*) thk_grid
+        write(10,*) spikethick
+        write(10,*) spikecolor
+        write(10,*) iextlabelrot
+        write(10,*) extlabeldecimal
+        write(10,*) extlabelsize
+        write(10,*) extlabelcontent
+        write(10,*) extlabelclr
+        write(10,*) extmaxlabelshiftX
+        write(10,*) extmaxlabelshiftY
+        write(10,*) extminlabelshiftX
+        write(10,*) extminlabelshiftY
+        write(10,*) gauweigh
+        write(10,*) iusersetY1
+        write(10,*) iusersetY2
+        write(10,*) iusersetX
+        write(10,*) ishowline
+        write(10,*) ishowgrid
+        write(10,*) ishowlevel
+        write(10,*) ishowtotal
+        write(10,*) idegen
+        write(10,*) degencrit
+        write(10,*) iweisyscurve
+        write(10,*) ishowextrema
+        write(10,*) iunitliney
+        write(10,*) shiftx
+        write(10,*) ibroadfunc
+        write(10,*) iunitx
+        write(10,*) scalecurve
+        write(10,*) ispectrum
+        write(10,*) FWHMall(1,1)
+        write(10,*) xlow
+        write(10,*) xhigh
+        write(10,*) stepx
+        write(10,*) orgy1
+        write(10,*) endy1
+        write(10,*) stepy1
+        write(10,*) orgy2
+        write(10,*) endy2
+        write(10,*) stepy2
+        write(10,"(a)") graphformat
+        close(10)
+        write(*,*) "Done!"
+        cycle
+    else if (index(c80tmp,'l')/=0)then
+        write(*,"(a)") " Input file path to load plotting settings from it, e.g. C:\Bang_Dream\RAS.dat"
+        write(*,"(a)") " Note: If you press ENTER button directly, status will be load from spectrum.dat in current folder"
+        read(*,"(a)") c200tmp
+        if (c200tmp==" ") c200tmp="spectrum.dat"
+	    inquire(file=c200tmp,exist=alive)
+	    if (alive==.false.) then
+	        write(*,*) "Error: Cannot find the file! Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        open(10,file=c200tmp,status="old")
+        read(10,*) icurveclr
+        read(10,*) ilineclr
+        read(10,*) thk_curve
+        read(10,*) thk_weighted
+        read(10,*) thk_legend
+        read(10,*) thk_discrete
+        read(10,*) thk_axis
+        read(10,*) thk_grid
+        read(10,*) spikethick
+        read(10,*) spikecolor
+        read(10,*) iextlabelrot
+        read(10,*) extlabeldecimal
+        read(10,*) extlabelsize
+        read(10,*) extlabelcontent
+        read(10,*) extlabelclr
+        read(10,*) extmaxlabelshiftX
+        read(10,*) extmaxlabelshiftY
+        read(10,*) extminlabelshiftX
+        read(10,*) extminlabelshiftY
+        read(10,*) gauweigh
+        read(10,*) iusersetY1
+        read(10,*) iusersetY2
+        read(10,*) iusersetX
+        read(10,*) ishowline
+        read(10,*) ishowgrid
+        read(10,*) ishowlevel
+        read(10,*) ishowtotal
+        read(10,*) idegen
+        read(10,*) degencrit
+        read(10,*) iweisyscurve
+        read(10,*) ishowextrema
+        read(10,*) iunitliney
+        read(10,*) shiftx
+        read(10,*) ibroadfunc
+        read(10,*) iunitx
+        read(10,*) scalecurve
+        read(10,*) ispectrum
+        read(10,*) FWHMall(1,1)
+        read(10,*) xlow
+        read(10,*) xhigh
+        read(10,*) stepx
+        read(10,*) orgy1
+        read(10,*) endy1
+        read(10,*) stepy1
+        read(10,*) orgy2
+        read(10,*) endy2
+        read(10,*) stepy2
+        read(10,"(a)") graphformat
+        close(10)
+        write(*,*) "Loading finished!"
+        cycle
+    else
+        read(c80tmp,*) isel
+    end if
     
     if (isel==-4) then
         call setgraphformat
@@ -303,7 +431,7 @@ do while(.true.)
 			end do
 			close(10)
 			write(*,"(a)") " The transition data have been exported to transinfo.txt in current directory, &
-			this file can be directly used as input file of Multiwfn."
+			this file can be directly used as input file of Multiwfn"
 		else
 			do imol=1,nsystem
 				write(c200tmp,"(a,i3.3,a)") "transinfo",imol,".txt"
@@ -315,7 +443,7 @@ do while(.true.)
 				close(10)
 			end do
 			write(*,"(a)") " The transition data have been exported to .txt with ""transinfo"" as prefix in current directory, &
-			these files can be directly used as input file of Multiwfn."
+			these files can be directly used as input file of Multiwfn"
 		end if
         
 	else if (isel==-1.or.isel==20) then !Show transition data and modify strengths
@@ -333,13 +461,13 @@ do while(.true.)
 					write(*,"(i6,3x,f12.5,7x,f12.5)") i,dataxall(imol,i),strall(imol,i)
 				end do
 			else if (ispectrum==3.or.ispectrum==4) then !UV-Vis, ECD
-				if (ispectrum==3) write(*,*) " Index  Excit.energy(eV       nm         1000cm^-1)       Oscil.str."
-				if (ispectrum==4) write(*,*) " Index  Excit.energy(eV       nm         1000cm^-1)       Rotat.str."
-				if (iunitx==3) dataxall=dataxall/8.0655447D0 !If unit is in 1000cm^-1, temporarily convert to eV
+				if (ispectrum==3) write(*,*) " Index  Excit.energy(eV       nm        1000 cm^-1)       Oscil.str."
+				if (ispectrum==4) write(*,*) " Index  Excit.energy(eV       nm        1000 cm^-1)       Rotat.str."
+				if (iunitx==3) dataxall=dataxall/8.0655447D0 !If unit is in 1000 cm^-1, temporarily convert to eV
 				do i=1,numdataall(imol)
 					write(*,"(i6,1x,4f15.5)") i,dataxall(imol,i),1240.7011D0/dataxall(imol,i),8.0655447D0*dataxall(imol,i),strall(imol,i)
 				end do
-				if (iunitx==3) dataxall=dataxall*8.0655447D0 !Convert back from eV to 1000cm^-1
+				if (iunitx==3) dataxall=dataxall*8.0655447D0 !Convert back from eV to 1000 cm^-1
 			else if (ispectrum==5) then !VCD
 				write(*,*) " Index   Freq.(cm^-1)        Rotat.str."
 				do i=1,numdataall(imol)
@@ -389,7 +517,12 @@ do while(.true.)
 			xhigh=tmp
 			stepx=-stepx
 		else
-			read(c200tmp,*) xlow,xhigh,stepx
+			read(c200tmp,*,iostat=ierror) xlow,xhigh,stepx
+            if (ierror/=0) then
+                write(*,*) "Error: Unable to recognize the inputted content. Press ENTER button to continue"
+                read(*,*)
+                cycle
+            end if
 			if (xlow>xhigh.and.stepx>0) stepx=-stepx
 		end if
 		iusersetX=1 !User has modified it
@@ -413,7 +546,12 @@ do while(.true.)
 			endy1=tmp
 			stepy1=-stepy1
 		else
-			read(c200tmp,*) orgy1,endy1,stepy1
+			read(c200tmp,*,iostat=ierror) orgy1,endy1,stepy1
+            if (ierror/=0) then
+                write(*,*) "Error: Unable to recognize the inputted content. Press ENTER button to continue"
+                read(*,*)
+                cycle
+            end if
 			if (orgy1>endy1.and.stepy1>0) stepy1=-stepy1
 		end if
 		iusersetY1=1
@@ -446,7 +584,12 @@ do while(.true.)
 			endy2=tmp
 			stepy2=-stepy2
 		else
-			read(c200tmp,*) orgy2,endy2,stepy2
+			read(c200tmp,*,iostat=ierror) orgy2,endy2,stepy2
+            if (ierror/=0) then
+                write(*,*) "Error: Unable to recognize the inputted content. Press ENTER button to continue"
+                read(*,*)
+                cycle
+            end if
 		end if
 		iusersetY2=1
 		write(*,"(a)") " Do you want to let program properly scale left Y axis so that its zero position exactly corresponds to right Y-axis? (y/n)"
@@ -477,7 +620,7 @@ do while(.true.)
 			if (iunitx==2) write(*,"(a,/)") " NOTE: nm is not a linear unit of energy, so in principle one cannot define FWHM in nm. Nevertheless, in Multiwfn, when nm &
 			is chosen as the unit, the curve will be generated in eV as X-axis first, and then convert to nm. Since current unit is nm, now you have to define the FWHM in eV."
 			if (iunitx==1.or.iunitx==2) write(*,*) "Input the FWHM in eV, e.g. 0.5"
-			if (iunitx==3) write(*,*) "Input the FWHM in 1000cm^-1, e.g. 4"
+			if (iunitx==3) write(*,*) "Input the FWHM in 1000 cm^-1, e.g. 4"
 		end if
 		read(*,*) tmp
 		FWHMall=tmp
@@ -499,16 +642,16 @@ do while(.true.)
 		else if (ispectrum==3.or.ispectrum==4) then !UV-Vis, ECD
 			iusersetx=0 !Ensure auto X-axis is used, else will encounter problems 
 			iold=iunitx
-			write(*,*) "1: eV  2: nm  3: 1000cm^-1"
+			write(*,*) "1: eV  2: nm  3: 1000 cm^-1"
 			read(*,*) iunitx
 			if (iunitx==1.or.iunitx==2) then
-				if (iold==3) then !Convert data from 1000cm^-1 to eV (For both eV and nm, transition energies are stored in eV)
+				if (iold==3) then !Convert data from 1000 cm^-1 to eV (For both eV and nm, transition energies are stored in eV)
 					dataxall=dataxall/8.0655447D0
 					FWHMall=FWHMall/8.0655447D0
 					scalecurve=scalecurve/8.0655447D0 !1 unit oscillator strength can be broadened to 28700 area (X:eV Y:L/mol/cm)
 				end if
 			else if (iunitx==3) then
-				if (iold==1.or.iold==2) then !Convert data from eV to 1000cm^-1
+				if (iold==1.or.iold==2) then !Convert data from eV to 1000 cm^-1
 					dataxall=dataxall*8.0655447D0
 					FWHMall=FWHMall*8.0655447D0
 					scalecurve=scalecurve*8.0655447D0
@@ -536,6 +679,7 @@ do while(.true.)
 			write(*,*) "Note: This operation will be applied to all systems loaded"
 			write(*,*)
 		end if
+        dataxall=dataxall_org !Recovered to initially loaded data
 		if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then !Vibrational spectra, mode selection is viable
 			write(*,*) "Input the index range of the transitions you want to scaled"
 			write(*,*) "e.g. 1,3-6,22 means selecting transitions 1,3,4,5,6,22"
@@ -553,11 +697,11 @@ do while(.true.)
 				call str2arr(c200tmp,nmode,tmparr)
 			end if
 			write(*,"(i6,' frequencies were selected')") nmode
-			write(*,"(a)") " Multiplying the frequencies by which factor?  e.g. 0.97"
+			write(*,"(a)") " Input the scale factor, e.g. 0.97"
 			write(*,"(a)") " Note: If press ENTER button directly, 0.9614 will be used, which is recommended for B3LYP/6-31G* level"
 			read(*,"(a)") c200tmp
 			if (c200tmp==" ") then
-				tmpval=0.9614
+				tmpval=0.9614D0
 			else
 				read(c200tmp,*) tmpval
 			end if
@@ -682,7 +826,6 @@ do while(.true.)
 				if (temper==0) then
 					Bfac=1D0
 				else
-	! 				write(*,*) v0,lightc,planckc,boltzc,temper,-vi*100*lightc*planckc/(boltzc*temper)
 					Bfac=1-exp( -vi*100*lightc*planckc/(boltzc*temper) )
 				end if
 				if (iramantype==1) strall(imol,i)= Cfac*(v0-vi)**4 /Bfac /vi * strall(imol,i) !Convert from activity to intensity
@@ -730,6 +873,8 @@ do while(.true.)
         write(*,"(a)") " Note: You can use options 1~10 to define at most 10 sets of spikes"
         do while(.true.)
             write(*,*)
+            if (iexportlevel==0) write(*,*) "-4 Toggle exporting spikes as spike.txt during plotting, current: No"
+            if (iexportlevel==1) write(*,*) "-4 Toggle exporting spikes as spike.txt during plotting, current: Yes"
             if (idegen==1) write(*,"(a,f6.3)") " -3 Toggle considering degenerate, current: Yes, with threshold of ",degencrit
             if (idegen==0) write(*,"(a,f8.6)") " -3 Toggle considering degenerate, current: No"
             write(*,"(a,i3)") " -2 Set spike thick, current:",spikethick
@@ -749,7 +894,14 @@ do while(.true.)
                 end if
             end do
             read(*,*) isel2
-            if (isel2==-3) then
+            if (isel2==-4) then
+                if (iexportlevel==0) then
+                    iexportlevel=1
+                    if (ishowlevel==0) write(*,"(a)") " Warning: This option takes effect only when status of option -1 has been charnged to ""Yes"""
+                else
+                    iexportlevel=0
+                end if
+            else if (isel2==-3) then
                 if (idegen==1) then
                     idegen=0
                 else
@@ -921,7 +1073,7 @@ do while(.true.)
 					do ipoint=1,num1Dpoints
 						curveytmp(ipoint)=preterm/( (curvex(ipoint)-dataxall(imol,idata))**2+0.25D0*FWHMall(imol,idata)**2 )
 					end do
-					curveyall(imol,:)=curveyall(imol,:)+curveytmp
+					curveyall(imol,:)=curveyall(imol,:)+curveytmp !*dataxall(imol,idata)
 					if (isel==15) then !Individual contribution
 						if (idx2indband(idata)/=0) indcurve(:,idx2indband(idata))=curveytmp
 					end if
@@ -1031,9 +1183,9 @@ do while(.true.)
 		else if (ispectrum==3.or.ispectrum==4) then !UV-Vis, ECD
 			if (iunitx==1) write(*,*) "Column 1: Excitation energy (eV)"
 			if (iunitx==2) write(*,*) "Column 1: Wavelength (nm)"
-			if (iunitx==3) write(*,*) "Column 1: Wavenumber (1000cm^-1)"
+			if (iunitx==3) write(*,*) "Column 1: Wavenumber (1000 cm^-1)"
 			if (ispectrum==3) write(*,*) "Column 2: Molar absorption coefficient (L/mol/cm)"
-			if (ispectrum==4) write(*,*) "Column 2: Delta molar absorption coefficient (L/mol/cm)"
+			if (ispectrum==4) write(*,*) "Column 2: Delta molar absorption coefficient (arb.)"
 		else if (ispectrum==5) then !VCD
 			write(*,*) "Column 1: Wavenumber (cm^-1)"
 			write(*,*) "Column 2: Delta molar absorption coefficient (L/mol/cm)"
@@ -1078,7 +1230,7 @@ do while(.true.)
 		else if (ispectrum==3.or.ispectrum==4) then !UV-Vis, ECD
 			if (iunitx==1) write(*,*) "Column 1: Excitation energy (eV)"
 			if (iunitx==2) write(*,*) "Column 1: Wavelength (nm)"
-			if (iunitx==3) write(*,*) "Column 1: Wavenumber (1000cm^-1)"
+			if (iunitx==3) write(*,*) "Column 1: Wavenumber (1000 cm^-1)"
 			if (ispectrum==3) write(*,*) "Column 2: Oscillator strength"
 			if (ispectrum==4) write(*,*) "Column 2: Rotatory strength in cgs (10^-40 erg-esu-cm/Gauss)"
 		else if (ispectrum==5) then !VCD
@@ -1184,7 +1336,7 @@ do while(.true.)
 		    end if
 		    if (iunitx==1) CALL NAME('Excitation energy (eV)','X')
 		    if (iunitx==2) CALL NAME('Wavelength (nm)','X')
-		    if (iunitx==3) CALL NAME('Wavenumber (1000cm$^{-1}$)','X')
+		    if (iunitx==3) CALL NAME('Wavenumber (1000 cm$^{-1}$)','X')
         end if
 		! Name of Y-axis
 		call TEXMOD("ON")
@@ -1193,7 +1345,7 @@ do while(.true.)
 		else if (ispectrum==2) then
 			CALL NAME('Relative Raman intensity','Y')
 		else if (ispectrum==4.or.ispectrum==5) then
-			CALL NAME('$\Delta\epsilon$ (L mol$^{-1}$cm$^{-1}$)','Y')
+			CALL NAME('$\Delta\epsilon$ (arb.)','Y')
 		else if (ispectrum==6) then
 			if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) then
 				CALL NAME('$I_R+I_L$','Y')
@@ -1375,14 +1527,14 @@ do while(.true.)
         call angle(0) !Recover to default
 		call endgrf
         
-        !Draw spikes to show levels
+        !Draw spikes at the bottom of the map to show transition levels, may or may not consider degeneracy
         if (ishowlevel==1) then
             call AXSLEN(nxpixel,90)
             if (ishowline==0) call axspos(510,1630)
             if (ishowline==1) call axspos(400,1630)
             CALL TICKS(1,'X')
             CALL TICKS(0,'Y')
-            if (idegen==1) then !Determine maximum degenerate
+            if (idegen==1) then !Determine maximum degeneracy of all transition levels
                 maxdegen=1
                 do idata=1,numdata
                     degentest=1
@@ -1401,24 +1553,24 @@ do while(.true.)
 		    end if
 		    if (iunitx==1) CALL NAME('Excitation energy (eV)','X')
 		    if (iunitx==2) CALL NAME('Wavelength (nm)','X')
-		    if (iunitx==3) CALL NAME('Wavenumber (1000cm$^{-1}$)','X')
+		    if (iunitx==3) CALL NAME('Wavenumber (1000 cm$^{-1}$)','X')
             call setgrf('NAME','TICKS','NONE','TICKS')
 		    if (idegen==0) CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, 0D0,1D0,0D0,1D0)
             if (idegen==1) CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, 0D0,dfloat(maxdegen),0D0,1D0)
             allocate(spikey(3*numdata))
             call LINWID(spikethick)
             
-            do iset=1,maxspike
-                if (spikenum(iset)==0) cycle
+            do iset=1,maxspike !Plotting all spike sets
+                if (spikenum(iset)==0) cycle !This spike set has not been defined
                 spikey=0
-                if (idegen==0) then !Do not consider degenerate
+                if (idegen==0) then !Do not consider degeneracy
                     do idata=1,numdata
 				        inow=3*(idata-1)
 				        if (any(spikeidx(iset,1:spikenum(iset))==idata)) spikey(inow+2)=0.9D0
                     end do
-                else !Consider degenerate in current set
+                else !Consider degeneracy in current set
                     istart=1
-                    do while(istart<spikenum(iset))
+                    do while(istart<spikenum(iset)) !Cycle all levels in this set, and compare with latter ones
                         do idata=istart,spikenum(iset)
                             ireal=spikeidx(iset,idata)
                             enei=dataxall(1,ireal)
@@ -1436,14 +1588,24 @@ do while(.true.)
                 end if
                 call setcolor(spikecolor(iset))
 			    CALL CURVE(linexall(1,1:3*numdata),spikey,3*numdata)
+                if (iexportlevel==1) then !Export as .txt file
+                    write(c200tmp,"('spike',i2.2,'.txt')") iset
+                    open(10,file=c200tmp,status="replace")
+                    do itmp=1,3*numdata
+                        write(10,"(f12.4,f4.1)") linexall(1,itmp),spikey(itmp)
+                    end do
+                    close(10)
+                end if
             end do
             deallocate(spikey)
 		    CALL ENDGRF
 			call color("WHITE")
+            if (iexportlevel==1) write(*,"(a)") " Line data corresponding to various spike sets have been &
+            exported to spike[index].txt in current folder"
         end if
         
 		call disfin
-		if (isavepic==1) write(*,*) "Graphic file has been saved to current folder with ""DISLIN"" prefix"
+		if (isavepic==1) write(*,*) "Graphical file has been saved to current folder with ""DISLIN"" prefix"
 	end if
 
 end do
@@ -1679,7 +1841,7 @@ if (igauout==1) then
                             if (c80tmp==" ") exit
                             numcomb=numcomb+1
                         end do
-                        write(*,"(' Number of Combination frequencies:',i6)") numcomb
+                        write(*,"(' Number of combination frequencies:',i6)") numcomb
                     end if
                     numdata=numfund+numover+numcomb
 					
@@ -1711,10 +1873,14 @@ if (igauout==1) then
 					if (ctest3=='y'.or.ctest3=='Y') then
 						call loclabel(10,"Combination Bands",ifound,0)
 						read(10,*);read(10,*);read(10,*)
+                        !In order to compatible with different version, find the position of the last character of the two labels
+                        read(10,"(a)") c80tmp
+                        iskip=index(c80tmp,')',back=.true.)
+                        backspace(10)
 						do itmp=1,numcomb
 							idata=idata+1
-                            read(10,"(22x)",advance='no')
-							read(10,*) harmfreq,datax(idata),str(idata)
+                            read(10,"(a)") c80tmp
+                            read(c80tmp(iskip+1:),*) harmfreq,datax(idata),str(idata)
 							if (ispectrum==2) str(idata)=0.059320323D0*harmfreq*str(idata) !The conversion coefficient can be found in output file
 						end do
 					end if
@@ -1724,7 +1890,8 @@ if (igauout==1) then
 	
 	!UV-Vis, ECD
 	else if (ispectrum==3.or.ispectrum==4) then
-		!Because this may be an excited state optimization task, we need to determine how many steps are there
+		!Because this may be an excited state optimization task, we need to determine how many steps are there, so that we can locate to the last output
+        !Besides, for EOM-CCSD task, the EOM-CCSD energies and transition moments are outputted after CIS part, this also needs to find the last time of output
 		numopt=0
 		do while(.true.)
 			call loclabel(10,"Excitation energies and oscillator strengths",ifound,0)
@@ -1774,15 +1941,20 @@ if (igauout==1) then
 				write(*,*) "1: Length representation     2: Velocity representation (Recommended)"
 				read(*,*) istrtype
 			end if
+            rewind(10)
 			if (istrtype==1) then
-				call loclabel(10,"R(length)",ifound,1)
-				read(10,*)
+		        do i=1,numopt !Locate to the last time of output
+				    call loclabel(10,"R(length)",ifound,0)
+				    read(10,*)
+                end do
 				do i=1,numdata
 					read(10,*) inouse,rnouse,rnouse,rnouse,str(i)
 				end do
 			else
-				call loclabel(10,"R(velocity)",ifound,1)
-				read(10,*)
+		        do i=1,numopt !Locate to the last time of output
+				    call loclabel(10,"R(velocity)",ifound,0)
+				    read(10,*)
+                end do
 				do i=1,numdata
 					read(10,*) inouse,rnouse,rnouse,rnouse,str(i)
 					do while(.true.)

@@ -15,9 +15,9 @@ real*8 potx(sphpot),poty(sphpot),potz(sphpot),potw(sphpot)
 type(content) gridatm(radpot*sphpot)
 real*8 smat(ncenter,ncenter),Pvec(ncenter),rintval(ncenter,10),funcval(radpot*sphpot),atmspcweight(radpot*sphpot) !rintval store integral, can record 10 integrand at the same time
 real*8 rintvalp(ncenter,10) !Private for each OpenMP thread
-real*8 promol(radpot*sphpot),atomdens(radpot*sphpot),selfdens(radpot*sphpot),selfdensgrad(3,radpot*sphpot) !For Hirshfeld partition. selfdensgrad2 is only used in Shubin's project
+real*8 promol(radpot*sphpot),atomdens(radpot*sphpot),selfdens(radpot*sphpot),selfdensgrad(3,radpot*sphpot),selfdenslapl(radpot*sphpot) !For Hirshfeld partition
 real*8 specrho(radpot*sphpot),specrhograd2(radpot*sphpot) !Density and its gradient^2 of atom in specific state (user-provided atomic wavefunction). Used for taking Hirshfeld as reference to calculate relative Shannon and Fisher entropy
-real*8 :: covr_becke(0:nelesupp)=0D0 !covalent radii used for Becke partition
+real*8 :: covr_becke(0:nelesupp)=0D0 !Covalent radii used for Becke partition
 real*8 DI(ncenter,ncenter),DIa(ncenter,ncenter),DIb(ncenter,ncenter) !Delocalization index matrix
 real*8 LI(ncenter),LIa(ncenter),LIb(ncenter) !Localization index array
 real*8 CLRK(ncenter,ncenter) !Condensed linear response kernel
@@ -111,6 +111,7 @@ if (iwork==0) then
 		write(*,"(a)") " 100 Calculate relative Shannon and Fisher entropy of specific state w.r.t. Hirshfeld density"
 		write(*,*) "102 Obtain quadratic and cubic Renyi entropy"
 		write(*,*) "103 Obtain quadratic and cubic Renyi relative entropy"
+		write(*,*) "104 The same as 99, but also calculate relative g1,g2,g3"
 	end if
 	read(*,*) isel
 	
@@ -323,7 +324,7 @@ if (isel==1.or.isel==8) then !Select which function to be integrated in single a
 		write(*,*) "-2 Deformation density"
 		call selfunc_interface(1,ifunc)
 	end if
-else if (isel==2) then !Multipole moment integral need electron density
+else if (isel==2) then !Multipole moment integral needs electron density
 	ifunc=1
 	write(*,*) "Note: All units below are in a.u."
 	write(*,*)
@@ -414,12 +415,13 @@ else if (isel==12) then
 end if
 
 
+
 !!=======================================
 !!---------------------------------------
 !!--------- Start calculation -----------
 !!---------------------------------------
 !!=======================================
-rintval=0D0 !Clean accumulated variables
+rintval=0D0 !Initialize accumulated variables
 xintacc=0D0
 yintacc=0D0
 zintacc=0D0
@@ -433,8 +435,9 @@ call walltime(nwalltime1)
 
 call Lebedevgen(sphpot,potx,poty,potz,potw)
 
-do iatm=1,ncenter !! Cycle each atom
-	!Show progress for integrating function. For electric multipole moment integration the process is not shown, because it print data in the process
+!! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!
+do iatm=1,ncenter
+	!Show progress for integrating function. For electric multipole moment integration the process is not shown, because it prints data in the process
 	if (isel/=2) write(*,"(' Progress:',i6,'   /',i6)") iatm,ncenter
 
 	if ( (isel==1.or.isel==2).and.all(atmcalclist(1:natmcalclist)/=iatm) ) cycle
@@ -465,7 +468,7 @@ do iatm=1,ncenter !! Cycle each atom
 	if (isel==1.or.isel==2.or.isel==8.or.isel==102) then
 		!$OMP parallel do shared(funcval) private(i) num_threads(nthreads)
 		do i=1+iradcut*sphpot,radpot*sphpot
-			if (ifunc==-2.or.isel==102) then
+			if (ifunc==-2.or.isel==102) then !Deformation density and Renyi entropy require molecular electron density
 				funcval(i)=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
 			else
 				funcval(i)=calcfuncall(ifunc,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
@@ -488,7 +491,7 @@ do iatm=1,ncenter !! Cycle each atom
 			call dealloall
 			call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule) to calc real rho again
 		end if
-    else if (isel==12) then
+    else if (isel==12) then !Information-theoretic aromaticity index
         !$OMP parallel do shared(funcval) private(i) num_threads(nthreads)
 		do i=1+iradcut*sphpot,radpot*sphpot
             if (infoaromat==1) then
@@ -504,7 +507,7 @@ do iatm=1,ncenter !! Cycle each atom
 	
 	!Calculate "iatm" atomic space weight at all points around it (recorded in atmspcweight), which will be used later
 	!Also integrate fuzzy overlap region here (only available for Becke partition)
-	if (ipartition==1) then !Becke
+	if (ipartition==1) then !Becke partition
 		!$OMP parallel shared(atmspcweight,ovlpintpos,ovlpintneg) private(i,rnowx,rnowy,rnowz,smat,&
 		!$OMP ii,ri,jj,rj,rmiu,chi,uij,aij,tmps,iter,Pvec,tmpval,tmpval2,ovlpintpostmp,ovlpintnegtmp) num_threads(nthreads)
 		ovlpintpostmp=0D0
@@ -514,7 +517,7 @@ do iatm=1,ncenter !! Cycle each atom
 			rnowx=gridatm(i)%x
 			rnowy=gridatm(i)%y
 			rnowz=gridatm(i)%z
-			!Calculate weight, by using Eq. 11,21,13,22 in Becke's paper (JCP 88,15)
+			!Calculate weight, by using Eq. 11,21,13,22 in Becke's paper (JCP, 88,15)
 			smat=1.0D0
 			do ii=1,ncenter
 				ri=dsqrt( (rnowx-a(ii)%x)**2+(rnowy-a(ii)%y)**2+(rnowz-a(ii)%z)**2 )
@@ -569,16 +572,21 @@ do iatm=1,ncenter !! Cycle each atom
 			ovlpintneg=ovlpintneg+ovlpintnegtmp
 		!$OMP end CRITICAL
 		!$OMP end parallel
-	else if (ipartition==2) then !Hirshfeld based on atomic .wfn files
+	else if (ipartition==2) then !Hirshfeld partition based on atomic .wfn files
 		promol=0D0
 		do jatm=1,ncenter_org !Calculate free atomic density of each atom and promolecular density
 			call dealloall
 			call readwfn(custommapname(jatm),1)
-			!$OMP parallel do shared(atomdens,selfdensgrad) private(ipt) num_threads(nthreads)
+			!$OMP parallel do shared(atomdens,selfdensgrad,selfdenslapl) private(ipt,hess) num_threads(nthreads)
 			do ipt=1+iradcut*sphpot,radpot*sphpot
 				atomdens(ipt)=fdens(gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
-				if (jatm==iatm.and.(isel==99.or.isel==100)) then !SPECIAL: Calculate rho and its gradient for free atom
-					call calchessmat_dens(1,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,selfdens(ipt),selfdensgrad(1:3,ipt),hess)
+				if (jatm==iatm) then !SPECIAL: For Shubin's project, evaluate derivative of rho
+                    if (isel==99.or.isel==100) then !Calculate rho and its gradient for free atom
+					    call calchessmat_dens(1,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,selfdens(ipt),selfdensgrad(1:3,ipt),hess)
+                    else if (isel==104) then !Calculate rho, its gradient and Hessian for free atom
+					    call calchessmat_dens(2,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,selfdens(ipt),selfdensgrad(1:3,ipt),hess)
+                        selfdenslapl(ipt)=hess(1,1)+hess(2,2)+hess(3,3)
+                    end if
 				end if
 			end do
 			!$OMP end parallel do
@@ -648,11 +656,12 @@ do iatm=1,ncenter !! Cycle each atom
 		do i=1+iradcut*sphpot,radpot*sphpot
 			rintval(iatm,1)=rintval(iatm,1)+atmspcweight(i)*funcval(i)*gridatm(i)%value
 		end do
-	else if (isel==99.or.isel==100.or.isel==103) then !SPECIAL SPECIAL SPECIAL
+	else if (isel==99.or.isel==100.or.isel==103.or.isel==104) then !SPECIAL SPECIAL SPECIAL
 		!=99:  Calculate relative Shannon and Fisher entropy and 2nd-order term
 		!=100: Calculate relative Shannon/Fisher entropy by taking Hirshfeld density as reference
 		!=103: Calculate quadratic and cubic Renyi relative entropy
-		!$OMP parallel shared(rintval) private(i,rnowx,rnowy,rnowz,rhow,rhogradw,rhograd2w,rintvalp,tmpx,tmpy,tmpz) num_threads(nthreads)
+		!=104: Same as 99, but also calculate relative g1, g2, g3
+		!$OMP parallel shared(rintval) private(i,rnowx,rnowy,rnowz,rhow,rhogradw,rhograd2w,hess,rholaplw,rintvalp,tmpx,tmpy,tmpz) num_threads(nthreads)
 		rintvalp=0D0
 		!$OMP do schedule(dynamic)
 		do i=1+iradcut*sphpot,radpot*sphpot
@@ -661,13 +670,19 @@ do iatm=1,ncenter !! Cycle each atom
 			rnowz=gridatm(i)%z
 			if (isel==99.or.isel==100) then
 				call calchessmat_dens(1,rnowx,rnowy,rnowz,rhow,rhogradw(:),hess)
-				rhow=atmspcweight(i)*rhow !rhoA at current point
-				rhogradw=atmspcweight(i)*rhogradw
-				rhograd2w=sum(rhogradw(:)**2) !|grad_rhoA|^2 at current point
+				rhow=atmspcweight(i)*rhow !rhoA
+				rhogradw=atmspcweight(i)*rhogradw !grad_rhoA
+				rhograd2w=sum(rhogradw(:)**2) !|grad_rhoA|^2
+			else if (isel==104) then
+				call calchessmat_dens(2,rnowx,rnowy,rnowz,rhow,rhogradw(:),hess)
+				rhow=atmspcweight(i)*rhow !rhoA
+				rhogradw=atmspcweight(i)*rhogradw !grad_rhoA
+				rhograd2w=sum(rhogradw(:)**2) !|grad_rhoA|^2
+                rholaplw=atmspcweight(i)*(hess(1,1)+hess(2,2)+hess(3,3))
 			else
 				rhow=atmspcweight(i)*fdens(rnowx,rnowy,rnowz) !rhoA at current point
 			end if
-			if (isel==99) then
+			if (isel==99.or.isel==104) then
 			    !Relative Shannon entropy w.r.t. free-state
 			    rintvalp(iatm,1)=rintvalp(iatm,1)+rhow*log(rhow/selfdens(i))*gridatm(i)%value
 			    !Relative Fisher information entropy w.r.t. free-state (old formula, incorrect)
@@ -685,6 +700,14 @@ do iatm=1,ncenter !! Cycle each atom
 			    tmpy=rhogradw(2)/rhow-selfdensgrad(2,i)/selfdens(i)
 			    tmpz=rhogradw(3)/rhow-selfdensgrad(3,i)/selfdens(i)
 			    rintvalp(iatm,7)=rintvalp(iatm,7)+rhow*(tmpx**2+tmpy**2+tmpz**2)*gridatm(i)%value
+                if (isel==104) then !Relative g1, g2, g3, respectively
+                    rintvalp(iatm,8)=rintvalp(iatm,8) + rholaplw*log(rhow/selfdens(i))*gridatm(i)%value
+                    rintvalp(iatm,9)=rintvalp(iatm,9) + rhow*(rholaplw/rhow-selfdenslapl(i)/selfdens(i))*gridatm(i)%value
+                    tmpx=rhogradw(1)/rhow-selfdensgrad(1,i)/selfdens(i)
+                    tmpy=rhogradw(2)/rhow-selfdensgrad(2,i)/selfdens(i)
+                    tmpz=rhogradw(3)/rhow-selfdensgrad(3,i)/selfdens(i)
+                    rintvalp(iatm,10)=rintvalp(iatm,10) + rhow*(tmpx**2+tmpy**2+tmpz**2)*gridatm(i)%value
+                end if
 			else if (isel==100) then
 			    !Relative Shannon entropy of specific atomic state with Hirshfeld density as reference
 			    rintvalp(iatm,1)=rintvalp(iatm,1)+specrho(i)*log(specrho(i)/rhow)*gridatm(i)%value
@@ -709,28 +732,10 @@ do iatm=1,ncenter !! Cycle each atom
 		end do
 	else if (isel==2) then !Integrate multipole moments
 		eleint=0D0
-		xint=0D0
-		yint=0D0
-		zint=0D0
-		xxint=0D0
-		yyint=0D0
-		zzint=0D0
-		xyint=0D0
-		yzint=0D0
-		xzint=0D0
-		xxxint=0D0
-		yyyint=0D0
-		zzzint=0D0
-		yzzint=0D0
-		xzzint=0D0
-		xxzint=0D0
-		yyzint=0D0
-		xxyint=0D0
-		xyyint=0D0
-		xyzint=0D0
-		rrxint=0D0
-		rryint=0D0
-		rrzint=0D0
+		xint=0D0;yint=0D0;zint=0D0
+		xxint=0D0;yyint=0D0;zzint=0D0;xyint=0D0;yzint=0D0;xzint=0D0
+		xxxint=0D0;yyyint=0D0;zzzint=0D0;yzzint=0D0;xzzint=0D0;xxzint=0D0;yyzint=0D0;xxyint=0D0;xyyint=0D0;xyzint=0D0
+		rrxint=0D0;;rryint=0D0;rrzint=0D0
 		do i=1+iradcut*sphpot,radpot*sphpot
 			rx=gridatm(i)%x-a(iatm)%x
 			ry=gridatm(i)%y-a(iatm)%y
@@ -1054,9 +1059,8 @@ if (isel==1) then
 		write(*,"(' Summing up above values:',f20.8)") sumval
 		write(*,"(' Summing up absolute value of above values:',f20.8)") sumabsval
 	end if
-	write(*,*)
 	
-else if (isel==99) then !SPECIAL: Relative Shannon and Fisher entropy and 2nd-order term
+else if (isel==99.or.isel==104) then !SPECIAL: Relative Shannon and Fisher entropy and 2nd-order term
 	write(*,*) "Relative Shannon entropy and relative Fisher information w.r.t. its free-state"
 	write(*,*) "   Atom           Rel.Shannon       Rel.Fisher(old)   Rel.Fisher(new)"
 	do iatm=1,ncenter
@@ -1078,13 +1082,20 @@ else if (isel==99) then !SPECIAL: Relative Shannon and Fisher entropy and 2nd-or
 	end do
 	write(*,"(' Summing up above values:',2f16.8)") sum(rintval(:,5)),sum(rintval(:,6))
 	write(*,*)
+    if (isel==104) then
+	    write(*,*) "Relative g1, g2 and g3"
+        write(*,*) "    Atom            rel. g1           rel. g2           rel. g3"
+	    do iatm=1,ncenter
+		    write(*,"(i6,'(',a2,')  ',3f18.8)") iatm,a(iatm)%name,rintval(iatm,8),rintval(iatm,9),rintval(iatm,10)
+	    end do
+	    write(*,"(' Summing up above values:',3f18.8)") sum(rintval(:,8)),sum(rintval(:,9)),sum(rintval(:,10))
+	end if
 else if (isel==100) then !SPECIAL: Relative Shannon/Fisher by taking Hirshfeld density as reference
 	write(*,*) "Relative Shannon and Fisher entropy of specific state w.r.t. Hirshfeld density"
 	write(*,*) "   Atom         Relat_Shannon      Relat_Fisher"
 	do iatm=1,ncenter
 		write(*,"(i6,'(',a2,')  ',2f18.8)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,2)
 	end do
-	write(*,*)
 else if (isel==102) then !SPECIAL: Quadratic and cubic Renyi entropy
 	write(*,*) "Atomic contribution to int(rho^2) and int(rho^3) under Hirshfeld partition:"
 	write(*,*) "   Atom            Quadratic             Cubic"
@@ -1095,7 +1106,6 @@ else if (isel==102) then !SPECIAL: Quadratic and cubic Renyi entropy
 	write(*,*)
 	write(*,"(' Molecular quadratic Renyi entropy:',f18.8)") -log10(sum(rintval(:,1)))
 	write(*,"(' Molecular cubic Renyi entropy:    ',f18.8)") -log10(sum(rintval(:,2)))/2
-	write(*,*)
 else if (isel==103) then !SPECIAL: Quadratic and cubic Renyi relative entropy
 	write(*,"(a)") " Note: rhoA=w_A(r)*rho(r) is density of A in molecule, rhoA0 is density of A in its free-state"
 	write(*,*) "   Atom        int(rhoA^2/rhoA0)   int(rhoA^3/rhoA0^2)"
@@ -1106,7 +1116,6 @@ else if (isel==103) then !SPECIAL: Quadratic and cubic Renyi relative entropy
 	write(*,*)
 	write(*,"(' Molecular quadratic Renyi relative entropy:',f18.8)") -log10(sum(rintval(:,1)))
 	write(*,"(' Molecular cubic Renyi relative entropy:    ',f18.8)") -log10(sum(rintval(:,2)))
-	write(*,*)
 		
 else if (isel==2) then !Multipole moment integration
 	write(*,"(' Total number of electrons:',f14.6)") -sum(atmmono)
@@ -1117,7 +1126,6 @@ else if (isel==2) then !Multipole moment integration
 	write(*,"(' Molecular dipole moment (Debye):',3f14.6)") xmoldip*au2debye,ymoldip*au2debye,zmoldip*au2debye
 	xmoldipmag=sqrt(xmoldip**2+ymoldip**2+zmoldip**2)
 	write(*,"(' Magnitude of molecular dipole moment (a.u.&Debye):',2f14.6)") xmoldipmag,xmoldipmag*au2debye
-	write(*,*)
 	
 else if (isel==3) then !Output AOM
 	open(10,file="AOM.txt",status="replace")
@@ -1140,7 +1148,6 @@ else if (isel==3) then !Output AOM
 	end if
 	close(10)
 	write(*,*) "Done, AOM have been exported to AOM.txt in current folder"
-	write(*,*)
 	
 else if (isel==4) then !Show LI and DI or fuzzy bond order
 	if (iwork==0) then !Output LI and DI
@@ -1249,10 +1256,10 @@ else if (isel==4) then !Show LI and DI or fuzzy bond order
 			end do
 			write(*,*)
 			if (wfntype==1.or.wfntype==2.or.wfntype==4) then
-				write(*,"('The bond order between fragment 1 and 2:')")
-				write(*,"('Alpha:',f10.6,' Beta:',f10.6,' Total:',f10.6)") bndordfraga,bndordfragb,bndordfraga+bndordfragb
+				write(*,"(' The bond order between fragment 1 and 2:')")
+				write(*,"(' Alpha:',f10.6,' Beta:',f10.6,' Total:',f10.6)") bndordfraga,bndordfragb,bndordfraga+bndordfragb
 			else if (wfntype==0.or.wfntype==3) then
-				write(*,"('The bond order between fragment 1 and 2:',f12.6)") bndordfragtot
+				write(*,"(' The bond order between fragment 1 and 2:',f12.6)") bndordfragtot
 			end if
 		end if
 		write(*,*)
@@ -1291,7 +1298,6 @@ else if (isel==5) then !PDI
 		write(*,"(' Delocalization index of ',i5,'(',a,')   --',i5,'(',a,'):',f12.6)") PDIatom(2),a(PDIatom(2))%name,PDIatom(5),a(PDIatom(5))%name,DI(PDIatom(2),PDIatom(5))
 		write(*,"(' Delocalization index of ',i5,'(',a,')   --',i5,'(',a,'):',f12.6)") PDIatom(3),a(PDIatom(3))%name,PDIatom(6),a(PDIatom(6))%name,DI(PDIatom(3),PDIatom(6))
 		write(*,"(' PDI value is',f12.6)") ( DI(PDIatom(1),PDIatom(4))+DI(PDIatom(2),PDIatom(5))+DI(PDIatom(3),PDIatom(6)) )/3D0
-		write(*,*)
 	end do
 	
 else if (isel==6) then !FLU
@@ -1332,7 +1338,6 @@ else if (isel==6) then !FLU
 			FLUval=FLUval+FLUpair
 		end do
 		write(*,"(' FLU value is',f12.6)") FLUval
-		write(*,*)
 	end do
 	
 else if (isel==7) then !FLU-pi
@@ -1392,7 +1397,6 @@ else if (isel==7) then !FLU-pi
 			FLUval=FLUval+FLUpair
 		end do
 		write(*,"(' FLU-pi value is',f12.6)") FLUval
-		write(*,*)
 	end do
 	
 else if (isel==8) then !Integral in overlap region
@@ -1477,7 +1481,6 @@ else if (isel==8) then !Integral in overlap region
 			write(10,*)
 			close(10)
 			write(*,*) "Done, the matrices have been outputted to intovlp.txt in current folder"
-			write(*,*)
 		end if
 	end if
 	
@@ -1491,7 +1494,6 @@ else if (isel==9) then !CLRK
 		call showmatgau(CLRK,"Condensed linear response kernel (CLRK) matrix",0,"f14.8",10)
 		close(10)
 		write(*,*) "Done, the CLRK matrix has been outputted to CLRK.txt in current folder"
-		write(*,*)
 	end if
 	
 else if (isel==10) then !PLR
@@ -1507,7 +1509,6 @@ else if (isel==10) then !PLR
 		write(*,"(' CLRK of ',i5,'(',a,')   --',i5,'(',a,'):',f12.6)") PLRatom(2),a(PLRatom(2))%name,PLRatom(5),a(PLRatom(5))%name,CLRK(PLRatom(2),PLRatom(5))
 		write(*,"(' CLRK of ',i5,'(',a,')   --',i5,'(',a,'):',f12.6)") PLRatom(3),a(PLRatom(3))%name,PLRatom(6),a(PLRatom(6))%name,CLRK(PLRatom(3),PLRatom(6))
 		write(*,"(' PLR index is',f12.6)") ( CLRK(PLRatom(1),PLRatom(4))+CLRK(PLRatom(2),PLRatom(5))+CLRK(PLRatom(3),PLRatom(6)) )/3D0
-		write(*,*)
 	end do
 	
 else if (isel==11) then !Multicenter DI

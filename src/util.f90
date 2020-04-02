@@ -150,7 +150,7 @@ vecang=acos(costheta)/pi*180
 end function
 
 
-!!---------- Get distance of point 0 to plane(defined by point 1,2,3) 
+!!---------- Get distance of point 0 to plane (defined by point 1,2,3) 
 real*8 function potpledis(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0)
 real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz
 call pointprjple(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz)
@@ -158,7 +158,7 @@ potpledis=dsqrt((x0-prjx)**2+(y0-prjy)**2+(z0-prjz)**2)
 end function
 
 
-!!---------- Project a point(x0,y0,z0) to a plane defined by x/y/z-1/2/3, prjx/y/z are results
+!!---------- Project a point (x0,y0,z0) to a plane defined by x/y/z-1/2/3, prjx/y/z are results
 subroutine pointprjple(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz)
 real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz,A,B,C,D,t
 call pointABCD(x1,y1,z1,x2,y2,z2,x3,y3,z3,A,B,C,D)
@@ -179,7 +179,7 @@ v1z=z2-z1
 v2x=x3-x1
 v2y=y3-y1
 v2z=z3-z1
-! Solve determinant(Vector multiply) to get the normal vector (A,B,C):
+! Solve determinant (Vector multiply) to get the normal vector (A,B,C):
 !  i   j   k   //unit vector
 ! v1x v1y v1z
 ! v2x v2y v2z
@@ -238,6 +238,7 @@ end function
 
 
 !!--------- Input four points, return dihedral angle (in degree)
+!Note that the value is always positive and within [0,180]
 real*8 function xyz2dih(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4)
 real*8 :: x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,pi=3.141592653589793D0,phi
 v12x=x1-x2
@@ -302,52 +303,43 @@ gettetravol=abs(vec1x*vec2x3x+vec1y*vec2x3y+vec1z*vec2x3z)/6D0
 end function
 
 
-!!---------- Input a set of atoms to fit a best plane. Return A, B, C, D of plane equation Ax+By+Cz+D=0
-!Based on Ben's answer: https://math.stackexchange.com/questions/99299/best-fitting-plane-given-a-set-of-points
+
+!!---------- Input a set of atoms to fit a best plane. Return A, B, C, D of plane equation A*x+B*y+C*z+D=0
 !"atmarr" with size of "natm" is the array containing atom indices in the ring. rmsfit measures RMS fitting error in Bohr
+!  Based on joriki's answer: https://math.stackexchange.com/questions/99299/best-fitting-plane-given-a-set-of-points
+!  "Subtract out the centroid, form a 3¡ÁN matrix X out of the resulting coordinates and calculate its singular value decomposition. &
+!The normal vector of the best-fitting plane is the left singular vector corresponding to the least singular value"
 subroutine ptsfitplane(atmarr,natm,planeA,planeB,planeC,planeD,rmsfit)
 use defvar
 implicit real*8 (a-h,o-z)
 integer atmarr(natm)
 real*8 planeA,planeB,planeC,planeD,rmsfit
-real*8 matA(natm,3),matB(natm,1),ple(3,1),tmpmat(3,3)
+real*8 tmpmat(3,natm),singval(3),matU(3,3),matV(natm,natm)
 
-!The algorithm doesn't work when all atoms are exactly in a Cartesian plane, therefore special treatment is employed
-planeA=0;planeB=0;planeC=0;planeD=0;rmsfit=0
-if (maxval(a(atmarr)%x)==minval(a(atmarr)%x)) then
-    planeA=1
-    return
-else if (maxval(a(atmarr)%y)==minval(a(atmarr)%y)) then
-    planeB=1
-    return
-else if (maxval(a(atmarr)%z)==minval(a(atmarr)%z)) then
-    planeC=1
-    return
-end if
+cenx=sum(a(atmarr(:))%x)/natm
+ceny=sum(a(atmarr(:))%y)/natm
+cenz=sum(a(atmarr(:))%z)/natm
+tmpmat(1,:)=a(atmarr(:))%x-cenx
+tmpmat(2,:)=a(atmarr(:))%y-ceny
+tmpmat(3,:)=a(atmarr(:))%z-cenz
 
-matA(:,1)=a(atmarr)%x
-matA(:,2)=a(atmarr)%y
-matA(:,3)=1
-matB(:,1)=a(atmarr)%z
+call SVDmat(1,tmpmat,matU,matV,singval,info)
+ileast=minloc(singval,1)
 
-tmpmat=invmat(matmul(transpose(matA),matA),3)
-ple=matmul(matmul(tmpmat,transpose(matA)),matB)
-!Check fitting quality
+planeA=matU(1,ileast)
+planeB=matU(2,ileast)
+planeC=matU(3,ileast)
+planeD=-(planeA*cenx+planeB*ceny+planeC*cenz)
+
+!write(*,"(4f12.6)") planeA,planeB,planeC,planeD
+!Check fitting quality using A*x+B*y+C*z+D=0
 accum=0
 do iatm=1,natm
-    tmp1=a(atmarr(iatm))%x*ple(1,1)+a(atmarr(iatm))%y*ple(2,1)+ple(3,1)
-    tmp2=a(atmarr(iatm))%z
-    !write(*,"(i5,2f12.6)") iatm,tmp1,tmp2
-    accum=accum+(tmp1-tmp2)**2
+    tmp=planeA*a(atmarr(iatm))%x + planeB*a(atmarr(iatm))%y + planeC*a(atmarr(iatm))%z + planeD 
+    accum=accum+abs(tmp)
+    !write(*,*) iatm,atmarr(iatm),tmp
 end do
 rmsfit=dsqrt(accum/natm)
-
-!Now we have ple(1,1)*x + ple(2,1)*y + ple(3,1) = z
-!However we expect Ax+By+Cz+D=0, clearly
-planeA=ple(1,1)
-planeB=ple(2,1)
-planeC=-1D0
-planeD=ple(3,1)
 end subroutine
 
 
@@ -361,7 +353,7 @@ end subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !===============================================================!
 
-!!--------- Invert integer array, from istart to iend
+!!--------- Invert array, from istart to iend
 !If "list" is presented, also exchange the index during invert. list should have same size as array
 !Real*8 version
 subroutine invarrr8(array,list,list2)
@@ -418,7 +410,7 @@ end subroutine
 
 
 !-------- Sort value from small to big by Bubble method
-!mode=abs: sort by absolute value, =val: sort by value. Default is by value
+!inmode =abs: sort by absolute value, =val: sort by value. Default is by value
 !If "list" is presented, also exchange the index in the list during sorting. list should have same size as array
 !If want to sort from big to small, then you should use invarrr8 or invarri4 to invert the array
 !Real*8 version
@@ -1264,56 +1256,65 @@ end do
 end subroutine
 
 
-!!------ Display matrix similar to gaussian program
-subroutine showmatgau(mat,label,insemi,form,fileid,useri1,useri2,inncol,titlechar)
-!The number of columns is always 5 (unadjustable)
-!"Label" is the title, if the content is empty, title will not be printed
-!If semi==1, only lower and diagonal element will be shown
-!"form" is the format to show data, default is D14.6, can pass into such as "f14.8", total width should be 14 characters
-!fildid is output destination, 6 corresponds to outputting to screen
-!useri1 and useri2 define the dimension of the matrix, default or -1 means determining automatically
-!inncol seems controls spacing between number labels of each frame
-!Default titlechar is "i8,6x", if you manually set inncol, you also set this to broaden or narrow
+
+!!------ Print matrix in a format similar to Gaussian. The number of columns is 5 (unadjustable)
+!mat: The matrix to be printed
+!  Below are optional
+!Label: The title information. If the content is empty, title will not be printed
+!insemi: If 1, print as lower trigonal matrix. Default is 0 (full matrix)
+!form: Format to print, total width must be 14 characters. Default is D14.6
+!fildid: Output destination, 6 corresponds to outputting to screen
+!usern1 and usern2: Dimensions of the matrix, default or -1 means determining automatically
+!inncol: seems controls spacing between number labels of each frame
+!formindex: Format of index. Default is "i8,6x". Note that if you manually set inncol, you should also set this to broaden or narrow index spacing
+subroutine showmatgau(mat,label,insemi,form,fileid,usern1,usern2,inncol,formindex)
 implicit real*8(a-h,o-z)
 real*8 :: mat(:,:)
-character(*),optional :: label,form,titlechar
-integer,optional :: insemi,fileid,useri1,useri2,inncol
-integer :: semi,ides,ncol
+character(*),optional :: label,form,formindex
+integer,optional :: insemi,fileid,usern1,usern2,inncol
+integer semi,ides,ncol
 semi=0
 ides=6
 ncol=5
-i1=size(mat,1)
-i2=size(mat,2)
-if (present(useri1).and.useri1/=-1) i1=useri1
-if (present(useri2).and.useri1/=-1) i2=useri2
+n1=size(mat,1)
+n2=size(mat,2)
+if (present(usern1).and.usern1/=-1) n1=usern1
+if (present(usern2).and.usern1/=-1) n2=usern2
 if (present(insemi)) semi=insemi
 if (present(fileid)) ides=fileid
 if (present(inncol)) ncol=inncol
 if (present(label).and.label/='') then
-	nlabsize=26+len(label)
-	nspc=int((80-nlabsize)/2D0)
-	do i=1,nspc
-		write(ides,"(a)",advance='no') ' '
+	nspc=int((79-len(label))/2D0)
+    write(ides,"(a)",advance='no') " "
+	do i=1,nspc-2
+		write(ides,"(a)",advance='no') '*'
 	end do
-	write(ides,*) "************ ",label," ************"
+	write(ides,"(a)",advance='no') ' '//label//' '
+	do i=1,nspc-2
+		write(ides,"(a)",advance='no') '*'
+	end do
+    write(ides,*)
 end if
-nt=ceiling(i2/float(ncol))
-do i=1,nt !How many frame
-	ns=(i-1)*5+1 !This frame start from where
-	if (i/=nt) ne=(i-1)*ncol+ncol !This frame end to where
-	if (i==nt) ne=i2
+nf=ceiling(n2/float(ncol))
+do i=1,nf !How many frame
+	ns=(i-1)*5+1 !Absolute starting index to read
+	if (i/=nf) then
+        ne=i*ncol !Absolute ending index to read
+	else
+        ne=n2
+    end if
 	!Write basis number in separate line
 	write(ides,"(6x)",advance='no')
 	do j=ns,ne
-		if (present(titlechar)) then
-			write(ides,'('//titlechar//')',advance='no') j
+		if (present(formindex)) then
+			write(ides,'('//formindex//')',advance='no') j
 		else
 			write(ides,"(i8,6x)",advance='no') j
 		end if
 	end do
 	write(ides,*)
 	!Write content in each regular line
-	do k=1,i1
+	do k=1,n1
 		if (k<ns.and.semi==1) cycle !The lines have been outputted are skipped
 		write(ides,"(i6)",advance='no') k
 		do j=ns,ne
@@ -1330,71 +1331,97 @@ end do
 end subroutine
 
 
-!!------- Read matrix outputted in the gaussian .out file, such as outputted by iop(3/33=1)
-subroutine readmatgau(fileid,mat,semi,inform,inskipcol,inncol,innspace)
-!e.g. trigonal: readmatgau(10,tempmat,1,"D14.6",7,5)   full: readmatgau(10,tempmat,0,"D13.6",7,5)
-!inform is the format used to read data, default is D14.6, you can input "f8.4 " (Note: Must be 5 character!)
-!semi=1 means the read matrix is lower trigonal matrix
-!inskipcol is the skipped column (marker information) in front of each row, default is 7
-!inncol is data in each row, default is 5
-!innspace is space lines in between each frame, default is 1
 
-!Before use, loclabel should be used to move reading position into title line of the matrix£¬namely move to "*** Overlap ***"
-!This routine will skip title line, and skip one line in each frame reading
+!!------- Read matrix in Gaussian output file, such as that printed by IOp(3/33=1) (or may be matrix printed by e.g. NBO)
+subroutine readmatgau(fileid,mat,insemi,inform,inskipcol,inncol,innspace,iostat)
+!e.g. Lower trigonal matrix: readmatgau(10,tmpmat,1,"D14.6",7,5)   full matrix: readmatgau(10,tmpmat,0,"?",7,5)
+!mat: The matrix to return
+!Below are optional
+!insemi: 1 means the matrix is a lower trigonal matrix. Default is full matrix
+!inform: Format used to read data, default is D14.6. e.g. "f8.4 " (must be 5 character). inform="?" means use free format to read
+!inskipcol: Number of column (marker) to be skipped at the beginning of each row, default is 7
+!inncol: Number of columns in each line, default is 5
+!innspace: Number of useless lines in between each frame, default is 1
+!iostat: Returned reading status. /=0 means error occurs
+
+!Before use, loclabel should be used to move reading position to title line of the matrix£¬namely move to "*** Overlap ***"
 ! *** Overlap ***
 !                 1             2             3             4             5
 !       1  0.100000D+01
 !       2  0.236704D+00  0.100000D+01
+!       ...
+!    Nbasis ...
 implicit real*8(a-h,o-z)
 real*8 :: mat(:,:)
-character,optional :: inform*5
-character :: form*7,c80tmp*79
-integer,optional :: inskipcol,inncol,semi,innspace
-integer :: skipcol,ncol,fileid
-form="(D14.6)" !Suitable for Sbas,Kinene,Potene,Hcore by 3/33=1 ,Fockmat,Densmat by 5/33=3
+character(len=*),optional :: inform
+integer,optional :: inskipcol,inncol,insemi,innspace,iostat
+character form*7,c80tmp*79,c200tmp*200
+integer fileid, skipcol,ncol,nspace,semi
+form="(D14.6)" !Suitable for Sbas,Kinene,Potene,Hcore by IOp(3/33=1) ,Fockmat,Densmat by IOp(5/33=3)
 skipcol=7
 ncol=5
 nspace=1
+semi=0
+if (present(iostat)) iostat=0
 if (present(inform)) form='('//inform//')'
 if (present(inskipcol)) skipcol=inskipcol
 if (present(inncol)) ncol=inncol
 if (present(innspace)) nspace=innspace
-read(fileid,*) !!!!!!!!!!!! Skip title line
-i1=size(mat,1)
-i2=size(mat,2)
-nt=ceiling(i2/float(ncol))
+if (present(insemi)) semi=insemi
+n1=size(mat,1)
+n2=size(mat,2)
+nf=ceiling(n2/float(ncol))
 mat=0D0
-do i=1,nt !Number of frames
-	ns=(i-1)*ncol+1
-	if (i/=nt) ne=(i-1)*ncol+ncol
-	if (i==nt) ne=i2
-	do ii=1,nspace
-		read(fileid,*) !!!!!!!!!!!! Skip number line when reading each new frame
-	end do
-	do k=1,i1 !Scan rows in each frame
- 		!read(fileid,"(a)") c80tmp
- 		!write(15,"(a)") c80tmp
- 		!backspace(fileid)
-		
-		if (k<ns.and.present(semi).and.semi==1) cycle
-		do iii=1,skipcol !Skip marker columns in each row
-			read(fileid,"(1x)",advance='no')
-		end do
-		do j=ns,ne !Scan elements in each row
-			if (present(semi).and.semi==1.and.k<j) cycle
-			read(fileid,form,advance='no') mat(k,j)
- 			!write(*,*) i,k,j,mat(k,j)
-		end do
+read(fileid,*) !Skip title line
+do i=1,nf !Number of frames
+	ns=(i-1)*ncol+1 !Absolute starting index to read
+	if (i/=nf) then !Absolute ending index to read
+        ne=i*ncol
+	else
+        ne=n2
+    end if
+	do itmp=1,nspace !Skip rows when reading each new frame
 		read(fileid,*)
 	end do
+	do k=1,n1 !Scan rows in each frame
+ 		!read(fileid,"(a)") c80tmp
+ 		!write(*,"(a)") c80tmp
+ 		!backspace(fileid)
+        if (semi==1.and.ns>k) cycle
+        if (form/="(?)") then !Use fixed format to read
+		    do itmp=1,skipcol !Skip marker columns in each row
+			    read(fileid,"(1x)",advance='no')
+		    end do
+		    do j=ns,ne !Scan elements in each row
+			    if (semi==1.and.j>k) cycle
+			    read(fileid,form,advance='no',iostat=ierror) mat(k,j)
+                if (ierror/=0) then
+                    if (present(iostat)) iostat=ierror
+                    return
+                end if
+ 			    !write(*,*) i,k,j,mat(k,j)
+		    end do
+		    read(fileid,*)
+        else !Use free format to read, assume the line is up to 200 characters
+            read(fileid,"(a)") c200tmp
+            if (semi==0) then
+                read(c200tmp(1+skipcol:),*,iostat=ierror) mat(k,ns:ne)
+            else
+                read(c200tmp(1+skipcol:),*,iostat=ierror) mat(k,ns:min(k,ne))
+            end if
+            if (ierror/=0) then
+                if (present(iostat)) iostat=ierror
+                return
+            end if
+        end if
+	end do
 end do
-if (present(semi).and.semi==1) then !When read is lower trigonal matrix, we assume it is a symmetric matrix
+if (semi==1) then !For lower trigonal matrix, it is assumed to be symmetric. Now fill another part
 	mat=mat+transpose(mat)
-	do i=1,i1
+	do i=1,n1
 		mat(i,i)=mat(i,i)/2D0
 	end do
 end if
-
 end subroutine
 
 
@@ -1543,11 +1570,39 @@ end subroutine
 
 
 
+!--------- Determine the present file is output of file of which code
+!1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 0=Undetermined
+subroutine outputprog(ifileid,iprog)
+integer ifileid,iprog
+call loclabel(ifileid,"Gaussian, Inc",ifound,maxline=200)
+if (ifound==0) call loclabel(ifileid,"Entering Gaussian System",ifound,maxline=200)
+if (ifound==1) then
+    iprog=1
+    return
+end if
+call loclabel(ifileid,"O   R   C   A",ifound,maxline=200)
+if (ifound==1) then
+    iprog=2
+    return
+end if
+call loclabel(ifileid,"GAMESS VERSION =",ifound,maxline=200)
+if (ifound==1) then
+    iprog=3
+    return
+end if
+call loclabel(ifileid,"Firefly Project",ifound,maxline=200)
+if (ifound==1) then
+    iprog=4
+    return
+end if
+iprog=0
+end subroutine
+
 end module
 
 
 
-
+!================= OUTSIDE MODULE =================
 
 
 
@@ -1636,11 +1691,17 @@ end do
 end subroutine
 
 
+
 !--------- Show progress bar
 subroutine showprog(inow,nall)
 integer inow,nall
 integer :: itmp=0
 character c80tmp*80
+!if (inow==nall) then
+!    write(*,*)
+!else if (inow>nall) then
+!    return
+!end if
 iprog=int(dfloat(inow)/nall*50)
 c80tmp=' Progress: ['
 c80tmp(13:62)=repeat('#',iprog)

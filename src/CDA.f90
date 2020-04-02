@@ -1,7 +1,6 @@
 !!!----------  Charge decomposition analysis (CDA) and extended CDA (ECDA)
-! J. Phys. Chem. 1995, 99, 9352-9362, JACS,128,278, respectively
 ! Closed-shell, unrestricted open-shell, natural orbitals are supported. Restricted open-shell is not supported
-! For either complex or fragments, nbasis=nmo is always assumed. For open-shell, the nmo(or nmoCDA) used in this module is the number of either alpha or beta MOs, rather than their sum!
+! For either complex or fragments, nbasis=nmo is always assumed! For open-shell, the nmo(or nmoCDA) used in this module is the number of either alpha or beta MOs, rather than their sum!
 subroutine CDA
 use util
 use defvar
@@ -29,7 +28,6 @@ real*8,allocatable :: FOovlpmat(:,:),FOovlpmatb(:,:) !Overlap matrix between all
 real*8,allocatable :: dterm(:),bterm(:),rterm(:), dtermb(:),btermb(:),rtermb(:) !d,b,r defined in original paper
 real*8 :: conncritleft=0.1D0,conncritright=0.1D0,degencrit=0.1D0,eneshiftA=0D0,eneshiftB=0D0,eneshiftcomp=0D0,eneintv=2D0
 integer :: idrawMObar=1,iconnlogi=1,iout=6
-
 character c80tmp*80,c80tmp2*80,selectyn
 !Some options relating to orbital interaction diagram
 real*8 :: eneplotlow=-20,eneplothigh=5,complabshift=0.5D0
@@ -40,10 +38,10 @@ write(*,"(a)") " GCDA: Meng Xiao, Tian Lu, Generalized Charge Decomposition Anal
 write(*,"(a)") " CDA: Stefan Dapprich, Gernot Frenking, J. Phys. Chem., 99, 9352-9362 (1995)"
 write(*,*)
 
-ifchmol=0 !By default the input file is Gaussian output file
-if (allocated(CObasa)) ifchmol=1 !The input file contains basis function information
-!First we find out how many atoms and nmo(=nbasis) in complex, so that we can allocate proper size of arrays
-if (ifchmol==0) then
+if (allocated(CObasa)) then !The input file contains basis function information
+    igauout=0
+else !Assume that the input file is Gaussian output file
+    igauout=1
 	open(10,file=filename,status="old")
 	call loclabel(10,"NAtoms=",ifound) !Number of atoms
 	read(10,*) c80tmp,ncenter
@@ -59,15 +57,7 @@ if (ifchmol==0) then
 	end do
 	close(10)
 	nmo=nbasis
-else
-	if ( ((wfntype==0.or.wfntype==2.or.wfntype==3).and.nbasis/=nmo).or.((wfntype==1.or.wfntype==4).and.nbasis/=nmo/2) ) then
-		write(*,*) "Error: The number of basis functions is unequal to the number of orbitals!"
-		write(*,*) "Press ENTER button to return"
-		read(*,*)
-		return
-	end if
 end if
-
 
 !====== Load complex (ifrag=0) and fragments
 do while(.true.)
@@ -84,29 +74,28 @@ atmpos=0D0
 fragfilename=" "
 ! fragfilename(1)="examples\CDA\COBH3\CO.fch"
 ! fragfilename(2)="examples\CDA\COBH3\BH3.fch"
-! fragfilename(1)="examples\CDA\CH3NH2\CH3.fch"
-! fragfilename(2)="examples\CDA\CH3NH2\NH2.fch"
-! fragfilename(1)="examples\CDA\Pt(NH3)2Cl2\Pt.out"
-! fragfilename(2)="examples\CDA\Pt(NH3)2Cl2\Cl2.out"
-! fragfilename(3)="examples\CDA\Pt(NH3)2Cl2\(NH3)2.out"
 
 do ifrag=0,nCDAfrag !Here we first gather basic informations of complex(ifrag=0) and fragments(ifrag>0)
 	if (ifrag==0) then
 		fragfilename(ifrag)=filename !The file loaded when Multiwfn boots up
 		write(*,*) "Loading basic information of complex... Please wait"
 	else
-		if (ifchmol==1) write(*,"(/,a,i4)") " Input .fch or .molden or .gms file of fragment",ifrag
-		if (ifchmol==0) write(*,"(/,a,i4)") " Input Gaussian output file of fragment",ifrag
+		if (igauout==0) then
+            write(*,"(/,a,i4)") " Input .mwfn/.fch/.molden/.gms file of fragment",ifrag
+            write(*,*) "e.g. C:\mol\CO.fch"
+		else
+            write(*,"(/,a,i4)") " Input Gaussian output file of fragment",ifrag
+        end if
 		do while(.true.)
 			if (fragfilename(ifrag)/=" ") exit
 			read(*,"(a)") fragfilename(ifrag)
 			inquire(file=fragfilename(ifrag),exist=alive)
 			if (alive) exit
-			write(*,*) "File not found, input again"
+			write(*,*) "Error: File not found, input again"
 		end do
 		write(*,*) "Loading basic information of this fragment... Please wait"
 	end if
-	if (ifchmol==0) then !Gaussian output file
+	if (igauout==1) then !Gaussian output file
 		open(10,file=fragfilename(ifrag),status="old")
 		call loclabel(10,"NAtoms=",ifound) !Number of atoms
 		read(10,*) c80tmp,natmCDA(ifrag)
@@ -162,7 +151,7 @@ do ifrag=0,nCDAfrag !Here we first gather basic informations of complex(ifrag=0)
 		close(10)
 		if (iopsh(ifrag)==0.and.naelecCDA(ifrag)/=nbelecCDA(ifrag)) iRO(ifrag)=1 !This is a ROHF fragment
 		
-	else !The input file containing basis function information
+	else !The input file contains basis function information
 		if (ifrag>0) then
 			call dealloall
 			call readinfile(fragfilename(ifrag),1)
@@ -237,10 +226,27 @@ do iatm=1,ncenter_org
 		return
 	end if
 end do
+!Check consistency in coordinate
+devmax=0
+do ifrag=1,nCDAfrag
+    ntmp=0
+    if (ifrag>1) ntmp=sum(natmCDA(1:ifrag-1))
+    do iatm=ntmp+1,natmCDA(ifrag)
+        devtmp=dsqrt(sum((atmpos(iatm,:,0)-atmpos(iatm,:,ifrag))**2)) !Distance between fragment atom and complex atom
+        if (devtmp>devmax) devmax=devtmp
+    end do
+end do
+if (devmax>0.01D0) then
+    write(*,"(/,' Maximum deviation of atomic coordinate between fragment and complex:',f10.3,' Bohr')") devmax
+    write(*,"(/,a)") " Warning: The coordinate of the fragments deviates from the complex distinctly! The result may be fully meaningless. &
+    Please check input files of your quantum chemistry code to make the coordinate of the fragments fully consistent with the complex"
+    write(*,*) "Press ENTER button to continue"
+    read(*,*)
+end if
 !Check if the number of basis functions in complex is equal to the sum of that in all fragments
 if (nmoCDA(0)/=sum(nmoCDA(1:))) then
 	write(*,"(/,a)") " Error: The sum of the number of basis functions in all fragments is inconsistent with complex! &
-	Please carefully check the basis set you used in each calculation."
+	Please carefully check the basis set you used in each calculation"
 	write(*,*) "Press ENTER button to exit"
 	read(*,*)
 	return
@@ -271,7 +277,7 @@ do ifrag=0,nCDAfrag
 	else if (ifrag>0) then
 		write(*,"(/,a,i4,a)") " Loading orbitals information for fragment",ifrag,"..."
 	end if
-	if (ifchmol==0) then
+	if (igauout==1) then
 		open(10,file=fragfilename(ifrag),status="old")
 	else
 		call dealloall
@@ -284,7 +290,7 @@ do ifrag=0,nCDAfrag
 	iend=istart+nmotmp-1
 		
 	if (iopsh(ifrag)==0) then !Closed-shell complex or fragment
-		if (ifchmol==0) then
+		if (igauout==1) then
 			call loclabel(10,"Orbital Coefficients",ifound,1)
 			call readmatgau(10,cobasCDA(istart:iend,istart:iend,ifrag),0,"f10.5",21,5,3-inatorb(ifrag)) !nbasis1+1:nbasis are empty
 			!Set occupation number and energies
@@ -314,7 +320,7 @@ do ifrag=0,nCDAfrag
 	else !Open-shell complex or fragment
 		if (ifrag==0) write(*,*) "Note: The complex is an open-shell system"
 		if (ifrag>0) write(*,*) "Note: This fragment is an open-shell system"
-		if (ifchmol==0) then !Gaussian output file
+		if (igauout==1) then !Gaussian output file
 			write(*,*) "Loading alpha MO cofficients..."
 			call loclabel(10,"Orbital Coefficients",ifound,1)
 			call readmatgau(10,cobasCDA(istart:iend,istart:iend,ifrag),0,"f10.5",21,5,3-inatorb(ifrag)) !For fragments, nmotmp+1:nmo are empty
@@ -375,7 +381,7 @@ do ifrag=0,nCDAfrag
 		end if	
 	end if
 	
-	if (ifchmol==0) then
+	if (igauout==1) then
 		close(10)
 	else
 		call dealloall
@@ -735,19 +741,26 @@ do while(.true.)
 					write(*,"(a,i7,a,i7,/)") " Error: Orbital index should between",1," and",nmo
 					cycle
 				else
-					write(*,"(a,f5.1,a)") " Note: Only the fragment orbitals with contribution >",compthresCDA,"% will be shown below"
+					write(*,"(a,f5.1,a,/)") " Note: Only the fragment orbitals with contribution >",compthresCDA," % will be shown below, &
+                    the threshold can be changed by ""compthresCDA"" in settings.ini"
 					if (iopshCDA==0) then
-						write(*,"(' Occupation number of orbital',i6,' of the complex:',f12.8)") iorb,occCDA(iorb,0)
+						write(*,"(' Occupation number of orbital',i6,' of the complex:',f8.8)") iorb,occCDA(iorb,0)
+                        sumcontri=0
 						do ifrag=1,nCDAfrag
 							do iFOidx=1,nmoCDA(ifrag)
 								itmp=0
 								if (ifrag>1) itmp=sum(nmoCDA(1:ifrag-1))
 								iFO=itmp+iFOidx
-								if (abs(FOcomp(iFO,iorb))*100>=compthresCDA) write(*,"(' Orbital',i6,' of fragment',i3,', Occ:',f8.5,'    Contribution:',f10.4,'%')") &
-								iFOidx,ifrag,occCDA(iFOidx,ifrag),FOcomp(iFO,iorb)*100
+								if (abs(FOcomp(iFO,iorb))*100>=compthresCDA) then
+                                    write(*,"(' Orbital',i6,' of fragment',i3,', Occ:',f8.5,'    Contribution:',f8.2,' %')") &
+								    iFOidx,ifrag,occCDA(iFOidx,ifrag),FOcomp(iFO,iorb)*100
+                                    sumcontri=sumcontri+FOcomp(iFO,iorb)
+                                end if
 							end do
 						end do
+                        write(*,"(' Sum of values shown above:',f10.2,' %')") sumcontri*100
 					else if (iopshCDA==1) then
+                        sumcontri=0
 						write(*,*) "                           **** Alpha orbitals ****"
 						write(*,"(' Occupation number of alpha orbital',i6,' of the complex:',f12.8)") iorb,occCDA(iorb,0)
 						do ifrag=1,nCDAfrag
@@ -755,10 +768,16 @@ do while(.true.)
 								itmp=0
 								if (ifrag>1) itmp=sum(nmoCDA(1:ifrag-1))
 								iFO=itmp+iFOidx
-								if (abs(FOcomp(iFO,iorb))*100>=compthresCDA) write(*,"(' Alpha orbital',i6,' of fragment',i3,', Occ:',f8.5,'    Contribution:',f10.4,'%')") &
-								iFOidx,ifrag,occCDA(iFOidx,ifrag),FOcomp(iFO,iorb)*100
+								if (abs(FOcomp(iFO,iorb))*100>=compthresCDA) then
+                                    write(*,"(' Alpha orbital',i6,' of fragment',i3,', Occ:',f8.5,'    Contribution:',f8.2,' %')") &
+								    iFOidx,ifrag,occCDA(iFOidx,ifrag),FOcomp(iFO,iorb)*100
+                                    sumcontri=sumcontri+FOcomp(iFO,iorb)
+                                end if
 							end do
 						end do
+                        write(*,"(' Sum of values shown above:',f10.2,' %',/)") sumcontri*100
+                        
+                        sumcontri=0
 						write(*,*) "                           **** Beta orbitals ****"
 						write(*,"(' Occupation number of beta orbital ',i6,' of the complex:',f12.8)") iorb,occCDAb(iorb,0)
 						do ifrag=1,nCDAfrag
@@ -766,10 +785,14 @@ do while(.true.)
 								itmp=0
 								if (ifrag>1) itmp=sum(nmoCDA(1:ifrag-1))
 								iFO=itmp+iFOidx
-								if (abs(FOcompb(iFO,iorb))*100>=compthresCDA) write(*,"(' Beta orbital',i6,' of fragment',i3,', Occ:',f8.5,'    Contribution:',f10.4,'%')") &
-								iFOidx,ifrag,occCDAb(iFOidx,ifrag),FOcompb(iFO,iorb)*100
+								if (abs(FOcompb(iFO,iorb))*100>=compthresCDA) then
+                                    write(*,"(' Beta orbital ',i6,' of fragment',i3,', Occ:',f8.5,'    Contribution:',f8.2,' %')") &
+								    iFOidx,ifrag,occCDAb(iFOidx,ifrag),FOcompb(iFO,iorb)*100
+                                    sumcontri=sumcontri+FOcompb(iFO,iorb)
+                                end if
 							end do
 						end do
+                        write(*,"(' Sum of values shown above:',f10.2,' %')") sumcontri*100
 					end if
 					write(*,*)
 				end if

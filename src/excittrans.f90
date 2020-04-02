@@ -9,7 +9,7 @@
 module excitinfo
 character :: excitfilename*200=" " !"D:\CM\my_program\Multiwfn\x\excittrans\4-Nitroaniline\4-Nitroaniline.out"
 integer :: ifiletypeexc !1=Gaussian output; 2=ORCA output; 3=Plain text file; 4=Firefly output file
-integer nstates !The total number of excited states (for ORCA, if triplet keyword is used, only one set of spin multiplicity states is loaded)
+integer :: nstates=0 !The total number of excited states (for ORCA, if triplet keyword is used, only one set of spin multiplicity states is loaded)
 integer numexcgeom !The number of geometries in excited state optimization task of Gaussian/ORCA (1 corresponds to only one structure)
 real*8,allocatable :: allexcene(:) !Excitation energies
 integer,allocatable :: allexcmulti(:) !Multiplicity of the states. 0 means the multiplicity is undefined (i.e. unrestricted reference state)
@@ -53,6 +53,7 @@ do while(.true.)
 	write(*,*) "12 Calculate Mulliken atomic transition charges"
 	write(*,*) "13 Generate natural orbitals of specific excited states"
 	write(*,*) "14 Calculate lambda index to characterize electron excitation (JCP,128,044118)"
+	write(*,*) "15 Print major MO transitions in all excited states"
 
 	read(*,*) isel
 	if (isel==-1) then
@@ -92,6 +93,8 @@ do while(.true.)
 		call genexcitNO
 	else if (isel==14) then
 		call lambda_excit
+    else if (isel==15) then
+        call majorMOtrans
 	end if
 end do
 end subroutine
@@ -102,7 +105,7 @@ end subroutine
 
 !=============== Load and show basic information of all excited states
 !ioutinfo=1: Output summary  =0: Do not output summary
-!Loaded content: total number of states, as well as multiplicity, energy, the number of MO pairs of each excited state
+!Loaded content: Total number of states, as well as spin multiplicity, energy, the number of MO pairs of each excited state
 !If these information have already been loaded previously, then this routine only show summary
 subroutine loadallexcinfo(ioutinfo)
 use defvar
@@ -116,7 +119,6 @@ character c80tmp*80,transmodestr*200,selectyn
 !ifiletypeexc=3: plain text file
 !ifiletypeexc=4: Firefly TDDFT output file
 !ifiletypeexc=5: GAMESS-US TDDFT output file
-
 if (nstates>0) then
 	write(*,"(' Note: Basic information of all excited states have been previously loaded from ',a)") trim(excitfilename)
 else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
@@ -127,7 +129,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		else
 			write(*,"(a)") " Please input path of Gaussian/ORCA output file or plain text file, electron excitation information will be loaded from this file"
 			write(*,*) "e.g. C:\lovelive\sunshine\yosoro.out"
-            if (ifiletype==1.or.ifiletype==9) write(*,"(a)") " Hint: If pressing ENTER button directly, the file with identical name as input file but &
+            if (ifiletype==1.or.ifiletype==9.or.ifiletype==14) write(*,"(a)") " Hint: If pressing ENTER button directly, the file with identical name as input file but &
             with .out or .log suffix will be loaded"
 			do while(.true.)
 				read(*,"(a)") excitfilename
@@ -163,10 +165,10 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 	else if (ifiletype==10) then
 		call loclabel(10,"Firefly Project",ifirefly,maxline=100)
 		if (ifirefly==1) then
-			write(*,*) "Note: This file will be recognized as Firefly output"
+			write(*,*) "Note: This file will be recognized as Firefly output file"
 			ifiletypeexc=4
 		else
-			write(*,*) "Note: This file will be recognized as GAMESS-US output"
+			write(*,*) "Note: This file will be recognized as GAMESS-US output file"
 			ifiletypeexc=5
 		end if
 		write(*,"(a)") " Your input file is assumed to contain electron excitation information, they will be loaded now"
@@ -460,7 +462,7 @@ end subroutine
 !================ Load details of all excited states
 !If information have already been loaded previously, they will not be loaded again
 !Loaded content: MO index, excitation direction, determinant coefficient
-!ioutinfo=1: Output summary  =0: Do not output summary
+!ioutinfo=1: Output summary  =0: Do not output summary  =2: Print nothing
 subroutine loadallexccoeff(ioutinfo)
 use defvar
 use excitinfo
@@ -1123,7 +1125,7 @@ Sm=min(holegrid,elegrid)
 Sr=dsqrt(holegrid*elegrid)
 
 call walltime(iwalltime2)
-write(*,"(' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
+write(*,"(' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
 
 !Check normalization
 dvol=dx*dy*dz
@@ -1144,6 +1146,8 @@ centelez=0
 rtransmagx=0
 rtransmagy=0
 rtransmagz=0
+ele_deloc=0
+hole_deloc=0
 do k=1,nz
 	tmpz=orgz+(k-1)*dz
 	do j=1,ny
@@ -1164,6 +1168,8 @@ do k=1,nz
 			centelex=centelex+elegrid(i,j,k)*tmpx
 			centeley=centeley+elegrid(i,j,k)*tmpy
 			centelez=centelez+elegrid(i,j,k)*tmpz
+            ele_deloc=ele_deloc+elegrid(i,j,k)**2
+            hole_deloc=hole_deloc+holegrid(i,j,k)**2
 			if (idomag==1) then
 				rtransmagx=rtransmagx+magtrdens(i,j,k,1)
 				rtransmagy=rtransmagy+magtrdens(i,j,k,2)
@@ -1186,6 +1192,8 @@ centholez=centholez*dvol/rnormhole
 centelex=centelex*dvol/rnormele
 centeley=centeley*dvol/rnormele
 centelez=centelez*dvol/rnormele
+ele_deloc=dsqrt(ele_deloc*dvol)*100
+hole_deloc=dsqrt(hole_deloc*dvol)*100
 rtransmagx=rtransmagx*dvol
 rtransmagy=rtransmagy*dvol
 rtransmagz=rtransmagz*dvol
@@ -1252,6 +1260,8 @@ H_index=(signormele+signormhole)/2D0
 write(*,"(' H_x:',f7.3,'  H_y:',f7.3,'  H_z:',f7.3,'  H_CT:',f7.3,'  H index:',f7.3,' Angstrom')") Hx*b2a,Hy*b2a,Hz*b2a,H_CT*b2a,H_index*b2a
 t_index=disnorm-H_CT
 write(*,"(' t index:',f7.3,' Angstrom')") t_index*b2a
+write(*,"(' Hole delocalization index (HDI):    ',f7.2)") hole_deloc
+write(*,"(' Electron delocalization index (EDI):',f7.2)") ele_deloc
 
 !---- Calculate ghost state diagnostic index proposed by Adamo (JCC,38,2151)
 ghostp2=1/disnorm !in a.u.
@@ -1606,7 +1616,7 @@ do while(.true.)
 		dvol=dx*dy*dz
 		coulene=coulene*dvol*dvol
 		call walltime(iwalltime2)
-		write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+		write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 		write(*,*)
 		write(*,"(' Coulomb attractive energy:',f12.6,' a.u.  (',f12.6,' eV )')") coulene,coulene*au2eV
 		deallocate(cubx,cuby,cubz)
@@ -2894,9 +2904,9 @@ else if (iselNTO==2) then
 	write(*,"(a)") " Exporting Molden input file finished! Now you can load the newly generated .fch file to visualize NTOs"
 end if
 write(*,*)
-write(*,*) "Reloading the initial file to recover status..."
+write(*,*) "Reloading "//trim(filename)//" to recover initial status..."
 call dealloall
-call readinfile(firstfilename,1)
+call readinfile(filename,1)
 write(*,*) "Loading finished!"
 write(*,*)
 end subroutine
@@ -2919,7 +2929,8 @@ real*8,allocatable :: MOdipint(:,:,:) !Dipole moment integral between all MOs. T
 !The tdvecmat(:,i,j) will record transition electric dipole moment between i and j states.&
 !i and j start from 0 and end at nstates. Only electronic contribution is taken into account
 real*8,allocatable :: tdvecmat(:,:,:),Xnorm(:)
-real*8 grounddip(3),nucdip(3),tdvec(3),tmpvec(3)
+real*8 grounddip(3),eledip(3),nucdip(3) !Total ground state dipole moment, electronic contribution, nuclear contribution
+real*8 tdvec(3),tmpvec(3)
 character,allocatable :: allexclab(:)*5 !Label of each states
 
 call loadallexcinfo(0)
@@ -2930,7 +2941,7 @@ write(*,*) "Please select a task:"
 write(*,*) "1 Output transition dipole moments to screen"
 write(*,*) "2 Output transition dipole moments to transdipmom.txt in current folder"
 write(*,*) "3 Generate input file of SOS module of Multiwfn as SOS.txt in current folder"
-write(*,"(a)") " 4 Calculate and output electric dipole moment of each excited state to ESdipmom.txt in current folder"
+write(*,"(a)") " 4 Output electric dipole moment of each excited state to dipmom.txt in current folder"
 read(*,*) isel
 write(*,*)
 
@@ -3015,7 +3026,7 @@ do imo=1,nmo
 	end do
 end do
 call walltime(iwalltime2)
-write(*,"(' (Stage 2 took up wall clock time',i10,'s)')") iwalltime2-iwalltime1
+write(*,"(' (Stage 2 took up wall clock time',i10,' s)')") iwalltime2-iwalltime1
 
 if (isel==1) then
 	iout=6
@@ -3034,15 +3045,15 @@ fac=1
 if (wfntype==0.or.wfntype==3) fac=2
 
 !Dipole moment of ground state
-grounddip=0
+eledip=0
 do imo=1,nmo
-	grounddip=grounddip+MOocc(imo)*MOdipint(:,imo,imo)
+	eledip=eledip+MOocc(imo)*MOdipint(:,imo,imo)
 end do
-tdvecmat(:,0,0)=grounddip
+tdvecmat(:,0,0)=eledip
 nucdip(1)=sum(a%charge*a%x)
 nucdip(2)=sum(a%charge*a%y)
 nucdip(3)=sum(a%charge*a%z)
-grounddip=grounddip+nucdip
+grounddip=eledip+nucdip
 
 !Transition dipole moment between ground state and excited states
 do iexc=1,nstates
@@ -3100,7 +3111,7 @@ do iexc=1,nstates
 					else if (imo/=jmo.and.lmo==kmo) then
 						tdvec=tdvec-wei*MOdipint(:,imo,jmo)
 					else if (imo==jmo.and.lmo==kmo) then
-						tdvec=tdvec+wei*(grounddip-MOdipint(:,imo,imo)+MOdipint(:,lmo,lmo))
+						tdvec=tdvec+wei*(eledip-MOdipint(:,imo,imo)+MOdipint(:,lmo,lmo))
 					end if
 				end if
 			end do
@@ -3117,7 +3128,7 @@ do iexc=1,nstates
 end do
 !$OMP END PARALLEL DO
 call walltime(iwalltime2)
-write(*,"(' (Stage 3 took up wall clock time',i10,'s)',/)") iwalltime2-iwalltime1
+write(*,"(' (Stage 3 took up wall clock time',i10,' s)',/)") iwalltime2-iwalltime1
 
 if (all(allexcmulti==allexcmulti(1))) then !All states have the same spin, in this case all options are available
 	if (isel==1.or.isel==2) then !Output transition dipole moment between various states
@@ -3129,32 +3140,31 @@ if (all(allexcmulti==allexcmulti(1))) then !All states have the same spin, in th
 			write(iout,"(2i6,3f14.7,2f12.5)") 0,iexc,tdvecmat(:,0,iexc),allexcene(iexc),oscillstr
 		end do
 		write(iout,*)
-		write(iout,"(' Note: In below output and for the cases of i=j, &
-		only electronic contribution to dipole moment of the state is taken into account')")
+		write(iout,"(' Note: In below output the case of i=j corresponds to electronic contribution to dipole moment of excited state i')")
 		write(iout,"(' Transition dipole moment between excited states (a.u.):')")
 		write(iout,*) "    i     j         X             Y             Z        Diff.(eV)   Oscil.str"
 	else if (isel==4) then !Output dipole moment for each state
 		write(iout,"(a)") " Note: The dipole moments shown below include both nuclear charge and electronic contributions"
 		write(iout,"(' Ground state dipole moment in X,Y,Z:',3f12.6,' a.u.',/)") grounddip
 		write(iout,"(' Excited state dipole moments (a.u.):')")
-		write(iout,*) "  State      X           Y           Z        exc.(eV)    exc.(nm)"
+		write(iout,*) " State         X             Y             Z        exc.(eV)    exc.(nm)"
 	end if
 	do iexc=1,nstates
-		if (isel==4) then
-			write(iout,"(i6,3f12.6,f12.4,f12.2)") iexc,tdvecmat(:,iexc,iexc)+nucdip(:),allexcene(iexc),1240.7011D0/allexcene(iexc)
-			cycle
-		end if
-		do jexc=iexc,nstates
-			if (isel==1.or.isel==2) then
-				enediff=abs(allexcene(jexc)-allexcene(iexc))
-				oscillstr=2D0/3D0*enediff/au2eV*sum(tdvecmat(:,iexc,jexc)**2)
-				write(iout,"(2i6,3f14.7,2f12.5)") iexc,jexc,tdvecmat(:,iexc,jexc),enediff,oscillstr
-			else if (isel==3) then
-				write(iout,"(2i6,3(1PE15.6))") iexc,jexc,tdvecmat(:,iexc,jexc)
-			end if
-		end do
+        if (isel<=3) then
+		    do jexc=iexc,nstates
+			    if (isel==1.or.isel==2) then
+				    enediff=abs(allexcene(jexc)-allexcene(iexc))
+				    oscillstr=2D0/3D0*enediff/au2eV*sum(tdvecmat(:,iexc,jexc)**2)
+				    write(iout,"(2i6,3f14.7,2f12.5)") iexc,jexc,tdvecmat(:,iexc,jexc),enediff,oscillstr
+			    else if (isel==3) then
+				    write(iout,"(2i6,3(1PE15.6))") iexc,jexc,tdvecmat(:,iexc,jexc)
+			    end if
+		    end do
+        else if (isel==4) then
+			write(iout,"(i6,3f14.6,f12.4,f12.2)") iexc,tdvecmat(:,iexc,iexc)+nucdip(:),allexcene(iexc),1240.7011D0/allexcene(iexc)
+        end if
 	end do
-else !Not all states have the same spin, 50-50 with singlet ground state is assumed
+else !Not all states have the same spin, 50-50 with singlet ground state is assumed. isel=3 and isel=4 are not available in this case
 	allocate(allexclab(0:2*nstates))
 	iS=0
 	iT=0
@@ -3168,8 +3178,7 @@ else !Not all states have the same spin, 50-50 with singlet ground state is assu
 			write(allexclab(iexc),"(' T',i3)") iT
 		end if
 	end do
-	write(iout,"(' Note: In below output and for the cases of i=j, &
-	only electronic contribution to dipole moment of the state is taken into account')")
+	write(iout,"(' Note: In below output the case of i=j corresponds to electronic contribution to dipole moment of excited state i')")
 	write(iout,"(' Transition dipole moment between singlet states (a.u.):')")
 	write(iout,*) "  i        j          X             Y             Z         Diff.(eV)"
 	write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(0),allexclab(0),grounddip,0D0 !<S0|-r|S0>
@@ -4380,7 +4389,7 @@ else !Open-shell case
 end if
 
 call walltime(iwalltime2)
-write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 write(*,"(' Totally',i12,' terms were calculated')") nterm
 
 write(*,*)
@@ -4663,6 +4672,7 @@ end subroutine
 
 !--------------------------------------------------------------------------------
 !------------- Generate natural orbitals of specific excited states -------------
+!--------------------------------------------------------------------------------
 subroutine genexcitNO
 use defvar
 use util
@@ -4748,4 +4758,212 @@ do iexc=1,nexcsel
 	call readinfile(firstfilename,1)
 end do
 write(*,"(/,a)") " Done! Molden files containing natural orbitals of all selected excited states have been successfully generated!"
+end subroutine
+
+
+
+
+
+!------------------------------------------------------------------
+!-------- Print major MO transitions in all excited states --------
+!------------------------------------------------------------------
+!This routine is independent of wavefunction information. Output file of excited state calculation should be used as input file
+subroutine majorMOtrans
+use defvar
+use excitinfo
+use util
+implicit real*8 (a-h,o-z)
+character c2tmp*2,c80tmp*80,outstr*80,outfilename*200,selectyn
+integer,allocatable :: idxorder(:)
+real*8,allocatable :: exccoefftmp(:)
+
+compout=10*compthres !Composition criterion of outputting MO transitions
+
+!Determine "iopsh", "wfntype" and "nbasis", the latter two are needed by the routines of loading excited state information
+open(10,file=filename,status="old")
+call outputprog(10,iprog)
+if (iprog==1) then !Gaussian
+    call loclabel(10,"  Beta  occ. eigenvalues",iopsh)
+    if (iopsh==0) wfntype=0
+    if (iopsh==1) wfntype=1
+    call loclabel(10,"basis functions,")
+    read(10,*) nbasis
+else if (iprog==2) then !ORCA
+    iopsh=0
+    call loclabel(10,"SPIN DOWN ORBITALS",iopsh)
+    if (iopsh==0) wfntype=0
+    if (iopsh==1) wfntype=1
+    call loclabel(10,"NO   OCC          E(Eh)") !Count number of MOs to determine nbasis (in "miniprint" case doesn't explicitly print this)
+    read(10,*)
+    nbasis=0
+    do while(.true.)
+        read(10,*,iostat=ierror) inouse
+        if (ierror/=0) exit
+        nbasis=nbasis+1
+    end do
+else if (iprog==3.or.iprog==4) then !GAMESS-US/Firefly output file
+    !The inputted .gms file already contains "nbasis" and "wfntype"
+    iopsh=0
+    if (wfntype==1.or.wfntype==4) iopsh=1
+else
+    write(*,*) "Error: Unable to determine the content of this file"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
+if (iopsh==0) write(*,*) "The reference state is closed-shell"
+if (iopsh==1) write(*,*) "The reference state is open-shell"
+write(*,"(' The number of basis functions:',i6)") nbasis
+close(10)
+
+!Load all excited state information
+excitfilename=filename
+call loadallexcinfo(0)
+call loadallexccoeff(1)
+
+!Determine HOMO and LUMO index
+if (iprog==1) then
+    open(10,file=filename,status="old")
+    call loclabel(10," alpha electrons")
+    read(10,"(a)") c80tmp
+    read(c80tmp,*) iHOMO_A
+    read(c80tmp(24:),*) iHOMO_B
+    close(10)
+else if (iprog==2) then
+    open(10,file=filename,status="old")
+    call loclabel(10,"N(Alpha)",ifound)
+    if (ifound==1) then
+        read(10,"(a)") c80tmp
+        itmp=index(c80tmp,':')
+        read(c80tmp(itmp+1:),*) naelec
+        read(10,"(a)") c80tmp
+        read(c80tmp(itmp+1:),*) nbelec
+    else
+        write(*,"(a)") " Unable to determine the number of alpha and beta electrons from the input file, please input them respectively, e.g. 15,14"
+        read(*,*) naelec,nbelec
+    end if
+    close(10)
+    iHOMO_A=nint(naelec)
+    iHOMO_B=nint(nbelec)
+else if (iprog==3.or.iprog==4) then
+    iHOMO_A=nint(naelec)
+    iHOMO_B=nint(nbelec)
+end if
+iLUMO_A=iHOMO_A+1
+iLUMO_B=iHOMO_B+1
+if (iopsh==0) then
+    write(*,"(a,i6)") " HOMO index:",iHOMO_A
+    write(*,"(a,i6)") " LUMO index:",iLUMO_A
+else
+    write(*,"(a,2i6)") " HOMO and LUMO indices of alpha electron:",iHOMO_A,iLUMO_A
+    write(*,"(a,2i6)") " HOMO and LUMO indices of beta electron: ",iHOMO_B,iLUMO_B
+end if
+
+write(*,*)
+write(*,"(a,f5.1,a,/)") " Only MO transitions with absolute contribution >=",compout," % &
+are shown below. It corresponds to 10 times of ""compthres"" parameter in settings.ini"
+call path2filename(filename,outfilename)
+outfilename=trim(outfilename)//"_exc.txt"
+do itime=1,2 !=1: Print on screen, =2: Print to file
+    if (itime==1) then
+        iout=6
+    else if (itime==2) then
+        iout=10
+        open(10,file=outfilename,status="replace")
+    end if
+    do istat=1,nstates
+        if (allexcmulti(istat)==0) then
+            c2tmp=" ?"
+        else
+            write(c2tmp,"(i2)") allexcmulti(istat)
+        end if
+        write(iout,"(' #',i4,f9.3,' eV  Multi=',a,':')",advance='no') istat,allexcene(istat),c2tmp
+        npair=allexcnorb(istat)
+        allocate(excdir(npair),orbleft(npair),orbright(npair),exccoeff(npair))
+        excdir=allexcdir(1:npair,istat)
+        orbleft=allorbleft(1:npair,istat)
+        orbright=allorbright(1:npair,istat)
+        exccoeff=allexccoeff(1:npair,istat)
+        !Sort
+        allocate(idxorder(npair),exccoefftmp(npair))
+        exccoefftmp=exccoeff
+        forall(i=1:npair) idxorder(i)=i
+        call sortr8(exccoefftmp,"abs",idxorder)
+        deallocate(exccoefftmp)
+        call invarri4(idxorder)
+        !Print
+        ifirst=1
+        do idx=1,npair
+	        ipair=idxorder(idx)
+            comp=exccoeff(ipair)**2
+            if (iopsh==0) comp=comp*2
+            if (comp*100>compout) then
+                !Output string at left side
+                if (ifirst==1) then
+                    outstr=" H"
+                    ifirst=0
+                else
+                    outstr=", H"
+                end if
+                ileft=orbleft(ipair)
+                c80tmp=" "
+                if (iopsh==0) then
+                    if (ileft/=iHOMO_A) write(c80tmp,*) ileft-iHOMO_A
+                else
+                    if (ileft<=nbasis) then
+                        outstr=trim(outstr)//'a'
+                        if (ileft/=iHOMO_A) write(c80tmp,*) ileft-iHOMO_A
+                    else
+                        outstr=trim(outstr)//'b'
+                        if (ileft/=iHOMO_B+nbasis) write(c80tmp,*) ileft-(iHOMO_B+nbasis)
+                    end if
+                end if
+                outstr=trim(outstr)//trim(adjustl(c80tmp))
+                !Output excitation sign
+                if (excdir(ipair)==1) outstr=trim(outstr)//' -> '
+                if (excdir(ipair)==2) outstr=trim(outstr)//' <- '
+                !Output right side
+                iright=orbright(ipair)
+                outstr=trim(outstr)//" L"
+                c80tmp=" "
+                if (iopsh==0) then
+                    if (iright/=iLUMO_A) then
+                        write(c80tmp,*) iright-iLUMO_A
+                        outstr=trim(outstr)//'+'//trim(adjustl(c80tmp))
+                    end if
+                else
+                    if (iright<=nbasis) then
+                        outstr=trim(outstr)//'a'
+                        if (iright/=iLUMO_A) then
+                            write(c80tmp,*) iright-iLUMO_A
+                            outstr=trim(outstr)//'+'//trim(adjustl(c80tmp))
+                        end if
+                    else
+                        outstr=trim(outstr)//'b'
+                        if (iright/=iLUMO_B+nbasis) then
+                            write(c80tmp,*) iright-(iLUMO_B+nbasis)
+                            outstr=trim(outstr)//'+'//trim(adjustl(c80tmp))
+                        end if
+                    end if
+                end if
+                !Output composition
+                write(c80tmp,"(f5.1)") comp*100
+                if (excdir(ipair)==1) outstr=trim(outstr)//' '//trim(adjustl(c80tmp))//'%'
+                if (excdir(ipair)==2) outstr=trim(outstr)//' -'//trim(adjustl(c80tmp))//'%'
+                !Output string
+                write(iout,"(a)",advance='no') trim(outstr)
+            end if
+        end do
+        write(iout,*)
+        deallocate(excdir,orbleft,orbright,exccoeff,idxorder)
+    end do
+    if (itime==1) then
+        write(*,"(/,a)") " Do you want to export above information to "//trim(outfilename)//" in current folder? (y/n)"
+        read(*,*) selectyn
+        if (selectyn=='n'.or.selectyn=='N') exit
+    else  
+        close(10)
+        write(*,*) "Output finished!"
+    end if
+end do
 end subroutine
