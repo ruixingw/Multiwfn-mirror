@@ -23,7 +23,6 @@ do while(.true.)
 	write(*,*) "16 Generate natural orbitals based on the density matrix in .fch/.fchk file"
     write(*,*) "17 Calculate Coulomb and exchange integrals between two orbitals"
     write(*,*) "18 Calculate bond length/order alternation (BLA/BOA)"
-    write(*,*) "19 AV1245 (Used for calculating aromaticity for large ring)"
     write(*,*) "20 Bond order density (BOD) and natural adaptive orbital (NAdO) analyses"
 	read(*,*) isel
 	if (isel==0) then
@@ -64,8 +63,6 @@ do while(.true.)
         call orb_coulexcint
     else if (isel==18) then
         call BLABOA
-    else if (isel==19) then
-        call AV1245
     else if (isel==20) then
         call BOD
 	end if
@@ -90,22 +87,13 @@ if (.not.allocated(CObasa)) then
 	read(*,*)
 	return
 end if
-!!!!Beware that the dipole moment integral has taken the negative sign of electron charge into account!
-if (igenDbas==0) then !Haven't calculated dipole moment integral matrix, so reload the input file and calculate it
-	Ptottmp=Ptot !Backup Ptot, which may have already been modified by users (via modifying occ), otherwise it will be flushed when loading
-	igenDbas=1
-	write(*,*) "Reloading input file and meantime generating dipole moment integral matrix..."
-	call dealloall
-	call readinfile(firstfilename,1)
-	Ptot=Ptottmp
+if (.not.allocated(Dbas)) then
+    call genDbas_curr
+	write(*,*) "Generating electric dipole moment integral matrix..."
 end if
 xdipmat=Dbas(1,:,:)
 ydipmat=Dbas(2,:,:)
 zdipmat=Dbas(3,:,:)
-
-! call showmatgau(xdipmat,"dip x",0,"f14.8",6)
-! call showmatgau(ydipmat,"dip y",0,"f14.8",6)
-! call showmatgau(zdipmat,"dip z",0,"f14.8",6)
 
 !Calculate total dipole moment
 xnucdip=sum(a(:)%charge*a(:)%x)
@@ -451,7 +439,14 @@ use GUI
 implicit real*8 (a-h,o-z)
 character c200tmp*200,gauinpfile*200,gauoutfile*200,selectyn,suffix*4
 character,allocatable :: gauinpcontent(:)*79
+
+write(*,*) "Citation of ICSS: J. Chem. Soc. Perkin Trans. 2, 2001, 1893"
+write(*,*) "Citation of ICSS_XX/YY/ZZ and ICSS_ani:"
+write(*,*) "Carbon, 165, 468 (2020) DOI: 10.1016/j.carbon.2020.04.099"
+write(*,*)
+
 !Set grid for calculating NICS
+aug3D=12
 call setgrid(0,itmp)
 numbqper=NICSnptlim-ncenter
 write(*,"(' The number of Bq per batch:',i10)") numbqper
@@ -846,6 +841,7 @@ use util
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: convmat(:,:) !(i,j) is the coefficient of j MO of the second wavefunction in i MO of current wavefunction
 real*8,allocatable :: Snormmat(:,:) !(i,j) is the overlap integral between norm of i MO of current wavefunction and norm of j MO of the second wavefunction
+real*8,allocatable :: Snorm2mat(:,:) !(i,j) is the overlap integral between square of i MO of current wavefunction and norm of j MO of the second wavefunction
 real*8,allocatable :: MOvalgrd(:,:),MOvalgrd2(:,:) !MOvalgrd(j,n),MOvalgrd2(j,n) means the the value of the nth MO of the first/second wavefunction at the jth grid
 real*8,allocatable :: comparr(:),beckeweigrid(:)
 integer,allocatable :: comparridx(:)
@@ -904,19 +900,19 @@ end if
 
 call dealloall
 call readinfile(firstfilename,1)
-allocate(MOvalgrd(radpot*sphpot,nmo),MOvalgrd2(radpot*sphpot,nmo2),convmat(nmo,nmo2),Snormmat(nmo,nmo2))
+allocate(MOvalgrd(radpot*sphpot,nmo),MOvalgrd2(radpot*sphpot,nmo2),convmat(nmo,nmo2),Snormmat(nmo,nmo2),Snorm2mat(nmo,nmo2))
 convmat=0D0
 Snormmat=0D0
+Snorm2mat=0D0
 
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 write(*,*) "Calculating, please wait..."
 call gen1cintgrid(gridatmorg,iradcut)
 
 call walltime(iwalltime1)
-CALL CPU_TIME(time_begin)
 
 do iatm=1,ncenter
-	write(*,"(' Progress: ',i5,' /',i5)") iatm,ncenter
+    call showprog(iatm,ncenter)
 	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
 	gridatm%y=gridatmorg%y+a(iatm)%y
 	gridatm%z=gridatmorg%z+a(iatm)%z
@@ -940,24 +936,26 @@ do iatm=1,ncenter
 	!Calculate Becke weight at all grids
 	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
 	
-	!$OMP parallel do shared(convmat,Snormmat) private(imo,jmo,tmpval,tmpval2,ipt) num_threads(nthreads) schedule(dynamic)
+	!$OMP parallel do shared(convmat,Snormmat,Snorm2mat) private(imo,jmo,tmpval,tmpval2,tmpval2sqr,ipt) num_threads(nthreads) schedule(dynamic)
 	do imo=istart1,iend1
 		do jmo=istart2,iend2
 			tmpval=0D0
 			tmpval2=0D0
+            tmpval2sqr=0
 			do ipt=1+iradcut*sphpot,radpot*sphpot
 				tmpval=tmpval+beckeweigrid(ipt)*gridatmorg(ipt)%value*MOvalgrd(ipt,imo)*MOvalgrd2(ipt,jmo)
 				tmpval2=tmpval2+beckeweigrid(ipt)*gridatmorg(ipt)%value*abs(MOvalgrd(ipt,imo)*MOvalgrd2(ipt,jmo))
+				tmpval2sqr=tmpval2sqr+beckeweigrid(ipt)*gridatmorg(ipt)%value*MOvalgrd(ipt,imo)**2*MOvalgrd2(ipt,jmo)**2
 			end do
 			convmat(imo,jmo)=convmat(imo,jmo)+tmpval
             Snormmat(imo,jmo)=Snormmat(imo,jmo)+tmpval2
+            Snorm2mat(imo,jmo)=Snorm2mat(imo,jmo)+tmpval2sqr
 		end do
 	end do
 	!$OMP end parallel do
 end do
-CALL CPU_TIME(time_end)
 call walltime(iwalltime2)
-write(*,"(' Calculation took up CPU time',f12.2,'s, wall clock time',i10,'s',/)") time_end-time_begin,iwalltime2-iwalltime1
+write(*,"(' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
 
 ! call showmatgau(convmat,"convmat",0,"f12.3")
 
@@ -1010,9 +1008,10 @@ end do
 write(*,*)
 do while(.true.)
 	write(*,*) "Input the orbital index to print detail compositions and coefficients, e.g. 5"
-	write(*,*) "Input -1 can output all overlap integrals between the chosen orbitals"
-	write(*,"(a)") " Input -2 can output all overlap integrals of wavefunction norm between the chosen orbitals"
-	write(*,*) "Input 0 can exit"
+	write(*,*) "  Input -1 can output all overlap integrals between the chosen orbitals"
+	write(*,"(a)") "   Input -2 can output all overlap integrals of wavefunction norm between the chosen orbitals"
+	write(*,"(a)") "   Input -3 can output all overlap integrals of square of wavefunction between the chosen orbitals"
+	write(*,*) "  Input 0 can exit"
 	read(*,*) imo
 	if (imo==0) then
 		exit
@@ -1036,8 +1035,18 @@ do while(.true.)
 		close(10)
 		write(*,"(a,/)") " The overlap integrals of wavefunction norms have been outputted to Snormmat.txt in current folder, &
         the first and second columns correspond to the orbital indices in present and in the second wavefunctions, respectively"
+	else if (imo==-3) then
+		open(10,file="Snorm2mat.txt",status="replace")
+		do i=istart1,iend1
+			do j=istart2,iend2
+				write(10,"(2i7,f18.12)") i,j,Snorm2mat(i,j)
+			end do
+		end do
+		close(10)
+		write(*,"(a,/)") " The overlap integrals of square of wavefunctions have been outputted to Snorm2mat.txt in current folder, &
+        the first and second columns correspond to the orbital indices in present and in the second wavefunctions, respectively"
 	else if (imo<istart1.or.imo>iend1) then
-		write(*,"(a,i6,a,i6)") "Error: Exceed valid range! The value should within",istart1," and",iend1
+		write(*,"(a,i6,a,i6)") "Error: Exceeded valid range! The value should within",istart1," and",iend1
 	else
 		tmpval=0D0
 		do jmo=istart2,iend2
@@ -1066,10 +1075,11 @@ use defvar
 use util
 implicit real*8 (a-h,o-z)
 real*8 dipole(3),alpha(3,3),beta(3,3,3),gamma(3,3,3,3)
+real*8 alpha_org(3,3),beta_org(3,3,3),gamma_org(3,3,3,3) !The (hyper)polarizability tensor may be modified during processing, store the original ones in a.u.
 real*8 eigvecmat(3,3),eigval(3),freqval(100000)
 character :: c200tmp*200,sepchar,c210tmp*210,selectyn,lb(3)=(/"X","Y","Z"/)
 character*20 :: form,formau="(a,f17.5)",formother="(a,1PE16.6)"
-integer :: irdfreq=0,ides=6,iunit=1
+integer :: irdfreq=0,ides=6,iunit=1,ioutpol=0
 write(*,*) "Note: This function only works for ""polar"" tasks of Gaussian with #P"
 10 continue
 alpha=0D0
@@ -1081,6 +1091,8 @@ do while(.true.)
 	write(*,"(a,/)") " Select actual case of your Gaussian task. Option 2,4,6 print alpha, &
     option 1,3,5 print both alpha and beta, option 7 prints both alpha and gamma. -1 can be chosen &
     only if CPHF=RdFreq or polar=DCSHG was used in calculation"
+    if (ioutpol==1) write(*,*) "-4 Export (hyper)polarizability as .txt file after parsing, current: Yes"
+    if (ioutpol==0) write(*,*) "-4 Export (hyper)polarizability as .txt file after parsing, current: No"
 	if (iunit==1) write(*,*) "-3 Set unit in the output, current: a.u."
 	if (iunit==2) write(*,*) "-3 Set unit in the output, current: SI"
 	if (iunit==3) write(*,*) "-3 Set unit in the output, current: esu"
@@ -1112,6 +1124,12 @@ do while(.true.)
 		write(*,*) "2: SI unit (C^2*m^2/J for alpha, C^3*m^3/J for beta)"
 		write(*,*) "3: esu"
 		read(*,*) iunit
+	else if (isel==-4) then
+        if (ioutpol==1) then
+            ioutpol=0
+        else
+            ioutpol=1
+        end if
 	else if (isel==0) then
 		return
 	else
@@ -1179,11 +1197,11 @@ if (irdfreq==1) then
 		if (freqval(i)==0) then
             write(*,"(i8,'   w=',f12.6,' (     Static    )')") i,freqval(i)
 		else if (freqval(i)>0) then
-            write(*,"(i8,'   w=',f12.6,' (',f12.2,'nm )')") i,freqval(i),1240.7011D0/(freqval(i)*au2eV)
+            write(*,"(i8,'   w=',f12.6,' (',f12.2,'nm )')") i,freqval(i),1239.842D0/(freqval(i)*au2eV)
         end if
 	end do
 	read(*,*) ifreq
-	if (freqval(ifreq)>0) write(*,"(' Note: Printed (hyper)polarizability will correspond to w=',f12.6,' (',f12.2,'nm )',/)") freqval(ifreq),1240.7011D0/(freqval(ifreq)*au2eV)
+	if (freqval(ifreq)>0) write(*,"(' Note: Printed (hyper)polarizability will correspond to w=',f12.6,' (',f12.2,'nm )',/)") freqval(ifreq),1239.842D0/(freqval(ifreq)*au2eV)
 	if (freqval(ifreq)==0) write(*,"(' Note: Printed (hyper)polarizability will correspond to w=',f12.6,' ( Static )',/)") freqval(ifreq)
 	rewind(10) !Move to the beginning
 end if
@@ -1245,6 +1263,7 @@ end if
 alpha(1,2)=alpha(2,1)
 alpha(1,3)=alpha(3,1)
 alpha(2,3)=alpha(3,2)
+alpha_org=alpha
 !Convert to other unit
 if (iunit==2) alpha=alpha*1.6488D-41
 if (iunit==3) alpha=alpha*1.4819D-25
@@ -1281,7 +1300,14 @@ else
     write(ides,*) "Note: The polarizability printed above corresponds to standard orientation"
 end if
 write(ides,*)
-
+if (ioutpol==1) then
+    open(12,file="alpha.txt",status="replace")
+    write(12,"(1PE18.8E3)") ((alpha_org(i,j),j=1,3),i=1,3)
+    close(12)
+    write(*,*) "Alpha tensor has been exported to alpha.txt in current folder"
+    write(*,"(a)") " The sequence is ((alpha(i,j),j=1,3),i=1,3), where j loops first. The unit is a.u."
+    write(*,*)
+end if
 
 !!!! Print first hyperpolarizability part (Beta)
 if (isel==1.or.isel==3.or.isel==5) then
@@ -1328,6 +1354,7 @@ if (isel==1.or.isel==3.or.isel==5) then
 		beta(3,3,2)=beta(2,3,3)
 		write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian should be inverted, the outputs shown below have already been corrected"
 		beta=-beta
+        beta_org=beta
 		!Convert to other unit
 		if (iunit==2) beta=beta*3.20636D-53
 		if (iunit==3) beta=beta*8.63922D-33
@@ -1403,6 +1430,7 @@ if (isel==1.or.isel==3.or.isel==5) then
 			beta(2,3,3)=beta(3,2,3)
 			write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian should be multiplied by -1, the outputs below have already been corrected"
 			beta=-beta
+            beta_org=beta
 			!Convert to other unit
 			if (iunit==2) beta=beta*3.20636D-53
 			if (iunit==3) beta=beta*8.63922D-33
@@ -1468,6 +1496,7 @@ if (isel==1.or.isel==3.or.isel==5) then
 			read(10,*) c200tmp,beta(3,3,3)
 			write(ides,"(a,/)") " Note: It is well known that the sign of hyperpolarizability of Gaussian should be multiplied by -1, the outputs below have already been corrected"
 			beta=-beta
+            beta_org=beta
 			!Convert to other unit
 			if (iunit==2) beta=beta*3.20636D-53
 			if (iunit==3) beta=beta*8.63922D-33
@@ -1614,6 +1643,14 @@ if (isel==1.or.isel==3.or.isel==5) then
         end if
 	end if
     
+    if (ioutpol==1) then
+        open(12,file="beta.txt",status="replace")
+        write(12,"(1PE18.8E3)") (((beta_org(i,j,k),k=1,3),j=1,3),i=1,3)
+        close(12)
+        write(*,*)
+        write(*,*) "Beta tensor has been exported to beta.txt in current folder"
+        write(*,"(a)") " The sequence is (((beta(i,j,k),k=1,3),j=1,3),i=1,3), where k loops first. The unit is a.u."
+    end if
 end if
 
 
@@ -1675,6 +1712,7 @@ if (isel==7) then
                 end do
             end do
         end do
+        gamma_org=gamma
 		!Convert to other unit
 		if (iunit==2) gamma=gamma*6.23538D-65
 		if (iunit==3) gamma=gamma*5.03670D-40
@@ -1772,6 +1810,7 @@ if (isel==7) then
             tmp=gamma(2,1,3,1);gamma(1,2,3,1)=tmp;gamma(2,1,1,3)=tmp;gamma(1,2,1,3)=tmp
             tmp=gamma(3,1,3,1);gamma(1,3,3,1)=tmp;gamma(3,1,1,3)=tmp;gamma(1,3,1,3)=tmp
             tmp=gamma(3,2,3,1);gamma(2,3,3,1)=tmp;gamma(3,2,1,3)=tmp;gamma(2,3,1,3)=tmp
+            gamma_org=gamma
 		    !Convert to other unit
 		    if (iunit==2) gamma=gamma*6.23538D-65
 		    if (iunit==3) gamma=gamma*5.03670D-40
@@ -1903,6 +1942,7 @@ if (isel==7) then
             gamma(1,2,3,3)=gamma(1,3,2,3)
             gamma(2,2,3,3)=gamma(2,3,2,3)
             gamma(3,2,3,3)=gamma(3,3,2,3)
+            gamma_org=gamma
 		    !Convert to other unit
 		    if (iunit==2) gamma=gamma*6.23538D-65
 		    if (iunit==3) gamma=gamma*5.03670D-40
@@ -2000,7 +2040,15 @@ if (isel==7) then
     write(ides,form) " Average of gamma (definition 2):",gammaavg2
     write(ides,form) " gamma _|_:",gamma_nor
     write(ides,"(/,a)") " Note: Gamma (in input orientation) has been given above. If you want to obtain beta information, please use option 1"
-    
+        
+    if (ioutpol==1) then
+        open(12,file="gamma.txt",status="replace")
+        write(12,"(1PE18.8E3)") ((((gamma_org(i,j,k,l),l=1,3),k=1,3),j=1,3),i=1,3)
+        close(12)
+        write(*,*)
+        write(*,*) "Gamma tensor has been exported to gamma.txt in current folder"
+        write(*,"(a)") " The sequence is ((((gamma(i,j,k,l),l=1,3),k=1,3),j=1,3),i=1,3), where l loops first. The unit is a.u."
+    end if
 end if !End gamma
 
 close(10)
@@ -2127,8 +2175,9 @@ do istat=1,nstates
 	write(*,"(' State',i6,'   Excitation energy:',f12.5,' a.u.',f14.6,' eV')") istat,excene(istat),excene(istat)*au2eV
 end do
 write(*,"(' There are',i6,' excited states')") nstates
-write(*,"(' Dipole moment of ground state:'3f12.5,' a.u.')") trandip(0,0,:)
-write(*,*) "NOTE: All units used in this function is a.u."
+write(*,"(' Dipole moment of ground state contributed by electrons:',/,'   X=',f12.5,'   Y=',f12.5,'   Z=',f12.5,' a.u.')") trandip(0,0,:)
+write(*,*)
+write(*,*) "NOTE: Unless otherwise specified, all units used in this function are a.u."
 !Gaussian output file is impossible to provide <m|r|n>, even if alltransitiondensities is used for CIS, it doesn't output <m|r|m>
 do while(.true.)
 write(*,*)
@@ -2156,21 +2205,22 @@ else if (isel==1.or.isel==5.or.isel==15) then !Analysis of polarizability (alpha
 !5=Show the variation of alpha w.r.t. the number of states in consideration
 !15=Calculate alpha in a range of frequencies
 	if (isel==1.or.isel==5) then
-		write(*,*) "Input frequency of external field w for alpha(-w;w)"
-		write(*,*) "e.g. 0.25"
-		write(*,*) "Note: Negative value means using nm as unit, e.g. -693.5"
-		read(*,*) freqbeg
-		if (freqbeg<0) freqbeg=1240.7011D0/au2eV/abs(freqbeg)
-		freqend=freqbeg
-		freqstep=1
-		if (freqbeg/=0) then
-			wavlen=1240.7011D0/(freqbeg*au2eV)
-			write(*,"(' Wavelength of w:',f12.3,' nm',/)") wavlen
+		write(*,*) "Input frequency of external field w for alpha(-w;w) in a.u., e.g. 0.25"
+        write(*,*) "You can also input the value in nm, e.g. 532 nm"
+		write(*,*) "Note: 0 corresponds to static case"
+        read(*,"(a)") c80tmp
+		read(c80tmp,*) freq
+		if (index(c80tmp,"nm")/=0) freq=1239.842D0/au2eV/freq !Convert to a.u.
+		if (freq/=0) then
+			wavlen=1239.842D0/(freq*au2eV)
+			write(*,"(' Wavelength of w:',f12.6,' a.u.',f12.3,' nm',/)") freq,wavlen
+        else
+           write(*,*) "External field is static" 
 		end if
 	else if (isel==15) then
-		write(*,*) "Input lower and upper limits as well as stepsize of w for alpha(-w;w)"
+		write(*,*) "Input lower, upper limits and stepsize of w for alpha(-w;w)"
 		write(*,*) "e.g. 0.2,0.5,0.01"
-		read(*,*) freqbeg,freqend,freqstep
+		read(*,*) freq,freqend,freqstep
 	end if
 	
 	if (isel==1) then
@@ -2188,7 +2238,7 @@ else if (isel==1.or.isel==5.or.isel==15) then !Analysis of polarizability (alpha
 	
 	write(*,*) "Please wait..."
 	do numstat=istart,iend !Cycle number of states
-		do while(.true.) !Cycle frequencies from beginning until ending
+		do while(.true.) !For isel==15, vary frequency (freq) from initial value until reaching ending (freqend); For other cases, do once
 			do idir=1,3
 				do jdir=1,3
 					tmpval=0
@@ -2224,8 +2274,12 @@ else if (isel==1.or.isel==5.or.isel==15) then !Analysis of polarizability (alpha
 			else if (isel==15) then
 				write(10,"(f12.6,9(1PE14.5))") freq,alphaiso,alphaani1,alphaani2,alpha(1,1),alpha(2,2),alpha(3,3),alpha(1,2),alpha(1,3),alpha(2,3)
 			end if
-			freq=freq+freqstep
-			if (freq>freqend) exit
+            if (isel==1.or.isel==5) then
+                exit
+            else if (isel==15) then
+			    freq=freq+freqstep
+			    if (freq>freqend) exit
+            end if
 		end do
 	end do
 	if (isel==5.or.isel==15) then
@@ -2256,18 +2310,22 @@ else if (isel==2.or.isel==6.or.isel==16.or.isel==19) then !Analysis of first hyp
 	if (isel==2.or.isel==6) then
 		nfreq=1 !Only one frequency is considered
 		allocate(freqlist(1,2))
-		write(*,*) "Input frequency of external field w1 and w2 for beta(-(w1+w2);w1,w2)"
-		write(*,*) "e.g. 0.25,0.13"
-		write(*,*) "Note: Negative values mean using nm as unit, e.g. -693,0"
-		read(*,*) freqlist(1,:)
-		where(freqlist<0) freqlist=1240.7011D0/au2eV/abs(freqlist)
+		write(*,*) "Input w1 and w2 in a.u. for beta(-(w1+w2);w1,w2), e.g. 0.25,-0.13"
+        write(*,*) "You can also input the values in nm, e.g. 450,-532 nm"
+        read(*,"(a)") c80tmp
+		read(c80tmp,*) freqlist(1,:)
+		if (index(c80tmp,"nm")/=0) freqlist=1239.842D0/au2eV/freqlist
 		if (freqlist(1,1)/=0) then
-			wavlen1=1240.7011D0/(freqlist(1,1)*au2eV)
-			write(*,"(' Wavelength of w1:',f12.3,' nm')") wavlen1
+			wavlen1=1239.842D0/(freqlist(1,1)*au2eV)
+			write(*,"(' Wavelength of w1:',f12.6,' a.u.',f12.3,' nm')") freqlist(1,1),wavlen1
+        else
+            write(*,*) "w1 is static"
 		end if
 		if (freqlist(1,2)/=0) then
-			wavlen2=1240.7011D0/(freqlist(1,2)*au2eV)
-			write(*,"(' Wavelength of w2:',f12.3,' nm')") wavlen2
+			wavlen2=1239.842D0/(freqlist(1,2)*au2eV)
+			write(*,"(' Wavelength of w2:'f12.6,' a.u.',f12.3,' nm')") freqlist(1,2),wavlen2
+        else
+            write(*,*) "w2 is static"
 		end if
 		write(*,*)
 	else if (isel==16) then
@@ -2289,7 +2347,7 @@ else if (isel==2.or.isel==6.or.isel==16.or.isel==19) then !Analysis of first hyp
 		write(*,*) "The frequencies loaded:"
 		do ifreq=1,nfreq
 			write(*,"(' #',i5,'  w1=',f10.5,' a.u.',f10.3,' nm   w2=',f10.5' a.u.',f10.3,' nm')") &
-			ifreq,freqlist(ifreq,1),1240.7011D0/(freqlist(ifreq,1)*au2eV),freqlist(ifreq,2),1240.7011D0/(freqlist(ifreq,2)*au2eV)
+			ifreq,freqlist(ifreq,1),1239.842D0/(freqlist(ifreq,1)*au2eV),freqlist(ifreq,2),1239.842D0/(freqlist(ifreq,2)*au2eV)
 		end do
 		write(*,*)
 	else if (isel==19) then
@@ -2517,15 +2575,17 @@ else if (isel==3.or.isel==7.or.isel==17) then !Analysis of second hyperpolarizab
 	if (isel==3.or.isel==7) then
 		nfreq=1
 		allocate(freqlist(1,3))
-		write(*,*) "Input frequency of external fields w1, w2, w3 for gamma(-(w1+w2+w3);w1,w2,w3)"
-		write(*,*) "e.g. 0.13,0.13,0"
-		write(*,*) "Note: Negative values mean using nm as unit, e.g. -693,0,0"
-		read(*,*) freqlist(1,:)
-		where(freqlist<0) freqlist=1240.7011D0/au2eV/abs(freqlist)
+		write(*,*) "Input w1, w2, w3 in a.u. for gamma(-(w1+w2+w3);w1,w2,w3), e.g. 0.13,-0.13,0"
+        write(*,*) "You can also input the values in nm, e.g. 450.6,-532,532 nm"
+        read(*,"(a)") c80tmp
+		read(c80tmp,*) freqlist(1,:)
+		if (index(c80tmp,"nm")/=0) freqlist=1239.842D0/au2eV/freqlist
 		do i=1,3
 			if (freqlist(1,i)/=0) then
-				wavlen=1240.7011D0/(freqlist(1,i)*au2eV)
-				write(*,"(' Wavelength of w',i1,':',f12.3,' nm')") i,wavlen
+				wavlen=1239.842D0/(freqlist(1,i)*au2eV)
+				write(*,"(' Wavelength of w',i1,':',f12.6,' a.u.',f12.3,' nm')") i,freqlist(1,i),wavlen
+            else
+                write(*,"(' w',i1,' is static')") i
 			end if
 		end do
 		write(*,*)
@@ -2776,34 +2836,45 @@ else if (isel==3.or.isel==7.or.isel==17) then !Analysis of second hyperpolarizab
 
 ! Calculate third hyperpolarizability (delta)
 else if (isel==4) then
-	write(*,*) "Input w1,w2,w3,w4 for delta(-(w1+w2+w3+w4);w1,w2,w3,w4)"
+	write(*,*) "Input w1,w2,w3,w4 in a.u. for delta(-(w1+w2+w3+w4);w1,w2,w3,w4)"
 	write(*,*) "e.g. 0.13,0.13,0,-0.13"
-	write(*,*) "Note: Negative values mean using nm as unit, e.g. -693,0,0"
-	read(*,*) freq1,freq2,freq3,freq4
-	if (freq1<0) freq1=1240.7011D0/au2eV/abs(freq1)
-	if (freq2<0) freq2=1240.7011D0/au2eV/abs(freq2)
-	if (freq3<0) freq3=1240.7011D0/au2eV/abs(freq3)
-	if (freq4<0) freq4=1240.7011D0/au2eV/abs(freq4)
+    write(*,*) "You can also input the values in nm, e.g. 450.7,-450.7,532,532 nm"
+    read(*,"(a)") c80tmp
+	read(c80tmp,*) freq1,freq2,freq3,freq4
+	if (index(c80tmp,"nm")/=0) then
+	    freq1=1239.842D0/au2eV/freq1
+	    freq2=1239.842D0/au2eV/freq2
+	    freq3=1239.842D0/au2eV/freq3
+	    freq4=1239.842D0/au2eV/freq4
+    end if
 	freqtot=freq1+freq2+freq3+freq4
 	tmpw(1:5)=(/ -freqtot,freq1,freq2,freq3,freq4 /)
 	if (freq1/=0) then
-		wavlen1=1240.7011D0/(freq1*au2eV)
-		write(*,"(' Wavelength of w1:',f12.3,' nm')") wavlen1
+		wavlen1=1239.842D0/(freq1*au2eV)
+		write(*,"(' Wavelength of w1:',f12.6,' a.u.',f12.3,' nm')") freq1,wavlen1
+    else
+        write(*,*) "w1 is static"
 	end if
 	if (freq2/=0) then
-		wavlen2=1240.7011D0/(freq2*au2eV)
-		write(*,"(' Wavelength of w2:',f12.3,' nm')") wavlen2
+		wavlen2=1239.842D0/(freq2*au2eV)
+		write(*,"(' Wavelength of w2:',f12.6,' a.u.',f12.3,' nm')") freq2,wavlen2
+    else
+        write(*,*) "w2 is static"
 	end if
 	if (freq3/=0) then
-		wavlen3=1240.7011D0/(freq3*au2eV)
-		write(*,"(' Wavelength of w3:',f12.3,' nm')") wavlen3
+		wavlen3=1239.842D0/(freq3*au2eV)
+		write(*,"(' Wavelength of w3:',f12.6,' a.u.',f12.3,' nm')") freq3,wavlen3
+    else
+        write(*,*) "w3 is static"
 	end if
 	if (freq4/=0) then
-		wavlen4=1240.7011D0/(freq4*au2eV)
-		write(*,"(' Wavelength of w4:',f12.3,' nm')") wavlen4
+		wavlen4=1239.842D0/(freq4*au2eV)
+		write(*,"(' Wavelength of w4:',f12.6,' a.u.',f12.3,' nm')") freq4,wavlen4
+    else
+        write(*,*) "w4 is static"
 	end if
 	write(*,*)
-	write(*,"(' Consider how many states? Should <=',i6)") nstates
+	write(*,"(' Consider how many states? Should be <=',i6)") nstates
 	read(*,*) numstat
 	
 	write(*,*) "Please wait patiently..."
@@ -4707,171 +4778,6 @@ if (selectyn=='y'.or.selectyn=='Y') then
 end if
 
 
-end subroutine
-
-
-
-
-!!-------------------------------------------------------------------
-!!------------ AV1245, used for calculating aromaticity of large ring
-!!-------------------------------------------------------------------
-subroutine AV1245
-use defvar
-use util
-use NAOmod
-implicit real*8 (a-h,o-z)
-character c2000tmp*2000
-integer,allocatable :: atmarr(:),atmarrorg(:)
-integer cenind(12)
-real*8,allocatable :: PSmat(:,:),PSmatA(:,:),PSmatB(:,:)
-
-iopsh=0
-if (allocated(CObasa)) then !Calculate AV1245 in original basis
-    if (allocated(Palpha)) then !Open shell
-        iopsh=1
-        allocate(PSmatA(nbasis,nbasis),PSmatB(nbasis,nbasis))
-        PSmatA=matmul(Palpha,Sbas)
-        PSmatB=matmul(Pbeta,Sbas)
-    else
-        allocate(PSmat(nbasis,nbasis))
-        PSmat=matmul(Ptot,Sbas)
-    end if
-    ifNAO=0
-else !Load NAO and DMNAO information
-    write(*,"(a)") " Basis information is not presented, therefore trying to load natural atomic orbital (NAO) information from input file"
-    open(10,file=filename,status="old")
-    call checkNPA(ifound);if (ifound==0) return
-    call loadNAOinfo
-    write(*,*) "Loading NAO information finished!"
-    call checkDMNAO(ifound);if (ifound==0) return
-    call loadDMNAO
-    close(10)
-    write(*,*) "Loading density matrix in NAO basis finished!"
-    write(*,*) "The AV1245 will be calculated based on NAOs"
-    if (iopshNAO==0) then
-        allocate(PSmat(numNAO,numNAO))
-        PSmat=DMNAO
-    else if (iopshNAO==1) then !Open shell
-        iopsh=1
-        allocate(PSmatA(numNAO,numNAO),PSmatB(numNAO,numNAO))
-        PSmatA=DMNAOa
-        PSmatB=DMNAOb
-    end if
-    nbasis=numNAO
-    ifNAO=1
-    !Move information from NAO variables to common variables, so that multi-center bond order routines could be used
-    if (allocated(basstart)) deallocate(basstart,basend)
-    allocate(basstart(ncenter),basend(ncenter))
-    basstart=NAOinit
-    basend=NAOend
-end if
-iMCBOtype_old=iMCBOtype
-iMCBOtype=2
-
-do while(.true.)
-    write(*,*)
-    write(*,*) "          ------- AV1245 (Phys. Chem. Chem. Phys., 18, 11839) -------"
-    write(*,*) "Input index of the atoms in the order of connectivity, e.g. 2,3,7,18,19,20"
-    write(*,*) "To exit, input ""q"""
-    !When NAO information is loaded form NBO output file, geometry information is not available and cannot generate connectivity
-    if (ifNAO==0) write(*,"(a)") " Hint: If input ""d"" and press ENTER button, then you can input the indices in arbitrary order because the actual order &
-    will be automatically guessed, however in this case any atom should not connect to more than two atoms in the ring"
-    read(*,"(a)") c2000tmp
-    
-    if (index(c2000tmp,'q')/=0) then
-        exit
-    else if (index(c2000tmp,'d')/=0) then
-        if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
-        write(*,*)
-        write(*,*) "Input index of the atoms, the order is arbitrary"
-        write(*,*) "For example: 1,3-4,6-8,10-14"
-        read(*,"(a)") c2000tmp
-        call str2arr(c2000tmp,natm)
-        allocate(atmarr(natm),atmarrorg(natm))
-        call str2arr(c2000tmp,natm,atmarrorg)
-        !Reorganize the atmarrorg to correct sequence as atmarr according to connectivity
-        atmarr=0
-        atmarr(1)=atmarrorg(1)
-        inow=atmarr(1) !Current atom
-        atmarrorg(1)=0 !This atom has been picked out, so set to zero
-        do idx=2,natm
-            do jdx=1,natm
-                if (atmarrorg(jdx)==0) cycle
-                jatm=atmarrorg(jdx)
-                if (connmat(inow,jatm)/=0) then
-                    inow=jatm
-                    atmarr(idx)=inow
-                    atmarrorg(jdx)=0
-                    exit
-                end if
-            end do
-            if (jdx==natm+1) then
-                write(*,"(' Failed to determine connectivity of atom',i6)") inow
-                exit
-            end if
-        end do
-        deallocate(atmarrorg)
-        if (any(atmarr<=0)) then
-            write(*,"(a)") " Unfortunately, the order was not successfully recognized, you should manually input &
-            the atom indices according to connectivity"
-            write(*,*) "Press ENTER button to continue"
-            read(*,*)
-            deallocate(atmarr)
-            cycle
-        else
-            write(*,*) "The order of the atoms in the ring has been successfully identified"
-            write(*,*)
-        end if
-    else
-        call str2arr(c2000tmp,natm)
-        allocate(atmarr(natm))
-        call str2arr(c2000tmp,natm,atmarr)
-    end if
-    
-    write(*,"(' Number of selected atoms:',i6)") natm
-    write(*,*) "Atomic sequence:"
-    write(*,"(12i6)") atmarr
-    write(*,*)
-    totval=0
-    ipos=1
-    do while(.true.)
-        cenind(1)=atmarr(ipos)
-        if (ipos+1>natm) then
-            cenind(2)=atmarr(ipos+1-natm)
-        else
-            cenind(2)=atmarr(ipos+1)
-        end if
-        if (ipos+3>natm) then
-            cenind(3)=atmarr(ipos+3-natm)
-        else
-            cenind(3)=atmarr(ipos+3)
-        end if
-        if (ipos+4>natm) then
-            cenind(4)=atmarr(ipos+4-natm)
-        else
-            cenind(4)=atmarr(ipos+4)
-        end if
-        if (iopsh==0) then
-            call calcmultibndord(4,cenind,PSmat,nbasis,tmpval)
-        else
-            call calcmultibndord(4,cenind,PSmatA,nbasis,tmpvalA)
-            call calcmultibndord(4,cenind,PSmatB,nbasis,tmpvalB)
-            tmpval=8*(tmpvalA+tmpvalB) !8=2^(n-1)
-        end if
-        tmpval=tmpval/3 !Convert 4c-MCI to 4c-ESI according to Eq.10 of AV1245 paper
-        write(*,"(' 4-center electron sharing index of',4i6,':',f14.8)") cenind(1:4),tmpval
-        totval=totval+tmpval
-        if (ipos==natm) exit
-        ipos=ipos+1
-    end do
-    
-    totval=totval/natm
-    write(*,"(/,a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000
-    !write(*,"(a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000*0.635 !mimic data of AV1245 paper
-    deallocate(atmarr)
-end do
-
-iMCBOtype=iMCBOtype_old
 end subroutine
 
 

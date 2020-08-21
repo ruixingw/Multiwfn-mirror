@@ -41,7 +41,7 @@ fi
 
 echo delta parameter is $delta
 
-keyword_opt="# "$level_opt" opt "$solvent
+keyword_opt="# "$level_opt" opt=loose "$solvent
 keyword_SP_gas="# "$level_SP" pop=MK IOp(6/33=2,6/42=6)"
 keyword_SP_solv="# "$level_SP" "$solvent" pop=MK IOp(6/33=2,6/42=6)"
 

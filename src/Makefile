@@ -1,16 +1,18 @@
-OPT = -O2 -qopenmp -qopenmp-link=static -threads -qopt-matmul -msse3 -diag-disable 8290,8291,6371,10316 -fpp -mkl -static-intel
+SIMD = -msse3
+OPT = -O2 -qopenmp -qopenmp-link=static -threads -qopt-matmul $(SIMD) -diag-disable 8290,8291,6371,10316 -fpp -mkl -static-intel
 #Options in the next line is for debugging purpose
 #OPT = -O0 -qopenmp -diag-disable 8290,8291,6371 -threads -qopenmp-link=static -debug all -g -traceback -check all -fstack-protector -fpp -mkl -static-intel
 
 LIB = ./dislin_d-11.0.a -lXm -lXt -lX11 -lGL #Works for CentOS 7.x
 FC = ifort
 EXE = Multiwfn
+LIBRETAPATH = ./libreta_slow
 
-objects = define.o util.o plot.o Bspline.o sym.o function.o GUI.o sub.o integral.o Lebedev-Laikov.o \
+objects = define.o util.o plot.o Bspline.o sym.o libreta.o function.o GUI.o sub.o integral.o Lebedev-Laikov.o \
 DFTxclib.o edflib.o fileIO.o spectrum.o DOS.o Multiwfn.o 0123dim.o LSB.o \
 population.o orbcomp.o bondorder.o topology.o excittrans.o otherfunc.o \
 otherfunc2.o otherfunc3.o surfana.o procgriddata.o AdNDP.o fuzzy.o CDA.o basin.o \
-orbloc.o visweak.o EDA.o atmraddens.o NAONBO.o minpack.o
+orbloc.o visweak.o EDA.o atmraddens.o NAONBO.o minpack.o ean.o hrr_012345.o eanvrr_012345.o boysfunc.o
 
 default : $(objects) 
 	$(FC) $(OPT) $(objects) $(LIB) -o $(EXE)
@@ -20,6 +22,10 @@ default : $(objects)
 
 clean:
 	rm -f $(EXE) *.o *.mod
+
+cleanlibreta:
+	rm -f $(EXE) libreta.o ean.o hrr_012345.o eanvrr_012345.o \
+	boysfunc.o libreta.mod hrr.mod ean.mod eanvrr.mod boysfunc.mod
 
 
 #Define modules that used by other files
@@ -36,16 +42,16 @@ Bspline.o : Bspline.f90
 util.o : util.f90 define.o
 	$(FC) $(OPT) -c util.f90
 
-function.o : function.f90 define.o util.o bspline_sub_module.mod
+function.o : function.f90 define.o util.o Bspline.o libreta.o
 	$(FC) $(OPT) -c function.f90
 
 plot.o : plot.f90 define.o util.o
 	$(FC) $(OPT) -c plot.f90
 
-GUI.o : GUI.f90 define.o plot.o
+GUI.o : GUI.f90 define.o plot.o function.o
 	$(FC) $(OPT) -c GUI.f90
 
-modules = define.o util.o function.o plot.o GUI.o
+modules = define.o util.o function.o plot.o GUI.o libreta.o
 
 
 #Library or adpated third-part codes
@@ -148,3 +154,24 @@ EDA.o : EDA.f90 $(modules)
 
 NAONBO.o : NAONBO.f90 $(modules)
 	$(FC) $(OPT) -c NAONBO.f90
+
+
+
+# Interfaces of libreta to Multiwfn
+
+libreta.o: ${LIBRETAPATH}/libreta.f90 ean.o hrr_012345.o eanvrr_012345.o boysfunc.o
+	$(FC) $(OPT) -c ${LIBRETAPATH}/libreta.f90
+
+# Pure libreta files
+
+ean.o: ${LIBRETAPATH}/ean.f90 hrr_012345.o eanvrr_012345.o boysfunc.o ${LIBRETAPATH}/ean_data1.h ${LIBRETAPATH}/ean_data2.h
+	$(FC) $(OPT) -c ${LIBRETAPATH}/ean.f90
+
+hrr_012345.o: ${LIBRETAPATH}/hrr_012345.f90
+	$(FC) -O2 -diag-disable 6843 $(SIMD) -c ${LIBRETAPATH}/hrr_012345.f90
+
+eanvrr_012345.o: ${LIBRETAPATH}/eanvrr_012345.f90 boysfunc.o
+	$(FC) $(OPT) -c ${LIBRETAPATH}/eanvrr_012345.f90
+
+boysfunc.o: ${LIBRETAPATH}/boysfunc.f90 ${LIBRETAPATH}/boysfunc_data1.h ${LIBRETAPATH}/boysfunc_data2.h
+	$(FC) $(OPT) -c ${LIBRETAPATH}/boysfunc.f90

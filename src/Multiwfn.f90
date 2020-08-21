@@ -8,14 +8,28 @@ real*8,allocatable :: tmparr(:),tmparr2(:),tmpmat(:,:),tmpmat2(:,:) !For debug p
 integer,allocatable :: tmparri(:),tmparr2i(:),tmpmati(:,:),tmpmat2i(:,:)
 
 call kmp_set_warnings_off() !In rare case, "Cannot open message catalog "1041\libiomp5ui.dll"" may occurs, this calling avoid this problem, or user should set KMP_WARNINGS environment variable to 0
-call getarg(1,filename)
-call getarg(2,cmdarg2)
+
+!Try to get input file name from argument, which should be the first argument
+filename=" "
+narg=command_argument_count()
+if (narg>0) then
+    call getarg(1,filename)
+    inquire(file=filename,exist=alive)
+    if (.not.alive) then
+        write(*,*) "Error: Unable to find the input file you specified in argument"
+        write(*,*)
+        filename=" "
+    end if
+end if
+
 10 call loadsetting
+
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.7(dev), release date: 2020-Mar-28"
+write(*,*) "Version 3.7, release date: 2020-Aug-14"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
+write(*,*) "See ""How to cite Multiwfn.pdf"" in Multiwfn binary package for more information"
 write(*,*) "Multiwfn official website: http://sobereva.com/multiwfn"
 write(*,*) "Multiwfn English forum: http://sobereva.com/wfnbbs"
 write(*,*) "Multiwfn Chinese forum: http://bbs.keinsci.com/wfn"
@@ -29,14 +43,14 @@ if (isys==1) then !Set via ompstacksize in settings.ini
     call KMP_SET_STACKSIZE_S(ompstacksize)
 else if (isys==2) then !The size should have been defined by KMP_STACKSIZE
     CALL getenv('KMP_STACKSIZE',c200tmp)
-    if (c200tmp==" ") write(*,"(/,a)") " Warning: You should set ""KMP_STACKSIZE"" &
-    environment variable as mentioned in Section 2.1.2 of Multiwfn manual!"
+    if (c200tmp==" ") write(*,"(/,a)") " Warning: You should set ""KMP_STACKSIZE"" environment variable as mentioned in Section 2.1.2 of Multiwfn manual!"
 end if
 !write(*,"(' OpenMP stacksize for each thread: ',f10.2,' MB')") dfloat(KMP_GET_STACKSIZE_S())/1024/1024
+call mkl_set_num_threads(nthreads) !Use this to set number of cores used in MKL library (e.g. function matmul_blas)
 
 write(*,*)
 
-if (trim(filename)=="") then !Haven't defined filename variable
+if (trim(filename)==" ") then !Haven't defined filename variable
 	call mylover(lovername)
 	write(*,"(a,a,a)") " Input file path, for example E:\",trim(lovername),".wfn"
 	write(*,*) "(Supported: .mwfn/wfn/wfx/fch/molden/31/chg/pdb/xyz/mol/mol2/cub/grd, etc.)"
@@ -166,12 +180,14 @@ if (allocated(a)) then
     if (ncenter<200.and.all(a%index>0)) then !Too large system will take evidently cost
         allocate(tmpmat(3,ncenter),tmpmat2i(ncenter,ncenter),tmparri(ncenter))
         tmpmat(1,:)=a%x*b2a;tmpmat(2,:)=a%y*b2a;tmpmat(3,:)=a%z*b2a
-        !This tolerance is suitable for most systems. 0.01 may be too tight, however if the criterion is loosen, in rare case &
-        !The SYVA routine will ceaselessly show "ERROR: Too many symmetry operations. Try a lower tolerance" and doesn't work
-        call PG_eqvatm(ncenter,a%index,tmpmat,0.01D0,strtmp,ncls,tmparri,tmpmat2i)
+        !Tolerance of 0.001 is suitable for most systems. Though it may be too tight to detect point group for difficult case, &
+        !if the criterion is loosen, in rare case (e.g. C32) the SYVA routine will ceaselessly show &
+        !"ERROR: Too many symmetry operations. Try a lower tolerance" and doesn't work or even make Multiwfn crash
+        call PG_eqvatm(ncenter,a%index,tmpmat,0.001D0,strtmp,ncls,tmparri,tmpmat2i)
         if (strtmp==" ".and.ncenter<50) then
             do i=1,20
-                call PG_eqvatm(ncenter,a%index,tmpmat,i*0.005D0,strtmp,ncls,tmparri,tmpmat2i)
+                !write(*,"(' Loosen the tolerance of determining point group to',f12.6)") i*0.003D0
+                call PG_eqvatm(ncenter,a%index,tmpmat,i*0.003D0,strtmp,ncls,tmparri,tmpmat2i)
                 if (strtmp/=" ") exit
             end do
         end if
@@ -180,13 +196,18 @@ if (allocated(a)) then
         else
             write(*,"(' Point group: ',a)") strtmp
         end if
+        !Test ability of detecting point group
+        !do i=1,500
+        !    val=i*0.00002D0
+        !    call PG_eqvatm(ncenter,a%index,tmpmat,val,strtmp,ncls,tmparri,tmpmat2i)
+        !    write(*,"(i6,f12.6,2x,a)") i,val,trim(strtmp)
+        !end do
         deallocate(tmpmat,tmpmat2i,tmparri)
     end if
 end if
 
 !Special treatment
-! call sys1eprop !Show some system 1e properties, only works when Cartesian basis functions are presented
-!call fitatmdens
+!call sys1eprop
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
@@ -212,7 +233,7 @@ do while(.true.) !Main loop
 	write(*,*) "8 Orbital composition analysis"
 	write(*,*) "9 Bond order analysis"
 	write(*,*) "10 Plot total DOS, partial DOS, OPDOS, local DOS and photoelectron spectrum"
-	write(*,*) "11 Plot IR/Raman/UV-Vis/ECD/VCD/ROA spectrum"
+	write(*,*) "11 Plot IR/Raman/UV-Vis/ECD/VCD/ROA/NMR spectrum"
 	write(*,*) "12 Quantitative analysis of molecular surface"
 	if (allocated(cubmat)) write(*,*) "13 Process grid data"
 	if (.not.allocated(cubmat)) write(*,*) "13 Process grid data (No grid data is presented currently)"
@@ -451,14 +472,15 @@ do while(.true.) !Main loop
 			    write(*,"(a)") " 4 Set the plane for user-defined function 38 (Defined)"
 		    end if
 		    write(*,"(a,1PE18.8)") " 5 Set global temporary variable, current:",globaltmp
-		    write(*,"(a,f8.4,' a.u.')") " 6 Set delta for orbital-weighted Fukui function or DD, current:",orbwei_delta
 		    write(*,"(a,i3)") " 10 Set number of threads of parallel calculation, current:",nthreads
 		    write(*,*) "11 Reload settings.ini file"
             write(*,*) "12 Add a Bq atom to specific position"
             write(*,*) "13 Convert bndmat.txt in current folder to Gaussian .gjf file with bond orders"
+            write(*,*) "14 Convert current wavefunction to .rad file"
 		    write(*,*) "90 Calculate nuclear attractive energy between a fragment and an orbital"
 		    write(*,*) "91 Exchange orbital energies and occupations"
 		    write(*,*) "92 Calculate result of various kinetic energy functionals"
+            write(*,*) "93 Output all Becke's integration points to intpt.txt in current folder"
 		    write(*,*) "97 Generate natural orbitals based on density matrix outputted by MRCC program"
 		    write(*,*) "99 Show EDF information (if any)"
 		    write(*,*) "100 Check the sanity of present wavefunction"
@@ -497,10 +519,6 @@ do while(.true.) !Main loop
 		    else if (i==5) then
 			    write(*,*) "Input the value, e.g. 0.3"
 			    read(*,*) globaltmp
-			    write(*,*) "Done!"
-		    else if (i==6) then
-			    write(*,*) "Input the delta value, e.g. 0.1"
-			    read(*,*) orbwei_delta
 			    write(*,*) "Done!"
 		    else if (i==10) then
 			    write(*,*) "Input an integer, e.g. 8"
@@ -555,6 +573,11 @@ do while(.true.) !Main loop
                 close(10)
                 deallocate(tmpmat)
                 write(*,*) "Done! gen.gjf has been generated in current folder"
+            else if (i==14) then
+                ipos=index(filename,'.',back=.true.)
+                write(*,"(a)") " Converting to "//filename(1:ipos)//"rad"
+                call atmwfn2atmrad(filename,filename(1:ipos)//"rad")
+                write(*,*) "Done!"
 		    else if (i==90) then
 			    call attene_orb_fragnuc
 		    else if (i==91) then
@@ -572,6 +595,8 @@ do while(.true.) !Main loop
 			    end if
 		    else if (i==92) then
 			    call intKED
+		    else if (i==93) then
+                call outBeckeintpt
 		    else if (i==97) then
 			    call MRCC_gennatorb
 		    else if (i==99) then

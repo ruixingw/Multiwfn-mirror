@@ -7,7 +7,7 @@
 
 #!/bin/bash
 
-keyword_opt="# B3LYP/def2SVP em=GD3BJ scrf(solvent=water) opt"
+keyword_opt="# B3LYP/def2SVP em=GD3BJ scrf(solvent=water) opt=loose"
 keyword_SP="# B3LYP/def2TZVP em=GD3BJ scrf(solvent=water) pop=MK IOp(6/33=2,6/42=6)"
 Gaussian=g09
 

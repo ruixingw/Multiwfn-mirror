@@ -1,0 +1,2 @@
+examples\spectra\NMR\valine\conf1.out conformer 1
+examples\spectra\NMR\valine\conf2.out conformer 2

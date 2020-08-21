@@ -1,0 +1,2 @@
+examples\spectra\NMR\valine\conf1.out 0.827
+examples\spectra\NMR\valine\conf2.out 0.173

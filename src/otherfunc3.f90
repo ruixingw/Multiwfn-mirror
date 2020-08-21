@@ -7,6 +7,10 @@ do while(.true.)
 	write(*,*) "0 Return"
 	write(*,*) "1 Viewing free regions and calculating free volume in a box"
 	write(*,*) "2 Fitting atomic radial density as linear combination of multiple STOs or GTFs"
+    write(*,*) "3 Visualize (hyper)polarizability via unit sphere and vector representations"
+    write(*,*) "4 Simulating scanning tunneling microscope (STM) image"
+    write(*,*) "5 Calculate electric dipole, quadrupole and octopole moments analytically"
+    
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -14,6 +18,12 @@ do while(.true.)
         call freeregion
 	else if (isel==2) then
         call fitatmdens
+	else if (isel==3) then
+        call vis_hypol
+	else if (isel==4) then
+        call STM
+    else if (isel==5) then
+        call calc_multipole
 	end if
 end do
 end subroutine
@@ -985,3 +995,776 @@ do i=nradpt,1,-1 !From close to far
     fitdensint=fitdensint+rhotmp*radw_int(i)
 end do
 end function
+
+
+
+
+!!------------ Visualize (hyper)polarizability via unit sphere and vector representations
+subroutine vis_hypol
+use util
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 :: arrowscl=0.015D0,arrowrad=0.025D0,arrowradvec=0.15D0,arrowsclvec=0.05D0
+real*8 alpha(3,3),beta(3,3,3),gamma(3,3,3,3),vec(3),vecrep(3),univec(3),ten2(3,3),ten3(3,3,3)
+real*8,allocatable :: ptxyz(:,:),allvec(:,:)
+character c200tmp*200,c80tmp*80,name*10
+integer :: numpt=600,icolorarrow=1,ispecmaxlen=0
+
+if (allocated(distmat)) then !Input file contains atom information
+    sphererad=maxval(distmat)/2*b2a*1.6D0
+else
+    sphererad=2D0
+end if
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "       --------------- Visualizing (hyper)polarizability ---------------"
+    if (ispecmaxlen==0) write(*,*) "-8 Toggle making longest arrow on sphere has specific length, current: No"
+    if (ispecmaxlen==1) write(*,*) "-8 Toggle making longest arrow on sphere has specific length, current: Yes"
+    if (icolorarrow==0) write(*,*) "-7 Toggle coloring arrows on sphere, current: No"
+    if (icolorarrow==1) write(*,*) "-7 Toggle coloring arrows on sphere, current: Yes"
+    write(*,"(a,f9.6)") " -6 Set radius for the arrow of vector rep., current:",arrowradvec
+    write(*,"(a,f9.6)") " -5 Set length scale factor for the arrow of vector rep., current:",arrowsclvec
+    write(*,"(a,f9.6)") " -4 Set radius for the arrows on sphere, current:",arrowrad
+    write(*,"(a,f9.6)") " -3 Set length scale factor for the arrows on sphere, current:",arrowscl
+    write(*,"(a,i6)") " -2 Set number of points on the sphere, current:",numpt
+    write(*,"(a,f8.3,' Angstrom')") " -1 Set sphere radius, current:",sphererad
+    write(*,*) "0 Return"
+    write(*,*) "1 Do analysis for polarizability (alpha)"
+    write(*,*) "2 Do analysis for first-order hyperpolarizability (beta)"
+    write(*,*) "3 Do analysis for second-order hyperpolarizability (gamma)"
+    read(*,*) isel
+    
+    if (isel==-8) then
+        if (ispecmaxlen==1) then
+            ispecmaxlen=0
+        else
+            ispecmaxlen=1
+        end if
+    else if (isel==-7) then
+        if (icolorarrow==1) then
+            icolorarrow=0
+        else
+            icolorarrow=1
+        end if
+    else if (isel==-6) then
+        write(*,*) "Input radius of the arrow, e.g. 0.25"
+        read(*,*) arrowradvec
+    else if (isel==-5) then
+        write(*,*) "Input scale factor for the arrow, e.g. 0.05"
+        read(*,*) arrowsclvec
+    else if (isel==-4) then
+        write(*,*) "Input radius of the arrows, e.g. 0.05"
+        read(*,*) arrowrad
+    else if (isel==-3) then
+        write(*,*) "Input scale factor for the arrows, e.g. 0.15"
+        read(*,*) arrowscl
+    else if (isel==-2) then
+        write(*,*) "Input expected number of points on the sphere, e.g. 800"
+        write(*,"(a)") "  You can also input negative value to specify density of points, e.g. -8.5 means the density is 8.5 points per Angstrom^2"
+        write(*,*) "Note: The actual number will be automatically maginally adjusted"
+        read(*,*) numpt
+        if (numpt<0) numpt=nint(4*sphererad**2*abs(numpt))
+    else if (isel==-1) then
+        write(*,*) "Input radius of sphere (in Angstrom), e.g. 1.5"
+        read(*,*) sphererad
+    else if (isel==0) then
+        exit
+    
+    else if (isel==1.or.isel==2.or.isel==3) then
+        if (isel==1) name="alpha"
+        if (isel==2) name="beta"
+        if (isel==3) name="gamma"
+        c200tmp=trim(name)//".txt"
+	    inquire(file=c200tmp,exist=alive)
+        if (alive) then
+            write(*,"(a)") " Since "//trim(c200tmp)//" can be found in current folder, "//trim(name)//" tensor will be directly loaded from it"
+        else
+            write(*,*) "Input path of the file containing full "//trim(name)//" tensor, e.g. C:\yohane.txt"
+            do while(.true.)
+                read(*,"(a)") c200tmp
+	            inquire(file=c200tmp,exist=alive)
+	            if (alive) exit
+	            write(*,*) "Cannot find the file, input again!"
+            end do
+        end if
+        write(*,*) "Loading "//trim(name)//" tensor from "//trim(c200tmp)
+        open(10,file=c200tmp,status="old")
+        if (isel==1) read(10,*) ((alpha(i,j),j=1,3),i=1,3)
+        if (isel==2) read(10,*) (((beta(i,j,k),k=1,3),j=1,3),i=1,3)
+        if (isel==3) read(10,*) ((((gamma(i,j,k,l),l=1,3),k=1,3),j=1,3),i=1,3)
+        close(10)
+        allocate(ptxyz(3,numpt),allvec(3,numpt))
+        
+        call unitspherept(ptxyz,numpt) !The inputted numpt will be automatically adjusted by this routine
+        write(*,"(' Actual number of points on unit sphere:',i6)") numpt
+        ptxyz=ptxyz*sphererad
+        
+        write(*,*) "Calculating data points on the sphere ..."
+        do ipt=1,numpt
+            tmpnorm=dsqrt(sum(ptxyz(:,ipt)**2))
+            univec=ptxyz(:,ipt)/tmpnorm
+            if (isel==1) then !alpha
+                do i=1,3
+                    allvec(i,ipt)=sum(alpha(i,:)*univec(:))
+                end do
+            else if (isel==2) then !beta
+                do i=1,3
+                    do j=1,3
+                        ten2(i,j)=sum(beta(i,j,:)*univec(:))
+                    end do
+                end do
+                do i=1,3
+                    allvec(i,ipt)=sum(ten2(i,:)*univec(:))
+                end do
+            else if (isel==3) then !gamma
+                do i=1,3
+                    do j=1,3
+                        do k=1,3
+                            ten3(i,j,k)=sum(gamma(i,j,k,:)*univec(:))
+                        end do
+                    end do
+                end do
+                do i=1,3
+                    do j=1,3
+                        ten2(i,j)=sum(ten3(i,j,:)*univec(:))
+                    end do
+                end do
+                do i=1,3
+                    allvec(i,ipt)=sum(ten2(i,:)*univec(:))
+                end do
+            end if
+        end do
+        allvec=allvec*arrowscl
+        
+        valmax=0
+        valmin=1E20
+        do ipt=1,numpt
+            tmp=dsqrt(sum(allvec(:,ipt)**2))
+            if (tmp>valmax) valmax=tmp
+            if (tmp<valmin) valmin=tmp
+        end do
+        write(*,"(' Minimal arrow length after scaling:',f12.3)") valmin
+        write(*,"(' Maximal arrow length after scaling:',f12.3)") valmax
+        
+        if (ispecmaxlen==1) then
+            write(*,*)
+            write(*,*) "Input expected length of longest arrow on the sphere, e.g. 2.5"
+            read(*,*) tmpmax
+            sclf=tmpmax/valmax
+            allvec=allvec*sclf
+            valmax=valmax*sclf
+            valmin=valmin*sclf
+            write(*,"(' Current arrows on sphere have been further scaled by',f12.6)") sclf
+        end if
+        
+        c80tmp=trim(name)//".tcl"
+        write(*,*) "Outputting "//trim(c80tmp)//" ..."
+        open(10,file=c80tmp,status="replace")
+        write(10,"(a)") "color Display Background white"
+        if (icolorarrow==0) then
+            write(10,"(a)") "draw color white"
+            do ipt=1,numpt
+                call drawVMDarrow(10,ptxyz(:,ipt),allvec(:,ipt),arrowrad)
+            end do
+        else if (icolorarrow==1) then
+            call writeVMD_BWR(10)
+            do ipt=1,numpt
+                tmp=dsqrt(sum(allvec(:,ipt)**2))
+                !idcolor=nint(tmp/valmax*1000) !Using zero as color lower limit
+                idcolor=nint((tmp-valmin)/(valmax-valmin)*1000)
+                if (idcolor==0) idcolor=1
+                write(10,"(a,i5)") "draw color",idcolor+50
+                call drawVMDarrow(10,ptxyz(:,ipt),allvec(:,ipt),arrowrad)
+            end do
+        end if
+        close(10)
+        write(*,"(a,/)") " Done! "//trim(c80tmp)//" has been generated in current folder, it is a VMD plotting script, &
+        you can run ""source "//trim(c80tmp)//""" in VMD console window to plot the map"
+        deallocate(ptxyz,allvec)
+        
+        !Output vector representation
+        vecrep=0
+        if (isel==1) then
+            do i=1,3
+                do j=1,3
+                    vecrep(i)=vecrep(i)+alpha(i,j)
+                end do
+            end do
+            write(*,"(' Alpha_X:',1PE14.6,'   Alpha_Y:',1PE14.6,'   Alpha_Z:',1PE14.6,' a.u.')") vecrep(:)
+        else if (isel==2) then
+            do i=1,3
+		        do j=1,3
+			        vecrep(i)=vecrep(i)+beta(i,j,j)+beta(j,j,i)+beta(j,i,j)
+		        end do
+            end do
+            vecrep=vecrep/3
+            write(*,"(' Beta_X:',1PE14.6,'   Beta_Y:',1PE14.6,'   Beta_Z:',1PE14.6,' a.u.')") vecrep(:)
+        else if (isel==3) then
+            do i=1,3
+	            do j=1,3
+		            vecrep(i)=vecrep(i)+gamma(i,j,j,i)+gamma(i,j,i,j)+gamma(i,i,j,j)
+	            end do
+            end do
+            vecrep=vecrep/15
+            write(*,"(' Gamma_X:',1PE14.6,'   Gamma_Y:',1PE14.6,'   Gamma_Z:',1PE14.6,' a.u.')") vecrep(:)
+        end if
+        if (isel==2) then !For alpha and gamma, the vector representation is useless
+            open(10,file=trim(name)//"_vec.tcl",status="replace")
+            vec=0 !Origin of the arrow is (0,0,0)
+            write(10,"(a)") "draw color lime"
+            call drawVMDarrow(10,vec,vecrep*arrowsclvec,arrowradvec)
+            close(10)
+            write(*,"(1x,a)") trim(name)//"_vec.tcl has been generated in current folder, it contains VMD command to plot "//trim(name)//" &
+            tensor via vector representation"
+        end if
+    end if
+end do
+
+end subroutine
+
+!!--------- Write command for drawing arrow into VMD plotting script according to inputted coordinate and arrow vector
+subroutine drawVMDarrow(ifileid,ptxyz,vec,arrowrad)
+integer ifileid
+real*8 ptxyz(3),vec(3),arrowrad
+conerad=2.5D0*arrowrad !cone radius
+conepos=0.65D0
+write(ifileid,"( 'draw cylinder {',3f8.3,'} {',3f8.3,'} radius',f5.2,' filled yes resolution 20' )") ptxyz(:),ptxyz(:)+conepos*vec(:),arrowrad
+write(ifileid,"( 'draw cone {',3f8.3,'} {',3f8.3,'} radius',f5.2,' resolution 20' )") ptxyz(:)+conepos*vec(:),ptxyz(:)+vec(:),conerad
+end subroutine
+
+!!-------- Define 1000 customized colors (index from 51 to 1050) corresponding to variation of blue-white-red
+!The reason of using 50~1050: (1) 0~32 are built-in colors (2) index >=1057 is unsupported by VMD
+subroutine writeVMD_BWR(ifileid)
+write(ifileid,"(a)") "set j 0                                         "
+write(ifileid,"(a)") "for {set i 1} {$i<=500} {incr i} {              "
+write(ifileid,"(a)") "incr j                                          "
+write(ifileid,"(a)") "set red [expr double($j)/500]                       "
+write(ifileid,"(a)") "set green [expr double($j)/500]                     "
+write(ifileid,"(a)") "set blue 1                                      "
+write(ifileid,"(a)") "color change rgb [expr $i+50] $red $green $blue"
+write(ifileid,"(a)") "}                                               "
+write(ifileid,"(a)") "set j 0                                         "
+write(ifileid,"(a)") "for {set i 501} {$i<=1000} {incr i} {            "
+write(ifileid,"(a)") "incr j                                          "
+write(ifileid,"(a)") "set red 1                                       "
+write(ifileid,"(a)") "set green [expr double(500-$j)/500]               "
+write(ifileid,"(a)") "set blue [expr double(500-$j)/500]                "
+write(ifileid,"(a)") "color change rgb [expr $i+50] $red $green $blue"
+write(ifileid,"(a)") "}                                               "
+end subroutine
+
+
+
+
+
+
+
+!!----------- Simulating scanning tunneling microscope (STM) image
+!Main ref: https://en.wikipedia.org/wiki/Scanning_tunneling_microscope
+!Partial ref: Tersoff and Hamann, Theory of the scanning tunneling microscope, PRB, 31, 805 (1985)
+subroutine STM
+use defvar
+use GUI
+use function
+use util
+implicit real*8 (a-h,o-z)
+integer :: imode=2
+real*8 :: bias=0
+character c80tmp*80
+real*8,external :: LDOS_STM
+
+if (allocated(cubmat)) deallocate(cubmat)
+nx=200;ny=200
+!Set initial range, in Bohr
+orgx=minval(a%x)-3
+endx=maxval(a%x)+3
+orgy=minval(a%y)-3
+endy=maxval(a%y)+3
+orgz=maxval(a%z)+0.7D0/b2a !Scan Z=0.7~2.5 Angstrom with respect to top atom
+endz=orgz+1.8D0/b2a
+
+if (.not.allocated(b)) then
+    write(*,"(a)") " Error: In order to use this function, the input file must at least contain GTF information! See Section 2.5 of manual for detail."
+    write(*,*) "Input ENTER button to return"
+    read(*,*)
+    return
+end if
+if (wfntype==3.or.wfntype==4) then
+    write(*,"(a)") " Error: This function does not support multiconfiguration state wavefunction!"
+    write(*,*) "Input ENTER button to return"
+    read(*,*)
+    return
+end if
+
+if (allocated(CObasa)) then
+    call getHOMOidx
+    Ef=(MOene(idxHOMO)+MOene(idxHOMO+1))/2
+    bias=MOene(idxHOMO)-Ef
+    
+    if (wfntype==0) then
+        write(*,*) "Note: The default Fermi level has been set to average of E(HOMO) and E(LUMO)"
+    else
+        write(*,*) "Note: The default Fermi level has been set to average of E(HOMO) and E(LUMO) of alpha spin. In this case, &
+        the result will be problematic if bias voltage is set to positive value (electron flows from tip to sample)"
+    end if
+    write(*,"(a)") " The default bias voltage has been set to the difference between E(HOMO) and Fermi level, &
+    therefore under default setting only HOMO will be imaged"
+else
+    Ef=maxval(MOene)
+    write(*,*) "Note: The default Fermi level has been set to HOMO"
+    write(*,"(a)") " Note: Since there is no unoccupied MO, the bias voltage must be set to negative value (electron flows from sample to tip)"
+end if
+
+do while(.true.)
+    write(*,*)
+    write(*,*) " ----------- Simulating scanning tunneling microscope (STM) image -----------"
+    write(*,*) "-1 Return"
+    if (imode==1) write(*,*) "0 Calculating grid data of tunneling current!"
+    if (imode==2) write(*,*) "0 Calculating tunneling current on the plane!"
+    if (imode==1) write(*,*) "1 Toggle mode of STM image, current: Constant current"
+    if (imode==2) write(*,*) "1 Toggle mode of STM image, current: Constant distance"
+    write(*,"(a,f10.3,' V')") " 2 Set bias voltage, current:",bias*au2eV
+    write(*,"(a,f10.3,' eV')") " 3 Set Fermi level, current:",Ef*au2eV
+    !write(*,"(a,f6.3,' eV')") " 3 Set FWHM for Gaussian broadening, current:",STM_FWHM
+    if (imode==1) write(*,"(a,3i5)") " 4 Set number of grid points in X,Y,Z, current:",nx,ny,nz
+    if (imode==2) write(*,"(a,3i5)") " 4 Set number of grid points in X and Y, current:",nx,ny
+    write(*,"(a,f8.3,a,f8.3,a)") " 5 Set range in X direction, current: From",orgx*b2a," to",endx*b2a," Angstrom"
+    write(*,"(a,f8.3,a,f8.3,a)") " 6 Set range in Y direction, current: From",orgy*b2a," to",endy*b2a," Angstrom"
+    if (imode==1) write(*,"(a,f8.3,a,f8.3,a)") " 7 Set range in Z direction, current: From",orgz*b2a," to",endz*b2a," Angstrom"
+    if (imode==2) write(*,"(a,f8.3,a)") " 7 Set Z coordinate of the XY plane, current:",orgz*b2a," Angstrom"
+    read(*,*) isel
+    
+    if (isel==-1) then
+        return
+    else if (isel==1) then
+        if (imode==1) then
+            imode=2
+            nx=200;ny=200
+        else if (imode==2) then
+            imode=1
+            nx=150;ny=150;nz=80
+        end if
+    else if (isel==2) then
+        write(*,*) "Input bias voltage in V, e.g. -3.5"
+        write(*,"(a)") " Note: Negative value lets electron flow from sample to tip, thus density of occupied MOs are imaged. &
+        Positive value lets electron flow from tip to sample, thus unoccupied MOs are imaged."
+        read(*,*) bias
+        bias=bias/au2eV
+    else if (isel==3) then
+        write(*,*) "Input Fermi energy in eV, e.g. -5.82"
+        read(*,*) Ef
+        Ef=Ef/au2eV
+    else if (isel==4) then
+        if (imode==1) then
+            write(*,*) "1 Coarse grid (100*100*40)"
+            write(*,*) "2 Medium grid (150*150*70)"
+            write(*,*) "3 Fine grid (200*200*100)"
+            write(*,*) "or, directly input number of grid points in X,Y,Z, e.g. 80,80,30"
+            read(*,"(a)") c80tmp
+            read(c80tmp,*,iostat=ierror) nx,ny,nz
+            if (ierror/=0) then
+                read(c80tmp,*) isel2
+                if (isel2==1) then
+                    nx=100;ny=100;nz=40
+                else if (isel2==2) then
+                    nx=150;ny=150;nz=70
+                else if (isel2==3) then
+                    nx=200;ny=200;nz=100
+                end if
+            end if
+        else if (imode==2) then
+            write(*,*) "Input number of grid points in X and Y, e.g. 80,80"
+            read(*,*) nx,ny
+        end if
+    else if (isel==5) then
+        write(*,*) "Input lower and upper limit of X in Angstrom, e.g. -5.8,6.4"
+        write(*,"(a)") " If you only input a number, it will be employed as extension distance (in Angstrom) in X direction to properly determine the X range"
+        read(*,"(a)") c80tmp
+        read(c80tmp,*,iostat=ierror) orgx,endx
+        if (ierror==0) then
+            orgx=orgx/b2a
+            endx=endx/b2a
+        else
+            read(c80tmp,*) ext
+            orgx=minval(a%x)-ext/b2a
+            endx=maxval(a%x)+ext/b2a
+        end if
+    else if (isel==6) then
+        write(*,*) "Input lower and upper limit of Y in Angstrom, e.g. -5.8,6.4"
+        write(*,"(a)") " If you only input a number, it will be employed as extension distance (in Angstrom) in Y direction to properly determine the X range"
+        read(*,"(a)") c80tmp
+        read(c80tmp,*,iostat=ierror) orgy,endy
+        if (ierror==0) then
+            orgy=orgy/b2a
+            endy=endy/b2a
+        else
+            read(c80tmp,*) ext
+            orgy=minval(a%y)-ext/b2a
+            endy=maxval(a%y)+ext/b2a
+        end if
+    else if (isel==7) then
+        if (imode==1) then
+            write(*,*) "Input lower and upper limit of Z in Angstrom, e.g. 0,2.5"
+            read(*,*) orgz,endz
+            orgz=orgz/b2a
+            endz=endz/b2a
+        else if (imode==2) then
+            write(*,*) "Input Z coordinate of the XY plane in Angstrom, e.g. 2.2"
+            read(*,*) orgz
+            orgz=orgz/b2a
+        end if
+    
+    else if (isel==0) then !Start calculation !!!
+        
+        !Show which MOs will be taken into account
+        if (bias<=0) then
+            Elow=Ef+bias
+            Ehigh=Ef
+        else
+            Elow=Ef
+            Ehigh=Ef+bias
+        end if
+        write(*,"(/,' Lower limit of MO energy considered in the calculation:',f12.3,' eV')") Elow*au2eV
+        write(*,"(' Upper limit of MO energy considered in the calculation:',f12.3,' eV')") Ehigh*au2eV
+        nconsider=0
+        write(*,*) "The MOs taken into account in the current STM simulation:"
+        do imo=1,nmo
+            if (bias<=0) then !Electron flows from sample to tip
+                if (MOocc(imo)>0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) then
+                    write(*,"(' MO',i6,'   Occ=',f6.3,'   Energy=',f12.4,' eV   Type: ',a)") imo,MOocc(imo),MOene(imo)*au2eV,trim(orbtypename(MOtype(imo)))
+                    nconsider=nconsider+1
+                end if
+            else if (bias>0) then !Electron flows from tip to sample
+                if (MOocc(imo)==0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) then
+                    write(*,"(' MO',i6,'   Occ=',f6.3,'   Energy=',f12.4,' eV   Type: ',a)") imo,MOocc(imo),MOene(imo)*au2eV,trim(orbtypename(MOtype(imo)))
+                    nconsider=nconsider+1
+                end if
+            end if
+        end do
+        if (nconsider==0) then
+            write(*,*) "None. Therefore the calculation is canceled"
+            cycle
+        else
+            write(*,"(' Totally',i4,' MOs are taken into account',/)") nconsider
+        end if
+        
+        dx=(endx-orgx)/(nx-1)
+        dy=(endy-orgy)/(ny-1)
+        !Prepare settings for plane plot, they are utilized by "drawplane" routine via "planemap_interface" routine
+        call gencontour(0,0D0,0D0,0) !Generate contour lines
+        ngridnum1=nx
+        ngridnum2=ny
+        plesel=1 !XY plane
+        disshowlabel=100 !Very broad threshold to make sure showing all atom labels
+        ilenunit2D=2 !Use Angstrom
+        planestpx=(endx-orgx)*b2a/7
+        planestpy=(endy-orgy)*b2a/7
+        iclrtrans=6 !Grey transition in color-filled map
+        !ibond_on_plane=1 !Show bond on map
+        iatom_on_plane=1 !Show atom label on map
+        numdigz=4
+        
+        if (imode==1) then !Constant current STM
+            dz=(endz-orgz)/(nz-1)
+	        write(*,"(' Grid spacings in X,Y,Z are',3f12.6,' Bohr')") dx,dy,dz
+            write(*,*) "Calculating, please wait..."
+            allocate(cubmat(nx,ny,nz))
+            call walltime(iwalltime1)
+            ifinish=0
+            !$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(ix,xpos,iy,ypos,iz,zpos) schedule(dynamic) NUM_THREADS(nthreads)
+            do ix=1,nx
+                xpos=orgx+(ix-1)*dx
+                do iy=1,ny
+                    ypos=orgy+(iy-1)*dy
+                    do iz=1,nz
+                        zpos=orgz+(iz-1)*dz
+                        cubmat(ix,iy,iz)=LDOS_STM(xpos,ypos,zpos,Ef,bias)
+                    end do
+                end do
+                ifinish=ifinish+1
+                call showprog(ifinish,nx)
+            end do
+            !$OMP END PARALLEL DO
+            call walltime(iwalltime2)
+            write(*,"(' Calculation took up time',i10,' s')") iwalltime2-iwalltime1
+            valmax=maxval(cubmat)
+            write(*,"(' Maximal value (LDOS) is',f12.6,' a.u.')") valmax
+            sur_value=valmax/2 !For isosurface plot
+            
+            do while(.true.)
+                write(*,*)
+                write(*,*) "          ------------------- Post-processing menu -------------------"
+                write(*,*) "0 Return"
+                write(*,*) "1 Visualize isosurface of current"
+                write(*,*) "2 Export grid data of current as STM.cub in current folder"
+                write(*,*) "3 Calculate and visualize constant current STM image"
+                read(*,*) isel2
+                if (isel2==0) then
+                    deallocate(cubmat)
+                    exit
+                else if (isel2==1) then
+                    call drawisosurgui(1)
+                else if (isel2==2) then
+                    open(10,file="STM.cub",status="replace")
+                    gridvec1=(/ dx,0D0,0D0 /)
+                    gridvec2=(/ 0D0,dy,0D0 /)
+                    gridvec3=(/ 0D0,0D0,dz /)
+			        call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+                    close(10)
+                    write(*,*) "Exporting finished!"
+                else if (isel2==3) then
+                    write(*,*) "Input constant current value, e.g. 0.004"
+                    write(*,"(' Note: The value should be larger than 0 and smaller than',f10.6)") valmax
+                    read(*,*) constcurr
+                    write(*,*) "Calculating constant current map, please wait..."
+                    allocate(planemat(nx,ny))
+                    ifinish=0
+                    do ix=1,nx
+                        xpos=orgx+(ix-1)*dx
+                        do iy=1,ny
+                            ypos=orgy+(iy-1)*dy
+                            !Gradually decrease tip from high z to low z, until isosurface is encountered, and using linear interpolation to determine its position
+                            do iz=nz,2,-1
+                                zpos=orgz+(iz-1)*dz
+                                zposnext=orgz+(iz-2)*dz
+                                val=cubmat(ix,iy,iz)
+                                valnext=cubmat(ix,iy,iz-1)
+                                if (val<constcurr.and.valnext>constcurr) then
+                                    zdiffmin=zposnext+(constcurr-valnext)/(val-valnext)*dz
+                                    exit
+                                end if
+                            end do
+                            if (iz==1) zdiffmin=orgz !Failed to determine isosurface position
+                            planemat(ix,iy)=zdiffmin*b2a
+                        end do
+                    end do
+                    
+                    write(*,"(' Minimal Z is',f12.6,' Angstrom')") minval(planemat)
+                    write(*,"(' Maximal Z is',f12.6,' Angstrom')") maxval(planemat)
+                    clrlow=minval(planemat)*0.99999D0;clrhigh=maxval(planemat)*1.00001D0 !Avoid a few points marginally exceed upper limit
+                    planestpz=(clrhigh-clrlow)/10
+                    orgz2D=0 !In fact this is meaningless for present case, but should be initialized...
+                    call gencontour(2,clrlow,clrhigh,10) !Generate contour lines evenly covering lower and upper limits
+                    call planemap_interface("constant current STM","STM",orgx,endx,orgy,endy,clrlow,clrhigh)
+                    deallocate(planemat)
+                end if
+            end do
+        
+        else if (imode==2) then !Constant height STM
+	        write(*,"(' Grid spacings in X and Y are',2f12.6,' Bohr')") dx,dy
+            write(*,*) "Calculating, please wait..."
+            allocate(planemat(nx,ny))
+            !$OMP PARALLEL DO SHARED(planemat) PRIVATE(ix,xpos,iy,ypos) schedule(dynamic) NUM_THREADS(nthreads)
+            do ix=1,nx
+                xpos=orgx+(ix-1)*dx
+                do iy=1,ny
+                    ypos=orgy+(iy-1)*dy
+                    planemat(ix,iy)=LDOS_STM(xpos,ypos,orgz,Ef,bias)
+                end do
+            end do
+            !$OMP END PARALLEL DO
+            write(*,"(' Maximal value (LDOS) is',f12.6,' a.u.')") maxval(planemat)
+            clrlow=0D0
+            clrhigh=maxval(planemat)
+            planestpz=(clrhigh-clrlow)/10
+            orgz2D=orgz
+            call planemap_interface("constant height STM","STM",orgx,endx,orgy,endy,clrlow,clrhigh)
+            deallocate(planemat)
+        end if
+        
+    end if
+end do
+
+end subroutine
+
+
+!!-------- Return LDOS for MOs from Ef-bias to Ef at x,y,z (Bohr). Invoked by subroutine STM
+real*8 function LDOS_STM(x,y,z,Ef,bias)
+use defvar
+use function
+implicit real*8 (a-h,o-z)
+real*8 x,y,z,Ef,bias,wfnval(nmo)
+
+call orbderv(1,1,nmo,x,y,z,wfnval)
+if (bias<=0) then
+    Elow=Ef+bias
+    Ehigh=Ef
+else
+    Elow=Ef
+    Ehigh=Ef+bias
+end if
+
+LDOS_STM=0
+do imo=1,nmo
+    if (MOtype(imo)==0) then !Spatial orbital
+        ndup=2
+    else !Spin orbital
+        ndup=1
+    end if
+    if (bias<=0) then !Electron flows from sample to tip
+        if (MOocc(imo)>0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) LDOS_STM=LDOS_STM+ndup*wfnval(imo)**2
+    else if (bias>0) then !Electron flows from tip to sample
+        if (MOocc(imo)==0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) LDOS_STM=LDOS_STM+ndup*wfnval(imo)**2
+    end if
+end do
+end function
+
+
+
+
+
+!!--------------- Calculate electric dipole, quadrupole and octopole moments of present system based on analytic integrals
+subroutine calc_multipole
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+
+if (allocated(CObasa)) then
+    write(*,*) "Calculating electric dipole moment integral matrix..."
+    call genDbas_curr
+    write(*,*) "Calculating electric quadruple and octopole moment integral matrix..."
+    call genMultipolebas_curr
+
+    xinttot=sum(Dbas(1,:,:)*Ptot(:,:))
+    yinttot=sum(Dbas(2,:,:)*Ptot(:,:))
+    zinttot=sum(Dbas(3,:,:)*Ptot(:,:))
+
+    xxinttot=sum(Quadbas(1,:,:)*Ptot(:,:))
+    yyinttot=sum(Quadbas(2,:,:)*Ptot(:,:))
+    zzinttot=sum(Quadbas(3,:,:)*Ptot(:,:))
+    xyinttot=sum(Quadbas(4,:,:)*Ptot(:,:))
+    yzinttot=sum(Quadbas(5,:,:)*Ptot(:,:))
+    xzinttot=sum(Quadbas(6,:,:)*Ptot(:,:))
+
+    xxxinttot=sum(Octobas(1,:,:)*Ptot(:,:))
+    yyyinttot=sum(Octobas(2,:,:)*Ptot(:,:))
+    zzzinttot=sum(Octobas(3,:,:)*Ptot(:,:))
+    yzzinttot=sum(Octobas(4,:,:)*Ptot(:,:))
+    xzzinttot=sum(Octobas(5,:,:)*Ptot(:,:))
+    xxzinttot=sum(Octobas(6,:,:)*Ptot(:,:))
+    yyzinttot=sum(Octobas(7,:,:)*Ptot(:,:))
+    xxyinttot=sum(Octobas(8,:,:)*Ptot(:,:))
+    xyyinttot=sum(Octobas(9,:,:)*Ptot(:,:))
+    xyzinttot=sum(Octobas(10,:,:)*Ptot(:,:))
+    
+else if (allocated(b)) then
+    write(*,*) "Calculating density matrix based on GTFs..."
+    call genPprim
+    write(*,*) "Calculating electric dipole moment integral matrix..."
+    call genDprim
+    write(*,*) "Calculating electric quadruple and octopole moment integral matrix..."
+    call genMultipoleprim
+
+    xinttot=sum(Dprim(1,:,:)*Ptot_prim(:,:))
+    yinttot=sum(Dprim(2,:,:)*Ptot_prim(:,:))
+    zinttot=sum(Dprim(3,:,:)*Ptot_prim(:,:))
+
+    xxinttot=sum(Quadprim(1,:,:)*Ptot_prim(:,:))
+    yyinttot=sum(Quadprim(2,:,:)*Ptot_prim(:,:))
+    zzinttot=sum(Quadprim(3,:,:)*Ptot_prim(:,:))
+    xyinttot=sum(Quadprim(4,:,:)*Ptot_prim(:,:))
+    yzinttot=sum(Quadprim(5,:,:)*Ptot_prim(:,:))
+    xzinttot=sum(Quadprim(6,:,:)*Ptot_prim(:,:))
+
+    xxxinttot=sum(Octoprim(1,:,:)*Ptot_prim(:,:))
+    yyyinttot=sum(Octoprim(2,:,:)*Ptot_prim(:,:))
+    zzzinttot=sum(Octoprim(3,:,:)*Ptot_prim(:,:))
+    yzzinttot=sum(Octoprim(4,:,:)*Ptot_prim(:,:))
+    xzzinttot=sum(Octoprim(5,:,:)*Ptot_prim(:,:))
+    xxzinttot=sum(Octoprim(6,:,:)*Ptot_prim(:,:))
+    yyzinttot=sum(Octoprim(7,:,:)*Ptot_prim(:,:))
+    xxyinttot=sum(Octoprim(8,:,:)*Ptot_prim(:,:))
+    xyyinttot=sum(Octoprim(9,:,:)*Ptot_prim(:,:))
+    xyzinttot=sum(Octoprim(10,:,:)*Ptot_prim(:,:))
+
+else
+    write(*,*) "Error: The current input file does not contain wavefunction information!"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
+
+!Combine nuclear contribution and electron contribution to obtain multiple moments
+do iatm=1,ncenter
+    xinttot=xinttot+a(iatm)%x*a(iatm)%charge
+    yinttot=yinttot+a(iatm)%y*a(iatm)%charge
+    zinttot=zinttot+a(iatm)%z*a(iatm)%charge
+    xxinttot=xxinttot+a(iatm)%x*a(iatm)%x*a(iatm)%charge
+    yyinttot=yyinttot+a(iatm)%y*a(iatm)%y*a(iatm)%charge
+    zzinttot=zzinttot+a(iatm)%z*a(iatm)%z*a(iatm)%charge
+    xyinttot=xyinttot+a(iatm)%x*a(iatm)%y*a(iatm)%charge
+    yzinttot=yzinttot+a(iatm)%y*a(iatm)%z*a(iatm)%charge
+    xzinttot=xzinttot+a(iatm)%x*a(iatm)%z*a(iatm)%charge
+	xxxinttot=xxxinttot+a(iatm)%x*a(iatm)%x*a(iatm)%x*a(iatm)%charge
+	yyyinttot=yyyinttot+a(iatm)%y*a(iatm)%y*a(iatm)%y*a(iatm)%charge
+	zzzinttot=zzzinttot+a(iatm)%z*a(iatm)%z*a(iatm)%z*a(iatm)%charge
+	yzzinttot=yzzinttot+a(iatm)%y*a(iatm)%z*a(iatm)%z*a(iatm)%charge
+	xzzinttot=xzzinttot+a(iatm)%x*a(iatm)%z*a(iatm)%z*a(iatm)%charge
+	xxzinttot=xxzinttot+a(iatm)%x*a(iatm)%x*a(iatm)%z*a(iatm)%charge
+	yyzinttot=yyzinttot+a(iatm)%y*a(iatm)%y*a(iatm)%z*a(iatm)%charge
+	xxyinttot=xxyinttot+a(iatm)%x*a(iatm)%x*a(iatm)%y*a(iatm)%charge
+	xyyinttot=xyyinttot+a(iatm)%x*a(iatm)%y*a(iatm)%y*a(iatm)%charge
+	xyzinttot=xyzinttot+a(iatm)%x*a(iatm)%y*a(iatm)%z*a(iatm)%charge
+end do
+rrinttot=xxinttot+yyinttot+zzinttot
+rrxinttot=xxxinttot+xyyinttot+xzzinttot
+rryinttot=xxyinttot+yyyinttot+yzzinttot
+rrzinttot=xxzinttot+yyzinttot+zzzinttot
+
+write(*,*)
+write(*,"(' Dipole moment (a.u.): ',3f14.6)") xinttot,yinttot,zinttot
+write(*,"(' Dipole moment (Debye):',3f14.6)") xinttot*au2debye,yinttot*au2debye,zinttot*au2debye
+dipmag=sqrt(xinttot**2+yinttot**2+zinttot**2)
+write(*,"(' Magnitude of dipole moment:',f14.6,' a.u.',f14.6,' Debye')") dipmag,dipmag*au2debye
+
+write(*,"(/,' Quadrupole moments (Standard Cartesian form):')")
+fac=1
+!fac=au2debye*b2a !If using this factor, result will be identical to "Quadrupole moment (field-independent basis, Debye-Ang):" printed by Gaussian
+write(*,"(' XX=',f12.6,'  XY=',f12.6,'  XZ=',f12.6)") xxinttot*fac,xyinttot*fac,xzinttot*fac
+write(*,"(' YX=',f12.6,'  YY=',f12.6,'  YZ=',f12.6)") xyinttot*fac,yyinttot*fac,yzinttot*fac
+write(*,"(' ZX=',f12.6,'  ZY=',f12.6,'  ZZ=',f12.6)") xzinttot*fac,yzinttot*fac,zzinttot*fac
+write(*,"(' Quadrupole moments (Traceless Cartesian form):')")
+!If removing the comment, the data will be identical to "Traceless Quadrupole moment (field-independent basis, Debye-Ang)" printed by Gaussian
+QXX=(3*xxinttot-rrinttot)/2 !*au2debye*b2a/1.5D0
+QYY=(3*yyinttot-rrinttot)/2 !*au2debye*b2a/1.5D0
+QZZ=(3*zzinttot-rrinttot)/2 !*au2debye*b2a/1.5D0
+QXY=3*xyinttot/2            !*au2debye*b2a/1.5D0
+QXZ=3*xzinttot/2            !*au2debye*b2a/1.5D0
+QYZ=3*yzinttot/2            !*au2debye*b2a/1.5D0
+write(*,"(' XX=',f12.6,'  XY=',f12.6,'  XZ=',f12.6)") QXX,QXY,QXZ
+write(*,"(' YX=',f12.6,'  YY=',f12.6,'  YZ=',f12.6)") QXY,QYY,QYZ
+write(*,"(' ZX=',f12.6,'  ZY=',f12.6,'  ZZ=',f12.6)") QXZ,QYZ,QZZ
+write(*,"(' Magnitude of the traceless quadrupole moment tensor:',f12.6)") sqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
+R20=(3*zzinttot-rrinttot)/2D0 !Notice that the negative sign, because electrons carry negative charge
+R2n1=dsqrt(3D0)*yzinttot
+R2p1=dsqrt(3D0)*xzinttot
+R2n2=dsqrt(3D0)*xyinttot
+R2p2=dsqrt(3D0)/2D0*(xxinttot-yyinttot)
+write(*,"(' Quadrupole moments (Spherical harmonic form):')")
+write(*,"(' Q_2,0 =',f11.6,'   Q_2,-1=',f11.6,'   Q_2,1=',f11.6)") R20,R2n1,R2p1
+write(*,"(' Q_2,-2=',f11.6,'   Q_2,2 =',f11.6)") R2n2,R2p2
+write(*,"( ' Magnitude: |Q_2|=',f12.6)") dsqrt(R20**2+R2n1**2+R2p1**2+R2n2**2+R2p2**2)
+
+R30=(5*zzzinttot-3*rrzinttot)/2D0
+R3n1=dsqrt(3D0/8D0)*(5*yzzinttot-rryinttot)
+R3p1=dsqrt(3D0/8D0)*(5*xzzinttot-rrxinttot)
+R3n2=dsqrt(15D0)*xyzinttot
+R3p2=dsqrt(15D0)*(xxzinttot-yyzinttot)/2D0
+R3n3=dsqrt(5D0/8D0)*(3*xxyinttot-yyyinttot)
+R3p3=dsqrt(5D0/8D0)*(xxxinttot-3*xyyinttot)
+write(*,"(/,' Octopole moments (Cartesian form):')")
+fac=1
+!fac=au2debye*b2a*b2a !If using this factor, result will be identical to "Octapole moment (field-independent basis, Debye-Ang**2):" printed by Gaussian
+write(*,"(' XXX=',f10.4,'  YYY=',f10.4,'  ZZZ=',f10.4,'  XYY=',f10.4,'  XXY=',f10.4)") &
+xxxinttot*fac,yyyinttot*fac,zzzinttot*fac,xyyinttot*fac,xxyinttot*fac
+write(*,"(' XXZ=',f10.4,'  XZZ=',f10.4,'  YZZ=',f10.4,'  YYZ=',f10.4,'  XYZ=',f10.4)") &
+xxzinttot*fac,xzzinttot*fac,yzzinttot*fac,yyzinttot*fac,xyzinttot*fac
+write(*,"(' Octopole moments (Spherical harmonic form):')")
+write(*,"(' Q_3,0 =',f11.4,'  Q_3,-1=',f11.4,'  Q_3,1 =',f11.4)") R30,R3n1,R3p1
+write(*,"(' Q_3,-2=',f11.4,'  Q_3,2 =',f11.4,'  Q_3,-3=',f11.4,'  Q_3,3 =',f11.4)") R3n2,R3p2,R3n3,R3p3
+write(*,"( ' Magnitude: |Q_3|=',f12.4)") dsqrt(R30**2+R3n1**2+R3p1**2+R3n2**2+R3p2**2+R3n3**2+R3p3**2)
+
+write(*,*)
+write(*,*) "Note: Unless otherwise specified, all data shown above are in a.u."
+end subroutine

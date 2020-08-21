@@ -57,7 +57,7 @@ do while(.true.)
 	write(*,*) "-2 Set path generating parameters"
 	write(*,*) "-1 Set CP searching parameters"
 	write(*,*) "0 Print and visualize all generated CPs, paths and interbasin surfaces"
-	write(*,*) "1 Search CPs from a given starting point"
+	write(*,*) "1 Search CPs from given starting points"
 	write(*,*) "2 Search CPs from nuclear positions"
 	write(*,*) "3 Search CPs from midpoint of atom pairs"
 	write(*,*) "4 Search CPs from triangle center of three atoms"
@@ -72,18 +72,12 @@ do while(.true.)
 	read(*,*) isel
 
 	if (isel==-11) then
+        write(*,"(a)") " Note: Only electron density and orbital wavefunction support both analytical gradient and Hessian, &
+        only Laplacian of electron density, ELF and LOL support analytic gradient, all other functions do not have any analytic derivative &
+        and thus their topology analysis may be slow and numerically unstable"
+        write(*,*)
 		write(*,*) "0 Return"
-		write(*,*) "1 Electron density (Analytical Hessian)"
-		write(*,*) "3 Laplacian of electron density"
-		write(*,*) "4 Value of orbital wavefunction"
-		if (ELFLOL_type==0) write(*,*) "9 Electron localization function (ELF)"
-		if (ELFLOL_type==1) write(*,*) "9 Electron localization function (ELF) defined by Tsirelson" 
-		if (ELFLOL_type==2) write(*,*) "9 Electron localization function (ELF) defined by Tian Lu" 
-		if (ELFLOL_type==0) write(*,*) "10 Localized orbital locator (LOL)"
-		if (ELFLOL_type==1) write(*,*) "10 Localized orbital locator (LOL) defined by Tsirelson" 
-		if (ELFLOL_type==2) write(*,*) "10 Localized orbital locator (LOL) defined by Tian Lu"
-		write(*,*) "12 Total electrostatic potential"
-		write(*,"(a,i5)") " 100 User-defined real space function, iuserfunc=",iuserfunc
+        call funclist
 		read(*,*) ifunctopo
 		if (ifunctopo==4) then
 			write(*,"(a,i10)") " Input orbital index, between 1 and",nmo
@@ -103,12 +97,15 @@ do while(.true.)
 			if (allocated(ple3n1path)) deallocate(ple3n1path)
 			write(*,*) "Note: All found CPs, paths, surfaces have been cleaned"
 			!Set special parameters for specific real space functions
-			if (ifunctopo==1.or.ifunctopo==4) then !High criteria for full analytical functions
+			if (ifunctopo==1.or.ifunctopo==4) then !Tight criteria for functions with analytical Hessian
 				gradconv=1D-7
 				dispconv=1D-8
-			else !User lower criteria for those functions with numerical gradient and Hessian
+			else if (ifunctopo==3.or.ifunctopo==9.or.ifunctopo==10) then !Looser criteria for functions with semi-numerical Hessian
 				gradconv=1D-5
 				dispconv=1D-6
+			else !Use much lower criteria for functions without any order analytic derivative
+				gradconv=1D-4
+				dispconv=1D-5
 			end if
 			if (ifunctopo==1) then
 				toposphrad=3D0
@@ -130,6 +127,7 @@ do while(.true.)
 				surfpathstpsiz=0.008D0
 			end if
 		end if
+        
 	else if (isel==-10) then
 		exit
 !-9 -9 -9 -9 -9 -9 -9
@@ -250,7 +248,7 @@ do while(.true.)
 						else
 							write(icp2text,"(i5,1x,a)") icp2,CPtyp2lab(CPtype(icp2))
 						end if
-						write(*,"(' #',i5,5x,'CP:',a,' --->',' CP:',a,'   Length:',f9.5)") i,icp1text,icp2text,(pathnumpt(i)-1)*pathstepsize
+						write(*,"(' #',i5,5x,'CP:',a,' --->',' CP:',a,'   Length:',f9.5)") i,icp1text,icp2text,pathlength(i)
 					end do
 				else
 					write(*,*) "No paths have been found"
@@ -262,11 +260,13 @@ do while(.true.)
 				if (ipath>numpath.or.ipath<=0) then
 					write(*,*) "Invalid index"
 				else
-					write(*,"(a,i6,a,f10.5,a,i5)") "Path:",ipath,"   Length:",(pathnumpt(ipath)-1)*pathstepsize,"   Total points:",pathnumpt(ipath)
-					write(*,"('From',3f18.12,/,'to  ',3f18.12)") topopath(:,1,ipath),topopath(:,pathnumpt(ipath),ipath)
+					write(*,"(a,i6,a,f10.5,a,i5)") " Path:",ipath,"   Length:",pathlength(ipath)," Bohr   Total points:",pathnumpt(ipath)
+					write(*,"(' From',3f18.12,/,' to  ',3f18.12)") topopath(:,1,ipath),topopath(:,pathnumpt(ipath),ipath)
 					write(*,*) "The X/Y/Z coordinate (Bohr) and length of points in the path:"
+                    curlen=0
 					do ipt=1,pathnumpt(ipath)
-						write(*,"(i6,3f16.10,f9.4)") ipt,topopath(:,ipt,ipath),(ipt-1)*pathstepsize
+                        if (ipt>1) curlen=curlen+ dsqrt(sum( (topopath(:,ipt,ipath)-topopath(:,ipt-1,ipath))**2) )
+						write(*,"(i6,3f16.10,f10.5)") ipt,topopath(:,ipt,ipath),curlen
 					end do
 				end if
 				
@@ -464,7 +464,6 @@ do while(.true.)
 					if (idel>0) then
 						numcpold=numcp
 						icp=1
-! 						write(*,*) CPtype(1:numcp)
 						do while(icp<=numcp)
 							if (CPtype(icp)==-1) then
 								CPpos(:,icp:numcp-1)=CPpos(:,icp+1:numcp)
@@ -618,13 +617,13 @@ do while(.true.)
 			write(*,"(a)") " 0 Return"
 			write(*,"(a,i5)") " 1 Set maximal iterations:",topomaxcyc
 			write(*,"(a,f12.6)") " 2 Set scale factor of stepsize:",CPstepscale
-			write(*,"(a,1PE12.5)") " 3 Criteria for gradient-norm convergence:",gradconv
+			write(*,"(a,1PE12.5)") " 3 Criteria for gradient norm convergence:",gradconv
 			write(*,"(a,1PE12.5)") " 4 Criteria for displacement convergence:",dispconv
 			write(*,"(a,f12.6)") " 5 Minimal distance between CPs:",minicpdis
 			write(*,"(a,f8.2)") " 6 Skip search if distance between atoms is longer than the sum of their vdW radius multiplied by:",vdwsumcrit
 			if (ishowsearchlevel==0) write(*,"(a)") " 7 Set printing level of details of CP searching, current: None"
 			if (ishowsearchlevel==1) write(*,"(a)") " 7 Set printing level of details of CP searching: Minor detail"
-			if (ishowsearchlevel==2) write(*,"(a)") " 7 Set printing level of details of CP searching: More detail"
+			if (ishowsearchlevel==2) write(*,"(a)") " 7 Set printing level of details of CP searching: Some detail"
 			if (ishowsearchlevel==3) write(*,"(a)") " 7 Set printing level of details of CP searching: All detail"
 			write(*,"(a,1PE15.8)") " 8 Criteria for determining if Hessian matrix is singular:",singularcrit
 			if (CPsearchlow==CPsearchhigh) then
@@ -720,7 +719,7 @@ do while(.true.)
 				else
 					write(icp2text,"(i5,1x,a)") icp2,CPtyp2lab(CPtype(icp2))
 				end if
-				write(*,"(' #',i5,5x,'CP:',a,' --->',' CP:',a,'   Length:',f9.5)") i,icp1text,icp2text,(pathnumpt(i)-1)*pathstepsize
+				write(*,"(' #',i5,5x,'CP:',a,' --->',' CP:',a,'   Length:',f9.5)") i,icp1text,icp2text,pathlength(i)
 			end do
 		else
 			write(*,*) "No paths have been found"
@@ -760,25 +759,70 @@ do while(.true.)
 		if (numbassurf>0) write(*,"(' The number of generated interbasin surfaces:',i8)") numbassurf
 		if (numpath>0) idrawmol=0 !Avoid atom and bond covered paths
 		if (isilent==0) call drawmoltopogui
-	!111111111111111111111
+        
+	!111111111111111111111 Locate CPs from one or more given starting points
 	else if (isel==1) then
-		numcpold=numcp
-		write(*,*) "Input X,Y,Z of starting point (in bohr, e.g. 2.0,3.1,-0.5)"
-		write(*,"(a)") " You can also input two atomic indices (e.g. 4,5), then midpoint of corresponding two atoms will be taken as starting point"
-		read(*,"(a)") c200
-		read(c200,*,iostat=ierror) x,y,z
-		if (ierror/=0) then
-			read(c200,*) iatm,jatm
-			x=(a(iatm)%x+a(jatm)%x)/2
-			y=(a(iatm)%y+a(jatm)%y)/2
-			z=(a(iatm)%z+a(jatm)%z)/2
-		end if
-		call findcp(x,y,z,ifunctopo,0)
-		if (numcp==numcpold) then
-			write(*,*) "No new critical point was found"
-		else
-			write(*,"(' Find',i5,' new critical points')") numcp-numcpold
-		end if
+        do while(.true.)
+            write(*,*)
+            write(*,*) "0 Return"
+            write(*,*) "1 Manually input starting point"
+            write(*,*) "2 Using midpoint of two atoms as starting point"
+            write(*,*) "3 Using all atom coordinates from a given .pdb or .pqr file as starting points"
+            write(*,*) "4 Using starting points from a .txt file"
+            read(*,*) isel2
+            if (isel2==0) exit
+		    numcpold=numcp
+            if (isel2==1) then
+		        write(*,*) "Input X,Y,Z of starting point"
+                write(*,*) "e.g. ""2.0,3.1,-0.5"" means (2.0,3.1,-0.5) Bohr"
+                write(*,*) "     ""2.5,3.2,-0.1 A"" means (2.5,3.2,-0.1) Angstrom"
+                read(*,"(a)") c200
+                read(c200,*) x,y,z
+                if (index(c200,'A')/=0.or.index(c200,'a')/=0) then
+                    x=x/b2a;y=y/b2a;z=z/b2a
+                end if
+		        call findcp(x,y,z,ifunctopo)
+            else if (isel2==2) then
+		        write(*,"(a)") " Input index of two atoms, e.g. 3,6"
+			    read(*,*) iatm,jatm
+			    x=(a(iatm)%x+a(jatm)%x)/2
+			    y=(a(iatm)%y+a(jatm)%y)/2
+			    z=(a(iatm)%z+a(jatm)%z)/2
+		        call findcp(x,y,z,ifunctopo)
+            else if (isel2==3.or.isel2==4) then
+                if (isel2==3) write(*,*) "Input path of the .pdb or .pqr file, e.g. C:\Cutie_panther.pdb"
+                if (isel2==4) write(*,*) "Input path of the .txt file, e.g. C:\maki.txt"
+                do while(.true.)
+	                read(*,"(a)") c200
+	                inquire(file=c200,exist=alive)
+	                if (alive) exit
+	                write(*,*) "Cannot find the file, input again!"
+                end do
+                open(10,file=c200,status="old")
+                ncalc=0
+                do while(.true.)
+	                read(10,"(a)",iostat=ierror) c200
+	                if (ierror/=0) exit
+                    if (isel2==3.and.(c200(1:6)=="HETATM".or.c200(1:6)=="ATOM  ")) then
+                        ncalc=ncalc+1
+		                read(c200,"(30x,3f8.3)") x,y,z
+                        write(*,"(' Starting point:',i6,'   X,Y,Z:',3f8.3,' Angstrom')") ncalc,x,y,z
+		                call findcp(x/b2a,y/b2a,z/b2a,ifunctopo)
+                    else if (isel2==4.and.c200/=" ") then
+                        ncalc=ncalc+1
+		                read(c200,*) x,y,z
+                        write(*,"(' Starting point:',i6,'   X,Y,Z:',3f12.6,' Bohr')") ncalc,x,y,z
+		                call findcp(x,y,z,ifunctopo)
+                    end if
+                end do
+                close(10)
+            end if
+		    if (numcp==numcpold) then
+			    write(*,*) "No new critical point was found"
+		    else
+			    write(*,"(' Found',i5,' new critical points')") numcp-numcpold
+		    end if
+        end do
 		
 	!Typical searching modes (mainly for AIM)
 	else if (isel==2.or.isel==3.or.isel==4.or.isel==5) then
@@ -792,10 +836,11 @@ do while(.true.)
 		if (isel==2) then
 			numcpold=numcp
 			inow=0
+            gradconv_bk=gradconv
+            gradconv=1  !Remove gradient convergence criterion, because for very heavy atoms, the nucleus has too sharp density to converge
 			!$OMP PARALLEL DO SHARED(itime) PRIVATE(iatm) schedule(dynamic) NUM_THREADS(nthreads)
 			do idx=1,nsearchlist
 				iatm=searchlist(idx)
-				
 				if (ishowsearchlevel>=1) then
 					write(*,"(' #',i5,' /',i5,a,i5,'(',a,')')") iatm,ncenter,": Trying from nuclear position of ",iatm,a(iatm)%name
 				else
@@ -804,12 +849,7 @@ do while(.true.)
 					call showprog(inow,nsearchlist)
 					!$OMP END CRITICAL
 				end if
-				
-				if (a(iatm)%index>10) then
-					call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,ifunctopo,1) !For heavy atoms, use lower criteria, because the cusp of electron density is sharp so hard to locate
-				else
-					call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,ifunctopo,0)
-				end if
+				call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,ifunctopo)
 			end do
 			!$OMP END PARALLEL DO
 			if ((numcp-numcpold)/=0) then
@@ -821,6 +861,7 @@ do while(.true.)
 				end do
 			end if
 			write(*,"(' Totally find',i6,' new critical points')") numcp-numcpold
+            gradconv=gradconv_bk
 			if (ifunctopo==1.and.count(CPtype(1:numcp)==1)<nsearchlist) write(*,*) "Warning: Some (3,-3) may missing, try to search again with different parameters"
 		
 		!333333333333333333333, midpoint between two atoms as initial guess
@@ -850,7 +891,7 @@ do while(.true.)
 						call showprog(itime,ntime)
 					end if
 					!$OMP end CRITICAL
-					call findcp( (a(iatm)%x+a(jatm)%x)/2D0,(a(iatm)%y+a(jatm)%y)/2D0,(a(iatm)%z+a(jatm)%z)/2D0, ifunctopo,0)
+					call findcp( (a(iatm)%x+a(jatm)%x)/2D0,(a(iatm)%y+a(jatm)%y)/2D0,(a(iatm)%z+a(jatm)%z)/2D0, ifunctopo)
 				end do
 			end do	
 			!$OMP END PARALLEL DO
@@ -901,7 +942,7 @@ do while(.true.)
 							call showprog(itime,ntime)
 						end if
 						!$OMP end CRITICAL
-						call findcp( (a(iatm)%x+a(jatm)%x+a(katm)%x)/3D0,(a(iatm)%y+a(jatm)%y+a(katm)%y)/3D0,(a(iatm)%z+a(jatm)%z+a(katm)%z)/3D0, ifunctopo,0)
+						call findcp( (a(iatm)%x+a(jatm)%x+a(katm)%x)/3D0,(a(iatm)%y+a(jatm)%y+a(katm)%y)/3D0,(a(iatm)%z+a(jatm)%z+a(katm)%z)/3D0, ifunctopo)
 					end do
 				end do
 			end do
@@ -966,7 +1007,7 @@ do while(.true.)
 							end if
 							!$OMP end CRITICAL
 							call findcp( (a(iatm)%x+a(jatm)%x+a(katm)%x+a(latm)%x)/4D0,&
-							(a(iatm)%y+a(jatm)%y+a(katm)%y+a(latm)%y)/4D0,(a(iatm)%z+a(jatm)%z+a(katm)%z+a(latm)%z)/4D0, ifunctopo,0)
+							(a(iatm)%y+a(jatm)%y+a(katm)%y+a(latm)%y)/4D0,(a(iatm)%z+a(jatm)%z+a(katm)%z+a(latm)%z)/4D0, ifunctopo)
 						end do
 					end do
 				end do
@@ -1046,7 +1087,7 @@ do while(.true.)
 					do i=1,numsearchpt_tmp
 						dispt_cen=dsqrt( (randptx(i)-sphcenx)**2+(randpty(i)-sphceny)**2+(randptz(i)-sphcenz)**2 )
 						if (dispt_cen>toposphrad) cycle
-						call findcp(randptx(i),randpty(i),randptz(i),ifunctopo,0)
+						call findcp(randptx(i),randpty(i),randptz(i),ifunctopo)
 						!$OMP CRITICAL
 						itime=itime+1
 						if (itime>ioutcount+99.or.ifunctopo==12) then
@@ -1147,7 +1188,9 @@ do while(.true.)
 				write(*,*) "Please wait..."
 				iback=ishowptESP
 				if (indcp==-1) ishowptESP=0 !Avoid outputting ESP
-				open(10,file="CPprop.txt",status="replace")
+                c200="CPprop.txt"
+                if (iaddprefix==1) call addprefix(c200)
+				open(10,file=c200,status="replace")
 				do icp=1,numcp
 					write(*,"(' Outputting CP',i6,'  /',i6)") icp,numcp
 					write(10,"(' ----------------   CP',i6,',     Type ',a,'   ----------------')") icp,CPtyp2lab(CPtype(icp))
@@ -1157,7 +1200,7 @@ do while(.true.)
 				end do
 				close(10)
 				if (indcp==-1) ishowptESP=iback
-				write(*,*) "Done! The results have been outputted to CPprop.txt in current folder"
+				write(*,"(a)") " Done! The results have been outputted to "//trim(c200)//" in current folder"
 				write(*,*) "Note: Unless otherwise specified, all units are in a.u."
 			else if (indcp>0.and.indcp<=numcp) then
 				write(*,*) "Note: Unless otherwise specified, all units are in a.u."
@@ -1595,6 +1638,9 @@ iterpt:	do ipt=2,maxpathpttry
 					numpath=numpath+1
 					pathnumpt(numpath)=ipt
 					topopath(:,:,numpath)=pathtmp(:,:,idir)
+                    !Add the nearly reached CP as the final point
+                    pathnumpt(numpath)=pathnumpt(numpath)+1
+                    topopath(:,pathnumpt(numpath),numpath)=CPpos(:,icp)
 					!$OMP END CRITICAL
 					if (info==1) then
 						write(*,"(a,i6,a,f8.4)") " Found new path after",ipt," iterations, path length:",(ipt-1)*pathstepsize
@@ -1680,25 +1726,16 @@ end subroutine
 
 !!!----------- Find critical points from initial guess at X,Y,Z using Newton method
 !ifunc is index of real space functions
-!If ilowcrit==1, use lower critiera, because for heavy atoms, cusp of electron density at nuclear position is very sharp hence hard to locate by default criteria
 !ishowsearchlevel=0/1/2/3:  Print none/minor/some/all detail. Notice that in parallel mode, the outputted details are messed up
-subroutine findcp(x,y,z,ifunc,ilowcrit)
+subroutine findcp(x,y,z,ifunc)
 use topo
 use function
 use util
 implicit real*8(a-h,o-z)
 integer ifunc
-integer ilowcrit
 real*8 x,y,z
 real*8 coord(3,1),grad(3,1),hess(3,3),disp(3,1)
 real*8 eigvecmat(3,3),eigval(3) !,tmpmat(3,3)
-if (ilowcrit==1) then
-	realdispconv=dispconv*10000D0
-	realgradconv=gradconv*10000D0
-else !For most cases use default criteria
-	realdispconv=dispconv
-	realgradconv=gradconv
-end if
 coord(1,1)=x
 coord(2,1)=y
 coord(3,1)=z
@@ -1706,8 +1743,6 @@ if (ishowsearchlevel>1) write(*,"(' Starting point:',3f12.6)") coord(1:3,1)
 
 do i=1,topomaxcyc
 	call gencalchessmat(2,ifunc,coord(1,1),coord(2,1),coord(3,1),value,grad(1:3,1),hess)
-! 	call showmatgau(hess)
-! 	write(*,*) detmat(hess)
 	singulartest=abs(detmat(hess))
 	if (singulartest<singularcrit) then
 		if (ishowsearchlevel>1) then
@@ -1728,13 +1763,13 @@ do i=1,topomaxcyc
 		write(*,"(' Current coordinate :',3f18.10)") coord
 		write(*,"(' Current gradient   :',3E18.10)") grad
 		write(*,"(' Norm of displacement:',E18.8,'  Norm of gradient:',E18.8)") disperr,graderr
-		write(*,"(' Goal: |disp|<',E18.8,'  |Grad|<',E18.8)") realdispconv,realgradconv
+		write(*,"(' Goal: |disp|<',E18.8,'  |Grad|<',E18.8)") dispconv,gradconv
 	end if
 ! 	tmpmat=hess
 ! 	call diagmat(tmpmat,eigvecmat,eigval,300,1D-12)
 ! 	write(*,"('Eigenvalue of Hessian   :  ',3E16.8)") eigval
 
-	if (disperr<realdispconv.and.graderr<realgradconv) then
+	if (disperr<dispconv.and.graderr<gradconv) then
 		if (ishowsearchlevel>1) write(*,"(' After',i6,' iterations')") i
 		if (ishowsearchlevel==3) write(*,*) "---------------------- Iteration ended ----------------------"
         !$OMP CRITICAL
@@ -2029,19 +2064,27 @@ do while(.true.)
 	allocate(curvex(npointcurve),curvey(npointcurve))
 	if (itwopath==0) then
 		do ipt=1,pathnumpt(ipath)
-			curvex(ipt)=(ipt-1)*pathstepsize
+            if (ipt==1) then
+                curvex(ipt)=0
+            else
+			    curvex(ipt)=curvex(ipt-1) + dsqrt(sum( (topopath(:,ipt,ipath)-topopath(:,ipt-1,ipath))**2) )
+            end if
 			curvey(ipt)=calcfuncall(iselfunc,topopath(1,ipt,ipath),topopath(2,ipt,ipath),topopath(3,ipt,ipath))
 		end do
 	else if (itwopath==1) then
 		ipttmp=0
 		do ipt=pathnumpt(ipath),1,-1
 			ipttmp=ipttmp+1
-			curvex(ipttmp)=(ipttmp-1)*pathstepsize
+            if (ipt==pathnumpt(ipath)) then
+                curvex(ipttmp)=0
+            else
+			    curvex(ipttmp)=curvex(ipttmp-1) + dsqrt(sum( (topopath(:,ipt,ipath)-topopath(:,ipt+1,ipath))**2) )
+            end if
 			curvey(ipttmp)=calcfuncall(iselfunc,topopath(1,ipt,ipath),topopath(2,ipt,ipath),topopath(3,ipt,ipath))
 		end do
 		do jpt=2,pathnumpt(jpath) !The first point of jpath is (3,-1), which has been included in ipath above
 			ipttmp=ipttmp+1
-			curvex(ipttmp)=(ipttmp-1)*pathstepsize
+			curvex(ipttmp)=curvex(ipttmp-1) + dsqrt(sum( (topopath(:,jpt,jpath)-topopath(:,jpt-1,jpath))**2) )
 			curvey(ipttmp)=calcfuncall(iselfunc,topopath(1,jpt,jpath),topopath(2,jpt,jpath),topopath(3,jpt,jpath))
 		end do
 	end if	
@@ -2145,3 +2188,16 @@ do while(.true.)
 	deallocate(curvex,curvey)
 end do
 end subroutine
+
+
+
+!!----------- Get length of a path
+real*8 function pathlength(ipath)
+use topo
+implicit real*8 (a-h,o-z)
+integer ipath
+pathlength=0
+do ipt=2,pathnumpt(ipath)
+    pathlength=pathlength+dsqrt(sum( (topopath(:,ipt,ipath)-topopath(:,ipt-1,ipath))**2 ))
+end do
+end function

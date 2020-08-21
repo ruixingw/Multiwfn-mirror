@@ -12,3 +12,5 @@ color Display Background white
 axes location Off
 display depthcue off
 display rendermode GLSL
+light 3 on
+material change specular Opaque 0.300000

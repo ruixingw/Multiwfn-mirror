@@ -7,6 +7,7 @@ use defvar
 use util
 use function
 implicit real*8 (a-h,o-z)
+character c2000tmp*2000
 integer :: maxcyc=80,ireload=1,idoene=0,idocore=1,imethod=1,domark(4),iPMexp=2,ilmocen=0
 real*8 :: arrayi(nbasis),arrayj(nbasis),crit=1D-4,tmpbasarr(nbasis),tmpprimarr(nprims),bastot(nbasis)
 real*8,pointer :: Cmat(:,:)
@@ -19,6 +20,7 @@ real*8 :: irj(3),iri(3),jrj(3) !Used for Boys localization, store dipole moment 
 real*8 :: crit1c=0.85D0,crit2c=0.80D0
 integer :: thres_1c=90,thres_2c=85,icompmethod=2
 character c200tmp*200,typestr*4,selectyn
+integer orblist(nmo),norblist !Record the index of MOs included in the localization
 !Below for calculating LMO centers and dipole moments
 real*8,allocatable :: orbvalpt(:,:)
 real*8 LMOpos(3,nmo),tmpvec(3)
@@ -66,6 +68,7 @@ do while(.true.)
 	write(*,*) "0 Return"
 	write(*,*) "1 Localizing occupied orbitals only"
 	write(*,*) "2 Localizing both occupied and unoccupied orbitals separately"
+	write(*,*) "3 Localizing specific set of orbitals"
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -101,12 +104,9 @@ do while(.true.)
 		write(*,*) "2 Pipek-Mezey based on Lowdin type of population"
 		write(*,*) "10 Foster-Boys"
 		read(*,*) imethod
-		if (imethod==10.and.igenDbas==0) then !Haven't calculated dipole moment integral matrix, so reload the input file and calculate it
-			igenDbas=1
-			write(*,*) "Reloading input file and meantime generating dipole moment integral matrix..."
-			write(*,*)
-			call dealloall
-			call readinfile(firstfilename,1)
+		if (imethod==10.and.(.not.(allocated(Dbas)))) then
+			write(*,*) "Generating electric dipole moment integral matrix..."
+			call genDbas_curr
 		end if
 	else if (isel==-7) then
 		write(*,*) "Input exponent of Pipek-Mezey method. 2 and 4 is allowed"
@@ -146,22 +146,50 @@ do while(.true.)
 		read(*,*) crit1c,crit2c
 	else if (isel==1.or.isel==2) then
 		exit
+	else if (isel==3) then
+        write(*,*) "Select type of orbitals"
+        if (wfntype==0) then
+            write(*,*) "1 Occupied orbitals"
+            write(*,*) "2 Unoccupied orbitals"
+        else if (wfntype==1) then
+            write(*,*) "1 Occupied alpha orbitals"
+            write(*,*) "2 Unoccupied alpha orbitals"
+            write(*,*) "3 Occupied beta orbitals"
+            write(*,*) "4 Unoccupied beta orbitals"
+        end if
+        read(*,*) iorbtype
+        write(*,"(a)") " Input indices of the orbitals to localize, e.g. 2,3,7-10. The range must belong to the type you selected"
+        if (iorbtype==3.or.iorbtype==4) write(*,*) "Note: The beta indices are 1 based"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,norblist,orblist)
+        exit
 	end if
 end do
 
 call walltime(iwalltime1)
 
+!Will perform Alpha/total-occ, Alpha/total-vir, Beta-occ, Beta-vir, set a label to indicate which part will actually done
 domark=0
 if (wfntype==0) then
-	domark(1)=1
-	if (isel==2) domark(2)=1
+    if (isel==1) then
+	    domark(1)=1
+	else if (isel==2) then
+        domark(1:2)=1
+    else if (isel==3) then
+        domark(iorbtype)=1
+    end if
 else if (wfntype==1) then
-	domark(1)=1
-	domark(3)=1
-	if (isel==2) domark=1
+    if (isel==1) then
+	    domark(1)=1
+	    domark(3)=1
+	else if (isel==2) then
+        domark=1
+    else if (isel==3) then
+        domark(iorbtype)=1
+    end if
 end if
 
-if (idocore==0) then
+if (isel/=3.and.idocore==0) then
 	call getninnerele(ninnerele,0) !Count the number of inner electrons
 	write(*,"(' Note: Lowest',i5,' orbitals are regarded as core orbitals and will not be localized')") ninnerele/2
 end if
@@ -189,21 +217,28 @@ do itime=1,4
 	else
 		Cmat=>CObasb
 	end if
-	if (itime==1) then
-		nmobeg=1
-		if (idocore==0) nmobeg=ninnerele/2+1
-		nmoend=naelec
-	else if (itime==2) then
-		nmobeg=naelec+1
-		nmoend=nbasis
-	else if (itime==3) then
-		nmobeg=1
-		if (idocore==0) nmobeg=ninnerele/2+1
-		nmoend=nbelec
-	else if (itime==4) then
-		nmobeg=nbelec+1
-		nmoend=nbasis
-	end if
+    !Set orbital range to deal with. 1 based index for both alpha and beta
+    if (isel==1.or.isel==2) then
+	    if (itime==1) then
+		    nmobeg=1
+		    if (idocore==0) nmobeg=ninnerele/2+1
+		    nmoend=naelec
+	    else if (itime==2) then
+		    nmobeg=naelec+1
+		    nmoend=nbasis
+	    else if (itime==3) then
+		    nmobeg=1
+		    if (idocore==0) nmobeg=ninnerele/2+1
+		    nmoend=nbelec
+	    else if (itime==4) then
+		    nmobeg=nbelec+1
+		    nmoend=nbasis
+	    end if
+        norblist=nmoend-nmobeg+1
+        forall(i=1:norblist) orblist(i)=nmobeg-1+i
+    else if (isel==3) then
+        continue !orblist has already been set
+    end if
 	if (imethod==1) SC=matmul(Sbas,Cmat) !Generate intermediate matrix SC for PM-Mulliken for lowering cost from N^4 to N^3
 	
 	if (wfntype==0) then
@@ -218,8 +253,10 @@ do itime=1,4
 
 	Pvalold=0
 	do icyc=1,maxcyc
-		do imo=nmobeg,nmoend-1 !Cycle each orbital pair
-			do jmo=imo+1,nmoend
+		do idx=1,norblist-1 !Cycle each orbital pair
+            imo=orblist(idx)
+			do jdx=idx+1,norblist
+                jmo=orblist(jdx)
 				if (imethod==1) then !Pipek-Mezey with Mulliken population
 					Aval=0
 					Bval=0
@@ -261,11 +298,11 @@ do itime=1,4
 				end if
 				if (Aval**2+Bval**2<1D-12) cycle
 				gamma=sign(1D0,Bval)*acos(-Aval/dsqrt(Aval**2+Bval**2))/4D0
-				arrayi=cos(gamma)*Cmat(:,imo)+sin(gamma)*Cmat(:,jmo)
+				arrayi=cos(gamma)*Cmat(:,imo)+sin(gamma)*Cmat(:,jmo) !Rotate imo and jmo by angle gamma to yield a new orbital
 				arrayj=-sin(gamma)*Cmat(:,imo)+cos(gamma)*Cmat(:,jmo)
-				Cmat(:,imo)=arrayi
+				Cmat(:,imo)=arrayi !Update current coefficient matrix by new mixed orbital
 				Cmat(:,jmo)=arrayj
-				if (imethod==1) then !For PM-Mulliken, also correspondingly update intermediate matrix
+				if (imethod==1) then !For PM-Mulliken, also correspondingly update intermediate matrix SC
 					arrayi=cos(gamma)*SC(:,imo)+sin(gamma)*SC(:,jmo)
 					arrayj=-sin(gamma)*SC(:,imo)+cos(gamma)*SC(:,jmo)
 					SC(:,imo)=arrayi
@@ -274,7 +311,8 @@ do itime=1,4
 			end do
 		end do
 		Pval=0
-		do imo=nmobeg,nmoend
+		do idx=1,norblist
+            imo=orblist(idx)
 			do iatm=1,ncenter
 				Pval=Pval+Qval(Cmat,imo,imo,iatm)**iPMexp
 			end do
@@ -304,12 +342,15 @@ write(*,"(/,' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwal
 !Print orbital energies, sort orbitals according to energies
 if (idoene==1) then
 	nmobeg=1
-	if (idocore==0) nmobeg=ninnerele/2+1
+	if (isel/=3.and.idocore==0) nmobeg=ninnerele/2+1
 	!Do Alpha part or closed-shell orbitals
 	allocate(FLMOA(nbasis,nbasis))
 	FLMOA=matmul(matmul(transpose(CObasa),FmatA),CObasa)
-	if (isel==1) nmoend=naelec
-	if (isel==2) nmoend=nbasis
+	if (isel==1) then
+        nmoend=naelec
+	else if (isel==2.or.isel==3) then
+        nmoend=nbasis
+    end if
 	do iorb=nmobeg,nmoend
 		MOene(iorb)=FLMOA(iorb,iorb)
 	end do
@@ -330,6 +371,7 @@ if (idoene==1) then
 	end do
 	write(*,*) "Energies of localized orbitals:"
 	do iorb=nmobeg,nmoend
+        if (all(orblist(1:norblist)/=iorb)) cycle
 		typestr="A+B"
 		if (wfntype==1)	typestr="A"
 		write(*,"(i6,'   Energy:',f13.7,' a.u.',f13.4,' eV   Type: ',a,'  Occ:',f4.1)") &
@@ -339,8 +381,11 @@ if (idoene==1) then
 	if (wfntype==1) then
 		allocate(FLMOB(nbasis,nbasis))
 		FLMOB=matmul(matmul(transpose(CObasb),FmatB),CObasb)
-		if (isel==1) nmoend=nbelec
-		if (isel==2) nmoend=nbasis
+		if (isel==1) then
+            nmoend=nbelec
+		else if (isel==2.or.isel==3) then
+            nmoend=nbasis
+        end if
 		do iorb=nmobeg,nmoend
 			MOene(nbasis+iorb)=FLMOB(iorb,iorb)
 		end do
@@ -361,11 +406,12 @@ if (idoene==1) then
 		end do
 		typestr="B"
 		do iorb=nmobeg,nmoend
+            if (all(orblist(1:norblist)/=iorb)) cycle
 			write(*,"(i6,'   Energy:',f13.7,' a.u.',f13.4,' eV   Type: ',a,'  Occ:',f4.1)") &
 			iorb+nbasis,MOene(iorb+nbasis),MOene(iorb+nbasis)*au2eV,typestr,MOocc(iorb+nbasis)
 		end do
 	end if
-	if (idocore==0)  write(*,*) "Energies of core orbitals are not updated since they were not localized"
+	if (isel/=3.and.idocore==0)  write(*,*) "Energies of core orbitals are not updated since they were not localized"
 	if (isel==1) write(*,*) "Energies of unoccupied orbitals are not updated since they were not localized"
 	
 	!Second-order perturbation analysis between occupied and virtual orbitals (like NBO E2), this only works when both of them have been localized
@@ -395,35 +441,43 @@ end if
 
 !Calculate orbital composition and print major character of LMOs
 if (icompmethod>0) then
-    
 	orbtype=0
 	!At most four batches, 1: Alpha-occ 2: Alpha-vir 3: Beta-occ 4: Beta-vir
 	do itime=1,4
-		if (domark(itime)==0) cycle
-		if (itime<=2) then !For batches 1 and 2, use alpha density matrix
-			Cmat=>CObasa
-		else !For batches 3 and 4, use beta density matrix
-			Cmat=>CObasb
-		end if
-		if (itime==1) then
-			ibeg=1
-			if (idocore==0) ibeg=ninnerele/2+1
-			iend=naelec
-		else if (itime==2) then
-			ibeg=naelec+1
-			iend=nbasis
-		else if (itime==3) then
-			ibeg=1
-			if (idocore==0) ibeg=ninnerele/2+1
-			iend=nbelec
-		else if (itime==4) then
-			ibeg=nbelec+1
-			iend=nbasis
-		end if
+        if (domark(itime)==0) cycle
+        if (isel==1.or.isel==2) then
+		    if (itime<=2) then !For batches 1 and 2, use alpha density matrix
+			    Cmat=>CObasa
+		    else !For batches 3 and 4, use beta density matrix
+			    Cmat=>CObasb
+		    end if
+		    if (itime==1) then
+			    ibeg=1
+			    if (idocore==0) ibeg=ninnerele/2+1
+			    iend=naelec
+		    else if (itime==2) then
+			    ibeg=naelec+1
+			    iend=nbasis
+		    else if (itime==3) then
+			    ibeg=1
+			    if (idocore==0) ibeg=ninnerele/2+1
+			    iend=nbelec
+		    else if (itime==4) then
+			    ibeg=nbelec+1
+			    iend=nbasis
+		    end if
+            norblist=iend-ibeg+1
+            forall(i=1:norblist) orblist(i)=ibeg-1+i
+        else if (isel==3) then
+            !orblist has already been set, however ibeg and iend should be set since will be used later
+            ibeg=minval(orblist(1:norblist))
+            iend=maxval(orblist(1:norblist))
+        end if
 		
 		!Calculate orbital composition and then sort from large to small. Size: orbcomp(1:ncenter,1:nbasis)
         if (icompmethod==1) then !Mulliken+SCPA
-		    do iorb=ibeg,iend
+		    do idx=1,norblist
+                iorb=orblist(idx)
 			    if (itime==1.or.itime==3) then !For occupied LMOs, use Mulliken
 				    do ibas=1,nbasis
 					    bascross=0D0
@@ -460,7 +514,8 @@ if (icompmethod>0) then
         end if
         
         !Sort atomic contributions
-		do iorb=ibeg,iend
+		do idx=1,norblist
+            iorb=orblist(idx)
 			forall(iatm=1:ncenter) iatmarr(iatm,iorb)=iatm
 			call sort(orbcomp(:,iorb),"val",iatmarr(:,iorb)) !Sort atomic contributions from small to large
 			call invarr(orbcomp(:,iorb),iatmarr(:,iorb)) !Then become from large to small
@@ -481,7 +536,8 @@ if (icompmethod>0) then
 		write(*,"(' Almost single center LMOs: (An atom has contribution >',f5.1,'%)')") crit1c*100
 		itmp=0
         if (iprintLMOorder==0) then !Print LMO in original order
-		    do iorb=ibeg,iend
+		    do idx=1,norblist
+                iorb=orblist(idx)
 			    if (orbcomp(1,iorb)>crit1c) then
 				    write(*,"(i5,':',i4,'(',a,')',f5.1,'%    ')",advance='no') iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100
 				    itmp=itmp+1
@@ -498,7 +554,8 @@ if (icompmethod>0) then
 		    end do
         else if (iprintLMOorder==1) then !Print LMO in the sequence of major contribution atom
             do iatm=1,ncenter
-		        do iorb=ibeg,iend
+		        do idx=1,norblist
+                    iorb=orblist(idx)
 			        if (orbcomp(1,iorb)>crit1c.and.iatmarr(1,iorb)==iatm) then
 				        write(*,"(i5,':',i4,'(',a,')',f5.1,'%    ')",advance='no') iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100
 				        itmp=itmp+1
@@ -519,11 +576,12 @@ if (icompmethod>0) then
 		if (itmp==0) write(*,*) "None!"
 		write(*,*)
 		
-		if (all(istatarr(ibeg:iend)==1)) cycle
+		if (all(istatarr(orblist(1:norblist))==1)) cycle
 		write(*,"(' Almost two-center LMOs: (Sum of two largest contributions >',f5.1,'%)')") crit2c*100
 		itmp=0
         if (iprintLMOorder==0) then !Print LMO in original order
-		    do iorb=ibeg,iend
+		    do idx=1,norblist
+                iorb=orblist(idx)
 			    if (istatarr(iorb)==1) cycle
 			    if (orbcomp(1,iorb)+orbcomp(2,iorb)>crit2c) then
 				    write(*,"(i5,':',i4,'(',a,')',f5.1,'%',i4,'(',a,')',f5.1,'%     ')",advance='no') &
@@ -544,7 +602,8 @@ if (icompmethod>0) then
         else if (iprintLMOorder==1) then !Print LMO in the sequence of major contribution atom pair
             do iatm=1,ncenter
                 do jatm=iatm+1,ncenter
-		            do iorb=ibeg,iend
+		            do idx=1,norblist
+                        iorb=orblist(idx)
 			            if (istatarr(iorb)==1) cycle
 			            if (orbcomp(1,iorb)+orbcomp(2,iorb)>crit2c) then
                             if (iatmarr(1,iorb)==iatm.and.iatmarr(2,iorb)==jatm) then
@@ -577,9 +636,10 @@ if (icompmethod>0) then
 		if (itmp==0) write(*,*) "None!"
 		write(*,*)
 		
-		if (all(istatarr(ibeg:iend)==1)) cycle
+		if (all(istatarr(orblist(1:norblist))==1)) cycle
 		write(*,*) "More delocalized LMOs: (Three largest contributions are printed)"
-		do iorb=ibeg,iend
+		do idx=1,norblist
+            iorb=orblist(idx)
 			if (istatarr(iorb)==1) cycle
 			write(*,"(i5,':',i5,'(',a,')',f5.1,'%',i5,'(',a,')',f5.1,'%',i5,'(',a,')',f5.1,'%')") &
 			iorb,iatmarr(1,iorb),a(iatmarr(1,iorb))%name,orbcomp(1,iorb)*100,&
@@ -590,8 +650,6 @@ if (icompmethod>0) then
 	end do
 end if
 
-igenDbas_old=igenDbas
-if (ilmocen==1) igenDbas=1
 
 write(*,*) "Exporting localized orbitals to new.fch in current folder..."
 call outfch("new.fch",10,1)
@@ -604,7 +662,12 @@ if (ireload==1) then !Automatically reload the newly generated new.fch as reques
 
 	!Adding center of LMOs as Bq atoms
 	if (ilmocen==1) then
-		igenDbas=igenDbas_old
+        if (isel==3) then
+            write(*,*) "Note: Calculating center of LMOs is not supported in current case"
+            return
+        end if
+        write(*,*) "Generating electric dipole moment integral matrix..."
+        call genDbas_curr
 		write(*,*)
 		write(*,*) "Calculating center of LMOs and meanwhile adding them as Bq atoms..."
 		

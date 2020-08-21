@@ -619,7 +619,7 @@ do iatt=1,numrealatt !Cycle each attractors
 			write(*,"(' Attractor',i6,' corresponds to atom',i6,' (',a,')')") iatt,iatm,a(iatm)%name
 			numcpold=numcp
 			!Refine the crude position of attractor by exact newton method
-			call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,1,0)
+			call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,1)
 			if (numcp==numcpold) then
 				write(*,*) "Note: Unable to locate exact CP position! Use nuclear position"
 				numcp=numcp+1

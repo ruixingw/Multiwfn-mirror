@@ -6,6 +6,7 @@ proc orb {iorb} {
 set isoval 0.05
 #Set the material for showing orbitals here. Glossy and EdgyGlass are recommended.
 set mater Glossy
+light 3 on
 
 color Display Background white
 display depthcue off

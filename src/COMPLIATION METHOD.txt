@@ -1,17 +1,18 @@
 Here I introduce how to compile Multiwfn (64bit version) in Linux by Intel Fortran compiler, the compiler version I am using is 19.0.1.144, my system is CentOS 6.1 (64bit). I assume that you have logged on your system as root.
 PS: Don't try to use gfortran to compile Multiwfn, you must fail, because gfortran has lunatic requirement on the format of Fortran code, and the code relies on many features of ifort as well as intel MKL library.
 
-1 Uncompress the source code package to your favorite path, I assume the path is /sob/Multiwfn. In the package you can find following files:
+1 Uncompress the source code package to your favorite path, I assume the path is /sob/Multiwfn. In the package you can find the following files:
 a lot of .f90 files (except dislin_d.f90) // Source code of Multiwfn
 Lebedev-Laikov.F // A file containing the routines for generating Lebedev integration points
 DFTxclib.F // A file containing the routines for calculating DFT exchange-correlation functionals
 dislin_d-11.0.a and dislin_d.f90 // Static library and module file of Dislin graphical library
+"libreta_slow" and "libreta_fast" folders // Files of LIBRETA electron integral library, corresponding to slow and fast versions, respectively
 
 2 Ensure that you have installed developer edition of motif (e.g. motif-devel-2.3.4-1.x86_64_0), because libXm.a in this package is necessary in compilation of Multiwfn. If you have not installed it, you can search the package from the CD of your Linux distribution or download it from http://motif.ics.com/motif/downloads. If you are using CentOS/RHEL system, you can also directly run "yum install motif-devel" to install it.
 
 Also ensure that you have installed mesa-libGL-devel and mesa-libGLU-devel packages, under CentOS/RHEL you can use "yum install libGL-devel libGLU-devel" to install them.
 
-3 Go to /sob/Multiwfn folder, then run "make -j"
+3 Go to /sob/Multiwfn folder, then run "make -j". On a typical 4-cores computer, the compilation takes less than 10 minutes.
 
 If no any exception occurs, you will find executable file "Multiwfn" in current folder. Other file needed for running Multiwfn (settings.ini) is provided in binary package of Multiwfn. If this is the first time you use Linux version of Multiwfn, don't forget to read Section 2.1.2 of the manual to know how to prepare the running environment.
 
@@ -23,3 +24,16 @@ If you encountered difficulties when compiling or running Multiwfn due to missin
 1 ./noGUI.sh
 2 cd noGUI
 3 make -j
+
+
+============ Compile Multiwfn with fast ESP evaluation code  ============
+
+If you compile Multiwfn in above way, the speed of evaluating electrostatic potential (ESP) will be twice slower than the precompiled version on Multiwfn website. This is because the precompiled one is based on a more efficient code, however its compiliation is fairly time-consuming, therefore I only introduced how to compile Multiwfn with the slow ESP evaluation code. If you indeed want to compile Multiwfn with the fast ESP evaluation code, do following things:
+
+1 Open "Makefile" via text editor
+
+2 Change "LIBRETAPATH = ./libreta_slow" to "LIBRETAPATH = ./libreta_fast"
+
+3 Search "$(FC) -O2", and then change it to "$(FC) -O1"
+
+Then compile the code as shown earlier. Compilation of hrr_012345.f90 is the most time-consuming step, it usually takes 10~20 minutes.

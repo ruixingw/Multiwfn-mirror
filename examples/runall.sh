@@ -1,6 +1,6 @@
 #!/bin/bash
 icc=0
-nfile=`ls *.gjf|wc -l`
+nfile=`ls ./*.gjf|wc -l`
 for inf in *.gjf
 do
 ((icc++))

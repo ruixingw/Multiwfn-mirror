@@ -59,6 +59,7 @@ read(10,*);read(10,*);read(10,*);read(10,*)
 ilastspc=0
 do while(.true.) !Find how many centers and how many NAOs. We need to carefully check where is ending
 	read(10,"(a)") c80tmp
+    !write(*,*) trim(c80tmp)
 	if (c80tmp==' '.or.index(c80tmp,"low occupancy")/=0.or.index(c80tmp,"Population inversion found")/=0.or.index(c80tmp,"effective core potential")/=0) then
 		if (ilastspc==1) then
 			ncenter_NAO=iatm
@@ -67,7 +68,17 @@ do while(.true.) !Find how many centers and how many NAOs. We need to carefully 
 		end if
 		ilastspc=1 !last line is space
 	else
-		read(c80tmp,*) iNAO,c80tmp2,iatm
+		read(c80tmp,*,iostat=ierror) iNAO,c80tmp2,iatm
+        !Sometimes the content is " 940    H127  s      Ryd( 2s)...", there is no spacing between element symbol and atom index, use special treatment
+        if (ierror/=0) then
+            read(c80tmp,*) iNAO,c80tmp2
+            do i=1,len_trim(c80tmp2)
+                if ( iachar(c80tmp2(i:i))>=48 .and. iachar(c80tmp2(i:i))<=57 ) then !This is the first digit
+                    read(c80tmp2(i:),*) iatm
+                    exit
+                end if
+            end do
+        end if
 		ilastspc=0
 	end if
 end do
@@ -85,7 +96,17 @@ ilastspc=1
 do while(.true.)
 	read(10,"(a)") c80tmp
 	if (c80tmp/=' ') then
-		read(c80tmp,*) iNAO,c80tmp2,iatm
+		read(c80tmp,*,iostat=ierror) iNAO,c80tmp2,iatm
+        !Sometimes the content is " 940    H127  s      Ryd( 2s)...", there is no spacing between element symbol and atom index, use special treatment
+        if (ierror/=0) then
+            read(c80tmp,*) iNAO,c80tmp2
+            do i=1,len_trim(c80tmp2)
+                if ( iachar(c80tmp2(i:i))>=48 .and. iachar(c80tmp2(i:i))<=57 ) then !This is the first digit
+                    read(c80tmp2(i:),*) iatm
+                    exit
+                end if
+            end do
+        end if
 		NAOcen(iNAO)=iatm
 		if (ilastspc==1) NAOinit(iatm)=iNAO
 		ilastspc=0

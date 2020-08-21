@@ -11,6 +11,7 @@ character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
 character*6 :: symstr
 
 do while(.true.)
+	write(*,*)
 	write(*,*) "          ============ Modify & Check wavefunction ============ "
 	write(*,"(' Number of GTFs:',i6,', Orb:',i6,', Atoms:',i5,', A/B elec:',2f8.3)") nprims,nmo,ncenter,naelec,nbelec
 	if (ifragcontri/=1) write(*,*) "-4 Exclude contribution of some atoms to real space functions"
@@ -43,13 +44,13 @@ do while(.true.)
 	write(*,*) "36 Invert phase of some orbitals"
 	read(*,*) iselect
 	
-	write(*,*)
 	if (iselect==-1) then
 		if (allocated(CObasa).and.imodwfn==1) then
 			write(*,*) "Updating density matrix..."
 			call genP
 			write(*,*) "Density matrix has been updated"
 		end if
+        if (imodwfn==1) if_initlibreta=0 !LIBRETA should then be re-initialized
 		exit
 		
 	else if (iselect==-3.or.iselect==-4) then
@@ -244,13 +245,19 @@ do while(.true.)
 		write(*,*) "3 Magnetic dipole moment integral"
 		write(*,*) "4 Velocity integral"
 		write(*,*) "5 Kinetic energy integral"
+		write(*,*) "6 Electric quadrupole moment integral"
+		write(*,*) "7 Electric octopole moment integral"
 		read(*,*) imattype
-		write(*,*) "Select destination for output"
-		write(*,*) "1 Print on screen"
-		write(*,*) "2 Print to intmat.txt in current folder"
-		read(*,*) iout
-		if (iout==1) ides=6
-		if (iout==2) then
+        iout=2
+        if (imattype<=5) then !Amount of quadrupole and octopole is too large, and only be printed to file
+		    write(*,*) "Select destination of outputting"
+		    write(*,*) "1 Print on screen"
+		    write(*,*) "2 Print to intmat.txt in current folder"
+		    read(*,*) iout
+        end if
+		if (iout==1) then
+            ides=6
+		else
 			ides=10
 			open(ides,file="intmat.txt",status="replace")
 		end if
@@ -261,65 +268,72 @@ do while(.true.)
 			write(ides,*) "Eigenvalues:"
 			write(ides,"(6f12.8)") eigval
 		else if (imattype==2) then
-			if (allocated(Dbas)) then
-				write(ides,*)
-				call showmatgau(Dbas(1,:,:),"Electric dipole moment matrix (X component)",1,fileid=ides)
-				write(ides,*)
-				call showmatgau(Dbas(2,:,:),"Electric dipole moment matrix (Y component)",1,fileid=ides)
-				write(ides,*)
-				call showmatgau(Dbas(3,:,:),"Electric dipole moment matrix (Z component)",1,fileid=ides)
-			else
-				write(*,"(a)") " Error: Electric dipole moment integral matrix has not been calculated, please set ""igenDbas"" &
-				in settings.ini to 1, so that this matrix can be generated when loading input file"
-				write(*,*) "Press Enter button to skip"
-				read(*,*)
-				cycle
-			end if
+			if (.not.allocated(Dbas)) then
+                write(*,*) "Calculating the matrix..."
+                call genDbas_curr
+            end if
+			write(ides,*)
+			call showmatgau(Dbas(1,:,:),"Electric dipole moment matrix (X component)",1,fileid=ides)
+			write(ides,*)
+			call showmatgau(Dbas(2,:,:),"Electric dipole moment matrix (Y component)",1,fileid=ides)
+			write(ides,*)
+			call showmatgau(Dbas(3,:,:),"Electric dipole moment matrix (Z component)",1,fileid=ides)
 		else if (imattype==3) then
-			if (allocated(Magbas)) then
-				write(ides,*)
-				call showmatgau(Magbas(1,:,:),"Magnetic dipole moment matrix (X component)",0,fileid=ides)
-				write(ides,*)
-				call showmatgau(Magbas(2,:,:),"Magnetic dipole moment matrix (Y component)",0,fileid=ides)
-				write(ides,*)
-				call showmatgau(Magbas(3,:,:),"Magnetic dipole moment matrix (Z component)",0,fileid=ides)
-			else
-				write(*,"(a)") " Error: Magnetic dipole moment integral matrix has not been calculated, please set ""igenMagbas"" &
-				in settings.ini to 1, so that this matrix can be generated when loading input file"
-				write(*,*) "Press Enter button to skip"
-				read(*,*)
-				cycle
-			end if
-		else if (imattype==4.or.imattype==5) then
-			if (isphergau==1) then !If you want, you can generate the matrix and perform Cartesian->spherical transformation at file loading stage for Velbas
-				write(*,"(a)") " Error: Spherical-harmonic type of basis functions are found. This function only works when all basis functions are Cartesian type!"
-				write(*,*) "Press Enter button to skip"
-				read(*,*)
-				cycle
-			end if
-			if (imattype==4) then
-				if (.not.allocated(Velbas)) then
-					write(*,*) "Calculating velocity matrix..."
-					allocate(Velbas(3,nbasis,nbasis))
-    				call genvelbas
-				end if
-				write(ides,*)
-				call showmatgau(Velbas(1,:,:),"Velocity matrix (X component)",0,fileid=ides)
-				write(ides,*)
-				call showmatgau(Velbas(2,:,:),"Velocity matrix (Y component)",0,fileid=ides)
-				write(ides,*)
-				call showmatgau(Velbas(3,:,:),"Velocity matrix (Z component)",0,fileid=ides)
-			else if (imattype==5) then
-				if (.not.allocated(Tbas)) then
-					write(*,*) "Calculating Kinetic energy matrix..."
-					allocate(Tbas(nbasis,nbasis))
-    				call genTbas
-				end if
-				write(ides,*)
-				call showmatgau(Tbas(:,:),"Kinetic energy matrix",1,fileid=ides)
-			end if
+			if (.not.allocated(Magbas)) then
+                write(*,*) "Calculating the matrix..."
+                call genMagbas_curr
+            end if
+			write(ides,*)
+			call showmatgau(Magbas(1,:,:),"Magnetic dipole moment matrix (X component)",0,fileid=ides)
+			write(ides,*)
+			call showmatgau(Magbas(2,:,:),"Magnetic dipole moment matrix (Y component)",0,fileid=ides)
+			write(ides,*)
+			call showmatgau(Magbas(3,:,:),"Magnetic dipole moment matrix (Z component)",0,fileid=ides)
+		else if (imattype==4) then
+			if (.not.allocated(Velbas)) then
+                write(*,*) "Calculating the matrix..."
+                call genVelbas_curr
+            end if
+			write(ides,*)
+			call showmatgau(Velbas(1,:,:),"Velocity matrix (X component)",0,fileid=ides)
+			write(ides,*)
+			call showmatgau(Velbas(2,:,:),"Velocity matrix (Y component)",0,fileid=ides)
+			write(ides,*)
+			call showmatgau(Velbas(3,:,:),"Velocity matrix (Z component)",0,fileid=ides)
+        else if (imattype==5) then
+			if (.not.allocated(Tbas)) then
+                write(*,*) "Calculating the matrix..."
+                call genTbas_curr
+            end if
+			write(ides,*)
+			call showmatgau(Tbas(:,:),"Kinetic energy matrix",1,fileid=ides)
+        else if (imattype==6) then
+			if (.not.allocated(Quadbas)) then
+                write(*,*) "Calculating the matrix..."
+                call genMultipolebas_curr
+            end if
+			call showmatgau(Quadbas(1,:,:),"Quadrupole moment matrix (XX component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Quadbas(2,:,:),"Quadrupole moment matrix (YY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Quadbas(3,:,:),"Quadrupole moment matrix (ZZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Quadbas(4,:,:),"Quadrupole moment matrix (XY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Quadbas(5,:,:),"Quadrupole moment matrix (YZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Quadbas(6,:,:),"Quadrupole moment matrix (XZ component)",1,fileid=ides)
+        else if (imattype==7) then
+			if (.not.allocated(Octobas)) then
+                write(*,*) "Calculating the matrix..."
+                call genMultipolebas_curr
+            end if
+			call showmatgau(Octobas(1,:,:),"Octopole moment matrix (XXX component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(2,:,:),"Octopole moment matrix (YYY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(3,:,:),"Octopole moment matrix (ZZZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(4,:,:),"Octopole moment matrix (YZZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(5,:,:),"Octopole moment matrix (XZZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(6,:,:),"Octopole moment matrix (XXZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(7,:,:),"Octopole moment matrix (YYZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(8,:,:),"Octopole moment matrix (XXY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(9,:,:),"Octopole moment matrix (XYY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(Octobas(10,:,:),"Octopole moment matrix (XYZ component)",1,fileid=ides)
 		end if
-	
 		if (iout==2) then
 			write(*,*) "Done! The matrix has been outputted to intmat.txt in current folder"
 			close(ides)
@@ -701,6 +715,7 @@ do while(.true.)
 		if (iorb/=0) then
 			call orbcoeffrotate(iorb)
 		else if (iorb==0) then
+            write(*,*) "Please wait..."
 			do imo=1,nmo
 				call orbcoeffrotate(imo)
 			end do
@@ -757,7 +772,6 @@ do while(.true.)
 		write(*,*) "Done!"
 		imodwfn=1
 	end if
-	write(*,*)
 end do
 end subroutine
 
@@ -912,7 +926,7 @@ end subroutine
 
 
 
-!!---------- Return normalization coefficient for specific type of cartesian type GTF, see Levine 5ed p487
+!!---------- Return normalization coefficient for specific type of Cartesian type GTF, see Levine 5ed p487
 !The meaning of itype is defined in GTFtype2name
 real*8 function normgau(itype,exp)
 use defvar
@@ -1040,7 +1054,7 @@ Xmatinv=matmul(matmul(Umat,Smat),transpose(Umat))
 end subroutine
 
 
-!!!------------------------- Generate distance matrix
+!!!------------------ Generate distance matrix between atoms(in Bohr)
 subroutine gendistmat
 use defvar
 implicit real*8 (a-h,o-z)
@@ -1113,10 +1127,10 @@ end subroutine
 
 
 !!!---- Rotate(exchange) GTF and basis function coefficients within all shell in different direction of specific orbital
-! use this three times, namely XYZ->ZXY->YZX->XYZ, the coefficient recovered.
-! In detail, for examples, for d-type will lead to such coefficient exchange: XX to YY, YY to ZZ, ZZ to XX, XY to YZ, XZ to XY, YZ to XZ
+! If using this three times, namely XYZ->ZXY->YZX->XYZ, the original coefficient will be recovered
+! In detail, for example, for d-type will lead to such coefficient exchange: XX to YY, YY to ZZ, ZZ to XX, XY to YZ, XZ to XY, YZ to XZ
 ! exchange only involve the GTFs/basis func. in the same shell
-subroutine orbcoeffrotate(orb) !orb=Rotate which orbital
+subroutine orbcoeffrotate(orb) !orb=Rotate which orbital (from 1 to nmo)
 use defvar
 implicit real*8 (a-h,o-z)
 integer orb
@@ -1134,8 +1148,11 @@ do i=1,nprims
 	end do
 end do
 if (allocated(CObasa)) then
-	CObasa_tmp=CObasa(:,orb)
-	if (wfntype==1.or.wfntype==4) CObasb_tmp=CObasb(:,orb)
+    if (orb<=nbasis) then
+	    CObasa_tmp=CObasa(:,orb)
+	else
+        CObasb_tmp=CObasb(:,orb-nbasis)
+    end if
 	do iatm=1,ncenter
 		do ibas=basstart(iatm),basend(iatm)
 			ityp=bastype(ibas)
@@ -1144,16 +1161,20 @@ if (allocated(CObasa)) then
 			iztmp=type2iy(ityp)
 			do jbas=basstart(iatm),basend(iatm)
 				jtyp=bastype(jbas)
-				if (type2ix(jtyp)==ixtmp.and.type2iy(jtyp)==iytmp.and.type2iz(jtyp)==iztmp.and.&
-				basshell(ibas)==basshell(jbas)) then
-					CObasa(jbas,orb)=CObasa_tmp(ibas)
-					if (wfntype==1.or.wfntype==4) CObasb(jbas,orb)=CObasb_tmp(ibas)
+				if (type2ix(jtyp)==ixtmp.and.type2iy(jtyp)==iytmp.and.type2iz(jtyp)==iztmp.and.basshell(ibas)==basshell(jbas)) then
+                    if (orb<=nbasis) then
+					    CObasa(jbas,orb)=CObasa_tmp(ibas)
+					else
+                        CObasb(jbas,orb-nbasis)=CObasb_tmp(ibas)
+                    end if
 				end if
 			end do
 		end do
 	end do
 end if
 end subroutine
+
+
 
 
 
@@ -1164,10 +1185,11 @@ use defvar
 use util
 use function
 implicit real*8 (a-h,o-z)
-integer :: infomode,functype,calcfunc,iorb !Calculate which orbital wavefunction for fmo routine
+integer :: infomode,functype,iorb !Calculate which orbital wavefunction for fmo routine
 real*8 xarr(nx),yarr(ny),zarr(nz)
 character c80tmp*80,c200tmp*200,c400tmp*400,filename_tmp*200
-!---------- Special case, use cubegen to directly evaluate ESP grid data
+
+!---- Special case, use cubegen to directly evaluate ESP grid data
 alive=.false.
 if (cubegenpath/=" ".and.ifiletype==1.and.functype==12) then
 	inquire(file=cubegenpath,exist=alive)
@@ -1176,7 +1198,7 @@ if (cubegenpath/=" ".and.ifiletype==1.and.functype==12) then
 		the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 	end if
 end if
-if (alive.and.ifiletype==1.and.functype==12) then !Use cubegen to calculate ESP
+if (alive.and.ifiletype==1.and.functype==12) then !Use cubegen to calculate total ESP
 	call walltime(iwalltime1)
 	write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
 	now Multiwfn directly invokes cubegen to calculate electrostatic potential"
@@ -1194,11 +1216,11 @@ if (alive.and.ifiletype==1.and.functype==12) then !Use cubegen to calculate ESP
 	if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
 	filename_tmp=filename
 	if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
-	write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
+	write(c400tmp,"(a,i5,a)") """"//trim(cubegenpath)//"""",ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
 	""""//trim(filename_tmp)//""""//" ESPresult.cub -1 h ESPgridtmp.cub > nouseout"
-	write(*,"(a)") " Running: "//trim(c400tmp)
-	call system(c400tmp)
+	call runcommand(c400tmp)
 	if (index(filename,".chk")/=0) call delfile(filename_tmp)
+    
 	!Load ESP data from cubegen resulting file
 	call readcube("ESPresult.cub",1,1)
 	!Delete intermediate files
@@ -1209,14 +1231,18 @@ if (alive.and.ifiletype==1.and.functype==12) then !Use cubegen to calculate ESP
 	end if
 	call walltime(iwalltime2)
 	if (infomode==0) write(*,"(' Calculation of grid data took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+    
 	return
 end if
 
-!--- Below are normal case, use Multiwfn internal code
+!--- Another special case, use slow but specifically optimized code for evaluating ESP grid data (deprecated)
+if (functype==12.and.iESPcode==1) then
+    call cubesp
+    return
+end if
+
+!--- Below are normal cases, only use Multiwfn regular internal code
 iorbsel=iorb
-calcfunc=functype
-if (functype==12) calcfunc=8 !If calculate total ESP, first calculate nuclear ESP, and finally call espcub to evaluate electronic ESP
-if (functype==100.and.iuserfunc==14) calcfunc=0 !Calculate electronic ESP, use this setting to skip grid calculation, and finally call espcub to evaluate electronic ESP
 if (infomode==0.and.functype/=12) then
 	if (expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored ')") expcutoff
 end if
@@ -1238,35 +1264,50 @@ do i=1,nx
 end do
 
 call walltime(iwalltime1)
-!$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprho) schedule(dynamic) NUM_THREADS(nthreads)
+nthreads_old=nthreads
+!If the function to be calculated is related to ESP, initialize LIBRETA so that faster code will be used
+if (ifdoESP(functype).and.iESPcode==2) then
+    call doinitlibreta
+    if (isys==1.and.nthreads>10) nthreads=10
+end if
+if (infomode==0) then
+    write(*,*)
+    call showprog(0,nz)
+end if
+
+!$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
 do k=1,nz
 	tmpz=zarr(k)
 	do j=1,ny
 		tmpy=yarr(j)
 		do i=1,nx
 			tmpx=xarr(i)
-			if (calcfunc==1513) then !Only involved by funcvsfunc routine, when RDG and signlambda2rho is combined
-				call signlambda2rho_RDG(tmpx,tmpy,tmpz,cubmat(i,j,k),cubmattmp(i,j,k),tmprho)
-			else if (calcfunc==1614) then !Only involved by funcvsfunc routine, when RDG and signlambda2rho is combined
+			if (functype==1513) then !Only involved by funcvsfunc routine, when RDG and sign(lambda2)rho is combined
+				call signlambda2rho_RDG(tmpx,tmpy,tmpz,cubmat(i,j,k),cubmattmp(i,j,k))
+			else if (functype==1614) then !Only involved by funcvsfunc routine, when promolecular RDG and sign(lambda2)rho is combined
 				call signlambda2rho_RDG_prodens(tmpx,tmpy,tmpz,cubmat(i,j,k),cubmattmp(i,j,k))
+            else if (functype==1599) then !Only involved by funcvsfunc routine, when IRI and sign(lambda2)rho is combined
+                call IRI_s2lr(tmpx,tmpy,tmpz,cubmat(i,j,k),cubmattmp(i,j,k))
 			else
-				cubmat(i,j,k)=calcfuncall(calcfunc,tmpx,tmpy,tmpz)
+				cubmat(i,j,k)=calcfuncall(functype,tmpx,tmpy,tmpz)
 			end if
 		end do
 	end do
-	if (infomode==0.and.functype/=12.and.calcfunc/=0) then
+	if (infomode==0) then
         ifinish=ifinish+1
         call showprog(ifinish,nz)
 	end if
 end do
 !$OMP END PARALLEL DO
-call walltime(iwalltime2)
-if (functype==12.or.(functype==100.and.iuserfunc==14)) then
-	call espcub !Calculate electronic ESP and accumulate to existing cubmat
-else
-	if (infomode==0) write(*,"(' Calculation of grid data took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+nthreads=nthreads_old
+
+if (infomode==0) then
+    call walltime(iwalltime2)
+    if (ifinish<nz) call showprog(nz,nz)
+    write(*,"(' Calculation of grid data took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 end if
 end subroutine
+
 
 
 !!!------ A concise routine specifically for filling up electron density to "rhocub" array
@@ -1518,9 +1559,7 @@ else if (noatmwfn==1) then !Some wfn needs to be genereated by Gaussian and sphe
 		inquire(file=trim(tmpdir)//nametmp//".wfn",exist=alive)
 		if (alive) cycle !If the .wfn file had copied from atomwfn folder, needn't recalculate
 
-		write(*,*) "Running:"
-		write(*,*) trim(gaupath)//' "'//trim(tmpdir)//nametmp//'.gjf" "'//trim(tmpdir)//nametmp//'"'
-		call system(trim(gaupath)//' "'//trim(tmpdir)//nametmp//'.gjf" "'//trim(tmpdir)//nametmp//'"')
+		call runcommand('"'//trim(gaupath)//'" "'//trim(tmpdir)//nametmp//'.gjf" "'//trim(tmpdir)//nametmp//'"')
 		!Check if Gaussian task was successfully finished
 		if (isys==1) inquire(file=trim(tmpdir)//trim(nametmp)//".out",exist=alivegauout)
 		if (isys==2) inquire(file=trim(tmpdir)//trim(nametmp)//".log",exist=alivegauout)
@@ -1660,6 +1699,7 @@ end subroutine
 !!!------------------ Generate density matrix, can be used when basis function information is available
 subroutine genP
 use defvar
+use util
 implicit real*8 (a-h,o-z)
 if (allocated(Ptot)) deallocate(Ptot)
 if (allocated(Palpha)) deallocate(Palpha)
@@ -1676,12 +1716,18 @@ end if
 !For SCF wavefunction, if the wavefunction has not been modified (imodwfn==0), use fast way to construct it
 !However, if the wavefunction has been modified, the case may be complicated, for example, there is a hole orbital. In these cases
 !We use general way (as used for post-HF) to construct density matrix
-
 if (wfntype==0.and.imodwfn==0) then !RHF
-	Ptot=2*matmul(CObasa(:,1:nint(naelec)),transpose(CObasa(:,1:nint(naelec))))
+	!Ptot=2*matmul(CObasa(:,1:nint(naelec)),transpose(CObasa(:,1:nint(naelec))))
+    Ptot=matmul_blas(CObasa(:,1:nint(naelec)),CObasa(:,1:nint(naelec)),nbasis,nbasis,0,1) !Parallel MKL, fastest
+    !call matprod(2,Ptot,CObasa(:,1:nint(naelec)),CObasa(:,1:nint(naelec)))
+    Ptot=Ptot*2
 else if (wfntype==1.and.imodwfn==0) then !UHF
-	Palpha=matmul(CObasa(:,1:nint(naelec)),transpose(CObasa(:,1:nint(naelec))))
-	Pbeta=matmul(CObasb(:,1:nint(nbelec)),transpose(CObasb(:,1:nint(nbelec))))
+	!Palpha=matmul(CObasa(:,1:nint(naelec)),transpose(CObasa(:,1:nint(naelec))))
+	!Pbeta=matmul(CObasb(:,1:nint(nbelec)),transpose(CObasb(:,1:nint(nbelec))))
+    Palpha=matmul_blas(CObasa(:,1:nint(naelec)),CObasa(:,1:nint(naelec)),nbasis,nbasis,0,1)
+    Pbeta=matmul_blas(CObasb(:,1:nint(nbelec)),CObasb(:,1:nint(nbelec)),nbasis,nbasis,0,1)
+    !call matprod(2,Palpha,CObasa(:,1:nint(naelec)),CObasa(:,1:nint(naelec)))
+    !call matprod(2,Pbeta,CObasa(:,1:nint(nbelec)),CObasa(:,1:nint(nbelec)))
 	Ptot=Palpha+Pbeta
 else if (wfntype==2.and.imodwfn==0) then !ROHF
 	Palpha=matmul(CObasa(:,1:nint(naelec)),transpose(CObasa(:,1:nint(naelec))))
@@ -1708,32 +1754,109 @@ end subroutine
 
 
 
+!!!------ Generate density matrix based on GTFs, only total density matrix is considered currently
+subroutine genPprim
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+
+if (allocated(Ptot_prim)) deallocate(Ptot_prim)
+allocate(Ptot_prim(nprims,nprims))
+Ptot_prim=0
+
+if (wfntype==1.or.wfntype==2.or.wfntype==4) then
+    if (allocated(Palpha_prim)) deallocate(Palpha_prim,Pbeta_prim)
+    allocate(Palpha_prim(nprims,nprims),Pbeta_prim(nprims,nprims))
+    Palpha_prim=0
+    Pbeta_prim=0
+end if
+
+naint=nint(naelec)
+nbint=nint(nbelec)
+if (wfntype==0.and.imodwfn==0) then !R wavefunction
+    Ptot_prim=2*matmul_blas(transpose(CO(1:naint,:)),CO(1:naint,:),nprims,nprims,0,0)
+    
+else if (wfntype==1.and.imodwfn==0) then !U wavefunction
+    do ibbeg=1,nmo
+	    if (MOtype(ibbeg)==2) exit
+    end do
+    ibend=ibbeg-1+nbint
+    Palpha_prim=matmul_blas(transpose(CO(1:naint,:)),CO(1:naint,:),nprims,nprims,0,0)
+    if (nbint>0) then
+        Pbeta_prim=matmul_blas(transpose(CO(ibbeg:ibend,:)),CO(ibbeg:ibend,:),nprims,nprims,0,0)
+    end if
+    Ptot_prim=Palpha_prim+Pbeta_prim
+    
+else if (wfntype==2.and.imodwfn==0) then !RO wavefunction
+    Palpha_prim=matmul_blas(transpose(CO(1:naint,:)),CO(1:naint,:),nprims,nprims,0,0)
+    if (nbint>0) then
+        Pbeta_prim=matmul_blas(transpose(CO(1:nbint,:)),CO(1:nbint,:),nprims,nprims,0,0)
+    end if
+    Ptot_prim=Palpha_prim+Pbeta_prim
+    
+else if (wfntype==3.or.((wfntype==0.or.wfntype==2).and.imodwfn==1)) then !Restricted post-HF
+    !$OMP PARALLEL DO SHARED(Ptot_prim) PRIVATE(iGTF,jGTF,imo) schedule(auto) NUM_THREADS(nthreads)
+    do iGTF=1,nprims
+        do jGTF=1,nprims
+            do imo=1,nmo
+                Ptot_prim(iGTF,jGTF) = Ptot_prim(iGTF,jGTF)+MOocc(imo)*CO(imo,iGTF)*CO(imo,jGTF)
+            end do
+        end do
+    end do
+    !$OMP END PARALLEL DO
+    
+else if (wfntype==4.or.(wfntype==1.and.imodwfn==1)) then !Unrestricted post-HF
+    do ibbeg=1,nmo
+	    if (MOtype(ibbeg)==2) exit
+    end do
+    !$OMP PARALLEL DO SHARED(Palpha_prim) PRIVATE(iGTF,jGTF,imo) schedule(auto) NUM_THREADS(nthreads)
+    do iGTF=1,nprims
+        do jGTF=1,nprims
+            do imo=1,ibbeg-1
+                Palpha_prim(iGTF,jGTF) = Palpha_prim(iGTF,jGTF)+MOocc(imo)*CO(imo,iGTF)*CO(imo,jGTF)
+            end do
+        end do
+    end do
+    !$OMP END PARALLEL DO
+    !$OMP PARALLEL DO SHARED(Pbeta_prim) PRIVATE(iGTF,jGTF,imo) schedule(auto) NUM_THREADS(nthreads)
+    do iGTF=1,nprims
+        do jGTF=1,nprims
+            do imo=ibbeg,nmo
+                Pbeta_prim(iGTF,jGTF) = Pbeta_prim(iGTF,jGTF)+MOocc(imo)*CO(imo,iGTF)*CO(imo,jGTF)
+            end do
+        end do
+    end do
+    !$OMP END PARALLEL DO
+    Ptot_prim=Palpha_prim+Pbeta_prim
+end if
+end subroutine
+
+
 
 !!!------ Show system one-electron properties based on density matrix and integral matrix between basis functions
-!The results are correct only when Cartesian basis functions are used
 subroutine sys1eprop
 use defvar
 if (.not.allocated(Sbas)) allocate(Sbas(nbasis,nbasis))
-call genSbas
+call genSbas_curr
 write(*,"(' Total number of electrons:',f16.8)") sum(Ptot*Sbas)
 if (.not.allocated(Tbas)) allocate(Tbas(nbasis,nbasis))
-call genTbas
+call genTbas_curr
 write(*,"(' Kinetic energy:',f18.9,' a.u.')") sum(Ptot*Tbas)
 if (.not.allocated(Dbas)) allocate(Dbas(3,nbasis,nbasis))
-call genDbas
+call genDbas_curr
 write(*,"(' Electric dipole moment in X/Y/Z:',3f13.7,' a.u.')") sum(Ptot*Dbas(1,:,:)),sum(Ptot*Dbas(2,:,:)),sum(Ptot*Dbas(3,:,:))
 if (.not.allocated(Magbas)) allocate(Magbas(3,nbasis,nbasis))
-call genMagbas
+call genMagbas_curr
 write(*,"(' Magnetic dipole moment in X/Y/Z:',3f13.7,' a.u.')") sum(Ptot*Magbas(1,:,:)),sum(Ptot*Magbas(2,:,:)),sum(Ptot*Magbas(3,:,:))
 if (.not.allocated(Velbas)) allocate(Velbas(3,nbasis,nbasis))
-call genVelbas
+call genVelbas_curr
 write(*,"(' Linear momentum in X/Y/Z:       ',3f13.7,' a.u.')") sum(Ptot*Velbas(1,:,:)),sum(Ptot*Velbas(2,:,:)),sum(Ptot*Velbas(3,:,:))
 end subroutine
 
 
 
 !!!------------- Show all properties at a point
-!ifuncsel: controls the gradient and Hessian for which function
+!ifuncsel: Controls the gradient and Hessian for which function
 !ifileid: Output to which file destination, of course 6=screen
 subroutine showptprop(inx,iny,inz,ifuncsel,ifileid)
 use util
@@ -1761,10 +1884,8 @@ if (allocated(b)) then !If loaded file contains wavefuntion information
 	write(ifileid,"(' Lagrangian kinetic energy G(r):',E18.10)") valG
 	write(ifileid,"(' G(r) in X,Y,Z:',3E18.10)") valGx,valGy,valGz
 	valK=Hamkin(inx,iny,inz,0)
-! 	valKx=Hamkin(inx,iny,inz,1)
-! 	valKy=Hamkin(inx,iny,inz,2)
-! 	valKz=Hamkin(inx,iny,inz,3)
 	write(ifileid,"(' Hamiltonian kinetic energy K(r):',E18.10)") valK
+! 	valKx=Hamkin(inx,iny,inz,1);valKy=Hamkin(inx,iny,inz,2);valKz=Hamkin(inx,iny,inz,3)
 ! 	write(ifileid,"(' K(r) in X,Y,Z:',3E18.10)") valKx,valKy,valKz
 	write(ifileid,"(' Potential energy density V(r):',E18.10)") -valK-valG !When without EDF, also equals to flapl(inx,iny,inz,'t')/4.0D0-2*valG
 	write(ifileid,"(' Energy density E(r) or H(r):',E18.10)") -valK
@@ -1789,7 +1910,8 @@ if (allocated(b)) then !If loaded file contains wavefuntion information
 	else if (iALIEdecomp==1) then
 		call avglociondecomp(ifileid,inx,iny,inz)
 	end if
-	write(ifileid,"(' Delta_g:',E18.10)") delta_g_IGM(inx,iny,inz)
+	write(ifileid,"(' Delta_g (under promolecular approximation):',E18.10)") delta_g_promol(inx,iny,inz)
+	write(ifileid,"(' Delta_g (under Hirshfeld partition):',E18.10)") delta_g_Hirsh(inx,iny,inz)
 	write(ifileid,"(' User-defined real space function:',E18.10)") userfunc(inx,iny,inz)
 	fesptmp=nucesp(inx,iny,inz)
 	if (ifiletype==4) then
@@ -1802,9 +1924,11 @@ if (allocated(b)) then !If loaded file contains wavefuntion information
 		write(ifileid,"(' ESP from electrons:',E18.10)") fesptmpelec
 		write(ifileid,"(' Total ESP:',E18.10,' a.u. (',E14.7,' eV,',E14.7,' kcal/mol)')") &
 		fesptmpelec+fesptmp,(fesptmpelec+fesptmp)*au2eV,(fesptmpelec+fesptmp)*au2kcal
-		tmpval=totespskip(inx,iny,inz,iskipnuc)
-		if (iskipnuc/=0) write(ifileid,"(' Total ESP without contribution from nuclear charge of &
-		atom',i6,':',/,E18.10,' a.u. (',E15.7,' eV,',E15.7,' kcal/mol)')") iskipnuc,tmpval,tmpval*au2eV,tmpval*au2kcal
+        if (iskipnuc/=0) then
+		    tmpval=totespskip(inx,iny,inz,iskipnuc)
+            write(ifileid,"(' Total ESP without contribution from nuclear charge of &
+		    atom',i6,':',/,E18.10,' a.u. (',E15.7,' eV,',E15.7,' kcal/mol)')") iskipnuc,tmpval,tmpval*au2eV,tmpval*au2kcal
+        end if
 	end if
 	write(ifileid,*)
 	if (ifuncsel==1) then
@@ -1812,12 +1936,21 @@ if (allocated(b)) then !If loaded file contains wavefuntion information
 		funchess=elehess
 		funcgrad=elegrad
 	else
-		if (ifuncsel==3) write(ifileid,*) "Note: Below information are for Laplacian of electron density"
-		if (ifuncsel==4) write(ifileid,*) "Note: Below information are for value of orbital wavefunction"
-		if (ifuncsel==9) write(ifileid,*) "Note: Below information are for electron localization function"
-		if (ifuncsel==10) write(ifileid,*) "Note: Below information are for localized orbital locator"
-		if (ifuncsel==12) write(ifileid,*) "Note: Below information are for total ESP"
-		if (ifuncsel==100) write(ifileid,*) "Note: Below information are for user-defined real space function"
+		if (ifuncsel==3) then
+            write(ifileid,*) "Note: Below information are for Laplacian of electron density"
+		else if (ifuncsel==4) then
+            write(ifileid,*) "Note: Below information are for value of orbital wavefunction"
+		else if (ifuncsel==9) then
+            write(ifileid,*) "Note: Below information are for electron localization function"
+		else if (ifuncsel==10) then
+            write(ifileid,*) "Note: Below information are for localized orbital locator"
+		else if (ifuncsel==12) then
+            write(ifileid,*) "Note: Below information are for total ESP"
+		else if (ifuncsel==100) then
+            write(ifileid,*) "Note: Below information are for user-defined real space function"
+		else
+            write(ifileid,"(a,i4)") " Note: Below information are for real space function",ifuncsel
+        end if
 		call gencalchessmat(2,ifuncsel,inx,iny,inz,funcvalue,funcgrad,funchess)
 	end if
 	write(ifileid,*)
@@ -1871,7 +2004,7 @@ else !Only loaded structure, use YWT promolecule density
 	write(ifileid,"(3E18.10)") elehess
 	call diagmat(elehess,eigvecmat,eigval,300,1D-12)
 	write(ifileid,"(' Eigenvalues of Hessian:',3E18.10)") eigval(1:3)
-	write(ifileid,*) "Eigenvectors(columns) of Hessian:"
+	write(ifileid,*) "Eigenvectors (columns) of Hessian:"
 	write(ifileid,"(3E18.10)") ((eigvecmat(i,j),j=1,3),i=1,3)
 end if
 end subroutine
@@ -1968,7 +2101,7 @@ ntotmed=512000
 ntothigh=1728000
 do while(.true.)
 	write(*,*) "Please select a method to set up grid"
-	write(*,"(a,f10.6,a)") " -10 Set extension distance of grid range for mode 1~4, current:",aug3D," Bohr"
+	write(*,"(a,f7.3,a)") " -10 Set extension distance of grid range for mode 1~4, current:",aug3D," Bohr"
 	write(*,*) "1 Low quality grid   , covering whole system, about 125000 points in total"
 	write(*,*) "2 Medium quality grid, covering whole system, about 512000 points in total"
 	write(*,*) "3 High quality grid  , covering whole system, about 1728000 points in total"
@@ -2380,6 +2513,7 @@ if (allocated(connmat)) deallocate(connmat)
 !Related to basis functions
 if (allocated(shtype)) deallocate(shtype,shcen,shcon,primshexp,primshcoeff,&
 basshell,bascen,bastype,basstart,basend,primstart,primend,primconnorm)
+if (allocated(shtypeCar)) deallocate(shtypeCar)
 if (allocated(CObasa)) deallocate(CObasa)
 if (allocated(CObasb)) deallocate(CObasb)
 if (allocated(Ptot)) deallocate(Ptot)
@@ -2389,6 +2523,18 @@ if (allocated(Sbas)) deallocate(Sbas)
 if (allocated(Dbas)) deallocate(Dbas)
 if (allocated(DorbA)) deallocate(DorbA)
 if (allocated(DorbB)) deallocate(DorbB)
+if (allocated(Magbas)) deallocate(Magbas)
+if (allocated(Quadbas)) deallocate(Quadbas)
+if (allocated(Octobas)) deallocate(Octobas)
+
+if (allocated(Ptot_prim)) deallocate(Ptot_prim)
+if (allocated(Palpha_prim)) deallocate(Palpha_prim)
+if (allocated(Pbeta_prim)) deallocate(Pbeta_prim)
+if (allocated(Dprim)) deallocate(Dprim)
+if (allocated(Quadprim)) deallocate(Quadprim)
+if (allocated(Octoprim)) deallocate(Octoprim)
+!LIBRETA is in uninitialized status
+if_initlibreta=0
 end subroutine
 
 
@@ -2543,7 +2689,6 @@ do i=1,radpot !Combine spherical point&weights with second kind Gauss-Chebyshev 
 	gridatm( (i-1)*sphpot+1:i*sphpot )%z=radr*potz
 	gridatm( (i-1)*sphpot+1:i*sphpot )%value=radw*potw
 	if (radcut/=0D0.and.iradcut==0.and.radr<radcut) iradcut=i-1
-! 	write(*,"(2f20.6)") radr,radw
 end do
 end subroutine
 !!--- Generate Becke weight for a batch of points around iatm, sharpness parameter=3
@@ -2564,6 +2709,7 @@ do i=1+iradcut*sphpot,radpot*sphpot
 		ri=dsqrt( (rnowx-a(ii)%x)**2+(rnowy-a(ii)%y)**2+(rnowz-a(ii)%z)**2 )
 		do jj=1,ncenter
 			if (ii==jj) cycle
+            !if (distmat(ii,jj)>12) cycle !This is found to be quite safe, the error is negligible, and the cost can be modestly reduced
 			rj=dsqrt( (rnowx-a(jj)%x)**2+(rnowy-a(jj)%y)**2+(rnowz-a(jj)%z)**2 )
 			rmiu=(ri-rj)/distmat(ii,jj)
  			!Adjust for heteronuclear
@@ -2585,13 +2731,14 @@ do i=1+iradcut*sphpot,radpot*sphpot
 		Pvec=Pvec*smat(:,ii)
 	end do
 	beckeweigrid(i)=Pvec(iatm)/sum(Pvec)
+    !write(12,"(2i6,4f12.6)") iatm,i,rnowx,rnowy,rnowz,beckeweigrid(i)
 end do
 !$OMP end parallel do
 end subroutine
 
 
 
-!!--------- A standalone routine to calculate atomic contribution to specific real space function
+!!--------- A standalone routine to calculate atomic contribution to specific real space function. Employed by IFCT analysis
 !iparttype=1: Becke partition
 !atmcontri: Returned array containing atomic contribution
 !ifunc: The function to be evaluated
@@ -2621,6 +2768,52 @@ if (iparttype==1) then !Becke partition
 	end do
 	!$OMP END PARALLEL DO
 end if
+end subroutine
+
+
+
+!!--------- Output all Becke's integration points to intpt.txt in current folder
+subroutine outBeckeintpt
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 beckeweigrid(radpot*sphpot)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+character outwei
+
+write(*,*) "See Appendix 6 of Multiwfn manual for detail of this function"
+write(*,*)
+write(*,*) "Also export Becke's integration weights? (y/n)"
+read(*,*) outwei
+
+open(10,file="intpt.txt",status="replace")
+write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+if (outwei=='y') then
+    write(*,*) "Calculating and exporting, please wait..."
+else
+    write(*,*) "Exporting, please wait..."
+end if
+call gen1cintgrid(gridatmorg,iradcut)
+do iatm=1,ncenter
+	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+    if (outwei=='n') then
+        do ipt=1+iradcut*sphpot,radpot*sphpot
+            write(10,"(i6,4E16.8)") iatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,gridatmorg(ipt)%value
+        end do
+    else
+	    call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+        do ipt=1+iradcut*sphpot,radpot*sphpot
+            write(10,"(i6,5E16.8)") iatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,gridatmorg(ipt)%value,beckeweigrid(ipt)
+        end do
+    end if
+end do  
+close(10)
+write(*,"(a)") " Done! All Becke's integration points have been exported to intpt.txt in current folder"
+write(*,*) "Column 1: Index of the atom that the point belongs to"
+write(*,*) "Column 2/3/4: X/Y/Z coordinate of the point in Bohr"
+write(*,"(a)") " Column 5: Single center integration weight (second kind Gauss-Chebyshev for radial part and Lebedev for angular part"
+if (outwei=='y') write(*,*) "Column 6: Becke's integration weight"
 end subroutine
 
 
@@ -2766,7 +2959,7 @@ end subroutine
 !iprog=1: for readfch;  iprog=2: for readmolden
 !The table comes from IJQC,54,83, which is used by Gaussian
 !The sequence of d and f shell is also identical to .molden convention, but for g, another conversion table is used, &
-!since in Multiwfn g cartesian shell starts from ZZZZ, but that of .molden starts from xxxx
+!since in Multiwfn g Cartesian shell starts from ZZZZ, but that of .molden starts from xxxx
 subroutine gensphcartab(iprog,matd,matf,matg,math)
 real*8 matd(6,5),matf(10,7),matg(15,9),math(21,11)
 integer iprog
@@ -3211,9 +3404,8 @@ use util
 character(len=*) gjfname
 character command*200,outname*200
 outname=gjfname(:len(gjfname)-3)//"out"
-command=trim(gaupath)//' "'//gjfname//'" "'//trim(outname)//'"'
-write(*,*) "Running: "//trim(command)
-call system(command)
+command='"'//trim(gaupath)//'" "'//gjfname//'" "'//trim(outname)//'"'
+call runcommand(command)
 open(100,file=outname,status="old")
 call loclabel(100,"Normal termination",istate)
 close(100)
@@ -3357,12 +3549,11 @@ common /data/ wt(90),symb(90)
 common /chartab/ nir(2,55),chtab(14,322),nsymop(14,4,55),nrotharm(3,322),pgsymb(57),irsymb(322)
 common /subgroups/ nsgb(2,57),nsgr(406)
 character symb*2,pglabel*3,pgsymb*3,irsymb*4
-logical issubgroup
 integer natoms,nclass
 integer classnatm(natoms),classidx(natoms,natoms)
 integer,parameter :: nmax=150 !nmat: maximum number of symmetic operation
 real*8 coord(3,natoms),delta,pc(3),symn(3,nmax)
-integer nat(natoms),nper(natoms,250),nscl(natoms,natoms),nccl(natoms),nsym(nmax,5),natsym(natoms)
+integer nat(natoms),nper(natoms,250),nscl(natoms,natoms),nccl(natoms),nsym(nmax,5)
 ncr=0
 nsr=0
 nsg=0
@@ -3457,5 +3648,70 @@ else if (wfntype==1) then
     do idxHOMOb=nmo,nbasis+1,-1
 	    if (nint(MOocc(idxHOMOb))==1) exit
     end do
+end if
+end subroutine
+
+
+
+!!--------- Define fragment corresponding to global variable "frag1". Used by some orbital composition functions
+subroutine definefragment
+use defvar
+use util
+character c2000tmp*2000
+if (allocated(frag1)) then
+	write(*,*) "Atoms in current fragment:"
+	write(*,"(13i6)") frag1
+	write(*,"(a)") " Input 0 to keep unchanged, or redefine fragment, &
+    e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
+else
+	write(*,"(a)") " Input atomic indices to define fragment. &
+    e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
+end if
+read(*,"(a)") c2000tmp
+if (c2000tmp(1:1)=='0') then
+	continue
+else if (c2000tmp(1:1)==" ") then
+	deallocate(frag1)
+else
+	if (allocated(frag1)) deallocate(frag1)
+	call str2arr(c2000tmp,nfrag1)
+	allocate(frag1(nfrag1))
+	call str2arr(c2000tmp,nfrag1,frag1)
+end if
+end subroutine
+
+
+!!--------- Show basic information for a range of orbitals (from ibeg to iend)
+subroutine showorbinfo(ibeg,iend)
+use defvar
+integer ibeg,iend,i
+do i=1,nmo
+	write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") i,MOene(i),MOocc(i),orbtypename(MOtype(i))
+end do
+end subroutine
+
+
+!!--------- Initialize LIBRETA for present wavefunction if haven't and show some notices
+subroutine doinitlibreta
+use defvar
+use libreta
+if (iuserfunc>=61.and.iuserfunc<=67) return !In this case, the function involves derivative of ESP, while I found the numerical derivate of ESP produced by libreta has noise
+write(*,*)
+if (if_initlibreta==0) then
+    write(*,*) "Initializing LIBRETA library for ESP evaluation, please wait..."
+    if (nprims>7000) then
+        write(*,"(a)") " Note: Number of GTFs of present system is large, if then Multiwfn crashes due to insufficient memory, &
+        please change ""iESPcode"" in settings.ini to 1 to use slower ESP evaluation code instead. Alternatively, use a computer with larger memory!"
+    end if
+    call initlibreta()
+    if_initlibreta=1 !Global variable
+    write(*,*) "LIBRETA library has been successfully initialized!"
+end if
+write(*,"(a)") " The ESP evaluation code based on LIBRETA is being used, &
+also citing its original paper is recommended: Jun Zhang, J. Chem. Theory Comput., 14, 572 (2018)"
+if (isys==1.and.nthreads>10) then
+    write(*,"(a,/)") " Warning!!! In Windows system, it is found that the performance of ESP evaluation code may &
+    severely degrade when more than 10 CPU cores are used, therefore 10 cores are used in the following ESP calculation. &
+    If you want to pursue better performance by utilizing more cores, please use Linux version instead!"
 end if
 end subroutine

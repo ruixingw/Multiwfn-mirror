@@ -4,6 +4,7 @@
 
 module function
 use defvar
+use libreta
 implicit real*8 (a-h,o-z)
 
 contains
@@ -60,7 +61,9 @@ calcfuncall=edr(x,y,z)
 else if (ifunc==21) then
 calcfuncall=edrdmax(x,y,z)
 else if (ifunc==22) then
-calcfuncall=delta_g_IGM(x,y,z) !delta_g function, proposed in IGM original paper
+calcfuncall=delta_g_promol(x,y,z)
+else if (ifunc==23) then
+calcfuncall=delta_g_Hirsh(x,y,z)
 else if (ifunc==100) then
 calcfuncall=userfunc(x,y,z)
 end if
@@ -403,28 +406,28 @@ else if (ifunc==9.or.ifunc==10) then
 		grad(2)=(yadd-ymin)/denom
 		grad(3)=(zadd-zmin)/denom
 	end if
-else if (ifunc==12) then
-	value=totesp(x,y,z)
-	xadd=totesp(x+diff,y,z)
-	xmin=totesp(x-diff,y,z)
-	yadd=totesp(x,y+diff,z)
-	ymin=totesp(x,y-diff,z)
-	zadd=totesp(x,y,z+diff)
-	zmin=totesp(x,y,z-diff)
+else !User general interface to calculate value for all other functions
+	value=calcfuncall(ifunc,x,y,z)
+	xadd=calcfuncall(ifunc,x+diff,y,z)
+	xmin=calcfuncall(ifunc,x-diff,y,z)
+	yadd=calcfuncall(ifunc,x,y+diff,z)
+	ymin=calcfuncall(ifunc,x,y-diff,z)
+	zadd=calcfuncall(ifunc,x,y,z+diff)
+	zmin=calcfuncall(ifunc,x,y,z-diff)
 	grad(1)=(xadd-xmin)/denom
 	grad(2)=(yadd-ymin)/denom
 	grad(3)=(zadd-zmin)/denom
-else if (ifunc==100) then
-	value=userfunc(x,y,z)
-	xadd=userfunc(x+diff,y,z)
-	xmin=userfunc(x-diff,y,z)
-	yadd=userfunc(x,y+diff,z)
-	ymin=userfunc(x,y-diff,z)
-	zadd=userfunc(x,y,z+diff)
-	zmin=userfunc(x,y,z-diff)
-	grad(1)=(xadd-xmin)/denom
-	grad(2)=(yadd-ymin)/denom
-	grad(3)=(zadd-zmin)/denom
+!else if (ifunc==12) then !Numerical gradient for total ESP, may be replaced by analytic one in the future
+!	value=totesp(x,y,z)
+!	xadd=totesp(x+diff,y,z)
+!	xmin=totesp(x-diff,y,z)
+!	yadd=totesp(x,y+diff,z)
+!	ymin=totesp(x,y-diff,z)
+!	zadd=totesp(x,y,z+diff)
+!	zmin=totesp(x,y,z-diff)
+!	grad(1)=(xadd-xmin)/denom
+!	grad(2)=(yadd-ymin)/denom
+!	grad(3)=(zadd-zmin)/denom
 end if
 
 !Calculate Hessian semi (namely based on analyical gradient) or pure (based on function value) numerically
@@ -484,44 +487,44 @@ if (itype==2) then
 			xaddzmin=ELF_LOL(x+diff,y,z-diff,selELFLOL)
 			xminzmin=ELF_LOL(x-diff,y,z-diff,selELFLOL)
 		end if
-	else if (ifunc==12) then !pure numerical Hessian for total ESP
-		xaddxadd=totesp(x+2D0*diff,y,z)
-		xminxmin=totesp(x-2D0*diff,y,z)
-		yaddyadd=totesp(x,y+2D0*diff,z)
-		yminymin=totesp(x,y-2D0*diff,z)
-		zaddzadd=totesp(x,y,z+2D0*diff)
-		zminzmin=totesp(x,y,z-2D0*diff)
-		xaddyadd=totesp(x+diff,y+diff,z)
-		xminyadd=totesp(x-diff,y+diff,z)
-		xaddymin=totesp(x+diff,y-diff,z)
-		xminymin=totesp(x-diff,y-diff,z)
-		yaddzadd=totesp(x,y+diff,z+diff)
-		yminzadd=totesp(x,y-diff,z+diff)
-		yaddzmin=totesp(x,y+diff,z-diff)
-		yminzmin=totesp(x,y-diff,z-diff)
-		xaddzadd=totesp(x+diff,y,z+diff)
-		xminzadd=totesp(x-diff,y,z+diff)
-		xaddzmin=totesp(x+diff,y,z-diff)
-		xminzmin=totesp(x-diff,y,z-diff)
-	else if (ifunc==100) then !pure numerical Hessian for user-defined function
-		xaddxadd=userfunc(x+2D0*diff,y,z)
-		xminxmin=userfunc(x-2D0*diff,y,z)
-		yaddyadd=userfunc(x,y+2D0*diff,z)
-		yminymin=userfunc(x,y-2D0*diff,z)
-		zaddzadd=userfunc(x,y,z+2D0*diff)
-		zminzmin=userfunc(x,y,z-2D0*diff)
-		xaddyadd=userfunc(x+diff,y+diff,z)
-		xminyadd=userfunc(x-diff,y+diff,z)
-		xaddymin=userfunc(x+diff,y-diff,z)
-		xminymin=userfunc(x-diff,y-diff,z)
-		yaddzadd=userfunc(x,y+diff,z+diff)
-		yminzadd=userfunc(x,y-diff,z+diff)
-		yaddzmin=userfunc(x,y+diff,z-diff)
-		yminzmin=userfunc(x,y-diff,z-diff)
-		xaddzadd=userfunc(x+diff,y,z+diff)
-		xminzadd=userfunc(x-diff,y,z+diff)
-		xaddzmin=userfunc(x+diff,y,z-diff)
-		xminzmin=userfunc(x-diff,y,z-diff)
+	else !User general interface to calculate for all other functions
+		xaddxadd=calcfuncall(ifunc,x+2D0*diff,y,z)
+		xminxmin=calcfuncall(ifunc,x-2D0*diff,y,z)
+		yaddyadd=calcfuncall(ifunc,x,y+2D0*diff,z)
+		yminymin=calcfuncall(ifunc,x,y-2D0*diff,z)
+		zaddzadd=calcfuncall(ifunc,x,y,z+2D0*diff)
+		zminzmin=calcfuncall(ifunc,x,y,z-2D0*diff)
+		xaddyadd=calcfuncall(ifunc,x+diff,y+diff,z)
+		xminyadd=calcfuncall(ifunc,x-diff,y+diff,z)
+		xaddymin=calcfuncall(ifunc,x+diff,y-diff,z)
+		xminymin=calcfuncall(ifunc,x-diff,y-diff,z)
+		yaddzadd=calcfuncall(ifunc,x,y+diff,z+diff)
+		yminzadd=calcfuncall(ifunc,x,y-diff,z+diff)
+		yaddzmin=calcfuncall(ifunc,x,y+diff,z-diff)
+		yminzmin=calcfuncall(ifunc,x,y-diff,z-diff)
+		xaddzadd=calcfuncall(ifunc,x+diff,y,z+diff)
+		xminzadd=calcfuncall(ifunc,x-diff,y,z+diff)
+		xaddzmin=calcfuncall(ifunc,x+diff,y,z-diff)
+		xminzmin=calcfuncall(ifunc,x-diff,y,z-diff)
+	!else if (ifunc==12) then !Pure numerical Hessian for total ESP, may be replaced by analytic one in the future
+	!	xaddxadd=totesp(x+2D0*diff,y,z)
+	!	xminxmin=totesp(x-2D0*diff,y,z)
+	!	yaddyadd=totesp(x,y+2D0*diff,z)
+	!	yminymin=totesp(x,y-2D0*diff,z)
+	!	zaddzadd=totesp(x,y,z+2D0*diff)
+	!	zminzmin=totesp(x,y,z-2D0*diff)
+	!	xaddyadd=totesp(x+diff,y+diff,z)
+	!	xminyadd=totesp(x-diff,y+diff,z)
+	!	xaddymin=totesp(x+diff,y-diff,z)
+	!	xminymin=totesp(x-diff,y-diff,z)
+	!	yaddzadd=totesp(x,y+diff,z+diff)
+	!	yminzadd=totesp(x,y-diff,z+diff)
+	!	yaddzmin=totesp(x,y+diff,z-diff)
+	!	yminzmin=totesp(x,y-diff,z-diff)
+	!	xaddzadd=totesp(x+diff,y,z+diff)
+	!	xminzadd=totesp(x-diff,y,z+diff)
+	!	xaddzmin=totesp(x+diff,y,z-diff)
+	!	xminzmin=totesp(x-diff,y,z-diff)
 	end if 
 	!Collect above temporary data to evaluate pure numerical Hessian
 	gradx_yadd=(xaddyadd-xminyadd)/denom
@@ -571,7 +574,7 @@ case (3) !Integrand of electronic spatial extent <R**2>
 case (4) !Weizsacker potential
     userfunc=weizpot(x,y,z)
 case (5) !Integrand of weizsacker functional
-    userfunc=KED(x,y,z,4)
+    userfunc=KED(x,y,z,4) !Equivalent to weizsacker(x,y,z)
 case (6) !Radial distribution function (assume that density is sphericalized)
     userfunc=4*pi*fdens(x,y,z)*(x*x+y*y+z*z)
 case (7) !Local Temperature(Kelvin), PNAS,81,8028
@@ -698,6 +701,12 @@ case (66) !The magnitude of electrostatic force
     userfunc=elestatforce(x,y,z)
 case (67) !Electrostatic charge
     userfunc=elestatcharge(x,y,z)
+case (68) !Energy density of electronic part of electrostatic term (Ee) of SBL's energy decomposition
+    userfunc=fdens(x,y,z)*totesp(x,y,z)
+case (69) !Energy density of quantum term (Eq) of SBL's energy decomposition
+    userfunc=Hamkin(x,y,z,0)-weizsacker(x,y,z)+DFTxcfunc(x,y,z)
+case (-69) !Energy density of quantum term (Eq) of SBL's energy decomposition
+    userfunc=Lagkin(x,y,z,0)-weizsacker(x,y,z)+DFTxcfunc(x,y,z)
 case (70) !Phase-space-defined Fisher information density
     userfunc=4.5D0*fdens(x,y,z)**2/lagkin(x,y,z,0)
 case (71) !X component of electron linear momentum density in 3D representation
@@ -752,7 +761,9 @@ case (97) !Orbital-weighted f0 Fukui function
     userfunc=orbwei_Fukui(3,x,y,z)
 case (98) !Orbital-weighted dual descriptor
     userfunc=orbwei_Fukui(4,x,y,z)
-case (100) !Disequilibrium (also known as semi-similarity), DOI: 10.1002/qua.24510
+case (99) !Interaction region indicator (IRI)
+    userfunc=IRIfunc(x,y,z)
+case (100) !Disequilibrium (also known as semi-similarity)
     userfunc=fdens(x,y,z)**2
 case (101) !Positive part of ESP
 	userfunc=totesp(x,y,z)
@@ -767,6 +778,11 @@ case (802:807)
     userfunc=funcvalLSB(x,y,z,iuserfunc-800)
 case (812:817)
     userfunc=1/funcvalLSB(x,y,z,iuserfunc-810)
+case (820) !(tau-t_w)/t_w, for shubin
+    tmp=weizsacker(x,y,z)
+    userfunc=(lagkin(x,y,z,0)-tmp)/tmp
+case (821) !rho^(4/3) / |der_rho| , for shubin
+    userfunc=fdens(x,y,z)**(4D0/3D0) / fgrad(x,y,z,'t')
 case (900) !X coordinate
     userfunc=x
 case (901) !Y coordinate
@@ -983,7 +999,7 @@ end function
 
 !!!----- Calculate electron density, its gradient and Hessian matrix
 !itype=1 Only calculate value and grad, not Hessian
-!itype=2 calculate value, gradient and Hessian
+!itype=2 Calculate value, gradient and Hessian
 subroutine calchessmat_dens(itype,x,y,z,elerho,elegrad,elehess)
 real*8 x,y,z,elerho,elegrad(3),elehess(3,3),wfnval(nmo),wfnderv(3,nmo),wfnhess(3,3,nmo),EDFgrad(3),EDFhess(3,3)
 integer itype
@@ -1241,14 +1257,15 @@ end function
 !!!----- Calculate Sign(lambda2(r))*rho(r) function, this is a warpper used to convert subroutine to function form
 real*8 function signlambda2rho(x,y,z)
 real*8 x,y,z,sl2r,RDG,rho
-call signlambda2rho_RDG(x,y,z,sl2r,RDG,rho)
+call signlambda2rho_RDG(x,y,z,sl2r,RDG)
 signlambda2rho=sl2r
 end function
-!!!------ Calculate signlambda2rho and RDG at the same time
-subroutine signlambda2rho_RDG(x,y,z,sl2r,RDG,elerho)
+!!!------ Calculate signlambda2rho and RDG at the same time. rho and grad can also be returned if present
+subroutine signlambda2rho_RDG(x,y,z,sl2r,RDG,rho,grad)
 use util
 real*8 x,y,z,elerho,sl2r,RDG
 real*8 eigvecmat(3,3),eigval(3),elehess(3,3),elegrad(3) !Hessian of electron density
+real*8,optional :: rho,grad(3)
 call calchessmat_dens(2,x,y,z,elerho,elegrad,elehess)
 call diagmat(elehess,eigvecmat,eigval,100,1D-10)
 call sort(eigval)
@@ -1266,6 +1283,8 @@ else if (sumgrad2==0D0.or.elerho==0D0) then
 else
 	RDG=0.161620459673995D0*dsqrt(sumgrad2)/elerho**(4D0/3D0) !0.161620459673995D0=1/(2*(3*pi**2)**(1/3))
 end if
+if (present(rho)) rho=elerho
+if (present(grad)) grad=elegrad
 end subroutine
 
 
@@ -2022,63 +2041,148 @@ end function
 
 
 
-!!!----- Calculate gradient or Independent Gradient Model (IGM) for specific fragment based on promolecular density
-!Only Lagrangian interpolation density is used
-!iIGM=0, calculate usual gradient; iIGM=1, calculate IGM type of gradient
+!!------ Calculate delta_g function based on promolecular approximation
+real*8 function delta_g_promol(x,y,z)
+real*8 x,y,z,grad(3),IGM_grad(3)
+call IGMgrad_promol(x,y,z,fragatm,grad,IGM_grad)
+delta_g_promol=dsqrt(sum(IGM_grad**2))-dsqrt(sum(grad**2))
+end function
+
+!!!----- Calculate gradient or Independent Gradient Model (IGM) gradient for specific fragment based on promolecular density
+!grad: Returned usual gradient;  IGM_grad: Returned IGM type of gradient
 !Only the atoms in "atmlist" will be taken into account
-subroutine IGMprodens(iIGM,xin,yin,zin,grad,atmlist,dens)
-real*8 xin,yin,zin
-real*8 posarr(200),rhoarr(200),grad(3)
+subroutine IGMgrad_promol(x,y,z,atmlist,grad,IGM_grad)
+real*8 x,y,z,atmgrad(3),grad(3),IGM_grad(3)
 integer atmlist(:)
-real*8,optional :: dens
+grad=0D0
+IGM_grad=0D0
+do i=1,size(atmlist)
+    iatm=atmlist(i)
+    call proatmgrad(iatm,x,y,z,atmrho,atmgrad)
+	grad=grad+atmgrad
+	IGM_grad=IGM_grad+abs(atmgrad)
+end do
+end subroutine
+!!------ Calculate density and gradient of atom "iatm" in free state fully using built-in density
+!Only atomic density obtained via Lagrangian interpolation density is used
+subroutine proatmgrad(iatm,x,y,z,rho,grad)
+use defvar
+real*8 posarr(200),rhoarr(200),rho,grad(3)
+ind=a(iatm)%index
+rx=a(iatm)%x-x
+ry=a(iatm)%y-y
+rz=a(iatm)%z-z
+rx2=rx*rx
+ry2=ry*ry
+rz2=rz*rz
+r2=rx2+ry2+rz2
+rho=0
+grad=0
+absgrad=0
+!Cutoff, for CHNO corresponding to cutoff at rho=0.00001
+if (ind==1.and.r2>25D0) then !H, 6.63^2=43.9569. But this seems to be unnecessarily large, so I use 5^2=25
+	return
+else if (ind==6.and.r2>58.6756D0) then !C, 7.66^2=58.6756
+	return
+else if (ind==7.and.r2>43.917129D0) then !N, 6.627^2=43.917129
+	return
+else if (ind==8.and.r2>34.9281D0) then !O, 5.91^2=34.9281
+	return
+else if (r2>(2.5D0*vdwr(ind))**2) then !Other cases, larger than 2.5 times of its vdw radius will be skipped
+	return
+end if
+r=dsqrt(r2)
+call genatmraddens(ind,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element
+call lagintpol(posarr(1:npt),rhoarr(1:npt),npt,r,rho,der1r,der2r,2)
+der1rdr=der1r/r
+grad(1)=der1rdr*rx
+grad(2)=der1rdr*ry
+grad(3)=der1rdr*rz
+end subroutine
+
+
+
+!!!------ Calculate delta_g function defined in IGM based on Hirshfeld partition (IGMH)
+!Note that by default fragatm contains the whole system
+real*8 function delta_g_Hirsh(x,y,z)
+real*8 x,y,z,grad(3),IGM_grad(3)
+call IGMgrad_Hirsh(x,y,z,fragatm,grad,IGM_grad)
+delta_g_Hirsh=dsqrt(sum(IGM_grad**2))-dsqrt(sum(grad**2))
+end function
+
+!----- Calculate gradient and IGM gradient of a specific fragment using Hirshfeld partition to yield involved atomic densities and gradients
+!The fragment is defined by "atmlist" array
+!realrhoin and realgradin are real density and gradient of current system. If any of them is not passed in, they will be directly calculated. &
+! This design is used to avoid recalculate these expensive data if they are already available
+subroutine IGMgrad_Hirsh(x,y,z,atmlist,grad,IGM_grad,realrhoin,realgradin)
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 x,y,z
+real*8 grad(3),IGM_grad(3)
+integer atmlist(:)
+real*8 realrho,realgrad(3),hess(3,3)
+real*8 prorho,prograd(3)
+real*8 atmprorho(ncenter),atmprograd(3,ncenter)
+real*8 atmgrad(3),Hirshwei(ncenter)
+real*8 posarr(200),rhoarr(200)
+real*8,optional :: realrhoin,realgradin(3)
+
+!Obtain real density and gradient of the system
+if (present(realrhoin).and.present(realgradin)) then
+    realrho=realrhoin
+    realgrad=realgradin
+else
+    call calchessmat_dens(1,x,y,z,realrho,realgrad,hess)
+end if
+
+!Obtain density and gradient of all atoms in their isolated states
+do iatm=1,ncenter
+    call proatmgrad(iatm,x,y,z,atmprorho(iatm),atmprograd(:,iatm))
+end do
+
+!Calculate promolecular density and gradient of current system
+prorho=sum(atmprorho(:))
+do idir=1,3
+    prograd(idir)=sum(atmprograd(idir,:))
+end do
+
+!Calculate atomic Hirshfeld weights
+do iatm=1,ncenter
+    if (prorho==0) then
+        Hirshwei(iatm)=0
+    else
+        Hirshwei(iatm)=atmprorho(iatm)/prorho
+    end if
+end do
+
+!Calculate density, usual and IGM type of density gradient of the fragment
 rho=0D0
 grad=0D0
+IGM_grad=0D0
 do i=1,size(atmlist)
 	iatm=atmlist(i)
-	ind=a(iatm)%index
-	rx=a(iatm)%x-xin !Relative x
-	ry=a(iatm)%y-yin
-	rz=a(iatm)%z-zin
-	rx2=rx*rx
-	ry2=ry*ry
-	rz2=rz*rz
-	r2=rx2+ry2+rz2
-	!Cutoff, for CHNO corresponding to cutoff at rho=0.00001
-	if (ind==1.and.r2>25D0) then !H, 6.63^2=43.9569. But this seems to be unnecessarily large, so I use 5^2=25
-		cycle
-	else if (ind==6.and.r2>58.6756D0) then !C, 7.66^2=58.6756
-		cycle
-	else if (ind==7.and.r2>43.917129D0) then !N, 6.627^2=43.917129
-		cycle
-	else if (ind==8.and.r2>34.9281D0) then !O, 5.91^2=34.9281
-		cycle
-	else if (r2>(2.5D0*vdwr(ind))**2) then !Other cases, larger than 2.5 times of its vdw radius will be skipped
-		cycle
-	end if
-	r=dsqrt(r2)
-	call genatmraddens(ind,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element
-	call lagintpol(posarr(1:npt),rhoarr(1:npt),npt,r,val,der1r,der2r,2)
-	der1rdr=der1r/r
-	rho=rho+val
-	if (iIGM==0) then
-		grad(1)=grad(1)+der1rdr*rx
-		grad(2)=grad(2)+der1rdr*ry
-		grad(3)=grad(3)+der1rdr*rz
-	else
-		grad(1)=grad(1)+der1rdr*abs(rx)
-		grad(2)=grad(2)+der1rdr*abs(ry)
-		grad(3)=grad(3)+der1rdr*abs(rz)
-	end if
+    
+    !Atomic density partitioned by Hirshfeld
+    atmrho=Hirshwei(iatm)*realrho
+    !Atomic gradient partitioned by Hirshfeld
+    do idir=1,3
+        t1=Hirshwei(iatm)*realgrad(idir)
+        if (prorho==0) then
+            t2=0
+            t3=0
+        else
+            t2=realrho/prorho*atmprograd(idir,iatm)
+            t3=-realrho*atmprorho(iatm)/prorho**2 * prograd(idir)
+        end if
+        atmgrad(idir)=t1+t2+t3
+    end do
+    
+    rho=rho+atmrho
+	grad=grad+atmgrad(:)
+	IGM_grad=IGM_grad+abs(atmgrad(:))
 end do
-if (present(dens)) dens=rho
 end subroutine
-!!!------ Calculate delta_g function
-real*8 function delta_g_IGM(x,y,z)
-real*8 x,y,z,grad(3),IGM_grad(3)
-call IGMprodens(1,x,y,z,IGM_grad,fragatm)
-call IGMprodens(0,x,y,z,grad,fragatm)
-delta_g_IGM=dsqrt(sum(IGM_grad**2))-dsqrt(sum(grad**2))
-end function
+
 
 
 !!!--------------- Output Shannon information entropy function at a point
@@ -2138,24 +2242,35 @@ end do
 end function
 
 
-!------------------------- Calculate ESP from electrons at a point
-!Note that the negative sign of electron is already taken into account
+!------------------- Calculate ESP due to electrons at a point
+!Note that the negative sign of electron has already been taken into account
+!If user requests to use the old ESP code, or LIBRETA has not been (e.g. forgotten to be) initialized for present wavefunction, then use the old one
 real*8 function eleesp(Cx,Cy,Cz)
+real*8 Cx,Cy,Cz
+if (iESPcode==1.or.if_initlibreta==0) then
+    eleesp=eleesp1(Cx,Cy,Cz)
+else
+    eleesp=eleesp2(Cx,Cy,Cz)
+end if
+end function
+
+!------------ Slow code of calculating ESP from electrons at a point
+real*8 function eleesp1(Cx,Cy,Cz)
 implicit none
 integer,parameter :: narrmax=396 !Enough for h-type GTF, 5+5=10. Alri(0:10,0:5,0:5)-->11*6*6=396
 real*8 Cx,Cy,Cz,term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval
 real*8 sqPC,sqAB,expngaPC,PAx,PAy,PAz,PBx,PBy,PBz,PCx,PCy,PCz,fjtmp,addesp
 real*8 Alri(narrmax),Amsj(narrmax),Antk(narrmax),Fn(0:10) !Enough for h-type GTF, 5+5=10
-real*8 twoepsqPC,tl,tm,tn,espprivate,espexpcut
+real*8 twoepsqPC,tl,tm,tn,espprivate,espexpcut,espprecutoff
 integer nu,imo,iprim,jprim,maxFn,maplri(narrmax),mapmsj(narrmax),mapntk(narrmax),tmpnuml,tmpnumm,tmpnumn
 integer Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi
-eleesp=0.0D0
+eleesp1=0D0
 espexpcut=log10(espprecutoff)*3
 !$OMP parallel do private(Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi, &
 !$OMP nu,imo,iprim,jprim,maxFn,maplri,mapmsj,mapntk,tmpnuml,tmpnumm,tmpnumn,&
 !$OMP twoepsqPC,tl,tm,tn,Alri,Amsj,Antk,Fn,&
 !$OMP sqPC,sqAB,expngaPC,PAx,PAy,PAz,PBx,PBy,PBz,PCx,PCy,PCz,fjtmp,addesp,&
-!$OMP term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval,espprivate) shared(eleesp) schedule(dynamic) NUM_THREADS(nthreads)
+!$OMP term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval,espprivate) shared(eleesp1) schedule(dynamic) NUM_THREADS(nthreads)
 do iprim=1,nprims
     espprivate=0D0
 	icen=b(iprim)%center
@@ -2271,31 +2386,19 @@ do iprim=1,nprims
 		espprivate=espprivate+addesp*term
 	end do !end j primitive
 	!$OMP critical
-	eleesp=eleesp+espprivate
+	eleesp1=eleesp1+espprivate
 	!$OMP end critical
 end do !end i primitive
 !$OMP end parallel do
-eleesp=-eleesp
+eleesp1=-eleesp1
 end function
 
 
 !!!------------ Calculate ESP in a plane. In due time, cubegen will be employed instead of internal code to evaluate ESP
-!maxnumgrid is the maximum value of ngridnum1 and ngridnum2, this value determine the size of Alrivec,Amsjvec,Antkvec
-!We don't allocate Alrivec,Amsjvec,Antkvec dynamically since if we do such thing, this routine will crash in win7-64bit system.
-!The reason may be that dynamical arrays are not fully compatiable with private property in OpenMP
-subroutine planeesp(maxnumgrid)
+subroutine planeesp
 use util
 implicit real*8(a-h,o-z)
 character c200tmp*200,c400tmp*400,filename_tmp*200
-integer maxnumgrid
-integer,parameter :: narrmax=396 !Enough for h-type GTF, 5+5=10. Alri(0:10,0:5,0:5)-->11*6*6=396
-real*8 Cx,Cy,Cz,Cxold,Cyold,Czold,term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval
-real*8 sqPC,sqAB,expngaPC,PAx,PAy,PAz,PBx,PBy,PBz,PCx,PCy,PCz,fjtmp,addesp,espexpcut
-real*8 Alri(narrmax),Amsj(narrmax),Antk(narrmax),Fnmat(0:ngridnum1-1,0:ngridnum2-1),Fnvec(0:10) !Enough for h-type GTF, 5+5=10
-real*8:: Alrivec(narrmax,maxnumgrid),Amsjvec(narrmax,maxnumgrid),Antkvec(narrmax,maxnumgrid)
-real*8 twoepsqPC,tl,tm,tn,pleprivate(ngridnum1,ngridnum2) !Store plane contribution of GTFs in each thread, then sum up
-integer nu,imo,iprim,jprim,maxFn,maplri(narrmax),mapmsj(narrmax),mapntk(narrmax),tmpnuml,tmpnumm,tmpnumn
-integer Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi,ii,jj,planetype,numx,numy,numz,ifinish
 
 !Check if it is possible to use cubegen to calculate ESP plane data
 alive=.false.
@@ -2328,10 +2431,9 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 	!if input file is .chk, convert it to .fch before invoking cubegen
 	filename_tmp=filename
 	if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
-	write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
+	write(c400tmp,"(a,i5,a)") """"//trim(cubegenpath)//"""",ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
 	""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
-	write(*,"(a)") " Running: "//trim(c400tmp)
-	call system(c400tmp)
+	call runcommand(c400tmp)
 	if (index(filename,".chk")/=0) call delfile(filename_tmp)
 	
 	!Load ESP data from cubegen resulting file
@@ -2355,183 +2457,233 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 	return
 
 else
-	ifinish=0
-	espexpcut=log10(espprecutoff)*3
-	planemat=0D0
-	!Calc ESP of nuclear contribution
+	!Calculate ESP of electron contribution
+    if (iESPcode==1) then !Old slow code, but opitimized specifically for plane grid
+        call planeeleesp
+    else if (iESPcode==2) then !Use fast code
+        nESPthreads=nthreads
+        call doinitlibreta
+        if (isys==1.and.nESPthreads>10) nESPthreads=10
+        write(*,*)
+	    ifinish=0
+        !$OMP PARALLEL DO SHARED(planemat,ifinish) PRIVATE(ii,jj,Cx,Cy,Cz) schedule(dynamic) NUM_THREADS(nESPthreads)
+	    do ii=0,ngridnum1-1
+		    do jj=0,ngridnum2-1
+			    Cx=orgx2D+ii*v1x+jj*v2x
+			    Cy=orgy2D+ii*v1y+jj*v2y
+			    Cz=orgz2D+ii*v1z+jj*v2z
+			    planemat(ii+1,jj+1)=eleesp(Cx,Cy,Cz)
+		    end do
+            ifinish=ifinish+1
+            call showprog(ifinish,ngridnum1)
+	    end do
+        !$OMP END PARALLEL DO
+        if (ifinish<ngridnum1) call showprog(ngridnum1,ngridnum1)
+    end if
+    
+	!Combine ESP of nuclear contribution into plane map
 	do ii=0,ngridnum1-1
 		do jj=0,ngridnum2-1
 			Cx=orgx2D+ii*v1x+jj*v2x
 			Cy=orgy2D+ii*v1y+jj*v2y
 			Cz=orgz2D+ii*v1z+jj*v2z
-			planemat(ii+1,jj+1)=nucesp(Cx,Cy,Cz)
+			planemat(ii+1,jj+1)=planemat(ii+1,jj+1)+nucesp(Cx,Cy,Cz)
 		end do
 	end do
-
-	!$OMP PARALLEL DO private(Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi,ii,jj,planetype,numx,numy,numz,&
-	!$OMP nu,imo,iprim,jprim,maxFn,maplri,mapmsj,mapntk,tmpnuml,tmpnumm,tmpnumn,&
-	!$OMP twoepsqPC,tl,tm,tn,Alrivec,Amsjvec,Antkvec,Alri,Amsj,Antk,Fnmat,Fnvec,&
-	!$OMP sqPC,sqAB,expngaPC,PAx,PAy,PAz,PBx,PBy,PBz,PCx,PCy,PCz,fjtmp,addesp,&
-	!$OMP Cx,Cy,Cz,Cxold,Cyold,Czold,term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval,pleprivate) &
-	!$OMP shared(planemat,ifinish) schedule(dynamic) NUM_THREADS(nthreads)
-	do iprim=1,nprims
-		pleprivate=0D0
-		icen=b(iprim)%center
-		Aexp=b(iprim)%exp
-		Ax=a(icen)%x
-		Ay=a(icen)%y
-		Az=a(icen)%z
-		Aix=type2ix(b(iprim)%type)
-		Aiy=type2iy(b(iprim)%type)
-		Aiz=type2iz(b(iprim)%type)
-		sumAi=Aix+Aiy+Aiz
-		do jprim=iprim,nprims
-			jcen=b(jprim)%center
-			Bexp=b(jprim)%exp
-			Bix=type2ix(b(jprim)%type)
-			Biy=type2iy(b(jprim)%type)
-			Biz=type2iz(b(jprim)%type)
-			Bx=a(jcen)%x
-			By=a(jcen)%y
-			Bz=a(jcen)%z
-			ep=Aexp+Bexp
-			Px=(Ax*Aexp+Bx*Bexp)/ep
-			Py=(Ay*Aexp+By*Bexp)/ep
-			Pz=(Az*Aexp+Bz*Bexp)/ep
-			PAx=Px-Ax
-			PAy=Py-Ay
-			PAz=Pz-Az
-			PBx=Px-Bx
-			PBy=Py-By
-			PBz=Pz-Bz
-			sqAB=(Ax-Bx)**2+(Ay-By)**2+(Az-Bz)**2
-			tmpval=-Aexp*Bexp*sqAB/ep
-			prefac=2*pi/ep*dexp(tmpval)
-			if (prefac<espprecutoff) cycle
-			
-			Cxold=999.99912D0 !An arbitrary number
-			Cyold=999.99912D0
-			Czold=999.99912D0
-			sumBi=Bix+Biy+Biz
-			maxFn=sumAi+sumBi
-
-			!! Start cycle grid point
-			do ii=0,ngridnum1-1
-				do jj=0,ngridnum2-1
-					Cx=orgx2D+ii*v1x+jj*v2x
-					Cy=orgy2D+ii*v1y+jj*v2y
-					Cz=orgz2D+ii*v1z+jj*v2z
-					PCx=Px-Cx
-					PCy=Py-Cy
-					PCz=Pz-Cz
-					sqPC=PCx*PCx+PCy*PCy+PCz*PCz
-					twoepsqPC=2*ep*sqPC
-					term=0.0D0
-					if (-ep*sqPC>espexpcut) then
-						expngaPC=dexp(-ep*sqPC)
-					else
-						expngaPC=0D0
-					end if
-					Fnmat(ii,jj)=Fmch(maxFn,ep*sqPC,expngaPC)
-					Fnvec(maxFn)=Fnmat(ii,jj)
-					do nu=maxFn,1,-1
-						Fnvec(nu-1)=(expngaPC+twoepsqPC*Fnvec(nu))/(2*nu-1) !cook book p280
-					end do
-
-					if (Cx/=Cxold) then
-						tmpnuml=0
-						do l=0,Aix+Bix
-							tl=1.0D0
-							if (mod(l,2)==1) tl=-1.0D0
-							fjtmp=fj(l,Aix,Bix,PAx,PBx)*tl*fact(l)
-							do r=0,l/2.0D0
-								do i=0,(l-2*r)/2.0D0
-									tmpnuml=tmpnuml+1
-									Alri(tmpnuml)=Afac(l,r,i,PCx,ep,fjtmp)
-									maplri(tmpnuml)=l-2*r-i
-								end do
-							end do
-						end do
-						Cxold=Cx
-					end if
-					if (Cy/=Cyold) then
-						tmpnumm=0
-						do m=0,Aiy+Biy
-							tm=1.0D0
-							if (mod(m,2)==1) tm=-1.0D0
-							fjtmp=fj(m,Aiy,Biy,PAy,PBy)*tm*fact(m)
-							do s=0,m/2.0D0
-								do j=0,(m-2*s)/2.0D0
-									tmpnumm=tmpnumm+1
-									Amsj(tmpnumm)=Afac(m,s,j,PCy,ep,fjtmp)
-									mapmsj(tmpnumm)=m-2*s-j
-								end do
-							end do
-						end do
-						Cyold=Cy
-					end if
-					if (Cz/=Czold) then
-						tmpnumn=0
-						do n=0,Aiz+Biz
-							tn=1.0D0
-							if (mod(n,2)==1) tn=-1.0D0
-							fjtmp=fj(n,Aiz,Biz,PAz,PBz)*tn*fact(n)
-							do t=0,n/2.0D0
-								do k=0,(n-2*t)/2.0D0
-									tmpnumn=tmpnumn+1
-									Antk(tmpnumn)=Afac(n,t,k,PCz,ep,fjtmp)
-									mapntk(tmpnumn)=n-2*t-k
-								end do
-							end do
-						end do
-						Czold=Cz
-					end if
-
-					!Now calc "term"=<psi(iprim)|1/r_Z|psi(jprim)>
-					do l=1,tmpnuml
-						do m=1,tmpnumm
-							do n=1,tmpnumn
-								term=term+Alri(l)*Amsj(m)*Antk(n)*Fnvec(maplri(l)+mapmsj(m)+mapntk(n))
-							end do
-						end do
-					end do
-
-					if (iprim/=jprim) term=2.0*term
-					term=term*prefac
-					addesp=0.0D0
-					do imo=1,nmo
-						addesp=addesp+MOocc(imo)*CO(imo,iprim)*CO(imo,jprim)
-					end do
-					pleprivate(ii+1,jj+1)=pleprivate(ii+1,jj+1)-addesp*term
-				end do !end jj cycle
-			end do !end ii cycle
-
-		end do !end j primitive
-		ifinish=ifinish+1
-		call showprog(ifinish,nprims)
-		!$OMP CRITICAL
-		planemat=planemat+pleprivate
-		!$OMP END CRITICAL
-	end do !end i primitive
-	!$OMP END PARALLEL DO
 end if
 end subroutine
 
+!!!----------- Calculate ESP contributed by electron in a plane and save to planemap, using old and slow code (but optimized for calculate plane)
+!We don't allocate Alrivec,Amsjvec,Antkvec dynamically since if we do this, this routine will crash in win7-64bit system.
+!The reason may be that dynamical arrays are not fully compatiable with private property in OpenMP
+subroutine planeeleesp
+use util
+implicit real*8(a-h,o-z)
+integer,parameter :: narrmax=396 !Enough for h-type GTF, 5+5=10. Alri(0:10,0:5,0:5)-->11*6*6=396
+real*8 Cx,Cy,Cz,Cxold,Cyold,Czold,term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval
+real*8 sqPC,sqAB,expngaPC,PAx,PAy,PAz,PBx,PBy,PBz,PCx,PCy,PCz,fjtmp,addesp,espexpcut
+real*8 Alri(narrmax),Amsj(narrmax),Antk(narrmax),Fnmat(0:ngridnum1-1,0:ngridnum2-1),Fnvec(0:10) !Enough for h-type GTF, 5+5=10
+real*8,allocatable :: Alrivec(:,:),Amsjvec(:,:),Antkvec(:,:)
+real*8 twoepsqPC,tl,tm,tn,pleprivate(ngridnum1,ngridnum2) !Store plane contribution of GTFs in each thread, then sum up
+integer nu,imo,iprim,jprim,maxFn,maplri(narrmax),mapmsj(narrmax),mapntk(narrmax),tmpnuml,tmpnumm,tmpnumn
+integer Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi,ii,jj,planetype,numx,numy,numz
 
-!!!---------------- Calculate grid data of ESP from electrons and accumulate to cubmat (which may already records nuclear ESP)
-subroutine espcub
+maxnumgrid=max(ngridnum1,ngridnum2)
+allocate(Alrivec(narrmax,maxnumgrid),Amsjvec(narrmax,maxnumgrid),Antkvec(narrmax,maxnumgrid))
+
+planemat=0
+ifinish=0
+espexpcut=log10(espprecutoff)*3
+!$OMP PARALLEL DO private(Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi,ii,jj,planetype,numx,numy,numz,&
+!$OMP nu,imo,iprim,jprim,maxFn,maplri,mapmsj,mapntk,tmpnuml,tmpnumm,tmpnumn,&
+!$OMP twoepsqPC,tl,tm,tn,Alrivec,Amsjvec,Antkvec,Alri,Amsj,Antk,Fnmat,Fnvec,&
+!$OMP sqPC,sqAB,expngaPC,PAx,PAy,PAz,PBx,PBy,PBz,PCx,PCy,PCz,fjtmp,addesp,&
+!$OMP Cx,Cy,Cz,Cxold,Cyold,Czold,term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval,pleprivate) &
+!$OMP shared(planemat,ifinish) schedule(dynamic) NUM_THREADS(nthreads)
+do iprim=1,nprims
+	pleprivate=0D0
+	icen=b(iprim)%center
+	Aexp=b(iprim)%exp
+	Ax=a(icen)%x
+	Ay=a(icen)%y
+	Az=a(icen)%z
+	Aix=type2ix(b(iprim)%type)
+	Aiy=type2iy(b(iprim)%type)
+	Aiz=type2iz(b(iprim)%type)
+	sumAi=Aix+Aiy+Aiz
+	do jprim=iprim,nprims
+		jcen=b(jprim)%center
+		Bexp=b(jprim)%exp
+		Bix=type2ix(b(jprim)%type)
+		Biy=type2iy(b(jprim)%type)
+		Biz=type2iz(b(jprim)%type)
+		Bx=a(jcen)%x
+		By=a(jcen)%y
+		Bz=a(jcen)%z
+		ep=Aexp+Bexp
+		Px=(Ax*Aexp+Bx*Bexp)/ep
+		Py=(Ay*Aexp+By*Bexp)/ep
+		Pz=(Az*Aexp+Bz*Bexp)/ep
+		PAx=Px-Ax
+		PAy=Py-Ay
+		PAz=Pz-Az
+		PBx=Px-Bx
+		PBy=Py-By
+		PBz=Pz-Bz
+		sqAB=(Ax-Bx)**2+(Ay-By)**2+(Az-Bz)**2
+		tmpval=-Aexp*Bexp*sqAB/ep
+		prefac=2*pi/ep*dexp(tmpval)
+		if (prefac<espprecutoff) cycle
+			
+		Cxold=999.99912D0 !An arbitrary number
+		Cyold=999.99912D0
+		Czold=999.99912D0
+		sumBi=Bix+Biy+Biz
+		maxFn=sumAi+sumBi
+
+		!! Start cycle grid point
+		do ii=0,ngridnum1-1
+			do jj=0,ngridnum2-1
+				Cx=orgx2D+ii*v1x+jj*v2x
+				Cy=orgy2D+ii*v1y+jj*v2y
+				Cz=orgz2D+ii*v1z+jj*v2z
+				PCx=Px-Cx
+				PCy=Py-Cy
+				PCz=Pz-Cz
+				sqPC=PCx*PCx+PCy*PCy+PCz*PCz
+				twoepsqPC=2*ep*sqPC
+				term=0.0D0
+				if (-ep*sqPC>espexpcut) then
+					expngaPC=dexp(-ep*sqPC)
+				else
+					expngaPC=0D0
+				end if
+				Fnmat(ii,jj)=Fmch(maxFn,ep*sqPC,expngaPC)
+				Fnvec(maxFn)=Fnmat(ii,jj)
+				do nu=maxFn,1,-1
+					Fnvec(nu-1)=(expngaPC+twoepsqPC*Fnvec(nu))/(2*nu-1) !cook book p280
+				end do
+
+				if (Cx/=Cxold) then
+					tmpnuml=0
+					do l=0,Aix+Bix
+						tl=1.0D0
+						if (mod(l,2)==1) tl=-1.0D0
+						fjtmp=fj(l,Aix,Bix,PAx,PBx)*tl*fact(l)
+						do r=0,l/2.0D0
+							do i=0,(l-2*r)/2.0D0
+								tmpnuml=tmpnuml+1
+								Alri(tmpnuml)=Afac(l,r,i,PCx,ep,fjtmp)
+								maplri(tmpnuml)=l-2*r-i
+							end do
+						end do
+					end do
+					Cxold=Cx
+				end if
+				if (Cy/=Cyold) then
+					tmpnumm=0
+					do m=0,Aiy+Biy
+						tm=1.0D0
+						if (mod(m,2)==1) tm=-1.0D0
+						fjtmp=fj(m,Aiy,Biy,PAy,PBy)*tm*fact(m)
+						do s=0,m/2.0D0
+							do j=0,(m-2*s)/2.0D0
+								tmpnumm=tmpnumm+1
+								Amsj(tmpnumm)=Afac(m,s,j,PCy,ep,fjtmp)
+								mapmsj(tmpnumm)=m-2*s-j
+							end do
+						end do
+					end do
+					Cyold=Cy
+				end if
+				if (Cz/=Czold) then
+					tmpnumn=0
+					do n=0,Aiz+Biz
+						tn=1.0D0
+						if (mod(n,2)==1) tn=-1.0D0
+						fjtmp=fj(n,Aiz,Biz,PAz,PBz)*tn*fact(n)
+						do t=0,n/2.0D0
+							do k=0,(n-2*t)/2.0D0
+								tmpnumn=tmpnumn+1
+								Antk(tmpnumn)=Afac(n,t,k,PCz,ep,fjtmp)
+								mapntk(tmpnumn)=n-2*t-k
+							end do
+						end do
+					end do
+					Czold=Cz
+				end if
+
+				!Now calc "term"=<psi(iprim)|1/r_Z|psi(jprim)>
+				do l=1,tmpnuml
+					do m=1,tmpnumm
+						do n=1,tmpnumn
+							term=term+Alri(l)*Amsj(m)*Antk(n)*Fnvec(maplri(l)+mapmsj(m)+mapntk(n))
+						end do
+					end do
+				end do
+
+				if (iprim/=jprim) term=2.0*term
+				term=term*prefac
+				addesp=0.0D0
+				do imo=1,nmo
+					addesp=addesp+MOocc(imo)*CO(imo,iprim)*CO(imo,jprim)
+				end do
+				pleprivate(ii+1,jj+1)=pleprivate(ii+1,jj+1)-addesp*term
+			end do !end jj cycle
+		end do !end ii cycle
+
+	end do !end j primitive
+	ifinish=ifinish+1
+	call showprog(ifinish,nprims)
+	!$OMP CRITICAL
+	planemat=planemat+pleprivate
+	!$OMP END CRITICAL
+end do !end i primitive
+!$OMP END PARALLEL DO
+end subroutine
+
+
+
+
+!!!----------- Calculate grid data of total ESP
+!This subroutine uses old and slow code
+subroutine cubesp
 use util
 implicit none
 integer,parameter :: narrmax=396 !Enough for h-type GTF, 5+5=10. Alri(0:10,0:5,0:5)-->11*6*6=396
 real*8 Cx,Cy,Cz,term,ep,Ax,Ay,Az,Bx,By,Bz,Aexp,Bexp,Px,Py,Pz,prefac,tmpval
 real*8 sqPC,sqAB,expngaPC,PAx,PAy,PAz,PBx,PBy,PBz,PCx,PCy,PCz,fjtmp,addesp
 real*8 Alrivec(narrmax,nx),Amsjvec(narrmax,ny),Antkvec(narrmax,nz),Fnmat(0:nx-1,0:ny-1,0:nz-1),Fnvec(0:10) !Enough for h-type GTF, 5+5=10
-real*8 twoepsqPC,tl,tm,tn,time_begin,time_end,espexpcut,cubprivate(nx,ny,nz)
+real*8 twoepsqPC,tl,tm,tn,time_begin,time_end,espexpcut,espprecutoff,cubprivate(nx,ny,nz)
 integer nu,imo,iprim,jprim,maxFn,maplri(narrmax),mapmsj(narrmax),mapntk(narrmax),tmpnuml,tmpnumm,tmpnumn
-integer Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi,ii,jj,kk,ifinish,iwalltime1,iwalltime2
-call walltime(iwalltime1)
+integer Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi,ii,jj,kk,ifinish
+!In order to speed up ESP evaluation, some integrals that have little contributions can be ignored. 
+!The threshold is controlled by "espprecutoff", enlarging this parameter results in more accurate ESP value, 
+!but also brings higher computational cost
+espprecutoff=0
 ifinish=0
 espexpcut=log10(espprecutoff)*3
+call showprog(0,nprims)
 !$OMP PARALLEL DO private(Aix,Aiy,Aiz,Bix,Biy,Biz,l,r,i,m,s,j,n,t,k,icen,jcen,sumAi,sumBi,ii,jj,kk, &
 !$OMP nu,imo,iprim,jprim,maxFn,maplri,mapmsj,mapntk,tmpnuml,tmpnumm,tmpnumn, &
 !$OMP twoepsqPC,tl,tm,tn,Alrivec,Amsjvec,Antkvec,Fnmat,Fnvec, &
@@ -2678,8 +2830,22 @@ do iprim=1,nprims
     !$OMP END CRITICAL
 end do !end i primitive
 !$OMP END PARALLEL DO
-call walltime(iwalltime2)
-write(*,"(' ESP calculation took up time',i10,'s')") iwalltime2-iwalltime1
+if (ifinish<nprims) call showprog(nprims,nprims)
+
+!Combine nuclear contribution into it
+!$OMP PARALLEL DO SHARED(cubmat) PRIVATE(i,j,k,Cx,Cy,Cz) schedule(dynamic) NUM_THREADS(nthreads)
+do k=1,nz
+	Cz=orgz+(k-1)*dz
+	do j=1,ny
+		Cy=orgy+(j-1)*dy
+		do i=1,nx
+			Cx=orgx+(i-1)*dx
+			cubmat(i,j,k)=cubmat(i,j,k)+nucesp(Cx,Cy,Cz)
+		end do
+	end do
+end do
+!$OMP END PARALLEL DO
+
 end subroutine
 
 
@@ -2688,10 +2854,11 @@ end subroutine
 
 
 !========================================================================
-!============== Utilities routine for function modeule ==================
+!============== Utilities routine for function module ===================
 !========================================================================
 
 !!!---------- Generate nuclear attraction potential integral matrix between all GTFs at a given point
+!Used by PAEM
 subroutine genGTFattmat(x,y,z,GTFattmat)
 use defvar
 integer,parameter :: narrmax=396
@@ -2985,7 +3152,7 @@ SEDD=dlog(1+eps)
 end function
 
 
-!!!-------------- Density Overlap Regions Indicator (DORI) DOI:10.1021/ct500490b
+!!!-------------- Density Overlap Regions Indicator (DORI)
 real*8 function DORI(x,y,z)
 real*8 x,y,z,rho,grad(3),hess(3,3)
 call calchessmat_dens(2,x,y,z,rho,grad,hess)
@@ -2999,6 +3166,53 @@ tmp3_2=grad(3)*dersqr
 theta=4/dersqr**3*( (tmp1_1-tmp1_2)**2 + (tmp2_1-tmp2_2)**2 + (tmp3_1-tmp3_2)**2 )
 DORI=theta/(1+theta)
 end function
+
+
+
+!!!------------- Interaction region indicator at a point
+real*8 function IRIfunc(x,y,z)
+real*8 x,y,z,rho,grad(3),hess(3,3)
+call calchessmat_dens(1,x,y,z,rho,grad,hess)
+tmp=uservar
+if (uservar==0) tmp=1.1D0
+tmp2=uservar2
+if (uservar2==0) then
+    tmp2=0.0005D0
+else if (uservar2==-1) then
+    tmp2=0
+end if
+gradnorm=dsqrt(sum(grad**2))
+IRIfunc=rho**tmp / (gradnorm+tmp2)
+end function
+
+
+!!!------------- Simultaneously calculate interaction region indicator and sign(lambda2)rho at a point
+subroutine IRI_s2lr(x,y,z,sl2rval,IRIval)
+use util
+real*8 x,y,z,IRIval,sl2rval,rho,grad(3),hess(3,3)
+real*8 eigvecmat(3,3),eigval(3)
+call calchessmat_dens(2,x,y,z,rho,grad,hess)
+tmp=uservar
+if (uservar==0) tmp=1.1D0
+tmp2=uservar2
+if (uservar2==0) then
+    tmp2=0.0005D0
+else if (uservar2==-1) then
+    tmp2=0
+end if
+gradnorm=dsqrt(sum(grad**2))
+IRIval=rho**tmp / (gradnorm+tmp2)
+
+call diagmat(hess,eigvecmat,eigval,100,1D-10)
+call sort(eigval)
+if (eigval(2)==0D0) then !When eigval(2)==0, eigval(2)/abs(eigval(2)) can't be calculated, rho generally will be zero, so sign is not important
+	sl2rval=rho
+else
+	sl2rval=rho*eigval(2)/abs(eigval(2))
+end if
+end subroutine
+
+
 
 
 !!!----- Integrand of LSDA exchange functional
@@ -4733,7 +4947,7 @@ if (allocated(b)) then
 	write(*,"(a,i2,a,3f10.5)") " 19 Source function, mode:",srcfuncmode,", ref. point:",refx,refy,refz
 	write(*,*) "20 Electron delocalization range function EDR(r;d)"
 	write(*,*) "21 Orbital overlap distance function D(r)"
-	write(*,*) "22 Delta_g function"
+	write(*,*) "22 Delta_g (promol. approx.)     23 Delta_g (Hirshfeld partition)"
 	write(*,"(a,i5)") " 100 User-defined real space function, iuserfunc=",iuserfunc
 else !No wavefunction information is available
 	write(*,*) "1 Promolecular electron density "
@@ -4744,7 +4958,7 @@ else !No wavefunction information is available
 	end if
 	write(*,*) "14 Reduced density gradient (RDG) with promolecular approximation"
 	write(*,*) "16 Sign(lambda2)*rho with promolecular approximation"
-	write(*,*) "22 Delta_g function"
+	write(*,*) "22 Delta_g (promol. approx.)"
 	write(*,"(a,i3)") " 100 User-defined real space function, iuserfunc=",iuserfunc
 end if
 end subroutine

@@ -9,7 +9,7 @@ interface invarr
 	module procedure invarrr8
 	module procedure invarri4
 end interface
-!!------------------- Root and weight of hermite polynomial
+!!------------------- Root and weight of Hermite polynomial
 real*8 Rhm(10,10),Whm(10,10)
 data Rhm(1,1) /  0.0D0                      /
 data Rhm(2,1) / -0.70710678118654752440D+00 /
@@ -660,6 +660,16 @@ filenameout(1:iend-istart+1)=pathnamein(istart:iend)
 end subroutine
 
 
+!-------- Add name of input file as prefix of given string
+subroutine addprefix(inname)
+use defvar
+character c200tmp*200
+character(len=*) inname
+call path2filename(filename,c200tmp)
+inname=trim(c200tmp)//'_'//trim(inname)
+end subroutine
+
+
 !!--------- Convert a character to lower case
 subroutine uc2lc(inc)
 character*1 inc
@@ -712,6 +722,39 @@ do i=1,len_trim(str)
     end if
 end do
 end function
+
+
+!!--------- Return the number of a character in a string
+!e.g. strcharnum(sfisi1123,'i') returns 2
+function strcharnum(str,char)
+character(len=*) str
+character char
+integer itime
+strcharnum=0
+do i=1,len_trim(str)
+    if (str(i:i)==char) strcharnum=strcharnum+1
+end do
+end function
+
+
+!!-------- Read float data after the last specific sign (can be multiple characters) from inputted string
+subroutine readaftersign(ifileid,sign,val)
+character str*200
+character(len=*) sign
+real*8 val
+read(10,"(a)") str
+itmp=index(trim(str),sign,back=.true.)
+read(str(itmp+len(sign):),*) val
+end subroutine
+!!-------- Read integer data after the last specific sign from inputted string
+subroutine readaftersign_int(ifileid,sign,val)
+character str*200
+character(len=*) sign
+integer val
+read(10,"(a)") str
+itmp=index(trim(str),sign,back=.true.)
+read(str(itmp+len(sign):),*) val
+end subroutine
 
 
 
@@ -927,12 +970,13 @@ end subroutine
 
 
 !!-------Return matrix multiplication of two double float matrices. This is a wrapper of DGEMM routine in BLAS so that invoking could be easier
-!In fact, I found at -O2 level with /Qopt-matmul option, the matmul() is even much faster than this, therefore this function is useless 
-!nArow is the number of rows of matrix A, namely size(matA,1)
-!nBcol is the number of columns of matrix B, namely size(matB,2)
-!The returned matrix is (nArow,nBcol) dimension
-!If tranAin (tranBin) is optional, if it is 1 rather than 0, then matA (matB) will be transposed before doing the multiplication. &
-!(If the inputted matrix is not square, the transpose should be done using transpose() prior to input
+!In fact, I found at -O2 level with /Qopt-matmul option, the matmul() is even much faster than this, therefore this function may be useless ,
+!However, when MKL is linked, due to parallellization, this routine is much faster than matmul() with /Qopt-matmul
+! nArow is the number of rows of matrix A, namely size(matA,1). If tranBin=1, it should be size(matA,2)
+! nBcol is the number of columns of matrix B, namely size(matB,2). If tranBin=1, it should be size(matB,1)
+! The returned matrix is (nArow,nBcol) dimension
+! tranAin (tranBin) is optional, if it is 1 rather than 0, then matA (matB) will be transposed before doing the multiplication
+!This statement is wrong: If the inputted matrix is not square, the transpose should be done using transpose() prior to input
 function matmul_blas(matA,matB,nArow,nBcol,tranAin,tranBin)
 real*8 matA(:,:),matB(:,:),matmul_blas(nArow,nBcol)
 integer nArow,nBcol
@@ -1215,6 +1259,57 @@ end subroutine
 
 
 
+!----- Calculate outer product of two arrays "arr1" and "arr2" with size n1 and n2 to yield a new matrix "mat"(n1,n2)
+!The inputted two arrays are considered as column arrays, the "arr2" will be transposed
+subroutine vecextprod(mat,arr1,arr2,n1,n2)
+implicit real*8 (a-h,o-z)
+integer n1,n2
+real*8 mat(n1,n2)
+!$OMP PARALLEL DO SHARED(mat) PRIVATE(i,j) schedule(auto) NUM_THREADS(nthreads)
+do i=1,n1
+    do j=1,n2
+        mat(i,j)=arr1(i)*arr2(j)
+    end do
+end do
+!$OMP END PARALLEL DO
+end subroutine
+
+
+!----- Calculate matrix product of "mat1"(na*np) and "mat2"(np,nb) to yield "mat"(na,nb), using OpenMP
+!imode=1: Normal product
+!imode=2: matmul(mat1,transpose(mat2))
+subroutine matprod(imode,mat,mat1,mat2)
+real*8 mat(:,:),mat1(:,:),mat2(:,:)
+integer imode
+na=size(mat,1)
+nb=size(mat,2)
+np=size(mat1,2)
+mat=0
+if (imode==1) then
+    !$OMP PARALLEL DO SHARED(mat) PRIVATE(ia,ib,ip) schedule(dynamic) NUM_THREADS(nthreads)
+    do ia=1,na
+        do ib=1,nb
+            do ip=1,np
+                mat(ia,ib)=mat(ia,ib)+mat1(ia,ip)*mat2(ip,ib)
+            end do
+        end do
+    end do
+    !$OMP END PARALLEL DO
+else if (imode==2) then
+    !$OMP PARALLEL DO SHARED(mat) PRIVATE(ia,ib,ip) schedule(dynamic) NUM_THREADS(nthreads)
+    do ia=1,na
+        do ib=1,nb
+            do ip=1,np
+                mat(ia,ib)=mat(ia,ib)+mat1(ia,ip)*mat2(ib,ip)
+            end do
+        end do
+    end do
+    !$OMP END PARALLEL DO
+end if
+end subroutine
+
+
+
 
 
 
@@ -1262,7 +1357,7 @@ end subroutine
 !  Below are optional
 !Label: The title information. If the content is empty, title will not be printed
 !insemi: If 1, print as lower trigonal matrix. Default is 0 (full matrix)
-!form: Format to print, total width must be 14 characters. Default is D14.6
+!form: Format to print, total width must be 14 characters. Default is 1PE14.6
 !fildid: Output destination, 6 corresponds to outputting to screen
 !usern1 and usern2: Dimensions of the matrix, default or -1 means determining automatically
 !inncol: seems controls spacing between number labels of each frame
@@ -1322,7 +1417,7 @@ do i=1,nf !How many frame
 			if (present(form)) then
 				write(ides,'('//form//')',advance='no') mat(k,j)			
 			else
-				write(ides,"(D14.6)",advance='no') mat(k,j)
+				write(ides,"(1PE14.6)",advance='no') mat(k,j)
 			end if
 		end do
 		write(ides,*) !Change to next line
@@ -1431,6 +1526,7 @@ integer function totlinenum(fileid,imode)
 integer fileid,ierror,imode
 character*80 c80
 totlinenum=0
+rewind(fileid)
 do while(.true.)
 	read(fileid,"(a)",iostat=ierror) c80
 	if (imode==1) then
@@ -1477,6 +1573,27 @@ else
 	end do
 end if
 if (present(ifound)) ifound=0
+end subroutine
+
+
+!-------- Locate to the final label, and meantime returns the number of matches. Based on "loclabel"
+subroutine loclabelfinal(fileid,label,nfound)
+integer fileid,nfound,ifound
+character(len=*) label
+nfound=0
+do while(.true.)
+    call loclabel(fileid,label,ifound,0)
+    if (ifound==0) then
+        exit
+    else
+        nfound=nfound+1
+        read(fileid,*)
+    end if
+end do
+do ifound=1,nfound
+    call loclabel(fileid,label)
+    read(fileid,*)
+end do
 end subroutine
 
 
@@ -1598,6 +1715,25 @@ end if
 iprog=0
 end subroutine
 
+
+!Determine if the real space function currently to be studied (ifuncsel) involve ESP, and thus should call doinitlibreta first
+!If should do, ifdoESP=.true., else ifdoESP=.false.
+logical function ifdoESP(ifuncsel)
+use defvar
+integer ifuncsel
+ifdoESP=.false.
+if (ifuncsel==12) then
+    ifdoESP=.true.
+else if (ifuncsel==100) then
+    if (iuserfunc==8) ifdoESP=.true.
+    if (iuserfunc==14) ifdoESP=.true.
+    if (iuserfunc==39) ifdoESP=.true.
+    if (iuserfunc>=60.and.iuserfunc<=68) ifdoESP=.true.
+    if (iuserfunc==101) ifdoESP=.true.
+    if (iuserfunc==102) ifdoESP=.true.
+end if
+end function
+
 end module
 
 
@@ -1718,4 +1854,85 @@ if (itmp==4) then
 end if
 write(*,"(2a\)") trim(c80tmp),char(13)
 if (inow>=nall) write(*,*)
+end subroutine
+
+
+!--------- Run system command by inputting command string
+subroutine runcommand(cmd)
+use defvar
+character(len=*) cmd
+!Windows removes double quotation at the two sides of inputted string, therefore I add additional double quotation to protect those in the string
+write(*,"(a)") " Running: "//trim(cmd)
+if (isys==1) then
+    call system(""""//cmd//"""")
+else
+    call system(cmd)
+end if
+end subroutine
+
+
+
+!!-------- Get an integer argument from command line. e.g. call getarg_int("-nt",nthreads,ifound)
+!argname: The label for which the value after it should be extracted
+!argval: Returned value
+!ifound=1/0: Not found the argument
+subroutine getarg_int(argname,argval,ifound)
+implicit real*8 (a-h,o-z)
+character c80tmp,c200tmp*200
+character(len=*) argname
+integer ifound,argval
+narg=command_argument_count()
+iarg=1
+ifound=0
+do while(iarg<=narg)
+    call get_command_argument(iarg,c200tmp)
+    if (c200tmp==argname) then
+        iarg=iarg+1
+        call get_command_argument(iarg,c80tmp)
+        read(c80tmp,*) argval
+        ifound=1
+        exit
+    end if
+    iarg=iarg+1
+end do
+end subroutine
+
+!!--------- Same as above, but return string
+subroutine getarg_str(argname,argstr,ifound)
+implicit real*8 (a-h,o-z)
+character c80tmp,c200tmp*200
+character(len=*) argname,argstr
+integer ifound
+narg=command_argument_count()
+iarg=1 !The input file name must be the first argument
+ifound=0
+do while(iarg<=narg)
+    call get_command_argument(iarg,c200tmp)
+    if (c200tmp==argname) then
+        iarg=iarg+1
+        call get_command_argument(iarg,argstr)
+        ifound=1
+        exit
+    end if
+    iarg=iarg+1
+end do
+end subroutine
+
+!!--------- Test if an argument is existed
+subroutine testarg(argname,ifound)
+implicit real*8 (a-h,o-z)
+character c80tmp,c200tmp*200
+character(len=*) argname
+integer ifound
+narg=command_argument_count()
+iarg=1 !The input file name must be the first argument
+ifound=0
+do while(iarg<=narg)
+    call get_command_argument(iarg,c200tmp)
+    if (c200tmp==argname) then
+        ifound=1
+        exit
+    end if
+    iarg=iarg+1
+end do
 end subroutine

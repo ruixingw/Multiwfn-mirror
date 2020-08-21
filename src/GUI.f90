@@ -673,8 +673,8 @@ CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
 CALL WGPOP(idiswindow,"Set basin drawing method",idissetdraw)
-CALL wgapp(idissetdraw,"Entire basin",idisshowbasinall)
-CALL wgapp(idissetdraw,"rho>0.001 region only",idisshowbasinvdw)
+if (allocated(b)) CALL wgapp(idissetdraw,"Entire basin",idisshowbasinall)
+if (allocated(b)) CALL wgapp(idissetdraw,"rho>0.001 region only",idisshowbasinvdw)
 CALL wgapp(idissetdraw,"Set sphere size for showing basins",idissetbasinsphsize)
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idiswindow,"VERT",idisright2) !Provide another frame for linux version
@@ -741,8 +741,8 @@ end if
 call SWGCBK(idislabelsize,setlabelsize)
 call SWGCBK(idisattsize,setattsize)
 call SWGCBK(idisbasinplot,showbasinsel)
-call SWGCBK(idisshowbasinvdw,showbasinvdw)
-call SWGCBK(idisshowbasinall,showbasinall)
+if (allocated(b)) call SWGCBK(idisshowbasinall,showbasinall)
+if (allocated(b)) call SWGCBK(idisshowbasinvdw,showbasinvdw)
 call SWGCBK(idissetbasinsphsize,setbasinsphsize)
 CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
@@ -1220,8 +1220,11 @@ end subroutine
 
 subroutine resetview(id)
 integer,intent (in) :: id
-XVU=150.0D0
-YVU=30.0D0
+XVU=150D0
+YVU=30D0
+atmlabclrR=0D0
+atmlabclrG=0D0
+atmlabclrB=0D0
 if (GUI_mode==1.or.GUI_mode==3) then
 	bondcrit=1.15D0
 	textheigh=38.0D0
@@ -1569,6 +1572,7 @@ end subroutine
 
 subroutine GUIreturn(id)
 integer,intent (in) :: id
+CALL setxid(0,'NONE') !Return to default setting, otherwise such as spectrum cannot be plotted
 call sendok
 end subroutine
 
@@ -1872,7 +1876,7 @@ subroutine setatmlabclr(id)
 use defvar
 integer,intent (in) :: id
 character clrlist*200
-clrlist="Red|Green|Blue|White|Black|Gray|Cyan|Yellow|Orange|Magenta|Crimson|Dark green|Purple|Brown|Dark blue"
+clrlist="Red|Green|Blue|White|Black|Gray|Cyan|Yellow|Orange|Magenta|Crimson|Dark green|Purple|Brown|Dark blue|Pink"
 call SWGPOP("NOOK")  !Don't show OK&QUIT&HELP in upper menu
 call SWGPOP("NOQUIT")
 call SWGPOP("NOHELP")
@@ -1903,7 +1907,7 @@ subroutine setCPlabclr(id)
 use defvar
 integer,intent (in) :: id
 character clrlist*200
-clrlist="Red|Green|Blue|White|Black|Gray|Cyan|Yellow|Orange|Magenta|Crimson|Dark green|Purple|Brown|Dark blue"
+clrlist="Red|Green|Blue|White|Black|Gray|Cyan|Yellow|Orange|Magenta|Crimson|Dark green|Purple|Brown|Dark blue|Pink"
 call SWGPOP("NOOK")  !Don't show OK&QUIT&HELP in upper menu
 call SWGPOP("NOQUIT")
 call SWGPOP("NOHELP")

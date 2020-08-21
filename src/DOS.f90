@@ -285,7 +285,7 @@ if (index(c80tmp,'s')/=0) then
     write(10,*) enelow
     write(10,*) enehigh
     write(10,*) Yrightsclfac
-    !Parameters that can be set in post-process menu
+    !Parameters that can be set in post-processing menu
     write(10,"(a)") graphformat
     write(10,*) ylowerleft
     write(10,*) yupperleft
@@ -366,7 +366,7 @@ else if (index(c80tmp,'l')/=0) then
     read(10,*) enelow
     read(10,*) enehigh
     read(10,*) Yrightsclfac
-    !Parameters that can be set in post-process menu
+    !Parameters that can be set in post-processing menu
     read(10,"(a)") graphformat
     read(10,*) ylowerleft
     read(10,*) yupperleft
@@ -520,8 +520,8 @@ else if (isel==-2) then !Define MO sets for PDOS
         end if
     end if
     write(*,"(a)") " Note 1: You can use options 1~10 to define up to 10 MO sets for plotting respective PDOS"
-    write(*,"(a)") " Note 2: The first published paper employing MO-PDOS map is: Tian Lu, Qinxue Chen, Zeyu Liu, &
-    ChemRxiv (2019) DOI: 10.26434/chemrxiv.11320130. Please kindly cite this paper if MO-PDOS map is employed in your work, thank you!"
+    write(*,"(a)") " Note 2: The first published paper employing MO-PDOS map is: Zeyu Liu, Tian Lu, Qinxue Chen, &
+    Carbon, 165, 461 (2020) DOI: 10.1016/j.carbon.2020.05.023. Please cite this paper if MO-PDOS map is employed in your work, thank you!"
     do while(.true.)
         write(*,*)
         write(*,*) " 0 Return"
@@ -1081,7 +1081,7 @@ else if (isel==0.or.isel==10) then
             if (ishowYlab==0) then
                 call labels("NONE","Y")
 		    	CALL TICKS(0,'Y')
-                CALL TICKS (1,'X')
+                CALL TICKS(1,'X')
                 CALL NAMDIS(70,'Y')
             else
 		    	CALL TICKS(1,'XY')
@@ -1224,11 +1224,11 @@ else if (isel==0.or.isel==10) then
 		end if
 		idraw=0
 		
-		!============= Post-process menu ==============
-		!============= Post-process menu ==============
-		!============= Post-process menu ==============
+		!============= post-processing menu ==============
+		!============= post-processing menu ==============
+		!============= post-processing menu ==============
 		write(*,*)
-		write(*,*) "                      -------- Post-process menu --------"
+		write(*,*) "                    -------- Post-processing menu --------"
 		if (isel==0) then !T/P/OPDOS
             write(*,*) "-1 Set format of saved image file, current: "//graphformat
 			write(*,*) "0 Return"
@@ -1681,7 +1681,7 @@ else if (isel==11) then
 		idraw=0
 		isavepic=0
 		write(*,*)
-		write(*,*) "                    -------- Post-process menu --------"
+		write(*,*) "                  -------- Post-processing menu --------"
 		write(*,*) "0 Return"
 		write(*,*) "1 Show graph again"
 		write(*,*) "2 Save the graph to image file in current folder"
@@ -1858,7 +1858,14 @@ else if (isel==12) then
 		end if
 		
 		if (isel2==-1.or.isel2==1.or.isel2==2) then !Plot PES or export data
-	
+	        if (all(bindene>PES_Xhigh)) then
+                write(*,"(a)") " Error: There is no molecular orbital in the current plotting range! &
+                You should increase upper limit of X-axis by option 4"
+                write(*,*) "Press ENTER button to continue"
+                read(*,*)
+                cycle
+            end if
+        
 			!Set X position of curves
 			tmp=(PES_Xhigh-PES_Xlow)/(num1Dpoints-1) 
 			do i=1,num1Dpoints

@@ -18,8 +18,10 @@ use defvar
 implicit real*8 (a-h,o-z)
 
 do while(.true.)
-	write(*,"(/,a,/)") " If this module is used in your work, citing this paper along with Multiwfn original paper is highly recommended: &
-	Tian Lu, Feiwu Chen, Calculation of Molecular Orbital Composition, Acta Chim. Sinica, 69, 2393-2406 (2011)"
+    write(*,"(/,a)") " If this module is used in your work, please cite below paper together with &
+    Multiwfn original paper, in which all methods employed in this module are described"
+    write(*,"(a)") " Tian Lu, Feiwu Chen, Acta Chimica Sinica, 69, 2393 (2011) http://sioc-journal.cn/Jwk_hxxb/CN/abstract/abstract340458.shtml"
+    write(*,*)
 	write(*,*) "      ================ Orbital composition analysis ==============="
 	write(*,*) "-10 Return"
 	if (allocated(CObasa)) then
@@ -36,6 +38,7 @@ do while(.true.)
 	if (allocated(b)) write(*,*) "8 Calculate atom and fragment contributions by Hirshfeld method"
 	if (allocated(b)) write(*,*) "9 Calculate atom and fragment contributions by Becke method"
 	if (allocated(b)) write(*,*) "10 Calculate atom and fragment contributions by Hirshfeld-I method"
+	if (allocated(b)) write(*,*) "11 Calculate atom and fragment contributions by AIM method"
 	if (allocated(CObasa)) write(*,*) "100 Evaluate oxidation state by LOBA method"
 	read(*,*) icompana
 
@@ -72,6 +75,11 @@ do while(.true.)
 	else if (icompana==10) then
 		call Hirshfeld_I(2)
 		call orbatmcomp_space(3)
+	else if (icompana==11) then
+        write(*,"(a)") " Note: To compute orbital composition under AIM partition, you should use basin analysis module (main function 17). &
+        see Section 4.8.6 of Multiwfn manual for example"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 	else if (icompana==100) then
 		call LOBA
 	end if
@@ -745,9 +753,7 @@ do while(.true.)
         if (allocated(frag1)) deallocate(frag1)
 		exit
 	else if (ishowmo==-1) then !Show all orbital information
-		do i=1,nmo
-			write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") i,MOene(i),MOocc(i),orbtypename(MOtype(i))
-		end do
+        call showorbinfo(1,nmo)
 	else if (ishowmo==-2.or.ishowmo==-3) then !Print atom/fragment contribution to specific range of orbitals
 		if ((.not.allocated(frag1)).and.ishowmo==-3) then
 			write(*,*) "Error: You must define the fragment by option -9 first!"
@@ -889,26 +895,7 @@ do while(.true.)
         end if
     
 	else if (ishowmo==-9) then !Define fragment
-	    if (allocated(frag1)) then
-			write(*,*) "Atoms in current fragment:"
-			write(*,"(13i6)") frag1
-			write(*,"(a)") " Input 0 to keep unchanged, or redefine fragment, &
-            e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
-		else
-			write(*,"(a)") " Input atomic indices to define fragment. &
-            e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
-		end if
-		read(*,"(a)") c2000tmp
-		if (c2000tmp(1:1)=='0') then
-		    continue
-		else if (c2000tmp(1:1)==" ") then
-		    deallocate(frag1)
-		else
-			if (allocated(frag1)) deallocate(frag1)
-			call str2arr(c2000tmp,nfrag1)
-			allocate(frag1(nfrag1))
-			call str2arr(c2000tmp,nfrag1,frag1)
-		end if
+        call definefragment
 	    
 	else !Print composition for an orbital
 		write(*,"(' Orbital:',i5,'  Energy(a.u.):',f14.6,'  Occ:',f10.5,'  Type: ',a)") ishowmo,MOene(ishowmo),MOocc(ishowmo),orbtypename(MOtype(ishowmo))
@@ -942,7 +929,7 @@ do while(.true.)
         write(*,"(/,' Orbital delocalization index:',f8.2)") orbdeloc
 		if (allocated(frag1)) then
 		    fragcomp=sum(atmcomp(frag1))
-            write(*,"(/,' Fragment contribution:',f11.3,'%')") fragcomp
+            write(*,"(/,' Fragment contribution:',f11.3,' %')") fragcomp
             orbdeloc=sum((atmcomp(frag1(:))/(fragcomp/100))**2)/100
             write(*,"(' Orbital delocalization index of the fragment:',f8.2)") orbdeloc
         end if
@@ -966,7 +953,7 @@ use defvar
 use util
 use function
 implicit real*8(a-h,o-z)
-real*8 atmcomp(ncenter,iend-ibeg+1)
+real*8 atmcomp(ncenter,iend-ibeg+1),comptmp(iend-ibeg+1)
 type(content) gridorg(radpot*sphpot),gridatm(radpot*sphpot)
 real*8 allpotx(ncenter,radpot*sphpot),allpoty(ncenter,radpot*sphpot),allpotz(ncenter,radpot*sphpot),allpotw(ncenter,radpot*sphpot)
 real*8 tmpdens(radpot*sphpot),selfdens(radpot*sphpot),promol(radpot*sphpot),orbval(nmo)
@@ -1039,13 +1026,19 @@ end if
 if (info==1) write(*,*) "Calculating orbital compositions, please wait..."
 atmcomp=0
 do iatm=1,ncenter
-    !$OMP parallel do shared(atmcomp) private(ipot,orbval) num_threads(nthreads) schedule(dynamic)
+    !$OMP parallel shared(atmcomp) private(ipot,orbval,comptmp) num_threads(nthreads)
+    comptmp=0
+    !$OMP do schedule(dynamic)
 	do ipot=1+iradcut*sphpot,radpot*sphpot
 		if (allpotw(iatm,ipot)<1D-9) cycle !May lose 0.001% accuracy
 		call orbderv(1,ibeg,iend,allpotx(iatm,ipot),allpoty(iatm,ipot),allpotz(iatm,ipot),orbval)
-		atmcomp(iatm,:)=atmcomp(iatm,:)+orbval(ibeg:iend)**2*allpotw(iatm,ipot)
+		comptmp(:)=comptmp(:)+orbval(ibeg:iend)**2*allpotw(iatm,ipot)
 	end do
-    !$OMP end parallel do
+    !$OMP END DO
+    !$OMP CRITICAL
+    atmcomp(iatm,:)=atmcomp(iatm,:)+comptmp(:)
+    !$OMP END CRITICAL
+    !$OMP end parallel
     call showprog(iatm,ncenter)
 end do
 
@@ -1100,8 +1093,8 @@ if (ifound==1) then
 	read(10,"(a)") c80tmp
 	!For DKH case, G09 may output such as RelInt: Using uncontracted basis, NUniq=   180 NBsUse=   180 0.100E-13, this nbsuse is meaningless, use next nbsuse
 	if (index(c80tmp,"RelInt")/=0) call loclabel(10,"NBsUse=",ifound)
-	itmp=index(c80tmp,'=')
-	read(c80tmp(itmp+1:),*) numorb
+	itmp=index(c80tmp,'NBsUse=')
+	read(c80tmp(itmp+8:),*) numorb
 else !This make this analysis could be independent of Gaussian
     numorb=numNAO
 end if
@@ -1114,9 +1107,6 @@ call loadNAOMO(numorb)
 allocate(fragidx(numNAO),termtmp(numNAO))
 ifragend=0 !ifragend is actual ending position (number of elements) of fragidx array
 if (iopshNAO==1) ispinmode=1
-
-write(*,"(/,a)") " Please cite this paper together with Multiwfn original paper: &
-ACTA CHIMICA SINICA, 69, 2393 (2011) http://sioc-journal.cn/Jwk_hxxb/CN/abstract/abstract340458.shtml"
 
 !Interface
 NAOcompmaincyc: do while(.true.)

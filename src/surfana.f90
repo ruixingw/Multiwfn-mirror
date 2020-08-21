@@ -37,8 +37,8 @@ do while(.true.)
 	tetravol2=0D0
 	tetravol3=0D0
 	write(*,*)
-	write(*,"(a)") " If this module is used in your research, please cite both the Multiwfn original paper and below paper, &
-	the latter detailedly described the basic algorithm of this module"
+	write(*,"(a)") " NOTE: If this module is used in your research, please cite both the Multiwfn original paper and below paper, &
+	the latter detailedly described the underlying algorithm employed in this module"
 	write(*,"(a)") " Tian Lu, Feiwu Chen, Quantitative analysis of molecular surface based on improved Marching Tetrahedra algorithm, &
 	J. Mol. Graph. Model., 38, 314-323 (2012)"
 	write(*,*)
@@ -343,8 +343,12 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 	write(*,*)
 	
 	if (isurftype==1.or.isurftype==2) then
-		if (isurftype==1) write(*,*) "Calculating grid data of electron density..."
-		if (isurftype==2) write(*,*) "Calculating grid data of the real space function..."
+		if (isurftype==1) then
+            write(*,*) "Calculating grid data of electron density..."
+            if (.not.allocated(b)) write(*,*) "Note: Promolecular approximation is used"
+		else if (isurftype==2) then
+            write(*,*) "Calculating grid data of the real space function..."
+        end if
 		if (allocated(cubmat)) deallocate(cubmat)
 		allocate(cubmat(nx,ny,nz))
 		if (isurftype==1) then
@@ -558,7 +562,7 @@ allocate(surtriang(nassumfacet))
 allocate(surfcor2vtx(numsurfcubcor,14),surcor2vtxpos(numsurfcubcor)) !14 is max number that each corner can link other corner for main-axis decomposition of cube
 surfcor2vtx(:,:)%athcor=0
 surcor2vtxpos=0
-allocate(vtxconn(nassumsurfvtx,50),vtxconnpos(nassumsurfvtx)) !I assume that each surface vertex can connect up to 50 other surface vertices
+allocate(vtxconn(nassumsurfvtx,100),vtxconnpos(nassumsurfvtx)) !I assume that each surface vertex can connect up to 100 other surface vertices
 vtxconn=0
 vtxconnpos=0
 
@@ -841,10 +845,9 @@ if (ireadextmapval==0) then !Directly calculate
 		
 		filename_tmp=filename
 		if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
-		write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
+		write(c400tmp,"(a,i5,a)") """"//trim(cubegenpath)//"""",ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
 		""""//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
-		write(*,"(a)") " Running: "//trim(c400tmp)
-		call system(c400tmp)
+		call runcommand(c400tmp)
 		if (index(filename,".chk")/=0) call delfile(filename_tmp)
 		
 		!Load ESP data from cubegen resulting file
@@ -875,6 +878,15 @@ if (ireadextmapval==0) then !Directly calculate
 		end if
         !It is best to add CRITICAL to the progress variable, however this may slow down calculation. In current case
         !The progress bar may be messed up when calculation of mapped function is very fast (e.g. ALIE), this is not a big problem.
+        
+        noldthreads=nthreads
+        if (imapfunc==1) then !ESP
+            if (iESPcode==2) then
+                call doinitlibreta
+                if (isys==1.and.nESPthreads>10) nthreads=10
+            end if
+        end if
+        write(*,*)
         call showprog(0,100)
 		!$OMP PARALLEL DO SHARED(survtx,iprog,ii) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
 		do icyc=1,nsurvtx
@@ -889,6 +901,7 @@ if (ireadextmapval==0) then !Directly calculate
 		end do
 		!$OMP END PARALLEL DO
 		if (nHirBecatm==0) deallocate(HirBecatm)
+        nthreads=noldthreads
 	end if
 	call walltime(iwalltime2)
     if (ii<100) call showprog(100,100) !Guarantee that 100% must be printed
@@ -1224,7 +1237,7 @@ ishowlocminpos=1
 ishowlocmaxpos=1
 do while(.true.)
 	write(*,*)
-	write(*,*) "                   ---------- Post-process interface ----------"
+	write(*,*) "                   ---------- Post-processing menu ----------"
 	write(*,*) "-3 Visualize the surface"
 	write(*,*) "-2 Export the grid data to surf.cub in current folder"
 	write(*,*) "-1 Return to upper level menu"
@@ -1902,7 +1915,7 @@ do while(.true.)
 			end if
 		end if
 		! write(*,"(' Sum of area of total/pos./neg.:',3f12.6,' Bohr^2')") sum(fragsurarea(:,1)),sum(fragsurarea(:,2)),sum(fragsurarea(:,3))
-		write(*,"(/,a)") " If output the surface facets to locsurf.pdb in current folder? By which you can visualize local surface via third-part visualization program such as VMD (y/n)"
+		write(*,"(/,a)") " If outputting the surface facets to locsurf.pdb in current folder? By which you can visualize local surface via third-part visualization program such as VMD (y/n)"
 		read(*,*) selectyn
 		if (selectyn=='y'.or.selectyn=='Y') then
 			open(10,file="locsurf.pdb",status="replace")
@@ -2706,7 +2719,7 @@ use surfvertex
 implicit real*8(a-h,o-z)
 integer ind1,ind2
 do i=1,vtxconnpos(ind1)
-	if (vtxconn(ind1,i)==ind2) return !Have already exist this connection entry
+	if (vtxconn(ind1,i)==ind2) return !Have already existed this connection entry
 end do
 vtxconnpos(ind1)=vtxconnpos(ind1)+1
 vtxconn(ind1,vtxconnpos(ind1))=ind2

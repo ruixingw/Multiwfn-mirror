@@ -22,20 +22,10 @@ do while(.true.)
 	if (inpstring(1:1)=='q') then
 		return
 	else if (inpstring(1:4)=='allf') then
-		write(*,*) "1 Electron density"
-		write(*,*) "3 Laplacian of electron density"
-		write(*,*) "4 Value of orbital wavefunction"
-		if (ELFLOL_type==0) write(*,*) "9 Electron localization function (ELF)"
-		if (ELFLOL_type==1) write(*,*) "9 Electron localization function (ELF) defined by Tsirelson" 
-		if (ELFLOL_type==2) write(*,*) "9 Electron localization function (ELF) defined by Tian Lu" 
-		if (ELFLOL_type==0) write(*,*) "10 Localized orbital locator (LOL)"
-		if (ELFLOL_type==1) write(*,*) "10 Localized orbital locator (LOL) defined by Tsirelson" 
-		if (ELFLOL_type==2) write(*,*) "10 Localized orbital locator (LOL) defined by Tian Lu"
-		write(*,*) "12 Total electrostatic potential"
-		write(*,*) "100 User-defined real space function"
+		call funclist
 	else if (inpstring(1:1)=='f') then	
 		read(inpstring(2:),*) iprintfunc
-		write(*,"(' OK, Real space function',i5,' has been selected')") iprintfunc
+		write(*,"(' OK, real space function',i5,' has been selected')") iprintfunc
 	else if (inpstring(1:1)=='a') then
 		read(inpstring(2:),*) iatm
 		if (iatm>0.and.iatm<=ncenter) then
@@ -140,7 +130,7 @@ end do
 
 do while(.true.)
 	write(*,"(a,f8.4,a)") " 0 Set extension distance for mode 1, current:",aug1D," Bohr"
-	write(*,*) "1 Input index of two nuclei to define a line"
+	write(*,*) "1 Input index of two atoms to define a line"
 	write(*,*) "2 Input coordinate of two points to define a line"
 	read(*,*) isel2
 
@@ -149,7 +139,7 @@ do while(.true.)
 		read(*,*) aug1D
 	else if (isel2==1) then
 		do while(.true.)
-			write(*,*) "Input two indices to select two nuclei (e.g. 1,3)"
+			write(*,*) "Input two indices to select two atoms, e.g. 1,3"
 			read(*,*) iselatm1,iselatm2
 			if (iselatm1/=iselatm2.and.min(iselatm1,iselatm2)>=1.and.max(iselatm1,iselatm2)<=ncenter) exit
 			write(*,*) "Error: Invalid input!"
@@ -220,7 +210,8 @@ if (isel==100.and.(iuserfunc==57.or.iuserfunc==58.or.iuserfunc==59)) then !Calcu
 else !Common case
     do while(.true.)
 	    if (.not.(ipromol==1.and.icustom==0)) then !Calculate property for whole system. However for promolecular case at initial step, skip it
-		    !Use cubegen to calculate ESP
+		    
+            !Try to invoke cubegen to calculate ESP
 		    alive=.false.
 		    if (cubegenpath/=" ".and.ifiletype==1.and.isel==12) then
 			    inquire(file=cubegenpath,exist=alive)
@@ -229,7 +220,7 @@ else !Common case
 				    the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 			    end if
 		    end if
-		    if (alive.and.ifiletype==1.and.isel==12) then !Use cubegen to calculate ESP
+		    if (alive.and.ifiletype==1.and.isel==12) then !Indeed use cubegen to calculate ESP
 			    write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
 			    now Multiwfn directly invokes cubegen to calculate electrostatic potential"
 			
@@ -248,10 +239,9 @@ else !Common case
 			
                 filename_tmp=filename
 			    if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
-			    write(c400tmp,"(a,i5,a)") trim(cubegenpath),ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
+			    write(c400tmp,"(a,i5,a)") """"//trim(cubegenpath)//"""",ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
 			    """"//trim(filename_tmp)//""""//" ESPresult.cub -5 h < cubegenpt.txt > nouseout"
-			    write(*,"(a)") " Running: "//trim(c400tmp)
-			    call system(c400tmp)
+			    call runcommand(c400tmp)
 			    if (index(filename,".chk")/=0) call delfile(filename_tmp)
 			
 			    !Load ESP data from cubegen resulting file
@@ -272,6 +262,12 @@ else !Common case
 			    end if
 		
 		    else !Normal case, use internal code to calculate data
+                nthreads_old=nthreads
+                !Use fast ESP evaluation function for almost all functions that rely on ESP
+                if (ifdoESP(isel).and.iESPcode==2) then
+                    call doinitlibreta
+                    if (isys==1.and.nESPthreads>10) nthreads=10
+                end if
 			    !$OMP parallel do shared(curvex,curvey) private(ipt,rnowx,rnowy,rnowz) num_threads(nthreads)
 			    do ipt=1,npointcurve  !Calculate data for line plot
 				    rnowx=orgx1D+(ipt-1)*transx
@@ -285,6 +281,7 @@ else !Common case
 				    end if
 			    end do
 			    !$OMP end parallel do
+                nthreads=nthreads_old
 		    end if
 	    end if
 	
@@ -335,7 +332,7 @@ else !Common case
     end do
 end if
     
-write(*,"(' Minimal/Maximum value:',2E16.8)") minval(curvey),maxval(curvey)
+write(*,"(/,' Minimal/Maximum value:',2E16.8)") minval(curvey),maxval(curvey)
 write(*,"(' Summing up all values:',E18.8,'  Integration value:',E18.8)") sum(curvey),sum(curvey)*transr
 exty=(maxval(curvey)-minval(curvey))/10
 if (exty<maxval(abs(curvey))/100) exty=maxval(abs(curvey))/10 !Sometimes the difference between maximal and minimal values are too small, so do special treatment
@@ -390,8 +387,10 @@ do while(.true.)
 			call drawcurve(curvex,curvey,npointcurve,0D0,maxval(curvex),steplabx,curveymin,curveymax,steplaby,"save",atomr1,atomr2)
 		end if
 		write(*,"(a,a,a)") " The graph have been saved to ",trim(graphformat)," format file with ""DISLIN"" prefix in current directory"
-	else if (isel==2) then		
-		open(10,file="line.txt",status="replace")
+	else if (isel==2) then
+        c200tmp="line.txt"
+        if (iaddprefix==1) call addprefix(c200tmp)
+		open(10,file=c200tmp,status="replace")
 		do ipt=1,npointcurve  !Output result to file
 			rnowx=orgx1D+(ipt-1)*transx
 			rnowy=orgy1D+(ipt-1)*transy
@@ -399,7 +398,7 @@ do while(.true.)
 			write(10,"(4f12.6,1PE20.10E3)") rnowx*b2a,rnowy*b2a,rnowz*b2a,curvex(ipt)*b2a,curvey(ipt)
 		end do
 		close(10)
-		write(*,*) "Data have been exported to line.txt in current folder"
+		write(*,"(a)") " Data have been exported to "//trim(c200tmp)//" in current folder"
 		write(*,"(a)") " Unit is Angstrom. The first three columns are actual coordinates, the fourth column &
 		is X position in the curve graph, the fifth column is function value"
 	else if (isel==3) then
@@ -612,19 +611,9 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then  !Initial
 	if (idrawtype/=1) iatom_on_plane=1
 	ilabel_on_contour=0
 	if (ifuncsel==9.or.ifuncsel==10) then  !A special contour setting suitable for ELF and LOL
-		ncontour=21
-		do i=1,ncontour
-			ctrval(i)=(i-1)*0.05D0
-		end do
+        call gencontour(1,0D0,0D0,0)
 	else  !General contour setting for other real space functions
-		ncontour=62
-		ctrval(1)=1D-3
-		do i=0,9 !Set the value of contour line
-			ctrval(3*i+2)=2*1D-3*10**i
-			ctrval(3*i+3)=4*1D-3*10**i
-			ctrval(3*i+4)=8*1D-3*10**i
-		end do
-		ctrval(32:62)=-ctrval(1:31)
+        call gencontour(0,0D0,0D0,0)
 	end if
 else if (idrawtype==-10) then
     return
@@ -633,7 +622,7 @@ end if
 write(*,*) " -10 Return to main menu"
 write(*,*) "How many grids in the two dimensions, respectively?"
 if (idrawtype==1.or.idrawtype==2.or.idrawtype==6) then
-	if (ifuncsel==12.or.(ifuncsel==100.and.iuserfunc==60).or.iuserfunc==39.or.iuserfunc==101.or.iuserfunc==102) then
+	if (ifdoESP(ifuncsel)) then
 		write(*,*) "(100,100 is recommended)" !Because calculating ESP is very time consuming, so use lower grid
 	else
 		write(*,*) "(200,200 is recommended)"
@@ -648,7 +637,7 @@ read(*,"(a)") c200tmp
 
 if (c200tmp==' ') then !Press enter directly
 	if (idrawtype==1.or.idrawtype==2.or.idrawtype==6) then
-		if (ifuncsel==12.or.(ifuncsel==100.and.iuserfunc==60).or.iuserfunc==39.or.iuserfunc==101.or.iuserfunc==102) then
+		if (ifdoESP(ifuncsel)) then
 			ngridnum1=100
 			ngridnum2=100
 		else
@@ -1036,7 +1025,7 @@ if (iplaneextdata==1) then !Export plane data to external file, and then load da
 	
 else !Start calculation of plane data
 	if (ifuncsel/=4) call delvirorb(1) !Delete high-lying virtual orbitals for faster calculation, but don't do this for analyzing MO
-	write(*,*) "Please wait..."	
+	write(*,*) "Calculating plane data, please wait..."	
 	if (ifuncsel/=12.and.expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff
 	call walltime(iwalltime1)
 	icustom=0
@@ -1045,7 +1034,7 @@ else !Start calculation of plane data
 	!Note: If the task refers to plotting ESP map, the function of drawing gradient line will be disabled
 
 	400	if (ifuncsel==12.and.idrawtype/=6.and.idrawtype/=7) then
-		call planeesp(max(ngridnum1,ngridnum2)) !Special treatment to calculate ESP
+		call planeesp !Special treatment to calculate ESP
 	else if (ifuncsel==112) then !Calculate atomic Hirshfeld weighting function
 		call genhirshplanewei(tmparrint,size(tmparrint),iHirshdenstype)
 		ncustommap=0
@@ -1078,6 +1067,12 @@ else !Start calculation of plane data
         call g1g2g3plane
 		ncustommap=0
 	else !Common case
+        nthreads_old=nthreads
+        !For some ESP related functions, initialize LIBRETA so that fast code will be used
+        if (ifdoESP(ifuncsel).and.iESPcode==2) then
+            call doinitlibreta
+            if (isys==1.and.nthreads>10) nthreads=10
+        end if
 	    !$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planemat,d1add,d1min,d2add,d2min) schedule(dynamic) NUM_THREADS(nthreads)
 		do i=1,ngridnum1
 			do j=1,ngridnum2
@@ -1099,6 +1094,7 @@ else !Start calculation of plane data
 			end do
 		end do
 	    !$OMP END PARALLEL DO
+        nthreads=nthreads_old
 	end if
 
 	401	if (ncustommap/=0) then !Calculate data for custom map
@@ -1190,7 +1186,7 @@ else !Start calculation of plane data
 	end if
 	
 	call walltime(iwalltime2)
-	write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+	write(*,"(/,' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
 end if
 	
 write(*,*) "The minimum of data:",minval(planemat)
@@ -1254,6 +1250,9 @@ else if (ifuncsel==111.or.ifuncsel==112) then !Becke/Hirshfeld weight
 else if (ifuncsel==100.and.iuserfunc==20) then !DORI
 	drawlowlim=0D0
 	drawuplim=1D00
+else if (ifuncsel==100.and.iuserfunc==99) then !IRI
+	drawlowlim=0D0
+	drawuplim=1D00
 else !Including ifuncsel==100
 	drawlowlim=0.0D0
 	drawuplim=5.0D0
@@ -1295,7 +1294,7 @@ cp2ple3n1path=0
 if (allocated(ple3n1path)) deallocate(ple3n1path)
 i=-1
 
-!----------------- Post-process menu, use plane data to draw graph
+!----------------- post-processing menu, use plane data to draw graph
 do while(.true.)
 !! Because the max cycle is ngridnum1/2 - 1, so the upper coordinate likes dist1-d1 rather than dist1
 	if ((i==-1.and.isilent==0).or.isavepic==1) then
@@ -1312,21 +1311,21 @@ do while(.true.)
 	write(*,*)
 ! 		write(*,*) "-10 Multiply data by the data in a plane text file"
 	if (iatmcontri==0) write(*,*) "-9 Only plot the data around certain atoms"
-	if (iatmcontri==1) write(*,*) "-9 Recovery original plane data"
+	if (iatmcontri==1) write(*,*) "-9 Recover original plane data"
 	if (ilenunit2D==1) write(*,*) "-8 Change length unit of the graph to Angstrom"
 	if (ilenunit2D==2) write(*,*) "-8 Change length unit of the graph to Bohr"		
-	write(*,*) "-7 Multiply data by a factor"
-	write(*,*) "-6 Export calculated plane data to plane.txt in current folder"
+	write(*,*) "-7 Multiply the current data by a factor"
+	write(*,*) "-6 Export the current plane data to plane.txt in current folder"
 	write(*,*) "-5 Return to main menu"
-	write(*,*) "-4 Switch ON/OFF of reversing ticks"
-	write(*,"(a,i3)") " -3 Set the number of ticks between the labels, current:",iticks-1
+    write(*,*) "-4 Save (load) all plotting settings to (from) an external file"
+	write(*,*) "-3 Change other plotting settings"
 	if (idrawtype==1.or.idrawtype==4.or.idrawtype==5) then
-		write(*,"(a,2f7.3,f10.5)") " -2 Set stepsize in X,Y,Z axes, current:",planestpx,planestpy,planestpz
+		write(*,"(a,2f7.3,f12.6)") " -2 Set stepsize in X,Y,Z axes, current:",planestpx,planestpy,planestpz
 	else
 		write(*,"(a,2f7.3)") " -2 Set stepsize in X and Y axes, current:",planestpx,planestpy
 	end if
 	write(*,*) "-1 Show the graph again"
-	write(*,*) "0 Save the graph to a file"
+	write(*,*) "0 Save the graph to a graphical file in current folder"
 
 	if (idrawtype==1) then !Color-filled map
 		if (abs(drawlowlim)<1000000.and.abs(drawuplim)<1000000) then
@@ -1476,14 +1475,16 @@ do while(.true.)
 			ilenunit2D=1
 		end if
 	else if (i==-7) then		
-		write(*,*) "Input a value, e.g. 0.3"
+		write(*,*) "Input the value to be multiplied to the current plane data, e.g. 0.3"
 		read(*,*) scaleval
 		planemat=planemat*scaleval
         gradd1=gradd1*scaleval
         gradd2=gradd2*scaleval
 		write(*,*) "Done!"
 	else if (i==-6) then
-		open(10,file="plane.txt",status="replace")
+        c200tmp="plane.txt"
+        if (iaddprefix==1) call addprefix(c200tmp)
+		open(10,file=c200tmp,status="replace")
 		do i=0,ngridnum1-1
 			do j=0,ngridnum2-1
 				rnowx=orgx2D+i*v1x+j*v2x
@@ -1503,10 +1504,10 @@ do while(.true.)
 		else
 			write(*,"(a)") " The column 1,2,3,4 correspond to X,Y,Z and function value, respectively"
 		end if
-		write(*,"(a)") " Data has been ouputted to plane.txt in current folder, length unit is in Angstrom"
+		write(*,"(a)") " Data has been ouputted to "//trim(c200tmp)//" in current folder, length unit is in Angstrom"
 		if (idrawtype/=3.and.idrawtype/=4.and.idrawtype/=5) then
 			if ( numcp>0.or.(numpath>0.and.imarkpath==1).or.(nple3n1path>0.and.idrawintbasple==1) ) then
-				write(*,"(/,a)") " If also output critical points and topology/basin paths to plain text files in current folder? (y/n)"
+				write(*,"(/,a)") " If also outputting critical points and topology/basin paths to plain text files in current folder? (y/n)"
 				read(*,*) selectyn
 				if (selectyn=='y'.or.selectyn=='Y') then
 					iplaneoutall=1 !Global variable, which tells drawplane routine to export topology data
@@ -1526,15 +1527,9 @@ do while(.true.)
 		iorbsel2=0
 		exit
 	else if (i==-4) then
-		if (itickreverse==0) then
-			itickreverse=1
-		else
-			itickreverse=0
-		end if
+        call saveload2Dplottingsetting(drawlowlim,drawuplim)
 	else if (i==-3) then
-		write(*,*) "How many ticks between labels do you want? e.g. 2"
-		read(*,*) iticks
-		iticks=iticks+1
+        call plane_othersetting
 	else if (i==-2) then
 		if (idrawtype==1.or.idrawtype==4.or.idrawtype==5) then
 			write(*,"(a)") " Input the stepsize between the labels in X,Y,Z axes, e.g. 1.5,2.0,0.1"
@@ -1637,7 +1632,7 @@ do while(.true.)
 			else if (i==5) then
 				call settopomark
 			else if (i==19) then
-                CALL selcolortable
+                call selcolortable
 			end if
 		!Options only for idrawtype 2,6,7 ========================
 		else if (idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
@@ -1820,6 +1815,96 @@ end	do
 end subroutine
 
 
+
+
+!----- Interface of change other settings
+subroutine plane_othersetting
+use defvar
+implicit real*8 (a-h,o-z)
+do while(.true.)
+    write(*,*)
+    write(*,*) "                 ------------- Other plotting settings -------------"
+    write(*,*) "0 Return"
+    if (itickreverse==0) write(*,*) "1 Toggle reversing ticks, current: No"
+    if (itickreverse==1) write(*,*) "1 Toggle reversing ticks, current: Yes"
+    write(*,*) "2 Set number of digits after the decimal point for the labels"
+    write(*,"(a,2i6)") " 3 Set pixel for weight and height of the exported figure, current:",graph2Dwidth,graph2Dheight
+	write(*,"(a,i3)") " 4 Set the number of ticks between the labels, current:",iticks-1
+    write(*,"(a,i3)") " 5 Set text size in the axes, current:",plane_axistextsize
+    write(*,"(a,i3)") " 6 Set size of the axis names, current:",plane_axisnamesize
+	if (iatmlabtype==1) write(*,*) "7 Change style of atomic labels: Only plot element symbol"
+	if (iatmlabtype==2) write(*,*) "7 Change style of atomic labels: Only plot atomic index"
+	if (iatmlabtype==3) write(*,*) "7 Change style of atomic labels: Plot both element symbol and atomic index"
+    write(*,"(a,i4)") " 8 Set size of atomic labels, current:",pleatmlabsize
+    write(*,"(a,i3)") " 9 Set thick of bonds, current:",bondthick2D
+	write(*,*) "10 Set format of exported image file, current: "//graphformat
+    read(*,*) isel2
+    
+    if (isel2==0) then
+        exit
+    else if (isel2==1) then
+		if (itickreverse==0) then
+			itickreverse=1
+		else
+			itickreverse=0
+		end if
+    else if (isel2==2) then
+        write(*,*) "Note: The default value can be set by ""numdigxyz"" parameter in settings.ini"
+        write(*,*)
+        write(*,*) "Input number of digits after the decimal point for X axis, e.g. 2"
+        write(*,"(' Current value:',i3)") numdigx
+        read(*,*) numdigx
+        write(*,*) "Input number of digits after the decimal point for Y axis, e.g. 2"
+        write(*,"(' Current value:',i3)") numdigy
+        read(*,*) numdigy
+        write(*,*) "Input number of digits after the decimal point for Z axis, e.g. 3"
+        write(*,"(' Current value:',i3)") numdigz
+        read(*,*) numdigz
+        write(*,*) "Done!"
+    else if (isel2==3) then
+        write(*,*) "Note: The default value can be set by ""graph2Dsize"" parameter in settings.ini"
+        write(*,*)
+        write(*,*) "Input pixel for width, e.g. 1500"
+        write(*,"(' Current value:',i5)") graph2Dwidth
+        read(*,*) graph2Dwidth
+        write(*,*) "Input pixel for height, e.g. 1200"
+        write(*,"(' Current value:',i5)") graph2Dheight
+        write(*,*) "Note: If you input 0, then height will be set to",int(dfloat(graph2Dwidth)/5*4)
+        read(*,*) graph2Dheight
+        if (graph2Dheight==0) graph2Dheight=dfloat(graph2Dwidth)/5*4
+        write(*,*) "Done!"
+    else if (isel2==4) then
+		write(*,*) "How many ticks between labels do you want? e.g. 2"
+		read(*,*) iticks
+		iticks=iticks+1
+    else if (isel2==5) then
+        write(*,*) "Input text size in the axes, e.g. 45"
+        write(*,"(' Current value:',i3)") plane_axistextsize
+        read(*,*) plane_axistextsize
+    else if (isel2==6) then
+        write(*,*) "Input text size in the axes, e.g. 40"
+        write(*,"(' Current value:',i3)") plane_axisnamesize
+        read(*,*) plane_axisnamesize
+    else if (isel2==7) then
+		write(*,*) "1: Only plot element symbol"
+		write(*,*) "2: Only plot atomic index"
+		write(*,*) "3: Plot both element symbol and atomic index"
+		write(*,*) "Note: The default value can be set by ""iatmlabtype"" in settings.ini"
+		read(*,*) iatmlabtype
+    else if (isel2==8) then
+        write(*,*) "Input size of atomic labels, e.g. 40"
+        write(*,"(' Current value:',i3)") pleatmlabsize
+		write(*,*) "Note: The default value can be set by ""pleatmlabsize"" in settings.ini"
+        read(*,*) pleatmlabsize
+    else if (isel2==9) then
+        write(*,*) "Input thick of bonds, e.g. 20"
+        write(*,"(' Current value:',i3)") bondthick2D
+        read(*,*) bondthick2D
+    else if (isel2==10) then
+        call setgraphformat
+    end if
+end do
+end subroutine
 
 
 
@@ -2165,8 +2250,8 @@ else !Calculate grid data
 		write(*,*) "-1 Show isosurface graph"
 		write(*,*) "0 Return to main menu"
 		write(*,*) "1 Save graph of isosurface to file in current folder"
-		write(*,*) "2 Export data to Gaussian-type cube file in current folder"
-		write(*,*) "3 Export data to formatted text file in current folder"
+		write(*,*) "2 Export data to a Gaussian-type cube file in current folder"
+		write(*,*) "3 Export data to output.txt in current folder"
 		write(*,"(a,f10.5)") " 4 Set the value of isosurface to be shown, current:",sur_value
 		write(*,*) "5 Multiply all grid data by a factor"
 		write(*,*) "6 Divide all grid data by a factor"
@@ -2185,13 +2270,16 @@ else !Calculate grid data
 			isavepic=0
 			write(*,*) "Graphical file has been saved to current folder with ""DISLIN"" prefix"
 		else if (i==2) then
+            if (iaddprefix==1) call addprefix(outcubfile)
 			open(10,file=outcubfile,status="replace")
 			call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
 			close(10)
 			write(*,"(' Done! Grid data has been exported to ',a,' in current folder')") trim(outcubfile)
 		else if (i==3) then
-			open(10,file="output.txt",status="replace")
-			write(*,*) "Outputting output.txt in current folder..."
+            c200tmp="output.txt"
+            if (iaddprefix==1) call addprefix(c200tmp)
+			open(10,file=c200tmp,status="replace")
+			write(*,"(a)") " Outputting "//trim(c200tmp)//" in current folder..."
 			do i=1,nx
 				do j=1,ny
 					do k=1,nz
@@ -2200,7 +2288,7 @@ else !Calculate grid data
 				end do
 			end do
 			close(10)
-			write(*,"(a)") " Output finished, column 1/2/3/4 correspond to X/Y/Z/Value. The coordinate unit is Angstrom, the unit of the calculated function is a.u."
+			write(*,"(a)") " Output finished, column 1/2/3/4 correspond to X/Y/Z/value. The coordinate unit is Angstrom, the unit of the calculated function is a.u."
 		else if (i==4) then
 			write(*,*) "Input the value of isosurface, e.g. 0.02"
 			read(*,*) sur_value
@@ -2374,7 +2462,7 @@ do while(.true.)
         write(*,"(' Current values are:',2i5)") ctrposstyle(1),ctrposstyle(2)
 		read(*,*) ctrposstyle(1),ctrposstyle(2)
 		write(*,*) "Input line width, e.g. 2"
-        write(*,"(' Note: Current value is:',i5)") iwidthposctr
+        write(*,"(' Note: Current value is',i5)") iwidthposctr
 		read(*,*) iwidthposctr
 	else if (isel==13) then
 		write(*,*) "Use which color?"
@@ -2387,7 +2475,7 @@ do while(.true.)
         write(*,"(' Current values are:',2i5)") ctrnegstyle(1),ctrnegstyle(2)
 		read(*,*) ctrnegstyle(1),ctrnegstyle(2)
 		write(*,*) "Input line width, e.g. 2"
-        write(*,"(' Note: Current value is:',i5)") iwidthnegctr
+        write(*,"(' Note: Current value is',i5)") iwidthnegctr
 		read(*,*) iwidthnegctr
 	else if (isel==15) then
 		iclrindctrpos=11
@@ -2520,5 +2608,419 @@ do i=1,ncustommap
 			write(*,*) "File not found, input again"
 		end if
 	end do
+end do
+end subroutine
+
+
+
+!!-------- Generate contour line values
+!itype=0: For general case
+!itype=1: Specific for ELF/LOL
+!itype=2: Specify vallow and valhigh, generate evenly distributed nctr contour lines (no line corresponds to vallow, but a line corresponds to valhigh)
+subroutine gencontour(itype,vallow,valhigh,nctr)
+use defvar
+implicit real*8 (a-h,o-z)
+integer itype,nctr
+real*8 vallow,valhigh
+if (itype==0) then
+	ncontour=62
+	ctrval(1)=1D-3
+	do i=0,9
+		ctrval(3*i+2)=2*1D-3*10**i
+		ctrval(3*i+3)=4*1D-3*10**i
+		ctrval(3*i+4)=8*1D-3*10**i
+	end do
+	ctrval(32:62)=-ctrval(1:31)
+else if (itype==1) then
+	ncontour=21
+	do i=1,ncontour
+		ctrval(i)=(i-1)*0.05D0
+	end do
+else if (itype==2) then
+	ncontour=nctr
+    stp=(valhigh-vallow)/ncontour
+	do i=1,ncontour
+		ctrval(i)=vallow+i*stp
+	end do
+end if
+end subroutine
+
+
+
+
+
+!!----------- A general interface for plotting color-filled or contour map based on "planemat" data
+!In fact this is a simplified version of post-processing menu of main function 4
+!Gradient map is not available, topology information cannot be shown
+!Input data:
+!  mapname: The name of the map, shown as title
+!  outfilename: Name of exporting file
+!  xlow,xhigh,ylow,yhigh: Lower and upper limits of X and Y axis in the map
+!  zlow and zhigh: Color scale range
+!Before using this, below data should be initialized:
+!  ngridnum1 and ngridnum2: Number of grids of planemat
+!  plesel: Type of plane (XY, YZ...)
+!  Contour lines should be initialized by subroutine "gencontour"
+!  planestpx,planestpy,planestpz: Stepsize in X,Y,Z
+!  orgx2D,orgy2D,orgz2D: X, Y, Z of origin of the plane in molecular Cartesian space, used to determine if showing atomic labels, etc.
+subroutine planemap_interface(mapname,outfilename,xlow,xhigh,ylow,yhigh,zlow,zhigh)
+use defvar
+use plot
+implicit real*8 (a-h,o-z)
+character(len=*) mapname,outfilename
+character selectyn
+real*8 xlow,xhigh,ylow,yhigh,zlow,zhigh
+
+idrawtype=1
+idrawcontour=0
+
+do while(.true.)
+    write(*,*)
+    ntmp=(63-len(mapname))/2
+    write(*,"(' ')",advance='no')
+    do itmp=1,ntmp
+        write(*,"('-')",advance='no')
+    end do
+    write(*,"(' Plotting ',a,' map ')",advance='no') mapname
+    do itmp=1,ntmp
+        write(*,"('-')",advance='no')
+    end do
+    write(*,*) "-5 Save (load) all plotting settings to (from) from an external file"
+    write(*,*) "-4 Multiply the current data by a factor"
+    write(*,*) "-3 Change other plotting settings"
+    write(*,*) "-2 Export plane data as "//outfilename//".txt in current folder"
+    write(*,*) "-1 Return"
+    write(*,*) "0 Show the map on screen"
+    write(*,*) "1 Save the map as graphical file in current folder"
+    if (idrawtype==1.and.idrawcontour==0) then
+        write(*,*) "2 Choose map type, current: Color-filled map"
+    else if (idrawtype==1.and.idrawcontour==1) then
+        write(*,*) "2 Choose map type, current: Color-filled map with contour lines"
+    else if (idrawtype==2) then
+        write(*,*) "2 Choose map type, current: Contour line map"
+    end if
+	if (iatom_on_plane==0) write(*,*) "3 Toggle showing atom labels, current: No"
+	if (iatom_on_plane==1) write(*,*) "3 Toggle showing atom labels, current: Yes"
+    if (iatom_on_plane==1) write(*,"(a,f8.3,' Bohr')") " 4 Set distance threshold for showing atom labels, current:",disshowlabel
+    if (ibond_on_plane==0) write(*,*) "5 Toggle showing bonds, current: No"
+	if (ibond_on_plane==1) write(*,*) "5 Toggle showing bonds, current: Yes"
+	if (ilenunit2D==1) write(*,*) "6 Change length unit of the graph to Angstrom"
+	if (ilenunit2D==2) write(*,*) "6 Change length unit of the graph to Bohr"
+	if (idrawtype==1) then
+		write(*,"(a,2f7.3,f12.6)") " 7 Set stepsize in X,Y,Z axes, current:",planestpx,planestpy,planestpz
+	else
+		write(*,"(a,2f7.3)") " 7 Set stepsize in X and Y axes, current:",planestpx,planestpy
+	end if
+    !Options specific for color-filled map
+    if (idrawtype==1) then
+		if (abs(zlow)<1000000.and.abs(zhigh)<1000000) then
+			write(*,"(a,2f15.7)") " 8 Set lower&upper limit of color scale, current:",zlow,zhigh
+		else
+			write(*,"(a,2(1PE15.6))") " 8 Set lower&upper limit of color scale, current:",zlow,zhigh
+		end if
+        write(*,"(a,a)") " 9 Set color transition, current: ",trim(clrtransname(iclrtrans))
+    end if
+    if (idrawcontour==1) then
+		write(*,*) "10 Change contour line setting"
+		if (ilabel_on_contour==0) write(*,*) "11 Toggle showing isovalue on contour lines, current: No"
+		if (ilabel_on_contour==1) write(*,*) "11 Toggle showing isovalue on contour lines, current: Yes"
+    end if
+    read(*,*) isel
+    
+    if (isel==-5) then
+        call saveload2Dplottingsetting(zlow,zhigh)
+	else if (isel==-4) then		
+		write(*,*) "Input the value to be multiplied to the current plane data, e.g. 0.3"
+		read(*,*) scaleval
+        planemat=planemat*scaleval
+    else if (isel==-3) then
+        call plane_othersetting
+    else if (isel==-2) then
+        open(10,file=outfilename//".txt",status="replace")
+        do ix=1,nx
+            xpos=orgx+(ix-1)*dx
+            do iy=1,ny
+                ypos=orgy+(iy-1)*dy
+                write(10,"(2f12.6,f16.8)") xpos*b2a,ypos*b2a,planemat(ix,iy)
+            end do
+        end do
+        close(10)
+        write(*,"(a)") " Done! plane data has been exported to "//outfilename//".txt in current folder. &
+        The first two column correspond to X and Y coordinates in Angstrom, the last column is data"
+    else if (isel==-1) then
+        return
+    else if (isel==0.or.isel==1) then
+        if (isel==0) then
+            isavepic=0
+        else if (isel==1) then
+            isavepic=1
+        end if
+		call drawplane(xlow,xhigh,ylow,yhigh,zlow,zhigh,idrawtype)
+        if (isel==1) then
+            isavepic=0
+            write(*,"(a,a,a)") " The map have been saved as ",trim(graphformat)," format with ""DISLIN"" prefix in current folder"
+        end if
+    else if (isel==2) then
+        write(*,*) "Choose map type"
+        write(*,*) "1 Color-filled map"
+        write(*,*) "2 Color-filled map with contour lines"
+        write(*,*) "3 Contour line map"
+        read(*,*) isel2
+        if (isel2==1.or.isel2==2) then
+            idrawtype=1
+            if (isel2==1) then
+                idrawcontour=0
+            else if (isel2==2) then
+                idrawcontour=1
+            end if
+        else if (isel2==3) then
+            idrawtype=2
+            idrawcontour=1
+        end if
+    else if (isel==3) then
+		if (iatom_on_plane==1) then
+			iatom_on_plane=0
+		else if (iatom_on_plane==0) then
+			iatom_on_plane=1
+			write(*,*) "Use which color for labelling atoms?"
+			call selcolor(iclrindatmlab)
+		end if
+    else if (isel==4) then
+		write(*,*) "Input vertical distance threshold for plotting the objects in Bohr, e.g. 0.5"
+		write(*,*) "Note: The default value can be set by ""disshowlabel"" in settings.ini"
+		read(*,*) disshowlabel
+		write(*,"(a)") " If also show the labels of the atoms that beyond this criterion as light face type? (y/n)"
+		read(*,*) selectyn
+		if (selectyn=='y'.or.selectyn=='Y') then
+			iatom_on_plane_far=1
+		else
+			iatom_on_plane_far=0
+		end if
+    else if (isel==5) then
+		if (ibond_on_plane==0) then
+			ibond_on_plane=1
+			write(*,"(a,/)") " Note: The bonding will be empirically determined according to interatomic distance and atomic covalent radii"
+			write(*,*) "Use which color for drawing the bonds?"
+			call selcolor(iclrindbndlab)
+		else
+			ibond_on_plane=0
+		end if
+    else if (isel==6) then
+		if (ilenunit2D==1) then
+			ilenunit2D=2
+		else if (ilenunit2D==2) then
+			ilenunit2D=1
+		end if
+    else if (isel==7) then
+		if (idrawtype==1) then
+			write(*,"(a)") " Input the stepsize between the labels in X,Y,Z axes, e.g. 1.5,2.0,0.1"
+			read(*,*) planestpx,planestpy,planestpz
+		else if (idrawtype==2) then
+			write(*,"(a)") " Input the stepsize between the labels in X and Y axes, e.g. 1.5,2.0"
+			read(*,*) planestpx,planestpy
+		end if
+    else if (isel==8) then
+		write(*,*) "Input lower & upper limit of color scale, e.g. -0.3,0.3"
+		read(*,*) zlow,zhigh
+    else if (isel==9) then
+        call selcolortable
+    else if (isel==10) then
+        call setcontour
+    else if (isel==11) then
+		if (ilabel_on_contour==1) then
+			ilabel_on_contour=0
+		else if (ilabel_on_contour==0) then
+			ilabel_on_contour=1
+			write(*,*) "Input label size, e.g. 30"
+			read(*,*) ictrlabsize
+			write(*,"(a)") " Hint: The number of digits after the decimal point of label on contour lines can be set by ""numdigctr"" in settings.ini"
+		end if
+    end if
+end do      
+end subroutine
+
+
+
+!!---------- Save/load plotting settings to/from an .txt file
+!The clrlow and clrhigh are lower and upper limits of color scale. They are arguments since they are not global variables
+subroutine saveload2Dplottingsetting(clrlow,clrhigh)
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 clrlow,clrhigh
+character c200tmp*200,strtmp*20
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "0 Return"
+    write(*,*) "1 Save plotting settings to specific .txt file in current folder"
+    write(*,*) "2 Load plotting settings from specific .txt file in current folder"
+    read(*,*) isel
+
+    if (isel==0) then
+        return
+    else if (isel==1) then
+        write(*,"(a)") " Input the path of the file to save plotting settings, for example, C:\RAS\masking.txt"
+        write(*,*) "If pressing ENTER button directly, the file will be planeplot.txt"
+        read(*,"(a)") c200tmp
+        if (c200tmp==" ") c200tmp="planeplot.txt"
+        open(10,file=c200tmp,status="replace")
+        !write(10,"('idrawtype',i5)") idrawtype
+        !write(10,"('graph2Dwidth',i5)") graph2Dwidth
+        !write(10,"('graph2Dheight',i5)") graph2Dheight
+        !write(10,"('graphformat ',a)") graphformat
+        write(10,"('clrlow',1PE18.8)") clrlow
+        write(10,"('clrhigh',1PE18.8)") clrhigh
+        write(10,"('iclrtrans',i5)") iclrtrans
+        write(10,"('idrawcontour',i5)") idrawcontour
+        write(10,"('iatom_on_plane',i5)") iatom_on_plane
+        write(10,"('disshowlabel',f12.6)") disshowlabel
+        write(10,"('iatom_on_plane_far',i5)") iatom_on_plane_far
+        write(10,"('ibond_on_plane',i5)") ibond_on_plane
+        write(10,"('ilenunit2D',i5)") ilenunit2D
+        write(10,"('planestpx',f12.6)") planestpx
+        write(10,"('planestpy',f12.6)") planestpy
+        write(10,"('planestpz',f12.6)") planestpz
+        write(10,"('ilabel_on_contour',i5)") ilabel_on_contour
+        write(10,"('iclrindatmlab',i6)") iclrindatmlab
+        write(10,"('iclrindbndlab',i6)") iclrindbndlab
+        !Other settings
+        write(10,"('itickreverse',i5)") itickreverse
+        write(10,"('numdigx',i5)") numdigx
+        write(10,"('numdigy',i5)") numdigy
+        write(10,"('numdigz',i5)") numdigz
+        write(10,"('iticks',i5)") iticks
+        write(10,"('plane_axistextsize',i5)") plane_axistextsize
+        write(10,"('plane_axisnamesize',i5)") plane_axisnamesize
+        write(10,"('iatmlabtype',i5)") iatmlabtype
+        write(10,"('pleatmlabsize',i5)") pleatmlabsize
+        write(10,"('bondthick2D',i5)") bondthick2D
+        !Related to relief map
+        write(10,"('surcolorzmin',f16.8)") surcolorzmin
+        write(10,"('surcolorzmax',f16.8)") surcolorzmax
+        write(10,"('drawsurmesh ',a)") drawsurmesh
+        !Related to gradient line map
+        write(10,"('igrad_arrow',i6)") igrad_arrow
+        write(10,"('gradplotstep',f8.4)") gradplotstep
+        write(10,"('gradplotdis',f8.4)") gradplotdis
+        write(10,"('gradplottest',f8.4)") gradplottest
+        write(10,"('iclrindgradline',i6)") iclrindgradline
+        write(10,"('iwidthgradline',i6)") iwidthgradline
+        write(10,"('stream_intmethod ',a)") stream_intmethod
+        !Related to vector field map
+        write(10,"('cutgradvec',f8.4)") cutgradvec
+        write(10,"('igrad_arrow',i6)") igrad_arrow
+        write(10,"('icolorvecfield',i6)") icolorvecfield
+        write(10,"('iinvgradvec',f8.4)") iinvgradvec
+        write(10,"('vecclrind',f8.4)") vecclrind
+        !Related to plotting topology information
+        write(10,"('imark3n3',i6)") imark3n3
+        write(10,"('imark3n1',i6)") imark3n1
+        write(10,"('imark3p1',i6)") imark3p1
+        write(10,"('imark3p3',i6)") imark3p3
+        write(10,"('imarkpath',i6)") imarkpath
+        write(10,"('disshowCP',f10.3)") disshowCP
+        write(10,"('disshowpath',f10.3)") disshowpath
+        write(10,"('sizemarkcp',i6)") sizemarkcp
+        write(10,"('sizemarkpath',i6)") sizemarkpath
+        write(10,"('iclrpath',i6)") iclrpath
+        write(10,"('sizemark3n1path',i6)") sizemark3n1path
+        write(10,"('iclr3n1path',i6)") iclr3n1path
+        !Related to contour lines
+        write(10,"('ictrlabsize',i5)") ictrlabsize
+        write(10,"('iclrindctrpos',i5)") iclrindctrpos
+        write(10,"('iclrindctrneg',i5)") iclrindctrneg
+        write(10,"('iwidthposctr',i5)") iwidthposctr
+        write(10,"('iwidthnegctr',i5)") iwidthnegctr
+        write(10,"('ctrposstyle',2i5)") ctrposstyle(:)
+        write(10,"('ctrnegstyle',2i5)") ctrnegstyle(:)
+        write(10,"('ncontour',i5)") ncontour
+        do ictr=1,ncontour
+	        write(10,"(1PE18.8)") ctrval(ictr)
+        end do
+        close(10)
+        write(*,"(a)") " Done! Plotting settings have been saved to "//trim(c200tmp)
+    else if (isel==2) then
+        write(*,"(a)") " Input the path of the file from which the plotting settings will be loaded, e.g. C:\RAS\masking.txt"
+        write(*,*) "If pressing ENTER button directly, the file will be planeplot.txt"
+        do while(.true.)
+            read(*,"(a)") c200tmp
+            if (c200tmp==" ") c200tmp="planeplot.txt"
+            inquire(file=c200tmp,exist=alive)
+	        if (alive) exit
+	        write(*,*) "Cannot find the file, input again!"
+        end do
+        open(10,file=c200tmp,status="old")
+        read(10,*) strtmp,clrlow
+        read(10,*) strtmp,clrhigh
+        read(10,*) strtmp,iclrtrans
+        read(10,*) strtmp,idrawcontour
+        read(10,*) strtmp,iatom_on_plane
+        read(10,*) strtmp,disshowlabel
+        read(10,*) strtmp,iatom_on_plane_far
+        read(10,*) strtmp,ibond_on_plane
+        read(10,*) strtmp,ilenunit2D
+        read(10,*) strtmp,planestpx
+        read(10,*) strtmp,planestpy
+        read(10,*) strtmp,planestpz
+        read(10,*) strtmp,ilabel_on_contour
+        read(10,*) strtmp,iclrindatmlab
+        read(10,*) strtmp,iclrindbndlab
+        !Other settings
+        read(10,*) strtmp,itickreverse
+        read(10,*) strtmp,numdigx
+        read(10,*) strtmp,numdigy
+        read(10,*) strtmp,numdigz
+        read(10,*) strtmp,iticks
+        read(10,*) strtmp,plane_axistextsize
+        read(10,*) strtmp,plane_axisnamesize
+        read(10,*) strtmp,iatmlabtype
+        read(10,*) strtmp,pleatmlabsize
+        read(10,*) strtmp,bondthick2D
+        !Related to relief map
+        read(10,*) strtmp,surcolorzmin
+        read(10,*) strtmp,surcolorzmax
+        read(10,*) strtmp,drawsurmesh
+        !Related to gradient line map
+        read(10,*) strtmp,igrad_arrow
+        read(10,*) strtmp,gradplotstep
+        read(10,*) strtmp,gradplotdis
+        read(10,*) strtmp,gradplottest
+        read(10,*) strtmp,iclrindgradline
+        read(10,*) strtmp,iwidthgradline
+        read(10,*) strtmp,stream_intmethod
+        !Related to vector field map
+        read(10,*) strtmp,cutgradvec
+        read(10,*) strtmp,igrad_arrow
+        read(10,*) strtmp,icolorvecfield
+        read(10,*) strtmp,iinvgradvec
+        read(10,*) strtmp,vecclrind
+        !Related to plotting topology information
+        read(10,*) strtmp,imark3n3
+        read(10,*) strtmp,imark3n1
+        read(10,*) strtmp,imark3p1
+        read(10,*) strtmp,imark3p3
+        read(10,*) strtmp,imarkpath
+        read(10,*) strtmp,disshowCP
+        read(10,*) strtmp,disshowpath
+        read(10,*) strtmp,sizemarkcp
+        read(10,*) strtmp,sizemarkpath
+        read(10,*) strtmp,iclrpath
+        read(10,*) strtmp,sizemark3n1path
+        read(10,*) strtmp,iclr3n1path
+        !Related to contour lines
+        read(10,*) strtmp,ictrlabsize
+        read(10,*) strtmp,iclrindctrpos
+        read(10,*) strtmp,iclrindctrneg
+        read(10,*) strtmp,iwidthposctr
+        read(10,*) strtmp,iwidthnegctr
+        read(10,*) strtmp,ctrposstyle(:)
+        read(10,*) strtmp,ctrnegstyle(:)
+        read(10,*) strtmp,ncontour
+        do ictr=1,ncontour
+	        read(10,*) ctrval(ictr)
+        end do
+        close(10)
+        write(*,"(a)") " Done! Plotting settings have been retrieved from "//trim(c200tmp)
+    end if
 end do
 end subroutine

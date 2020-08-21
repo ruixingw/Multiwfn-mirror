@@ -14,6 +14,6 @@ Below are the license information in Chinese:
 (c)如果Multiwfn在你的研究中被使用，或者你自己写的代码里利用了Multiwfn中的代码，至少要引用Multiwfn原文：Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)
 (d)Multiwfn开发者不保证Multiwfn计算结果的正确性，也不对因为使用Multiwfn给出的结果所导致的任何后果负责。（但开发者总会尽最大努力保证程序计算结果的正确性）
 
-重要提示：最正规的引用Multiwfn的方法见Multiwfn主页Download页面下方的说明，或者Multiwfn手册第一章末尾"Citing Multiwfn"部分的说明。如果使用了Multiwfn的文章中就连上面提到的Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)这篇必须引的原文都没引用的话，作者可能会被列入Multiwfn黑名单，并禁止在未来使用Multiwfn。
+重要提示：如果使用了Multiwfn的文章中就连上面提到的Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)这篇必须引的原文都没引用的话，作者会被列入Multiwfn黑名单，并禁止在未来使用Multiwfn。Multiwfn最正确的引用方式参见Multiwfn可执行文件包中的How to cite Multiwfn.pdf文档。
 
-如果有Multiwfn使用上的问题，欢迎到http://bbs.keinsci.com的“波函数分析与Multiwfn”版块发帖咨询。开发者不在其它任何中文论坛上解答Multiwfn的使用问题。初次接触Multiwfn者请务必阅读《Multiwfn入门tips》（http://sobereva.com/167）。
+如果有Multiwfn使用上的问题，欢迎到http://bbs.keinsci.com的“波函数分析与Multiwfn”版块发帖咨询。开发者不在其它任何中文论坛上解答Multiwfn的使用问题。初次接触Multiwfn者请务必阅读《Multiwfn入门tips》（http://sobereva.com/167）和《Multiwfn FAQ》（http://sobereva.com/452）。

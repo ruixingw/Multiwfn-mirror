@@ -102,7 +102,7 @@ implicit real*8 (a-h,o-z)
 real*8 CNmat(ncenter,ncenter),k1,k2
 character c80tmp*80,selectyn
 write(*,*) "Input the threshold for printing connectivity index, e.g. 0.05"
-write(*,*) "If you press ENTER directly, 0.1 will be used"
+write(*,*) "If you press ENTER button directly, 0.1 will be used"
 read(*,"(a)") c80tmp
 if (c80tmp==" ") then
 	printthres=0.1D0
@@ -134,13 +134,13 @@ do iatm=1,ncenter
 	write(*,"(i5,2x,a,2x,'Sum of connectivity:',f8.4,'   Sum of integer connectivity:',i3)") iatm,ind2name(indi),sum(CNmat(iatm,:)),sum(nint(CNmat(iatm,:)))
 end do
 write(*,*)
-write(*,*) "If output connectivity matrix to connmat.txt in current folder? (y/n)"
+write(*,*) "If outputting connectivity matrix to connmat.txt in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
 	open(10,file="connmat.txt",status="replace")
 	call showmatgau(CNmat,"connectivity matrix",0,'f12.6',10)
 	close(10)
-	write(*,*) "Done, connmat.txt has been outputted to current folder"
+	write(*,*) "Done! connmat.txt has been outputted to current folder"
 end if
 end subroutine
 
@@ -254,7 +254,6 @@ else if (isel==8) then
 	else
 		write(*,*) "Input path for exporting file, e.g. C:\ltwd.47"
 		read(*,"(a)") c200tmp
-		write(*,*) "Exporting, please wait..."
 		call out47(c200tmp,10)
 	end if
 else if (isel==9) then
@@ -265,7 +264,6 @@ else if (isel==9) then
 	else
 		write(*,*) "Input path for exporting file, e.g. C:\ltwd.mkl"
 		read(*,"(a)") c200tmp
-		write(*,*) "Exporting, please wait..."
 		call outmkl(c200tmp,10)
 		write(*,*) "Exporting .mkl file finished!"
 	end if
@@ -335,6 +333,7 @@ end subroutine
 !iwork=0: General case
 !iwork=1: NCI
 !iwork=2: NCI based on promolecular approximation
+!iwork=4: IRI
 !iwork=5: DORI
 subroutine funcvsfunc(iwork)
 use plot
@@ -354,6 +353,11 @@ if (iwork==1) then !NCI
 else if (iwork==2) then !NCI based on promolecular approximation
 	iselfunc1=16
 	iselfunc2=14
+else if (iwork==4) then !IRI
+	iselfunc1=15
+	iuserfunc_old=iuserfunc
+	iselfunc2=100
+	iuserfunc=99
 else if (iwork==5) then !DORI
 	iselfunc1=15
 	iuserfunc_old=iuserfunc
@@ -377,6 +381,7 @@ else
 end if
 if (iselfunc1==15.or.iselfunc1==16) f1name="sign(lambda2)rho"
 if (iselfunc2==13.or.iselfunc2==14) f2name="RDG"
+if (iselfunc2==100.and.iuserfunc==99) f2name="IRI"
 if (iselfunc2==100.and.iuserfunc==20) f2name="DORI"
 
 if (iselfunc1==0.and.iselfunc2==0) then !Directly load grid data
@@ -390,21 +395,23 @@ if (iselfunc1==0.and.iselfunc2==0) then !Directly load grid data
 		return
 	end if
 else !Calculate grid data
-	if (iwork==1.or.iwork==2.or.iwork==5) aug3D=1.5D0 !Smaller than default value
+	if (iwork==1.or.iwork==2.or.iwork==4.or.iwork==5) aug3D=1.5D0 !Smaller than default value
 	call setgrid(0,igridsel)
 	if (allocated(cubmat)) deallocate(cubmat)
 	if (allocated(cubmattmp)) deallocate(cubmattmp)
 	allocate(cubmat(nx,ny,nz),cubmattmp(nx,ny,nz),exchangedata(nx,ny,nz))
 	call delvirorb(1)
-	if (iselfunc1==15.and.iselfunc2==13) then !Since RDG and sign(lambda2)rho is often combined to study NCI, a special code is provided for speedup
+	if (iselfunc1==15.and.iselfunc2==13) then !Since RDG and sign(lambda2)rho is often combined to study NCI, a special code is provided for reducing cost
 		call savecubmat(1513,0,1)
 	else if (iselfunc1==16.and.iselfunc2==14) then 
 		call savecubmat(1614,0,1)
+	else if (iselfunc1==15.and.iselfunc2==100.and.iuserfunc==99) then !Combinely calculate IRI and sign(lambda2)rho to reduce cost by double
+		call savecubmat(1599,0,1)
 	else
-		write(*,"(a)") " Processing "//trim(f2name)
+		write(*,"(a)") " Calculating "//trim(f2name)//"..."
 		call savecubmat(iselfunc2,0,iorbsel2)
 		cubmattmp=cubmat
-		write(*,"(a)") " Processing "//trim(f1name)
+		write(*,"(a)") " Calculating "//trim(f1name)//"..."
 		call savecubmat(iselfunc1,0,iorbsel1)
 	end if
 end if
@@ -488,7 +495,7 @@ do while (.true.)
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1)
 		end if
 	else if (isel==0) then
-		if (iwork==5) iuserfunc=iuserfunc_old !DORI
+		if (iwork==4.or.iwork==5) iuserfunc=iuserfunc_old !IRI, DORI
 		exit
 	else if (isel==1) then
 		isavepic=1
@@ -580,6 +587,7 @@ use util
 use defvar
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: cobas1(:,:),cobas2(:,:),ovlpbasmat(:,:),orbovlp(:,:) !ovlpmat is overlap matrix of basis functions
+integer,allocatable :: elemidxcomb(:) !Element index array, used for sanity check of case 2
 character monofile1*200,monofile2*200,c80tmp*80
 
 if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
@@ -672,7 +680,6 @@ else !Using wavefunction file of dimer and monomer to do the analysis
     nmoall=nmo
     nbasisall=nbasis
     call dealloall
-    write(*,*)
     
     write(*,*) "Input wavefunction of monomer 1, e.g. C:\monomer1.fch"
     do while(.true.)
@@ -698,6 +705,10 @@ else !Using wavefunction file of dimer and monomer to do the analysis
         cobas1(1:nbasis,:)=CObasa
         iopsh1=0
     end if
+    
+    allocate(elemidxcomb(ncenter_org))
+    elemidxcomb(1:ncenter)=a%index
+    ncenterfrag1=ncenter
     call dealloall
     
     write(*,*)
@@ -710,6 +721,13 @@ else !Using wavefunction file of dimer and monomer to do the analysis
     end do
     call readinfile(monofile2,1)
     write(*,"(' The number of basis functions in monomer 2',i10)") nbasis
+    if (nbasisall/=nbasis1+nbasis) then
+        write(*,"(a)") " Error: Sum of number of basis functions in the two monomers is inequivalent to that of the complex!"
+        write(*,*) "Press ENTER button to exit"
+        read(*,*)
+        return
+    end if
+    
     nmo2=nmo
 	allocate(cobas2(nbasisall,nmo))
     cobas2=0
@@ -723,7 +741,20 @@ else !Using wavefunction file of dimer and monomer to do the analysis
         cobas2(nbasis1+1:,:)=CObasa
         iopsh2=0
     end if
+    elemidxcomb(ncenterfrag1+1:)=a%index
     call dealloall
+    
+    !Check correspondence of fragments and dimer
+    do iatm=1,ncenter_org
+	    if (elemidxcomb(iatm)/=a_org(iatm)%index) then
+		    write(*,"(/,a)") " Error: The sequence of the atoms in the fragments is not consistent with that in complex, the result will be meaningless! Possible reasons:"
+		    write(*,"(a)") " 1 The fragment coordinates were not directly extracted from complex coordinate"
+		    write(*,"(a)") " 2 The loading sequence of the fragments is not identical to occurrence sequence of the fragments in complex"
+		    write(*,*) "Press ENTER button to exit"
+		    read(*,*)
+		    return
+	    end if
+    end do
     
     write(*,*)
     write(*,*) "Reloading the file initially loaded..."
@@ -1506,7 +1537,6 @@ write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per ce
 call gen1cintgrid(gridatmorg,iradcut)
 
 call walltime(iwalltime1)
-CALL CPU_TIME(time_begin)
 
 intval=0
 intvalold=0
@@ -1548,9 +1578,8 @@ do iatm=1,ncenter
 	intvalold=intval
 end do
 
-CALL CPU_TIME(time_end)
 call walltime(iwalltime2)
-write(*,"(' Calculation took up CPU time',f12.2,'s, wall clock time',i10,'s')") time_end-time_begin,iwalltime2-iwalltime1
+write(*,"(' Calculation took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 write(*,*)
 if (ispecial==0) then
 	write(*,"(' Final result:',f20.10)") intval(1)
@@ -1644,7 +1673,7 @@ do while(.true.)
 	intval=0
 	cenpos=0
 	do iatm=1,ncenter
-		write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+        call showprog(iatm,ncenter)
 		gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
 		gridatm%y=gridatmorg%y+a(iatm)%y
 		gridatm%z=gridatmorg%z+a(iatm)%z
@@ -2574,7 +2603,7 @@ do while (.true.)
 		end do
 		write(*,*) "Note: The units of the distances are Angstrom"
 		write(*,*)
-		write(*,*) "If output above data to result.txt in current folder? (y/n)"
+		write(*,*) "If outputting above data to result.txt in current folder? (y/n)"
 		read(*,*) selectyn
 		if (selectyn=='y'.or.selectyn=='Y') then
 			open(10,file="result.txt",status="replace")
@@ -3361,7 +3390,7 @@ RMSE=dsqrt(RMSE/nfuncfitpt)
 write(*,"(' RMSE:',f12.6,'   RRMSE:',f12.6)") RMSE,RRMSE
 
 write(*,*)
-write(*,"(a)") " If output coordinates and function value of all fitting points to funcfitpt.txt in current folder? (y/n)"
+write(*,"(a)") " If outputting coordinates and function value of all fitting points to funcfitpt.txt in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=="Y") then
 	open(10,file="funcfitpt.txt",status="replace")
@@ -3390,12 +3419,15 @@ do while(.true.)
 	write(*,*) "e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will be considered"
 	write(*,*) "Input ""all"" will analyze the whole system"
 	write(*,*) "Input ""size"" will report size information of the whole system"
+	write(*,*) "Input ""dist"" can measure distance between two specific fragments"
 	write(*,*) "Input q can exit"
 	read(*,"(a)") c2000tmp
 	if (c2000tmp(1:1)=='q'.or.c2000tmp(1:1)=='Q') then
 		exit
 	else if (c2000tmp(1:4)=='size') then
 		call calcmolsize
+	else if (c2000tmp(1:4)=='dist') then
+		call calcfragdist
 	else
 		if (allocated(calcatom)) deallocate(calcatom)
 		if (index(c2000tmp,"all")/=0) then
@@ -3668,6 +3700,67 @@ do while(.true.)
 end do
 end subroutine
 
+!!------ Calculate distance between two fragments
+subroutine calcfragdist
+use util
+use defvar
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer fr1(ncenter),fr2(ncenter)
+write(*,*) "Input atom indices for fragment 1, e.g. 3,5-8,15-20"
+read(*,"(a)") c2000tmp
+call str2arr(c2000tmp,nfr1,fr1)
+write(*,*) "Input atom indices for fragment 2, e.g. 3,5-8,15-20"
+read(*,"(a)") c2000tmp
+call str2arr(c2000tmp,nfr2,fr2)
+
+distmin=1D10
+distmax=0
+do idx=1,nfr1
+    iatm=fr1(idx)
+    do jdx=1,nfr2
+        jatm=fr2(jdx)
+        dist=distmat(iatm,jatm)
+        if (dist<distmin) then
+            distmin=dist
+            minatm1=iatm
+            minatm2=jatm
+        end if
+        if (dist>distmax) then
+            distmax=dist
+            maxatm1=iatm
+            maxatm2=jatm
+        end if
+    end do
+end do
+
+write(*,"(' Minimum distance:',f10.4,' Angstrom, between',i6,'(',a,') and',i6,'(',a,')')") distmin*b2a,minatm1,a(minatm1)%name,minatm2,a(minatm2)%name
+write(*,"(' Maximum distance:',f10.4,' Angstrom, between',i6,'(',a,') and',i6,'(',a,')')") distmax*b2a,maxatm1,a(maxatm1)%name,maxatm2,a(maxatm2)%name
+
+gc1x=sum(a(fr1(1:nfr1))%x)/nfr1
+gc1y=sum(a(fr1(1:nfr1))%y)/nfr1
+gc1z=sum(a(fr1(1:nfr1))%z)/nfr1
+gc2x=sum(a(fr2(1:nfr2))%x)/nfr2
+gc2y=sum(a(fr2(1:nfr2))%y)/nfr2
+gc2z=sum(a(fr2(1:nfr2))%z)/nfr2
+write(*,"(' Geometry center of fragment 1 (X/Y/Z):',3f10.4,' Angstrom')") gc1x*b2a,gc1y*b2a,gc1z*b2a
+write(*,"(' Geometry center of fragment 2 (X/Y/Z):',3f10.4,' Angstrom')") gc2x*b2a,gc2y*b2a,gc2z*b2a
+write(*,"(' Distance between the two geometry centers:',f10.4,' Angstrom')") dsqrt((gc1x-gc2x)**2+(gc1y-gc2y)**2+(gc1z-gc2z)**2)*b2a
+fr1mass=sum(atmwei(a(fr1(1:nfr1))%index))
+cm1x=sum(a(fr1(1:nfr1))%x*atmwei(a(fr1(1:nfr1))%index))/fr1mass
+cm1y=sum(a(fr1(1:nfr1))%y*atmwei(a(fr1(1:nfr1))%index))/fr1mass
+cm1z=sum(a(fr1(1:nfr1))%z*atmwei(a(fr1(1:nfr1))%index))/fr1mass
+fr2mass=sum(atmwei(a(fr2(1:nfr2))%index))
+cm2x=sum(a(fr2(1:nfr2))%x*atmwei(a(fr2(1:nfr2))%index))/fr2mass
+cm2y=sum(a(fr2(1:nfr2))%y*atmwei(a(fr2(1:nfr2))%index))/fr2mass
+cm2z=sum(a(fr2(1:nfr2))%z*atmwei(a(fr2(1:nfr2))%index))/fr2mass
+write(*,"(' Mass center of fragment 1 (X/Y/Z):',3f10.4,' Angstrom')") cm1x*b2a,cm1y*b2a,cm1z*b2a
+write(*,"(' Mass center of fragment 2 (X/Y/Z):',3f10.4,' Angstrom')") cm2x*b2a,cm2y*b2a,cm2z*b2a
+write(*,"(' Distance between the two mass centers:',f10.4,' Angstrom')") dsqrt((cm1x-cm2x)**2+(cm1y-cm2y)**2+(cm1z-cm2z)**2)*b2a
+end subroutine
+
+
+
 
 
 !! ------------ Generate promolecular wavefunction of a molecule consisted of several fragment wavefunctions
@@ -3923,7 +4016,7 @@ do iatm=1,ncenter
 	HFforce_ele(iatm,1)=(eleesp(a(iatm)%x+diff,a(iatm)%y,a(iatm)%z)-eleesp(a(iatm)%x-diff,a(iatm)%y,a(iatm)%z))/(2*diff)
 	HFforce_ele(iatm,2)=(eleesp(a(iatm)%x,a(iatm)%y+diff,a(iatm)%z)-eleesp(a(iatm)%x,a(iatm)%y-diff,a(iatm)%z))/(2*diff)
 	HFforce_ele(iatm,3)=(eleesp(a(iatm)%x,a(iatm)%y,a(iatm)%z+diff)-eleesp(a(iatm)%x,a(iatm)%y,a(iatm)%z-diff))/(2*diff)
-	HFforce_ele(iatm,:)=-HFforce_ele(iatm,:)*a(iatm)%charge !force is negative of gradient(1st derivative)
+	HFforce_ele(iatm,:)=-HFforce_ele(iatm,:)*a(iatm)%charge !Force is negative of gradient (1st derivative)
 	write(*,"(i5,'(',a,')',4f16.8)") iatm,a(iatm)%name,HFforce_ele(iatm,:),dsqrt(sum(HFforce_ele(iatm,:)**2))
 end do
 
@@ -4074,9 +4167,9 @@ use GUI
 use function
 use util
 implicit real*8 (a-h,o-z)
-character keywords*200,c200tmp*200,gjfname*200,selectyn
+character keywords*200,c200tmp*200,inpname*200,selectyn
 integer charge(4),spin(4) !Charge and spin multiplicity for N,N+1,N-1 states
-integer :: iwcubic=0
+integer :: iwcubic=0,iQCprog=1
 real*8 atmchg(ncenter,3) !Hirshfeld charges of N,N+1,N-1 states
 real*8 ene(4),E_HOMO(4) !Energy and E_HOMO of N,N+1,N-1 states
 real*8 atmfneg(ncenter),atmfpos(ncenter),atmf0(ncenter),atmCDD(ncenter)
@@ -4091,11 +4184,13 @@ cubfac=1D0
 do while(.true.)
     write(*,*)
     write(*,*) "---- Calculate various quantities in conceptual density functional theory ----"
+    if (iQCprog==1) write(*,*) "-2 Choose the quantum chemistry program used in option 1, current: Gaussian"
+    if (iQCprog==2) write(*,*) "-2 Choose the quantum chemistry program used in option 1, current: ORCA"
     if (iwcubic==0) write(*,*) "-1 Toggle calculating w_cubic electrophilicity index by option 2, current: No"
     if (iwcubic==1) write(*,*) "-1 Toggle calculating w_cubic electrophilicity index by option 2, current: Yes"
     write(*,*) "0 Return"
-    if (iwcubic==0) write(*,*) "1 Generate .wfn files for N, N+1, N-1 electrons states"
-    if (iwcubic==1) write(*,*) "1 Generate .wfn files for N, N+1, N-1, N-2 electrons states"
+    if (iwcubic==0) write(*,*) "1 Generate .wfn files for N, N+1, N-1 electronic states"
+    if (iwcubic==1) write(*,*) "1 Generate .wfn files for N, N+1, N-1, N-2 electronic states"
     if (iwcubic==0) write(*,*) "2 Calculate various quantitative indices"
     if (iwcubic==1) write(*,*) "2 Calculate various quantitative indices including w_cubic"
     write(*,*) "3 Calculate grid data of Fukui function and dual descriptor"
@@ -4105,17 +4200,24 @@ do while(.true.)
     write(*,*) "7 Calculate grid data of OW Fukui function and OW dual descriptor"
     read(*,*) isel
     
-    if (isel==-1) then
+        
+    if (isel==-2) then
+        write(*,*) "Select the program for which the input file will be generated by option 1"
+        write(*,*) "1 Gaussian"
+        write(*,*) "2 ORCA"
+        read(*,*) iQCprog
+    else if (isel==-1) then
         if (iwcubic==1) then
             iwcubic=0
         else
             iwcubic=1
         end if
     else if (isel==2.or.isel==3) then
+        alivewfn=.true.
         inquire(file="N.wfn",exist=alivewfn(1))
         inquire(file="N+1.wfn",exist=alivewfn(2))
         inquire(file="N-1.wfn",exist=alivewfn(3))
-        if (iwcubic==1) inquire(file="N-2.wfn",exist=alivewfn(3))
+        if (iwcubic==1) inquire(file="N-2.wfn",exist=alivewfn(4))
         if (any(alivewfn==.false.)) then
             if (iwcubic==0) write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn and N-1.wfn must all be presented in current folder!"
             if (iwcubic==1) write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn, N-1.wfn and N-2.wfn must all be presented in current folder!"
@@ -4129,129 +4231,181 @@ do while(.true.)
         return
         
     else if (isel==1) then
-        write(*,*) "Input Gaussian keywords used for single point task, e.g. PBE1PBE/def2SVP"
-        write(*,*) "You can also meantime add some keywords for facilitating SCF convergence"
-        write(*,*) "If press ENTER button directly, B3LYP/6-31G* will be employed"
-        read(*,"(a)") keywords
-        if (keywords==" ") keywords="B3LYP/6-31G*"
-        c200tmp=keywords
-        if (index(keywords,"gen")/=0) then
-            inquire(file="basis.txt",exist=alive)
-            if (.not.alive) then
-                write(*,*) "Error: ""gen"" keyword is found, but basis.txt cannot be found in current folder!"
-                write(*,*) "Press ENTER button to exit"
-                read(*,*)
-                exit
-            end if
-        end if
-        !"nosymm" is not absolutely needed, however, because Gaussian may move the coordinate, the final coordinate in the resulting .wfn
-        !may be different to the coordinate in the firstly loaded file, therefore add nosymm to guarantee the coordinate consistency
-        keywords="#P "//trim(c200tmp)//" out=wfn nosymm"
-        
-        write(*,*) "Input the net charge and spin multiplicity for N electrons state, e.g. 0 1"
-        if (iwcubic==0) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2) and (1 2) will be employed for N, N+1 and N-1 states, respectively"
-        if (iwcubic==1) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2), (1 2) and (2,1) will be employed for N, N+1, N-1 and N-2 states, respectively"
-        read(*,"(a)") c200tmp
-        if (c200tmp==" ") then
-            charge(1)=0;spin(1)=1
-            charge(2)=-1;spin(2)=2
-            charge(3)=1;spin(3)=2
-            charge(4)=2;spin(4)=1
-        else
-            read(c200tmp,*) charge(1),spin(1)
-            write(*,*) "Input the net charge and spin multiplicity for N+1 electrons state, e.g. -1 2"
-            read(*,*) charge(2),spin(2)
-            write(*,*) "Input the net charge and spin multiplicity for N-1 electrons state, e.g. 1 2"
-            read(*,*) charge(3),spin(3)
-            if (iwcubic==1) then
-                write(*,*) "Input the net charge and spin multiplicity for N-2 electrons state, e.g. 2 1"
-                read(*,*) charge(4),spin(4)
-            end if
-        end if
-        
-        !Generate .gjf for N, N+1, N-1 states
-        nstates=3
-        if (iwcubic==1) nstates=4
-        do istate=1,nstates
-            if (istate==1) gjfname="N.gjf"
-            if (istate==2) gjfname="N+1.gjf"
-            if (istate==3) gjfname="N-1.gjf"
-            if (istate==4) gjfname="N-2.gjf"
-            write(*,*) "Generating "//trim(gjfname)//"..."
-        
-            open(10,file=gjfname)
-            write(10,"(a)") trim(keywords)
-            write(10,*)
-            write(10,"(a)") "Generated by Multiwfn"
-            write(10,*)
-            write(10,"(2i2)") charge(istate),spin(istate)
-            do iatm=1,ncenter
-	            write(10,"(a,1x,3f14.8)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
-            end do
+        if (iQCprog==1) then
+            write(*,*) "Input Gaussian keywords used for single point task, e.g. PBE1PBE/def2SVP"
+            write(*,*) "You can also meantime add some keywords for facilitating SCF convergence"
+            write(*,*) "If press ENTER button directly, B3LYP/6-31G* will be employed"
+            read(*,"(a)") keywords
+            if (keywords==" ") keywords="B3LYP/6-31G*"
+            c200tmp=keywords
             if (index(keywords,"gen")/=0) then
-                open(11,file="basis.txt")
-                write(10,*)
-                do while(.true.)
-                    read(11,"(a)",iostat=ierror) c200tmp
-                    if (ierror/=0.or.c200tmp==" ") exit
-                    write(10,"(a)") trim(c200tmp)
-                end do
-                close(11)
-            end if
-            write(10,*)
-            if (istate==1) write(10,"(a)") "N.wfn"
-            if (istate==2) write(10,"(a)") "N+1.wfn"
-            if (istate==3) write(10,"(a)") "N-1.wfn"
-            if (istate==4) write(10,"(a)") "N-2.wfn"
-            write(10,*)
-            write(10,*)
-            close(10)
-        end do
-        write(*,*) "Gaussian input files for all states have been generated in current folder"
-        write(*,*)
-        write(*,"(a)") " Do you want to invoke Gaussian to calculate these .gjf files now to yield .wfn &
-        files, and then automatically delete the .gjf and .out files? (y/n)"
-        read(*,*) selectyn
-        if (selectyn=='y'.or.selectyn=='Y') then
-            call runGaussian("N.gjf",isuccess1)
-            if (isuccess1==1) then
-                call delfile("N.gjf N.out")
-                write(*,"(a,/)") " Now current folder should contain N.wfn"
-            else
-                write(*,"(a,/)") " The task has failed! Please manually check N.gjf and N.out"
-            end if
-            call runGaussian("N+1.gjf",isuccess2)
-            if (isuccess2==1) then
-                call delfile("N+1.gjf N+1.out")
-                write(*,"(a,/)") " Now current folder should contain N+1.wfn"
-            else
-                write(*,"(a,/)") " The task has failed! Please manually check N+1.gjf and N+1.out"
-            end if
-            call runGaussian("N-1.gjf",isuccess3)
-            if (isuccess3==1) then
-                call delfile("N-1.gjf N-1.out")
-                write(*,"(a,/)") " Now current folder should contain N-1.wfn"
-            else
-                write(*,"(a,/)") " The task has failed! Please manually check N-1.gjf and N-1.out"
-            end if
-            if (iwcubic==1) then
-                call runGaussian("N-2.gjf",isuccess4)
-                if (isuccess4==1) then
-                    call delfile("N-2.gjf N-2.out")
-                    write(*,"(a,/)") " Now current folder should contain N-2.wfn"
-                else
-                    write(*,"(a,/)") " The task has failed! Please manually check N-2.gjf and N-2.out"
+                inquire(file="basis.txt",exist=alive)
+                if (.not.alive) then
+                    write(*,*) "Error: ""gen"" keyword is found, but basis.txt cannot be found in current folder!"
+                    write(*,*) "Press ENTER button to exit"
+                    read(*,*)
+                    exit
                 end if
             end if
-            if (iwcubic==0.and.isuccess1*isuccess2*isuccess3==1) then
-                write(*,"(a)") " Since N.wfn, N+1.wfn and N-1.wfn have been successfully generated, &
-                now you can use option 2 or 3 to start the analysis"
-            else if (iwcubic==1.and.isuccess1*isuccess2*isuccess3*isuccess4==1) then
-                write(*,"(a)") " Since N.wfn, N+1.wfn, N-1.wfn and N-2.wfn have been successfully generated, &
-                now you can use option 2 or 3 to start the analysis"
+            !"nosymm" is not absolutely needed, however, because Gaussian may move the coordinate, the final coordinate in the resulting .wfn
+            !may be different to the coordinate in the firstly loaded file, therefore add nosymm to guarantee the coordinate consistency
+            keywords="#P "//trim(c200tmp)//" out=wfn nosymm"
+        
+            write(*,*) "Input the net charge and spin multiplicity for N electrons state, e.g. 0 1"
+            if (iwcubic==0) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2) and (1 2) will be employed for N, N+1 and N-1 states, respectively"
+            if (iwcubic==1) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2), (1 2) and (2,1) will be employed for N, N+1, N-1 and N-2 states, respectively"
+            read(*,"(a)") c200tmp
+            if (c200tmp==" ") then
+                charge(1)=0;spin(1)=1
+                charge(2)=-1;spin(2)=2
+                charge(3)=1;spin(3)=2
+                charge(4)=2;spin(4)=1
             else
-                write(*,"(a)") " Since one or more .wfn file was not successfully generated, the analysis cannot be conducted currently"
+                read(c200tmp,*) charge(1),spin(1)
+                write(*,*) "Input the net charge and spin multiplicity for N+1 electrons state, e.g. -1 2"
+                read(*,*) charge(2),spin(2)
+                write(*,*) "Input the net charge and spin multiplicity for N-1 electrons state, e.g. 1 2"
+                read(*,*) charge(3),spin(3)
+                if (iwcubic==1) then
+                    write(*,*) "Input the net charge and spin multiplicity for N-2 electrons state, e.g. 2 1"
+                    read(*,*) charge(4),spin(4)
+                end if
             end if
+        
+            !Generate .gjf for N, N+1, N-1 states
+            nstates=3
+            if (iwcubic==1) nstates=4
+            do istate=1,nstates
+                if (istate==1) inpname="N.gjf"
+                if (istate==2) inpname="N+1.gjf"
+                if (istate==3) inpname="N-1.gjf"
+                if (istate==4) inpname="N-2.gjf"
+                write(*,*) "Generating "//trim(inpname)//"..."
+        
+                open(10,file=inpname)
+                write(10,"(a)") trim(keywords)
+                write(10,*)
+                write(10,"(a)") "Generated by Multiwfn"
+                write(10,*)
+                write(10,"(2i2)") charge(istate),spin(istate)
+                do iatm=1,ncenter
+	                write(10,"(a,1x,3f14.8)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+                end do
+                if (index(keywords,"gen")/=0) then
+                    open(11,file="basis.txt")
+                    write(10,*)
+                    do while(.true.)
+                        read(11,"(a)",iostat=ierror) c200tmp
+                        if (ierror/=0.or.c200tmp==" ") exit
+                        write(10,"(a)") trim(c200tmp)
+                    end do
+                    close(11)
+                end if
+                write(10,*)
+                if (istate==1) write(10,"(a)") "N.wfn"
+                if (istate==2) write(10,"(a)") "N+1.wfn"
+                if (istate==3) write(10,"(a)") "N-1.wfn"
+                if (istate==4) write(10,"(a)") "N-2.wfn"
+                write(10,*)
+                write(10,*)
+                close(10)
+            end do
+            write(*,*) "Gaussian input files for all states have been generated in current folder"
+            write(*,*)
+            write(*,"(a)") " Do you want to invoke Gaussian to calculate these .gjf files now to yield .wfn &
+            files, and then automatically delete the .gjf and .out files? (y/n)"
+            read(*,*) selectyn
+            if (selectyn=='y'.or.selectyn=='Y') then
+                call runGaussian("N.gjf",isuccess1)
+                if (isuccess1==1) then
+                    call delfile("N.gjf N.out")
+                    write(*,"(a,/)") " Now current folder should contain N.wfn"
+                else
+                    write(*,"(a,/)") " The task has failed! Please manually check N.gjf and N.out"
+                end if
+                call runGaussian("N+1.gjf",isuccess2)
+                if (isuccess2==1) then
+                    call delfile("N+1.gjf N+1.out")
+                    write(*,"(a,/)") " Now current folder should contain N+1.wfn"
+                else
+                    write(*,"(a,/)") " The task has failed! Please manually check N+1.gjf and N+1.out"
+                end if
+                call runGaussian("N-1.gjf",isuccess3)
+                if (isuccess3==1) then
+                    call delfile("N-1.gjf N-1.out")
+                    write(*,"(a,/)") " Now current folder should contain N-1.wfn"
+                else
+                    write(*,"(a,/)") " The task has failed! Please manually check N-1.gjf and N-1.out"
+                end if
+                if (iwcubic==1) then
+                    call runGaussian("N-2.gjf",isuccess4)
+                    if (isuccess4==1) then
+                        call delfile("N-2.gjf N-2.out")
+                        write(*,"(a,/)") " Now current folder should contain N-2.wfn"
+                    else
+                        write(*,"(a,/)") " The task has failed! Please manually check N-2.gjf and N-2.out"
+                    end if
+                end if
+                if (iwcubic==0.and.isuccess1*isuccess2*isuccess3==1) then
+                    write(*,"(a)") " Since N.wfn, N+1.wfn and N-1.wfn have been successfully generated, &
+                    now you can use option 2 or 3 to start the analysis"
+                else if (iwcubic==1.and.isuccess1*isuccess2*isuccess3*isuccess4==1) then
+                    write(*,"(a)") " Since N.wfn, N+1.wfn, N-1.wfn and N-2.wfn have been successfully generated, &
+                    now you can use option 2 or 3 to start the analysis"
+                else
+                    write(*,"(a)") " Since one or more .wfn file was not successfully generated, the analysis cannot be conducted currently"
+                end if
+            end if
+            
+        else if (iQCprog==2) then !QC
+            write(*,*) "Input ORCA keywords used for single point task, e.g. PBE0 def2-TZVP RIJK def2/JK"
+            write(*,*) "You can also meantime add some keywords for facilitating SCF convergence"
+            write(*,*) "If press ENTER button directly, B3LYP/G 6-31G* with RIJCOSX will be employed"
+            read(*,"(a)") keywords
+            if (keywords==" ") keywords="B3LYP/G 6-31G* RIJCOSX autoaux"
+        
+            write(*,*) "Input the net charge and spin multiplicity for N electrons state, e.g. 0 1"
+            if (iwcubic==0) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2) and (1 2) will be employed for N, N+1 and N-1 states, respectively"
+            if (iwcubic==1) write(*,"(a)") " Note: If pressing ENTER button directly, (0 1), (-1 2), (1 2) and (2,1) will be employed for N, N+1, N-1 and N-2 states, respectively"
+            read(*,"(a)") c200tmp
+            if (c200tmp==" ") then
+                charge(1)=0;spin(1)=1
+                charge(2)=-1;spin(2)=2
+                charge(3)=1;spin(3)=2
+                charge(4)=2;spin(4)=1
+            else
+                read(c200tmp,*) charge(1),spin(1)
+                write(*,*) "Input the net charge and spin multiplicity for N+1 electrons state, e.g. -1 2"
+                read(*,*) charge(2),spin(2)
+                write(*,*) "Input the net charge and spin multiplicity for N-1 electrons state, e.g. 1 2"
+                read(*,*) charge(3),spin(3)
+                if (iwcubic==1) then
+                    write(*,*) "Input the net charge and spin multiplicity for N-2 electrons state, e.g. 2 1"
+                    read(*,*) charge(4),spin(4)
+                end if
+            end if
+        
+            !Generate .inp for N, N+1, N-1 states
+            nstates=3
+            if (iwcubic==1) nstates=4
+            do istate=1,nstates
+                if (istate==1) inpname="N.inp"
+                if (istate==2) inpname="N+1.inp"
+                if (istate==3) inpname="N-1.inp"
+                if (istate==4) inpname="N-2.inp"
+                write(*,*) "Generating "//trim(inpname)//"..."
+                open(10,file=inpname)
+                write(10,"(a)") "! "//trim(keywords)//" aim"
+                write(10,"('* xyz ',2i3)") charge(istate),spin(istate)
+                do iatm=1,ncenter
+	                write(10,"(a,1x,3f14.8)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+                end do
+                write(10,"(a)") "*"
+                close(10)
+            end do
+            write(*,"(a)") " ORCA input files for all electronic states have been generated in current folder. &
+            Please manually run them by ORCA, and then put the generated .wfn files to current folder, so that &
+            options 2 and 3 can perform analyses based on them"
         end if
     
     else if (isel==2) then

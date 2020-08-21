@@ -9,9 +9,9 @@ do while(.true.)
 	write(*,*) "           ================ Bond order analysis ==============="
 	if (allocated(b)) then
 		if (allocated(frag1)) then
-			write(*,*) "-1 Redefine fragment 1 and 2 for option 1,3,4,7,8"
+			write(*,*) "-1 Redefine fragment 1 and 2 for options 1,3,4,7,8,10"
 		else
-			write(*,*) "-1 Define fragment 1 and 2 for option 1,3,4,7,8 (to be defined)"
+			write(*,*) "-1 Define fragment 1 and 2 for options 1,3,4,7,8,10 (to be defined)"
 		end if
 	end if
 	write(*,*) "0 Return"
@@ -26,6 +26,8 @@ do while(.true.)
 	write(*,*) "7 Fuzzy bond order analysis (FBO)"
 	write(*,*) "8 Laplacian bond order (LBO)"
 	write(*,*) "9 Decompose Wiberg bond order in NAO basis as atomic orbital pair contribution"
+    write(*,*) "10 Intrinsic bond strength index (IBSI)"
+    write(*,*) "11 AV1245 index (approximate multicenter bond order for large rings) and AVmin"
 	read(*,*) ibondana
 	if (.not.allocated(CObasa).and.(ibondana>=1.and.ibondana<=6)) then
 		write(*,"(a)") " ERROR: The input file you used does not contain basis function information! Please check Section 2.5 of the manual for explanation"
@@ -144,6 +146,10 @@ do while(.true.)
 		call intatomspace(2)
 	else if (ibondana==9) then
 		call decompWibergNAO
+	else if (ibondana==10) then
+        call IBSI
+    else if (ibondana==11) then
+        call AV1245
 	end if
 end do
 end subroutine
@@ -275,7 +281,7 @@ if (allocated(frag1)) then
 end if
 write(*,*)
 
-write(*,*) "If output bond order matrix to bndmat.txt in current folder? (y/n)"
+write(*,*) "If outputting bond order matrix to bndmat.txt in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
 	open(10,file="bndmat.txt",status="replace")
@@ -585,7 +591,7 @@ end subroutine
 !Shared by subroutine multicenter, multicenterNAO, AV1245 and others
 !MCBOtype=0, return the MCBO in usual manner
 !MCBOtype=1, return the averaged result of positive order and reverse order of inputted atoms
-!MCBOtype=1, return the MCBO calculated as Eq. 9 of the AV1245 paper, namely taking all permutation into account
+!MCBOtype=2, return the MCBO calculated as Eq. 9 of the AV1245 paper, namely taking all permutation into account
 !Note that for open-shell cases, the returned result should then be multiplied by a proper factor
 !  Input variables:
 !nbndcen: Actual number of atoms to be calculated
@@ -908,7 +914,7 @@ if (allocated(frag1)) then
 	write(*,*)
 end if
 
-write(*,*) "If output bond order matrix to bndmat.txt in current folder? (y/n)"
+write(*,*) "If outputting bond order matrix to bndmat.txt in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
 	open(10,file="bndmat.txt",status="replace")
@@ -1196,5 +1202,294 @@ do while(.true.)
 	end do
 	write(*,"(/,a,f8.4)") " Total Wiberg bond order:",bndord
 	deallocate(shcontri)
+end do
+end subroutine
+
+
+
+
+!!-----------------------------------
+!!------------ AV1245 ---------------
+!!-----------------------------------
+subroutine AV1245
+use defvar
+use util
+use NAOmod
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer,allocatable :: atmarr(:),atmarrorg(:)
+integer cenind(12),minidx(4)
+real*8,allocatable :: PSmat(:,:),PSmatA(:,:),PSmatB(:,:)
+
+iopsh=0
+if (allocated(CObasa)) then !Calculate AV1245 in original basis
+    if (allocated(Palpha)) then !Open shell
+        iopsh=1
+        allocate(PSmatA(nbasis,nbasis),PSmatB(nbasis,nbasis))
+        PSmatA=matmul(Palpha,Sbas)
+        PSmatB=matmul(Pbeta,Sbas)
+    else
+        allocate(PSmat(nbasis,nbasis))
+        PSmat=matmul(Ptot,Sbas)
+    end if
+    ifNAO=0
+else !Load NAO and DMNAO information
+    write(*,"(a)") " Basis information is not presented, therefore trying to load natural atomic orbital (NAO) information from input file"
+    open(10,file=filename,status="old")
+    call checkNPA(ifound);if (ifound==0) return
+    call loadNAOinfo
+    write(*,*) "Loading NAO information finished!"
+    call checkDMNAO(ifound);if (ifound==0) return
+    call loadDMNAO
+    close(10)
+    write(*,*) "Loading density matrix in NAO basis finished!"
+    write(*,*) "The AV1245 will be calculated based on NAOs"
+    if (iopshNAO==0) then
+        allocate(PSmat(numNAO,numNAO))
+        PSmat=DMNAO
+    else if (iopshNAO==1) then !Open shell
+        iopsh=1
+        allocate(PSmatA(numNAO,numNAO),PSmatB(numNAO,numNAO))
+        PSmatA=DMNAOa
+        PSmatB=DMNAOb
+    end if
+    nbasis=numNAO
+    ifNAO=1
+    !Move information from NAO variables to common variables, so that multi-center bond order routines could be used
+    if (allocated(basstart)) deallocate(basstart,basend)
+    allocate(basstart(ncenter),basend(ncenter))
+    basstart=NAOinit
+    basend=NAOend
+end if
+iMCBOtype_old=iMCBOtype
+iMCBOtype=2
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "                        ------- AV1245 and AVmin -------"
+    write(*,*) "Input index of the atoms in the order of connectivity, e.g. 2,3,7,18,19,20"
+    write(*,*) "To exit, input ""q"""
+    !When NAO information is loaded form NBO output file, geometry information is not available and cannot generate connectivity
+    if (ifNAO==0) write(*,"(a)") " Hint: If input ""d"" and press ENTER button, then you can input the indices in arbitrary order because the actual order &
+    will be automatically guessed, however in this case any atom should not connect to more than two atoms in the ring"
+    read(*,"(a)") c2000tmp
+    
+    if (index(c2000tmp,'q')/=0) then
+        exit
+    else if (index(c2000tmp,'d')/=0) then
+        if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
+        write(*,*)
+        write(*,*) "Input index of the atoms, the order is arbitrary"
+        write(*,*) "For example: 1,3-4,6-8,10-14"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,natm)
+        allocate(atmarr(natm),atmarrorg(natm))
+        call str2arr(c2000tmp,natm,atmarrorg)
+        !Reorganize the atmarrorg to correct sequence as atmarr according to connectivity
+        atmarr=0
+        atmarr(1)=atmarrorg(1)
+        inow=atmarr(1) !Current atom
+        atmarrorg(1)=0 !This atom has been picked out, so set to zero
+        do idx=2,natm
+            do jdx=1,natm
+                if (atmarrorg(jdx)==0) cycle
+                jatm=atmarrorg(jdx)
+                if (connmat(inow,jatm)/=0) then
+                    inow=jatm
+                    atmarr(idx)=inow
+                    atmarrorg(jdx)=0
+                    exit
+                end if
+            end do
+            if (jdx==natm+1) then
+                write(*,"(' Failed to determine connectivity of atom',i6)") inow
+                exit
+            end if
+        end do
+        deallocate(atmarrorg)
+        if (any(atmarr<=0)) then
+            write(*,"(a)") " Unfortunately, the order was not successfully recognized, you should manually input &
+            the atom indices according to connectivity"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            deallocate(atmarr)
+            cycle
+        else
+            write(*,*) "The order of the atoms in the ring has been successfully identified"
+            write(*,*)
+        end if
+    else
+        call str2arr(c2000tmp,natm)
+        allocate(atmarr(natm))
+        call str2arr(c2000tmp,natm,atmarr)
+    end if
+    
+    write(*,"(' Number of selected atoms:',i6)") natm
+    write(*,*) "Atomic sequence:"
+    write(*,"(12i6)") atmarr
+    write(*,*)
+    totval=0
+    ipos=1
+    AVmin=1D10
+    do while(.true.)
+        cenind(1)=atmarr(ipos)
+        if (ipos+1>natm) then
+            cenind(2)=atmarr(ipos+1-natm)
+        else
+            cenind(2)=atmarr(ipos+1)
+        end if
+        if (ipos+3>natm) then
+            cenind(3)=atmarr(ipos+3-natm)
+        else
+            cenind(3)=atmarr(ipos+3)
+        end if
+        if (ipos+4>natm) then
+            cenind(4)=atmarr(ipos+4-natm)
+        else
+            cenind(4)=atmarr(ipos+4)
+        end if
+        if (iopsh==0) then
+            call calcmultibndord(4,cenind,PSmat,nbasis,tmpval)
+        else
+            call calcmultibndord(4,cenind,PSmatA,nbasis,tmpvalA)
+            call calcmultibndord(4,cenind,PSmatB,nbasis,tmpvalB)
+            tmpval=8*(tmpvalA+tmpvalB) !8=2^(n-1)
+        end if
+        tmpval=tmpval/3 !Convert 4c-MCI to 4c-ESI according to Eq.10 of AV1245 paper
+        write(*,"(' 4-center electron sharing index of',4i6,':',f14.8)") cenind(1:4),tmpval
+        if (abs(tmpval)<AVmin) then
+            AVmin=abs(tmpval)
+            minidx(:)=cenind(1:4)
+        end if
+        totval=totval+tmpval
+        if (ipos==natm) exit
+        ipos=ipos+1
+    end do
+    
+    totval=totval/natm
+    write(*,"(/,a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000
+    write(*,"(a,f12.6,' (',4i5,')')") " AVmin times 1000 for the selected atoms is ",AVmin*1000,minidx(:)
+    !write(*,"(a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000*0.635 !mimic data of AV1245 paper
+    deallocate(atmarr)
+end do
+
+iMCBOtype=iMCBOtype_old
+end subroutine
+
+
+
+
+
+!!-----------------------------------------------------------------
+!!------------ Intrinsic bond strength index (IBSI) ---------------
+!!-----------------------------------------------------------------
+subroutine IBSI
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer atmlist(ncenter)
+integer :: iIGMtype
+real*8 atmpairdg(ncenter,ncenter),IBSImat(ncenter,ncenter),IBSIfrag
+real*8 :: refval_IGM=0.410297D0,refval_IGMH=0.500791D0 !They were calculated under perfect grid by setting reference value as 1.0
+real*8 :: distprintthres=3.5D0
+character c2000tmp*2000
+
+natmlist=ncenter
+forall(i=1:ncenter) atmlist(i)=i
+
+write(*,*)
+write(*,*) "Citation: J. Phys. Chem. A, 124, 1850 (2020)"
+if (allocated(b)) then
+    iIGMtype=2
+    refval=refval_IGMH
+    write(*,"(a)") " Note: The current reference value corresponds to H2 in &
+    experimental structure (0.74144 Ang) with density generated at B3LYP/6-311G** level"
+else
+    iIGMtype=1
+    refval=refval_IGM
+    write(*,"(a)") " Note: The current reference value corresponds to H2 in experimental structure (0.74144 Ang)"
+end if
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "           ---------- Intrinsic bond strength index (IBSI) ----------"
+    write(*,*) "0 Return"
+    write(*,*) "1 Start calculation"
+    if (iIGMtype==1) write(*,*) "2 Toggle type of IGM, current: IGM based on promolecular approximation"
+    if (iIGMtype==2) write(*,*) "2 Toggle type of IGM, current: IGM based on Hirshfeld partition (IGMH)"
+    if (natmlist==ncenter) then
+        write(*,*) "3 Input the range of the atoms to be taken into account, current: all"
+    else
+        write(*,"(a,i5,' atoms')") " 3 Input the range of the atoms to be taken into account, current:",natmlist
+    end if
+    write(*,"(a,f10.6)") " 4 Set reference value, current:",refval
+    write(*,"(a,f6.3,' Angstrom')") " 5 Set distance threshold for printing result, current: <",distprintthres
+    read(*,*) isel
+    if (isel==0) then
+        return
+    else if (isel==2) then
+        if (iIGMtype==1) then
+            if (.not.allocated(b)) then
+                write(*,"(a)") " Error: Your input file does not contain wavefunction information, &
+                therefore only the IGM based on promolecular approximation can be used"
+                write(*,*) "Press ENTER button to continue"
+                read(*,*)
+                cycle
+            end if
+            iIGMtype=2
+            refval=refval_IGMH
+            write(*,"(a)") " Note: The current reference value corresponds to H2 in &
+            experimental structure (0.74144 Ang) with density generated at B3LYP/6-311G** level"
+        else if (iIGMtype==2) then
+            iIGMtype=1
+            refval=refval_IGM
+            write(*,"(a)") " Note: The current reference value corresponds to H2 in experimental structure (0.74144 Ang)"
+        end if
+    else if (isel==3) then
+        write(*,*) "Input index of the atoms to be considered in the calculation, e.g. 2,3,7-10"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,natmlist,atmlist)
+    else if (isel==4) then
+        write(*,*) "Input reference value, e.g. 0.324"
+        read(*,*) refval
+    else if (isel==5) then
+        write(*,*) "Input distance threshold for printing, e.g. 3.0"
+        write(*,*) "Note: If distance between two atoms is larger than this value, then the corresponding data will not be printed"
+        read(*,*) distprintthres
+        
+    else if (isel==1) then
+        call calcatmpairdg(iIGMtype,natmlist,atmlist,natmlist,atmlist,atmpairdg(1:natmlist,1:natmlist))
+        write(*,*)
+        write(*,"(a)") " Note: ""Dist"" is distance between the two atoms in Angstrom, Int(dg_pair) is the integral &
+        in the numerator of the IBSI formule (atom pair delta-g index)"
+        write(*,*)
+        do idx=1,natmlist
+            iatm=atmlist(idx)
+            do jdx=idx+1,natmlist
+                jatm=atmlist(jdx)
+                dist=distmat(iatm,jatm)*b2a
+                if (dist>distprintthres) cycle
+                IBSImat(idx,jdx)=atmpairdg(idx,jdx)/dist**2/refval
+                write(*,"(i5,'(',a,')',i5,'(',a,')  Dist:',f8.4,'   Int(dg_pair):',f8.5,'   IBSI:',f8.5)") &
+                iatm,a(iatm)%name,jatm,a(jatm)%name,dist,atmpairdg(idx,jdx),IBSImat(idx,jdx)
+            end do
+        end do
+        
+        !Between fragment
+        if (allocated(frag1)) then
+            if (natmlist==ncenter) then
+	            IBSIfrag=0
+	            do i=1,size(frag1)
+		            do j=1,size(frag2)
+			            IBSIfrag=IBSIfrag+IBSImat(frag1(i),frag2(j))
+		            end do
+	            end do
+	            write(*,"(/,' The total IBSI between fragment 1 and 2:',f10.5)") IBSIfrag
+            else
+                write(*,"(/,a)") " Note: IBSI between the two defined fragments is not shown because the range &
+                of the atoms to be taken into account is not all atoms"
+            end if
+        end if
+    end if
 end do
 end subroutine

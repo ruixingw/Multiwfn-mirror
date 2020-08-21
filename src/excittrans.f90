@@ -1,5 +1,5 @@
 !!! This module records electronic excitation information, shared by almost all electronic excitation analysis functions
-!The excitfilename,ifiletypeexc,nstates,allexcene,allexcmulti,allexcnorb are filled by "loadallexcinfo" routine
+!The excitfilename,ifiletypeexc,nstates,allexcene,allexcf,allexcmulti,allexcnorb are filled by "loadallexcinfo" routine
 !The allexcdir,allorbleft,allorbright,allexccoeff are filled by "loadallexccoeff" routine
 !All variables and arrays of user selected state is filled by "loadexccoeff"
 !Notice that "loadallexcinfo" routine must be invoked at least one time prior to using loadallexccoeff and loadexccoeff
@@ -9,9 +9,11 @@
 module excitinfo
 character :: excitfilename*200=" " !"D:\CM\my_program\Multiwfn\x\excittrans\4-Nitroaniline\4-Nitroaniline.out"
 integer :: ifiletypeexc !1=Gaussian output; 2=ORCA output; 3=Plain text file; 4=Firefly output file
+integer :: iORCAsTD=0 !1=ORCA with sTDA/sTDDFT, 0: Common ORCA TDA/TDDFT
 integer :: nstates=0 !The total number of excited states (for ORCA, if triplet keyword is used, only one set of spin multiplicity states is loaded)
 integer numexcgeom !The number of geometries in excited state optimization task of Gaussian/ORCA (1 corresponds to only one structure)
 real*8,allocatable :: allexcene(:) !Excitation energies
+real*8,allocatable :: allexcf(:) !Oscillator strength
 integer,allocatable :: allexcmulti(:) !Multiplicity of the states. 0 means the multiplicity is undefined (i.e. unrestricted reference state)
 integer,allocatable :: allexcnorb(:) !The number of MO pairs in the states
 !The last index in below arrays is the state index
@@ -19,7 +21,7 @@ integer,allocatable :: allexcdir(:,:) !1 means ->, 2 means <-
 integer,allocatable :: allorbleft(:,:),allorbright(:,:) !Denote the MO at the left/right side in the excitation data (beta MO i is recorded as nbasis+i)
 real*8,allocatable :: allexccoeff(:,:) !Coefficients of MO pairs
 !Below is information of an interesting excited state selected by user
-real*8 excene
+real*8 excene,excf
 integer excmulti,excnorb
 integer,allocatable :: excdir(:)
 integer,allocatable :: orbleft(:),orbright(:)
@@ -113,7 +115,7 @@ use excitinfo
 use util
 implicit real*8 (a-h,o-z)
 integer ioutinfo
-character c80tmp*80,transmodestr*200,selectyn
+character c80tmp*80,transmodestr*200,selectyn,c200tmp*200
 !ifiletypeexc=1: Gaussian output file
 !ifiletypeexc=2: ORCA output file
 !ifiletypeexc=3: plain text file
@@ -237,11 +239,18 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 	else if (ifiletypeexc==2) then !ORCA output file
 		call loclabel(10,"Number of roots to be determined",ifound)
 		if (ifound==0) then
-			write(*,"(a)") "Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT task, &
-			therefore cannot be used for present analysis. Please read Multiwfn manual Section 3.21 carefully"
-			write(*,*) "Press ENTER button to return"
-			read(*,*)
-			return
+            call loclabel(10,"spectral range up to (eV)",ifound)
+            if (ifound==1) then
+                call loclabel(10,"roots found,",ifound,0)
+                read(10,*) nstates
+                iORCAsTD=1
+            else
+			    write(*,"(a)") "Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT/sTDA/sTDDFT task, &
+			    therefore cannot be used for present analysis. Please read Multiwfn manual Section 3.21 carefully"
+			    write(*,*) "Press ENTER button to return"
+			    read(*,*)
+			    return
+            end if
         else
             read(10,"(50x,i7)") nstates
 		end if
@@ -290,7 +299,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
         end if
     end if
     write(*,*) 
-	allocate(allexcene(nstates),allexcmulti(nstates),allexcnorb(nstates))
+	allocate(allexcene(nstates),allexcf(nstates),allexcmulti(nstates),allexcnorb(nstates))
 	allexcnorb=0
 	
 	!Load excitation energy, multiplicity, the number of MO pairs of each excited state
@@ -314,6 +323,8 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 				if (transmodestr(i:i+1)=="eV") exit
 			end do
 			read(transmodestr(i-10:i-1),*) allexcene(iexc)
+            itmp=index(transmodestr,'f=')
+            read(transmodestr(itmp+2:),*) allexcf(iexc)
 			!Count how many orbital pairs are involved in this excitation
 			do while(.true.)
 				read(10,"(a)") c80tmp
@@ -326,64 +337,74 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 				end if
 			end do
 		end do
+        
 	else if (ifiletypeexc==2) then !ORCA output file
-		imultisel=1
-		allexcmulti=1 !Multiplicity of all excited states are firstly assumed to be singlet
-		if (wfntype==0.or.wfntype==3) then
-			call loclabel(10,"Generation of triplets") !When triplets=on, ORCA calculate both singlet and triplet excited state
-			read(10,"(a)") c80tmp
-			if (index(c80tmp," on ")/=0) then
-				write(*,*) "Load which kind of excited states?"
-				write(*,*) "1: Singlet   3: Triplet"
-				read(*,*) imultisel
-				allexcmulti=imultisel
-			end if
-		end if
-        rewind(10)
-        do igeom=1,numexcgeom
-            call loclabel(10,"Number of roots to be determined",ifound,0)
+        if (iORCAsTD==0) then !Regular case
+		    imultisel=1
+		    allexcmulti=1 !Multiplicity of all excited states are firstly assumed to be singlet
+		    if (wfntype==0.or.wfntype==3) then
+			    call loclabel(10,"Generation of triplets") !When triplets=on, ORCA calculate both singlet and triplet excited state
+			    read(10,"(a)") c80tmp
+			    if (index(c80tmp," on ")/=0) then
+				    write(*,*) "Load which kind of excited states?"
+				    write(*,*) "1: Singlet   3: Triplet"
+				    read(*,*) imultisel
+				    allexcmulti=imultisel
+			    end if
+		    end if
+            rewind(10)
+            do igeom=1,numexcgeom
+                call loclabel(10,"Number of roots to be determined",ifound,0)
+                read(10,*)
+            end do
+		    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
+		    if (imultisel==3) then
+			    read(10,*)
+			    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
+		    end if
+		    do iexc=1,nstates
+			    call loclabel(10,"STATE",ifound,0)
+			    read(10,"(a)") transmodestr
+			    do i=10,70
+				    if (transmodestr(i:i+1)=="eV") exit
+			    end do
+			    read(transmodestr(i-10:i-1),*) allexcene(iexc)
+			    !Count how many orbital pairs are involved in this excitation
+			    do while(.true.)
+				    read(10,"(a)") c80tmp
+				    if (index(c80tmp,'>')/=0) then
+					    allexcnorb(iexc)=allexcnorb(iexc)+1
+				    else if (index(c80tmp,'<')/=0) then
+					    allexcnorb(iexc)=allexcnorb(iexc)+1
+				    else
+					    exit
+				    end if
+			    end do
+		    end do
+            call loclabel(10,"ABSORPTION SPECTRUM",ifound,0) !Load oscillator strengths
+            call skiplines(10,5)
+		    do iexc=1,nstates
+                read(10,*) rnouse,rnouse,rnouse,allexcf(iexc)
+            end do
+        else if (iORCAsTD==1) then !sTDA or sTDDFT
+            !If triplets=true, at least for ORCA 4.2, singlet and triplets are not outputted with clear labels, and transition strengths are always zero
+            !In this case their information are loaded together
+		    allexcmulti=1
+            if (wfntype==0) then
+                call loclabel(10,"calculate triplets",ifound)
+                if (ifound==1) allexcmulti=0 !Spin multiplicity is undefined
+            else
+                allexcmulti=0 !Spin multiplicity is undefined due to unrestricted reference
+            end if
+            call loclabel(10,"state   eV")
             read(10,*)
-        end do
-		call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
-		if (imultisel==3) then
-			read(10,*)
-			call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
-		end if
-		do iexc=1,nstates
-			call loclabel(10,"STATE",ifound,0)
-			read(10,"(a)") transmodestr
-			do i=10,70
-				if (transmodestr(i:i+1)=="eV") exit
-			end do
-			read(transmodestr(i-10:i-1),*) allexcene(iexc)
-			!Count how many orbital pairs are involved in this excitation
-			do while(.true.)
-				read(10,"(a)") c80tmp
-				if (index(c80tmp,'>')/=0) then
-					allexcnorb(iexc)=allexcnorb(iexc)+1
-				else if (index(c80tmp,'<')/=0) then
-					allexcnorb(iexc)=allexcnorb(iexc)+1
-				else
-					exit
-				end if
-			end do
-		end do
-	else if (ifiletypeexc==3) then !Plain text file
-		rewind(10)
-		do iexc=1,nstates
-			call loclabel(10,"Excited State",ifound,0)
-			read(10,*) c80tmp,c80tmp,inouse,allexcmulti(iexc),allexcene(iexc)
-			!Count how many orbital pairs are involved in this excitation
-			do while(.true.)
-				read(10,"(a)",iostat=ierror) c80tmp
-				if (c80tmp==" ".or.ierror/=0) exit
-				if (index(c80tmp,'>')/=0) then
-					allexcnorb(iexc)=allexcnorb(iexc)+1
-				else if (index(c80tmp,'<')/=0) then
-					allexcnorb(iexc)=allexcnorb(iexc)+1
-				end if
-			end do
-		end do
+		    do iexc=1,nstates
+                read(10,"(a)") c200tmp
+                read(c200tmp,*) inouse,allexcene(iexc),rnouse,allexcf(iexc)
+                allexcnorb(iexc)=strcharnum(c200tmp,'(')
+            end do
+        end if
+        
 	else if (ifiletypeexc==4) then !Firefly output file
 		call loclabel(10,"EXCITED STATE   1 ",ifound)
 		do iexc=1,nstates
@@ -404,7 +425,9 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 			read(10,"(a)") c80tmp
 			read(c80tmp(1:3),*) allexcmulti(iexc)
 			read(c80tmp(26:33),*) allexcene(iexc)
+			read(c80tmp(71:),*) allexcf(iexc)
 		end do
+        
 	else if (ifiletypeexc==5) then !GAMESS-US output file
 		if (wfntype==0) then
 			allexcmulti=1
@@ -416,7 +439,8 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		call loclabel(10,"STATE #   1",ifound)
 		do iexc=1,nstates
 			read(10,"(22x,f12.6)") allexcene(iexc)
-			read(10,*);read(10,*);read(10,*);read(10,*);read(10,*)
+			read(10,"(22x,f12.6)") allexcf(iexc)
+			read(10,*);read(10,*);read(10,*);read(10,*)
 			if (wfntype==0) then
 				read(10,*);read(10,*)
 			end if
@@ -426,6 +450,23 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 					exit
 				else
 					allexcnorb(iexc)=allexcnorb(iexc)+2 !For TDDFT, excitation and de-excitation are outputted as a single line
+				end if
+			end do
+		end do
+        
+	else if (ifiletypeexc==3) then !Plain text file
+		rewind(10)
+		do iexc=1,nstates
+			call loclabel(10,"Excited State",ifound,0)
+			read(10,*) c80tmp,c80tmp,inouse,allexcmulti(iexc),allexcene(iexc)
+			!Count how many orbital pairs are involved in this excitation
+			do while(.true.)
+				read(10,"(a)",iostat=ierror) c80tmp
+				if (c80tmp==" ".or.ierror/=0) exit
+				if (index(c80tmp,'>')/=0) then
+					allexcnorb(iexc)=allexcnorb(iexc)+1
+				else if (index(c80tmp,'<')/=0) then
+					allexcnorb(iexc)=allexcnorb(iexc)+1
 				end if
 			end do
 		end do
@@ -468,7 +509,7 @@ use defvar
 use excitinfo
 use util
 implicit real*8 (a-h,o-z)
-character c80tmp*80,leftstr*80,rightstr*80
+character c80tmp*80,c200tmp*200,leftstr*80,rightstr*80
 
 if (allocated(allexcdir)) then
 	write(*,"(a)") " Detailed information of all excited states have already been loaded previously, now directly employ them"
@@ -529,61 +570,127 @@ else
 		end do
 		
 	else if (ifiletypeexc==2) then !ORCA output file
-		!Worthnotingly, in at least ORCA 4.0, de-excitation is not separately outputted as <-, but combined into ->
-		!Here we still check <-, because hopefully Neese may change the convention of ORCA output in the future...
-        do igeom=1,numexcgeom
-            call loclabel(10,"Number of roots to be determined",ifound,0)
+        if (iORCAsTD==0) then !Regular case
+		    !Worthnotingly, in at least ORCA 4.0, de-excitation is not separately outputted as <-, but combined into ->
+		    !Here we still check <-, because hopefully Neese may change the convention of ORCA output in the future...
+            do igeom=1,numexcgeom
+                call loclabel(10,"Number of roots to be determined",ifound,0)
+                read(10,*)
+            end do
+		    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
+		    if (allexcmulti(1)==3) then !When triplets=on, ORCA calculates both singlet and triplet excited states, now move to the latter
+			    read(10,*)
+			    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
+		    end if
+		    do iexc=1,nstates
+			    call loclabel(10,"STATE",ifound,0)
+			    read(10,*)
+			    do itmp=1,allexcnorb(iexc)
+				    read(10,"(a)") c80tmp
+				    if (index(c80tmp,'->')/=0) then
+					    allexcdir(itmp,iexc)=1
+				    else
+					    allexcdir(itmp,iexc)=2
+				    end if
+				    do isign=1,80 !Find position of <- or ->
+					    if (c80tmp(isign:isign)=='-'.or.c80tmp(isign:isign)=='<') exit
+				    end do
+				    !Process left side of <- or ->
+				    read(c80tmp(:isign-1),"(a)") leftstr
+				    read(leftstr(:len_trim(leftstr)-1),*) allorbleft(itmp,iexc)
+				    allorbleft(itmp,iexc)=allorbleft(itmp,iexc)+1 !ORCA counts orbital from 0 rather than 1!!!
+				    if (index(leftstr,'b')/=0) allorbleft(itmp,iexc)=allorbleft(itmp,iexc)+nbasis
+				    !Process right side of <- or ->
+				    read(c80tmp(isign+2:),*) rightstr
+				    read(rightstr(:len_trim(rightstr)-1),*) allorbright(itmp,iexc)
+				    allorbright(itmp,iexc)=allorbright(itmp,iexc)+1
+				    if (index(rightstr,'b')/=0) allorbright(itmp,iexc)=allorbright(itmp,iexc)+nbasis
+				    iTDA=index(c80tmp,'c=')
+				    if (iTDA/=0) then !CIS, TDA task, both configuration contribution and coefficients are presented, e.g. 2a ->   5a  :     0.985689 (c=  0.99281847)
+					    read(c80tmp(iTDA+2:iTDA+13),*) allexccoeff(itmp,iexc)
+				    else !TD task. Positive contribution of i->a and negative contribution a<-i are summed up and printed, e.g. 2a ->   6a  :     0.968777
+					    if (iexc==1.and.itmp==1) then
+						    write(*,"(a)") " Warning: For TD task, ORCA does not print configuration coefficients but only print contributions of each MO pair to excitation, &
+						    in this case Multiwfn guesses configuration coefficients by calculating square root of the contributions. &
+                            However, this treatment may lead to fully misleading result, you should consider using TDA instead, which is perfectly supported."
+						    write(*,*) "If you really want to proceed, press ENTER button"
+						    read(*,*)
+					    end if
+					    read(c80tmp(23:32),*) tmpval
+					    if (tmpval<0) allexcdir(itmp,iexc)=2 !Negative contribution is assumed to be significant de-excitation (of course this is not strict since -> and <- have been combined together)
+					    allexccoeff(itmp,iexc)=dsqrt(abs(tmpval))
+				    end if
+				    !Although for closed-shell reference state, ORCA still outputs coefficients as normalization to 1.0, &
+				    !However, in order to follow the Gaussian convention, we change the coefficient as normalization to 0.5
+				    if (wfntype==0.or.wfntype==3) allexccoeff(itmp,iexc)=allexccoeff(itmp,iexc)/dsqrt(2D0)
+			    end do
+		    end do
+        else if (iORCAsTD==1) then
+            !sTDA/sTDDFT ignores very low lying occupied MOs and very high lying virtual MOs, &
+            !we need to know how many core orbitals are ignored, so that actual MO index can be obtained
+            call loclabel(10,"occ. MOs in")
+            read(10,"(a)") c80tmp
+            itmp=index(c80tmp,'...')
+            if (wfntype==0) then
+                read(c80tmp(itmp+3:),*) ntmp
+                ncor=nint(naelec)-ntmp
+            else
+                read(c80tmp(itmp+3:),*) natmp,nbtmp
+                nacor=nint(naelec)-natmp
+                nbcor=nint(nbelec)-nbtmp
+            end if
+            call loclabel(10,"state   eV",ifound,0)
             read(10,*)
-        end do
-		call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
-		if (allexcmulti(1)==3) then !When triplets=on, ORCA calculates both singlet and triplet excited states, now move to the latter
-			read(10,*)
-			call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
+		    do iexc=1,nstates
+                read(10,"(a)") c200tmp
+                itmp=index(c200tmp,'(')
+                ipos=itmp-9
+                do ipair=1,allexcnorb(iexc)
+                    if (wfntype==0) then
+                        c80tmp=c200tmp(ipos:ipos+20)
+                    else
+                        c80tmp=c200tmp(ipos:ipos+22)
+                    end if
+                    read(c80tmp,*) allexccoeff(ipair,iexc)
+                    if (wfntype==0) allexccoeff(ipair,iexc)=allexccoeff(ipair,iexc)/dsqrt(2D0)
+                    if (index(c80tmp,'>')/=0) then
+                        allexcdir(ipair,iexc)=1
+                    else
+                        allexcdir(ipair,iexc)=2
+                    end if
+                    itmp=index(c80tmp,'(') !Load left orbital index
+                    if (wfntype==0) then
+                        read(c80tmp(itmp+1:itmp+4),*) allorbleft(ipair,iexc)
+                        allorbleft(ipair,iexc)=allorbleft(ipair,iexc)+ncor+1  !Note that the MO is 0 based index in sTDA/sTDDFT
+                    else
+                        read(c80tmp(itmp+1:itmp+4),*) allorbleft(ipair,iexc)
+                        if (c80tmp(itmp+5:itmp+5)=='a') then
+                            allorbleft(ipair,iexc)=allorbleft(ipair,iexc)+nacor+1
+                        else
+                            allorbleft(ipair,iexc)=allorbleft(ipair,iexc)+nbcor+1+nbasis
+                        end if
+                    end if
+                    itmp=index(c80tmp,')') !Load right orbital index
+                    if (wfntype==0) then
+                        read(c80tmp(itmp-4:itmp-1),*) allorbright(ipair,iexc)
+                        allorbright(ipair,iexc)=allorbright(ipair,iexc)+ncor+1
+                    else
+                        read(c80tmp(itmp-5:itmp-2),*) allorbright(ipair,iexc)
+                        if (c80tmp(itmp-1:itmp-1)=='a') then
+                            allorbright(ipair,iexc)=allorbright(ipair,iexc)+nacor+1
+                        else
+                            allorbright(ipair,iexc)=allorbright(ipair,iexc)+nbcor+1+nbasis
+                        end if
+                    end if
+                    if (wfntype==0) then
+                        ipos=ipos+21
+                    else
+                        ipos=ipos+23
+                    end if
+                end do
+            end do
 		end if
-		do iexc=1,nstates
-			call loclabel(10,"STATE",ifound,0)
-			read(10,*)
-			do itmp=1,allexcnorb(iexc)
-				read(10,"(a)") c80tmp
-				if (index(c80tmp,'->')/=0) then
-					allexcdir(itmp,iexc)=1
-				else
-					allexcdir(itmp,iexc)=2
-				end if
-				do isign=1,80 !Find position of <- or ->
-					if (c80tmp(isign:isign)=='-'.or.c80tmp(isign:isign)=='<') exit
-				end do
-				!Process left side of <- or ->
-				read(c80tmp(:isign-1),"(a)") leftstr
-				read(leftstr(:len_trim(leftstr)-1),*) allorbleft(itmp,iexc)
-				allorbleft(itmp,iexc)=allorbleft(itmp,iexc)+1 !ORCA counts orbital from 0 rather than 1!!!
-				if (index(leftstr,'b')/=0) allorbleft(itmp,iexc)=allorbleft(itmp,iexc)+nbasis
-				!Process right side of <- or ->
-				read(c80tmp(isign+2:),*) rightstr
-				read(rightstr(:len_trim(rightstr)-1),*) allorbright(itmp,iexc)
-				allorbright(itmp,iexc)=allorbright(itmp,iexc)+1
-				if (index(rightstr,'b')/=0) allorbright(itmp,iexc)=allorbright(itmp,iexc)+nbasis
-				iTDA=index(c80tmp,'c=')
-				if (iTDA/=0) then !CIS, TDA task, both configuration contribution and coefficients are presented, e.g. 2a ->   5a  :     0.985689 (c=  0.99281847)
-					read(c80tmp(iTDA+2:iTDA+13),*) allexccoeff(itmp,iexc)
-				else !TD task. Positive contribution of i->a and negative contribution a<-i are summed up and printed, e.g. 2a ->   6a  :     0.968777
-					if (iexc==1.and.itmp==1) then
-						write(*,"(a)") " Warning: For TD task, ORCA does not print configuration coefficients but only print corresponding contributions of each orbital pair, &
-						in this case Multiwfn determines configuration coefficients simply as square root of contribution values. However, this treatment is &
-						evidently inappropriate and the result is nonsense when de-excitation is significant (In this situation you have to use TDA-DFT instead)"
-						write(*,*) "If you really want to proceed, press ENTER button to continue"
-						read(*,*)
-					end if
-					read(c80tmp(23:32),*) tmpval
-					if (tmpval<0) allexcdir(itmp,iexc)=2 !Negative contribution is assumed to be significant de-excitation (of course this is not strict since -> and <- have been combined together)
-					allexccoeff(itmp,iexc)=dsqrt(abs(tmpval))
-				end if
-				!Although for closed-shell reference state, ORCA still outputs coefficients as normalization to 1.0, &
-				!However, in order to follow the Gaussian convention, we change the coefficient as normalization to 0.5
-				if (wfntype==0.or.wfntype==3) allexccoeff(itmp,iexc)=allexccoeff(itmp,iexc)/dsqrt(2D0)
-			end do
-		end do
-		
+        
 	else if (ifiletypeexc==4) then !Firefly output file
 		call loclabel(10,"EXCITED STATE   1 ",ifound)
 		do iexc=1,nstates
@@ -691,9 +798,10 @@ use defvar
 use excitinfo
 use util
 implicit real*8 (a-h,o-z)
-character c80tmp*80,leftstr*80,rightstr*80
+character c80tmp*80,c200tmp*200,leftstr*80,rightstr*80
 integer istate,ioutinfo
 excene=allexcene(istate)
+excf=allexcf(istate)
 excmulti=allexcmulti(istate)
 excnorb=allexcnorb(istate)
 if (allocated(excdir)) deallocate(excdir,orbleft,orbright,exccoeff)
@@ -763,58 +871,126 @@ if (ifiletypeexc==1.or.ifiletypeexc==3) then
 	end do
 	
 else if (ifiletypeexc==2) then !ORCA output file
-	!Worthnotingly, in at least ORCA 4.0, de-excitation is not separately outputted as <-, but combined into ->
-	!Here we still check <-, because hopefully Neese may change the convention of ORCA output in the future...
-	call loclabel(10,"the weight of the individual excitations are printed")
-	if (allexcmulti(1)==3) then !When triplets=on, ORCA calculates both singlet and triplet excited states, now move to the latter
-		read(10,*)
-		call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
-	end if
-	do iexc=1,istate
-		call loclabel(10,"STATE",ifound,0)
-		read(10,*)
-		if (iexc==istate) then
-			do itmp=1,excnorb
-				read(10,"(a)") c80tmp
-				if (index(c80tmp,'->')/=0) then
-					excdir(itmp)=1
-				else
-					excdir(itmp)=2
-				end if
-				do isign=1,80 !Find position of <- or ->
-					if (c80tmp(isign:isign)=='-'.or.c80tmp(isign:isign)=='<') exit
-				end do
-				!Process left side of <- or ->
-				read(c80tmp(:isign-1),"(a)") leftstr
-				read(leftstr(:len_trim(leftstr)-1),*) orbleft(itmp)
-				orbleft(itmp)=orbleft(itmp)+1 !ORCA counts orbital from 0 rather than 1!!!
-				if (index(leftstr,'b')/=0) orbleft(itmp)=orbleft(itmp)+nbasis
-				!Process right side of <- or ->
-				read(c80tmp(isign+2:),*) rightstr
-				read(rightstr(:len_trim(rightstr)-1),*) orbright(itmp)
-				orbright(itmp)=orbright(itmp)+1
-				if (index(rightstr,'b')/=0) orbright(itmp)=orbright(itmp)+nbasis
-				iTDA=index(c80tmp,'c=')
-				if (iTDA/=0) then !CIS, TDA task, configuration coefficients are presented
-					read(c80tmp(iTDA+2:iTDA+13),*) exccoeff(itmp)
-				else !TD task, configuration coefficients are not presented. Contribution of i->a and i<-a are summed up and outputted as i->a
-					if (iexc==1.and.itmp==1) then
-						write(*,"(a)") " Warning: For TD task, ORCA does not print configuration coefficients but only print corresponding contributions of each orbital pair, &
-						in this case Multiwfn determines configuration coefficients simply as square root of contribution values. However, this treatment is &
-						evidently inappropriate and the result is nonsense when de-excitation is significant (In this situation you have to use TDA-DFT instead)"
-						write(*,*) "If you really want to proceed, press ENTER button to continue"
-						read(*,*)
-					end if
-					read(c80tmp(23:32),*) tmpval
-					if (tmpval<0) excdir(itmp)=2 !Negative contribution is assumed to be de-excitation (of course this is not strict since -> and <- have been combined together)
-					exccoeff(itmp)=dsqrt(abs(tmpval))
-				end if
-				!Although for closed-shell ground state, ORCA still outputs coefficients as normalization to 1.0, &
-				!However, in order to follow the Gaussian convention, we change the coefficient as normalization to 0.5
-				if (wfntype==0.or.wfntype==3) exccoeff(itmp)=exccoeff(itmp)/dsqrt(2D0)
-			end do
-		end if
-	end do
+    if (iORCAsTD==0) then !Regular case
+	    !Worthnotingly, in at least ORCA 4.0, de-excitation is not separately outputted as <-, but combined into ->
+	    !Here we still check <-, because hopefully Neese may change the convention of ORCA output in the future...
+	    call loclabel(10,"the weight of the individual excitations are printed")
+	    if (allexcmulti(1)==3) then !When triplets=on, ORCA calculates both singlet and triplet excited states, now move to the latter
+		    read(10,*)
+		    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
+	    end if
+	    do iexc=1,istate
+		    call loclabel(10,"STATE",ifound,0)
+		    read(10,*)
+		    if (iexc==istate) then
+			    do itmp=1,excnorb
+				    read(10,"(a)") c80tmp
+				    if (index(c80tmp,'->')/=0) then
+					    excdir(itmp)=1
+				    else
+					    excdir(itmp)=2
+				    end if
+				    do isign=1,80 !Find position of <- or ->
+					    if (c80tmp(isign:isign)=='-'.or.c80tmp(isign:isign)=='<') exit
+				    end do
+				    !Process left side of <- or ->
+				    read(c80tmp(:isign-1),"(a)") leftstr
+				    read(leftstr(:len_trim(leftstr)-1),*) orbleft(itmp)
+				    orbleft(itmp)=orbleft(itmp)+1 !ORCA counts orbital from 0 rather than 1!!!
+				    if (index(leftstr,'b')/=0) orbleft(itmp)=orbleft(itmp)+nbasis
+				    !Process right side of <- or ->
+				    read(c80tmp(isign+2:),*) rightstr
+				    read(rightstr(:len_trim(rightstr)-1),*) orbright(itmp)
+				    orbright(itmp)=orbright(itmp)+1
+				    if (index(rightstr,'b')/=0) orbright(itmp)=orbright(itmp)+nbasis
+				    iTDA=index(c80tmp,'c=')
+				    if (iTDA/=0) then !CIS, TDA task, configuration coefficients are presented
+					    read(c80tmp(iTDA+2:iTDA+13),*) exccoeff(itmp)
+				    else !TD task, configuration coefficients are not presented. Contribution of i->a and i<-a are summed up and outputted as i->a
+					    if (iexc==1.and.itmp==1) then
+						    write(*,"(a)") " Warning: For TD task, ORCA does not print configuration coefficients but only print corresponding contributions of each orbital pair, &
+						    in this case Multiwfn determines configuration coefficients simply as square root of contribution values. However, this treatment is &
+						    evidently inappropriate and the result is nonsense when de-excitation is significant (In this situation you have to use TDA-DFT instead)"
+						    write(*,*) "If you really want to proceed, press ENTER button to continue"
+						    read(*,*)
+					    end if
+					    read(c80tmp(23:32),*) tmpval
+					    if (tmpval<0) excdir(itmp)=2 !Negative contribution is assumed to be de-excitation (of course this is not strict since -> and <- have been combined together)
+					    exccoeff(itmp)=dsqrt(abs(tmpval))
+				    end if
+				    !Although for closed-shell ground state, ORCA still outputs coefficients as normalization to 1.0, &
+				    !However, in order to follow the Gaussian convention, we change the coefficient as normalization to 0.5
+				    if (wfntype==0.or.wfntype==3) exccoeff(itmp)=exccoeff(itmp)/dsqrt(2D0)
+			    end do
+		    end if
+	    end do
+    else if (iORCAsTD==1) then
+        !sTDA/sTDDFT ignores very low lying occupied MOs and very high lying virtual MOs, &
+        !we need to know how many core orbitals are ignored, so that actual MO index can be obtained
+        call loclabel(10,"occ. MOs in")
+        read(10,"(a)") c80tmp
+        itmp=index(c80tmp,'...')
+        if (wfntype==0) then
+            read(c80tmp(itmp+3:),*) ntmp
+            ncor=nint(naelec)-ntmp
+        else
+            read(c80tmp(itmp+3:),*) natmp,nbtmp
+            nacor=nint(naelec)-natmp
+            nbcor=nint(nbelec)-nbtmp
+        end if
+        call loclabel(10,"state   eV",ifound,0)
+        read(10,*)
+		do iexc=1,nstates
+            read(10,"(a)") c200tmp
+            if (iexc==istate) then
+                itmp=index(c200tmp,'(')
+                ipos=itmp-9
+                do ipair=1,excnorb
+                    if (wfntype==0) then
+                        c80tmp=c200tmp(ipos:ipos+20)
+                    else
+                        c80tmp=c200tmp(ipos:ipos+22)
+                    end if
+                    read(c80tmp,*) exccoeff(ipair)
+                    if (wfntype==0) exccoeff(ipair)=exccoeff(ipair)/dsqrt(2D0)
+                    if (index(c80tmp,'>')/=0) then
+                        excdir(ipair)=1
+                    else
+                        excdir(ipair)=2
+                    end if
+                    itmp=index(c80tmp,'(') !Load left orbital index
+                    if (wfntype==0) then
+                        read(c80tmp(itmp+1:itmp+4),*) orbleft(ipair)
+                        orbleft(ipair)=orbleft(ipair)+ncor+1  !Note that the MO is 0 based index in sTDA/sTDDFT
+                    else
+                        read(c80tmp(itmp+1:itmp+4),*) orbleft(ipair)
+                        if (c80tmp(itmp+5:itmp+5)=='a') then
+                            orbleft(ipair)=orbleft(ipair)+nacor+1
+                        else
+                            orbleft(ipair)=orbleft(ipair)+nbcor+1+nbasis
+                        end if
+                    end if
+                    itmp=index(c80tmp,')') !Load right orbital index
+                    if (wfntype==0) then
+                        read(c80tmp(itmp-4:itmp-1),*) orbright(ipair)
+                        orbright(ipair)=orbright(ipair)+ncor+1
+                    else
+                        read(c80tmp(itmp-5:itmp-2),*) orbright(ipair)
+                        if (c80tmp(itmp-1:itmp-1)=='a') then
+                            orbright(ipair)=orbright(ipair)+nacor+1
+                        else
+                            orbright(ipair)=orbright(ipair)+nbcor+1+nbasis
+                        end if
+                    end if
+                    if (wfntype==0) then
+                        ipos=ipos+21
+                    else
+                        ipos=ipos+23
+                    end if
+                end do
+            end if
+        end do
+    end if
 	
 else if (ifiletypeexc==4) then !Firefly output file
 	write(c80tmp,"(' EXCITED STATE',i4)") istate
@@ -898,6 +1074,15 @@ if (ioutinfo==1) then
 	write(*,"(' The sum of square of excitation coefficients:',f10.6)") sumsqrexc
 	write(*,"(' The negative of the sum of square of de-excitation coefficients:',f10.6)") sumsqrdeexc
 	write(*,"(' The sum of above two values',f10.6)") sumsqrall
+    if (wfntype==0.or.wfntype==3) then
+        dev=abs(sumsqrall-0.5D0)
+        write(*,"(' Deviation to expected normalization value (0.5) is',f8.4)") dev
+        if (dev>0.05D0) write(*,"(a)") " Warning: The deviation is too obvious, in this case the analysis result is not reliable or even fully misleading!"
+    else
+        dev=abs(sumsqrall-1D0)
+        write(*,"(' Deviation to expected normalization value (1.0) is',f8.4)") dev
+        if (dev>0.05D0) write(*,"(a)") " Warning: The deviation is too obvious, in this case the analysis result is not reliable or even fully misleading!"
+    end if
 end if
 end subroutine
 
@@ -962,6 +1147,9 @@ end if
 call loadallexcinfo(1)
 call selexcit(istate)
 call loadexccoeff(istate,1)
+write(*,*)
+write(*,*) "Please cite hole-electron analysis:"
+write(*,*) "Carbon, 165, 461-467 (2020) DOI: 10.1016/j.carbon.2020.05.023"
 
 10 do while(.true.)
 	write(*,*)
@@ -1307,7 +1495,7 @@ Chole=Chole*rnormhole/(sum(Chole)*dvol)
 
 do while(.true.)
 	write(*,*)
-	write(*,*) "               -------------- Post-process menu --------------"
+	write(*,*) "             -------------- Post-processing menu --------------"
     if (iaddstateidx==1) write(*,*) "-1 Toggle if adding state index at end of exported cube filename, current: Yes"
     if (iaddstateidx==0) write(*,*) "-1 Toggle if adding state index at end of exported cube filename, current: No"
 	write(*,*) "0 Return"
@@ -2962,12 +3150,12 @@ end if
 !If only GTF information is available, we calculate <MO|-r|MO> based on <GTF|-r|GTF>. While if basis function is available, &
 !we calculate MO dipole moment integral matrix by unitary transformation of Dbas, because this is much faster
 if (allocated(CObasa)) then
-	if (igenDbas==0) then !Haven't calculated dipole moment integral matrix, so reload the input file and calculate it
-		igenDbas=1
-		write(*,"(a)") " Stage 1: Reloading input file and meantime generating dipole moment integral matrix..."
-		call dealloall
-		call readinfile(firstfilename,1)
-	end if
+    write(*,"(a)") " Stage 1: Generating dipole moment integral matrix..."
+    if (.not.allocated(Dbas)) then
+        call genDbas_curr
+    else
+        write(*,*) "This stage is skipped since the matrix is already available"
+    end if
 	call walltime(iwalltime1)
 	write(*,*) "Stage 2: Calculating dipole moment integrals between all MOs..."
 	allocate(MOdipint(3,nmo,nmo),DorbA(3,nbasis,nbasis))
@@ -3109,7 +3297,7 @@ do iexc=1,nstates
 					if (imo==jmo.and.lmo/=kmo) then
 						tdvec=tdvec+wei*MOdipint(:,lmo,kmo)
 					else if (imo/=jmo.and.lmo==kmo) then
-						tdvec=tdvec-wei*MOdipint(:,imo,jmo)
+						tdvec=tdvec-wei*MOdipint(:,jmo,imo)
 					else if (imo==jmo.and.lmo==kmo) then
 						tdvec=tdvec+wei*(eledip-MOdipint(:,imo,imo)+MOdipint(:,lmo,lmo))
 					end if
@@ -3132,6 +3320,7 @@ write(*,"(' (Stage 3 took up wall clock time',i10,' s)',/)") iwalltime2-iwalltim
 
 if (all(allexcmulti==allexcmulti(1))) then !All states have the same spin, in this case all options are available
 	if (isel==1.or.isel==2) then !Output transition dipole moment between various states
+		!The ground state dipole moment shown below include both nuclear charge and electronic contributions
 		write(iout,"(' Ground state dipole moment in X,Y,Z:',3f12.6,' a.u.',/)") grounddip
 		write(iout,"(' Transition dipole moment between ground state (0) and excited states (a.u.)')")
 		write(iout,*) "    i     j         X             Y             Z        Diff.(eV)   Oscil.str"
@@ -3161,7 +3350,7 @@ if (all(allexcmulti==allexcmulti(1))) then !All states have the same spin, in th
 			    end if
 		    end do
         else if (isel==4) then
-			write(iout,"(i6,3f14.6,f12.4,f12.2)") iexc,tdvecmat(:,iexc,iexc)+nucdip(:),allexcene(iexc),1240.7011D0/allexcene(iexc)
+			write(iout,"(i6,3f14.6,f12.4,f12.2)") iexc,tdvecmat(:,iexc,iexc)+nucdip(:),allexcene(iexc),1239.842D0/allexcene(iexc)
         end if
 	end do
 else !Not all states have the same spin, 50-50 with singlet ground state is assumed. isel=3 and isel=4 are not available in this case
@@ -3953,12 +4142,9 @@ integer,allocatable :: idxlist(:)
 real*8,allocatable :: dipcontri(:,:) !(1/2/3,iexc) contribution of orbital pairs "iexc" to transition dipole moment in X/Y/Z
 character strdir*3,strspin,c80tmp*80
 
-!Generate dipole moment integral matrix between basis functions
-if (igenDbas==0) then !Haven't calculated dipole moment integral matrix, so reload the input file and calculate it
-	igenDbas=1
-	write(*,"(a)") " Reloading input file and meantime generating dipole moment integral matrix between basis functions..."
-	call dealloall
-	call readinfile(firstfilename,1)
+if (.not.allocated(Dbas)) then
+	write(*,*) "Generating dipole moment integral matrix between basis functions..."
+    call genDbas_curr
 end if
 
 if (.not.allocated(DorbA)) then
@@ -3997,6 +4183,8 @@ zdipall=sum(dipcontri(3,:))
 dipallnorm=dsqrt(xdipall**2+ydipall**2+zdipall**2)
 oscillstr=2D0/3D0*excene/au2eV*(xdipall**2+ydipall**2+zdipall**2)
 write(*,*)
+write(*,"(a,/)") " Note: Carbon, 165, 461 (2020) employed this function to study the nature of very strong absorption of cyclo[18]carbon, &
+you are suggested to look at this paper and cite it along with Multiwfn original paper"
 if ((naelec==nbelec).and.excmulti==3) write(*,"(a,/)") " Notice: Since the spin multiplicity between ground state and the excited state &
 is different (spin-forbidden), the transition dipole moment analyzed in this function only considers spatial part"
 write(*,"(' Transition dipole moment in X/Y/Z: ',3f11.6,' a.u.')") xdipall,ydipall,zdipall
@@ -4199,13 +4387,8 @@ end if
 deallocate(tmparr,tmpmat)
 
 !! Below codes are used to check transition properties based on transition density matrix and corresponding integral matrix
-!BEWARE THAT CARTESIAN BASIS FUNCTIONS MUST BE USED, SO DON'T FORGET 6D 10F KEYWORDS IN DUE CASES! (However, pure type is OK if you have
-!set igenDbas/igenMagbas in settings.ini, because the Cartesian integral matrix generated when loading has already been converted to pure case)
 !Check transition eletric dipole moment. The result is correct when iTDMtype==1, see above
-! 		if (.not.allocated(Dbas)) then
-! 		    allocate(Dbas(3,nbasis,nbasis))
-! 		    call genDbas
-! 		end if
+! 		if (.not.allocated(Dbas)) call genDbas_curr
 ! 		Teledipx=sum(tdmata*Dbas(1,:,:))
 ! 		Teledipy=sum(tdmata*Dbas(2,:,:))
 ! 		Teledipz=sum(tdmata*Dbas(3,:,:))
@@ -4215,19 +4398,14 @@ deallocate(tmparr,tmpmat)
 ! 		write(*,"(' Transition electric dipole moment:',3f12.6)") Teledipx,Teledipy,Teledipz
 
 ! 		!Check transition velocity dipole moment. The result is correct when iTDMtype==2, see above
-! 		if (.not.allocated(Velbas)) then
-! 		    allocate(Velbas(3,nbasis,nbasis))
-! 	    	call genvelbas
-! 	    end if
+! 		if (.not.allocated(Velbas)) call genvelbas_curr
 ! 		Tvdipx=sum(tdmata*Velbas(1,:,:))
 ! 		Tvdipy=sum(tdmata*Velbas(2,:,:))
 ! 		Tvdipz=sum(tdmata*Velbas(3,:,:))
 ! 		write(*,"(' Transition velocity dipole moment:',3f12.6)") Tvdipx,Tvdipy,Tvdipz
 
 ! 		!Check transition magnetic dipole moment. The result is correct when iTDMtype==2, see above
-! 		if (.not.allocated(Magbas)) then
-! 		    allocate(Magbas(3,nbasis,nbasis))
-! 	    	call genMagbas
+! 		if (.not.allocated(Magbas)) call genMagbas_curr
 ! 	    end if
 ! 	    call showmatgau(tdmata,"tdmata matrix",1)
 ! 		Tmagdipx=sum(tdmata*Magbas(1,:,:))
@@ -4333,7 +4511,7 @@ if (wfntype==0.or.wfntype==3) then !Closed-shell case
 			if (imo==jmo.and.lmo/=kmo) then
 				tdmata=tdmata+wei*matmul(CObasa(:,lmo:lmo),CObasa_tr(kmo:kmo,:))
 			else if (imo/=jmo.and.lmo==kmo) then
-				tdmata=tdmata-wei*matmul(CObasa(:,imo:imo),CObasa_tr(jmo:jmo,:))
+				tdmata=tdmata-wei*matmul(CObasa(:,jmo:jmo),CObasa_tr(imo:imo,:))
 			else if (imo==jmo.and.lmo==kmo) then
 				tdmata=tdmata+wei*( Ptot - matmul(CObasa(:,imo:imo),CObasa_tr(imo:imo,:)) + matmul(CObasa(:,lmo:lmo),CObasa_tr(lmo:lmo,:)) )
 			end if
@@ -4514,13 +4692,12 @@ call genTDM(idecomptype,3)
 
 !Haven't calculated dipole moment integral matrix, so reload the input file and calculate it
 if (idecomptype==1.and.(.not.allocated(Dbas))) then
-	igenDbas=1
+    write(*,*) "Generating electric dipole moment integral matrix..."
+	call genDbas_curr
 else if (idecomptype==2.and.(.not.allocated(Magbas))) then
-	igenMagbas=1
+    write(*,*) "Generating magnetic dipole moment integral matrix..."
+	call genMagbas_curr
 end if
-write(*,"(a)") " Reloading input file and meantime generating dipole moment integral matrix..."
-call dealloall
-call readinfile(firstfilename,1)
 
 if (idecomptype==1) then
 	tmpbas=>Dbas
@@ -4822,30 +4999,72 @@ call loadallexcinfo(0)
 call loadallexccoeff(1)
 
 !Determine HOMO and LUMO index
-if (iprog==1) then
+if (iprog==1) then !Gaussian
     open(10,file=filename,status="old")
     call loclabel(10," alpha electrons")
     read(10,"(a)") c80tmp
     read(c80tmp,*) iHOMO_A
     read(c80tmp(24:),*) iHOMO_B
     close(10)
-else if (iprog==2) then
+else if (iprog==2) then !ORCA
     open(10,file=filename,status="old")
-    call loclabel(10,"N(Alpha)",ifound)
-    if (ifound==1) then
-        read(10,"(a)") c80tmp
-        itmp=index(c80tmp,':')
-        read(c80tmp(itmp+1:),*) naelec
-        read(10,"(a)") c80tmp
-        read(c80tmp(itmp+1:),*) nbelec
-    else
-        write(*,"(a)") " Unable to determine the number of alpha and beta electrons from the input file, please input them respectively, e.g. 15,14"
-        read(*,*) naelec,nbelec
+    if (iORCAsTD==0) then !Normal case
+        call loclabel(10,"N(Alpha)",ifound)
+        if (ifound==1) then
+            read(10,"(a)") c80tmp
+            itmp=index(c80tmp,':')
+            read(c80tmp(itmp+1:),*) naelec
+            read(10,"(a)") c80tmp
+            read(c80tmp(itmp+1:),*) nbelec
+        else !Determine number of electrons from orbital information
+            call loclabel(10,"ORBITAL ENERGIES",ifound)
+            if (ifound==1) then
+                read(10,*);read(10,*)
+                read(10,"(a)") c80tmp
+                iop=0
+                if (index(c80tmp,"SPIN UP")/=0) iop=1 !Open-shell case
+                read(10,*)
+                naelec=0
+                do while(.true.)
+                    read(10,"(a)") c80tmp
+                    if (c80tmp==" ".or.index(c80tmp,"time")/=0) exit
+                    read(c80tmp,*) inouse,tmpval
+                    naelec=naelec+tmpval
+                end do
+                if (iop==1) then
+                    nbelec=0
+                    read(10,*);read(10,*)
+                    do while(.true.)
+                        read(10,"(a)") c80tmp
+                        if (c80tmp==" ".or.index(c80tmp,"time")/=0) exit
+                        read(c80tmp,*) inouse,tmpval
+                        nbelec=nbelec+tmpval
+                    end do
+                else
+                    naelec=naelec/2
+                    nbelec=naelec
+                end if
+            else
+                write(*,"(a)") " Unable to determine the number of alpha and beta electrons from the input file, please input them respectively, e.g. 15,14"
+                read(*,*) naelec,nbelec
+            end if
+        end if
+        iHOMO_A=nint(naelec)
+        iHOMO_B=nint(nbelec)
+    else if (iORCAsTD==1) then !sTDA/sTDDFT
+        !The situation is tricky: In this case the printed data happens to correct, because when use this function, during loading
+        !configuration coefficients the naelec and nbelec are both 0
+        iHOMO_A=0
+        iHOMO_B=0
+        if (iopsh==1) then !This situation is more complicated. Ignore
+            write(*,"(a)") " Error: This function cannot be used for sTDDFT/sTDA task when reference state is open-shell"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            return
+        end if
     end if
     close(10)
-    iHOMO_A=nint(naelec)
-    iHOMO_B=nint(nbelec)
-else if (iprog==3.or.iprog==4) then
+else if (iprog==3.or.iprog==4) then !GAMESS-US, Firefly
     iHOMO_A=nint(naelec)
     iHOMO_B=nint(nbelec)
 end if
@@ -4877,7 +5096,8 @@ do itime=1,2 !=1: Print on screen, =2: Print to file
         else
             write(c2tmp,"(i2)") allexcmulti(istat)
         end if
-        write(iout,"(' #',i4,f9.3,' eV  Multi=',a,':')",advance='no') istat,allexcene(istat),c2tmp
+        write(iout,"(' #',i4,f9.4,' eV',f10.2,' nm   f=',f9.5,'   Spin multiplicity=',a,':')") istat,allexcene(istat),1239.842D0/allexcene(istat),allexcf(istat),c2tmp
+        write(iout,"(2x)",advance="no")
         npair=allexcnorb(istat)
         allocate(excdir(npair),orbleft(npair),orbright(npair),exccoeff(npair))
         excdir=allexcdir(1:npair,istat)

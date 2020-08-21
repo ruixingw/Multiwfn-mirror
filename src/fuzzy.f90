@@ -94,7 +94,7 @@ if (iwork==0) then
 	if (ipartition==4) write(*,"(a)") " -1 Select method for partitioning atomic space, current: Hirshfeld-I"
 	write(*,*) "0 Return"
 	write(*,*) "1 Perform integration in fuzzy atomic spaces for a real space function"
-	write(*,*) "2 Calculate atomic multipole moments"
+	write(*,*) "2 Calculate atomic and molecular multipole moments"
 	write(*,*) "3 Calculate and output atomic overlap matrix to AOM.txt in current folder"
 	write(*,*) "4 Calculate localization and delocalization index (Fuzzy bond order)"
 	write(*,*) "5 Calculate PDI (Para-delocalization index)"
@@ -422,11 +422,13 @@ end if
 !!---------------------------------------
 !!=======================================
 rintval=0D0 !Initialize accumulated variables
-xintacc=0D0
-yintacc=0D0
-zintacc=0D0
 ovlpintpos=0D0
 ovlpintneg=0D0
+atmmono=0
+xinttot=0D0;yinttot=0D0;zinttot=0D0 !For calculating molecular multiple moment
+xxinttot=0D0;yyinttot=0D0;zzinttot=0D0;xyinttot=0D0;yzinttot=0D0;xzinttot=0D0
+xxxinttot=0D0;yyyinttot=0D0;zzzinttot=0D0;yzzinttot=0D0;xzzinttot=0D0;xxzinttot=0D0;yyzinttot=0D0;xxyinttot=0D0;xyyinttot=0D0;xyzinttot=0D0
+
 if (ipartition==2.or.ifunc==-2) call setpromol !In this routine reload first molecule at the end
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 write(*,*) "Please wait..."
@@ -436,13 +438,16 @@ call walltime(nwalltime1)
 call Lebedevgen(sphpot,potx,poty,potz,potw)
 
 !! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!
+ifinish=0
+if (isel/=2) call showprog(0,natmcalclist)
+
 do iatm=1,ncenter
-	!Show progress for integrating function. For electric multipole moment integration the process is not shown, because it prints data in the process
-	if (isel/=2) write(*,"(' Progress:',i6,'   /',i6)") iatm,ncenter
 
 	if ( (isel==1.or.isel==2).and.all(atmcalclist(1:natmcalclist)/=iatm) ) cycle
-	if (isel==12.and.all(aromatatm/=iatm)) cycle
-
+	if (isel==12) then
+        if (all(aromatatm(1:naromatatm)/=iatm)) cycle
+    end if
+    
 	!Prepare grid points on current center
 	iradcut=0 !Before where the radial points will be cut
 	parm=1D0
@@ -460,7 +465,7 @@ do iatm=1,ncenter
 	gridatm%x=gridatm%x+a(iatm)%x !Move quadrature point to actual position in molecule
 	gridatm%y=gridatm%y+a(iatm)%y
 	gridatm%z=gridatm%z+a(iatm)%z
-	
+    
 	!For integrating real space function (1,8), calculate selected function value at each point here
 	!For multipole moment integration (2), calculate electron density here
     !For information-theoretic aromaticity index (12), calculate selected information density at each point here
@@ -735,24 +740,22 @@ do iatm=1,ncenter
 		xint=0D0;yint=0D0;zint=0D0
 		xxint=0D0;yyint=0D0;zzint=0D0;xyint=0D0;yzint=0D0;xzint=0D0
 		xxxint=0D0;yyyint=0D0;zzzint=0D0;yzzint=0D0;xzzint=0D0;xxzint=0D0;yyzint=0D0;xxyint=0D0;xyyint=0D0;xyzint=0D0
-		rrxint=0D0;;rryint=0D0;rrzint=0D0
 		do i=1+iradcut*sphpot,radpot*sphpot
 			rx=gridatm(i)%x-a(iatm)%x
 			ry=gridatm(i)%y-a(iatm)%y
 			rz=gridatm(i)%z-a(iatm)%z
 			tmpmul=atmspcweight(i)*funcval(i)*gridatm(i)%value
 			eleint=eleint-tmpmul !monopole
-			xint=xint+rx*tmpmul
+			xint=xint+rx*tmpmul !Dipole moments
 			yint=yint+ry*tmpmul
 			zint=zint+rz*tmpmul
-			xxint=xxint+rx*rx*tmpmul
+			xxint=xxint+rx*rx*tmpmul !Quadruple moments
 			yyint=yyint+ry*ry*tmpmul
 			zzint=zzint+rz*rz*tmpmul
 			xyint=xyint+rx*ry*tmpmul
 			yzint=yzint+ry*rz*tmpmul
 			xzint=xzint+rx*rz*tmpmul
-			!Used for octopole moments
-			xxxint=xxxint+rx*rx*rx*tmpmul
+			xxxint=xxxint+rx*rx*rx*tmpmul !Octopole moments
 			yyyint=yyyint+ry*ry*ry*tmpmul
 			zzzint=zzzint+rz*rz*rz*tmpmul
 			yzzint=yzzint+ry*rz*rz*tmpmul
@@ -762,12 +765,33 @@ do iatm=1,ncenter
 			xxyint=xxyint+rx*rx*ry*tmpmul
 			xyyint=xyyint+rx*ry*ry*tmpmul
 			xyzint=xyzint+rx*ry*rz*tmpmul
+            !Calculate molecular dipole/quadruple/octopole
+			rx=gridatm(i)%x;ry=gridatm(i)%y;rz=gridatm(i)%z
+			xinttot=xinttot-rx*tmpmul
+			yinttot=yinttot-ry*tmpmul
+			zinttot=zinttot-rz*tmpmul
+			xxinttot=xxinttot-rx*rx*tmpmul
+			yyinttot=yyinttot-ry*ry*tmpmul
+			zzinttot=zzinttot-rz*rz*tmpmul
+			xyinttot=xyinttot-rx*ry*tmpmul
+			yzinttot=yzinttot-ry*rz*tmpmul
+			xzinttot=xzinttot-rx*rz*tmpmul
+			xxxinttot=xxxinttot-rx*rx*rx*tmpmul
+			yyyinttot=yyyinttot-ry*ry*ry*tmpmul
+			zzzinttot=zzzinttot-rz*rz*rz*tmpmul
+			yzzinttot=yzzinttot-ry*rz*rz*tmpmul
+			xzzinttot=xzzinttot-rx*rz*rz*tmpmul
+			xxzinttot=xxzinttot-rx*rx*rz*tmpmul
+			yyzinttot=yyzinttot-ry*ry*rz*tmpmul
+			xxyinttot=xxyinttot-rx*rx*ry*tmpmul
+			xyyinttot=xyyinttot-rx*ry*ry*tmpmul
+			xyzinttot=xyzinttot-rx*ry*rz*tmpmul
 		end do
 		rrint=xxint+yyint+zzint
 		rrxint=xxxint+xyyint+xzzint
 		rryint=xxyint+yyyint+yzzint
 		rrzint=xxzint+yyzint+zzzint
-		atmchgtmp=a(iatm)%charge+eleint
+		atmchgtmp=a(iatm)%index+eleint !eleint contains contribution by EDF, therefore a%index should be used instead of a%charge
 		write(*,"('              *****  Atomic multipole moments of',i6,'(',a2,')  *****')") iatm,a(iatm)%name
 		write(*,"(' Atomic monopole moment (electron):',f12.6,'   Atomic charge:',f12.6)") eleint,atmchgtmp
 		write(*,"(' Atomic dipole moments:')")
@@ -777,14 +801,14 @@ do iatm=1,ncenter
 		contridipy=atmchgtmp*a(iatm)%y-yint
 		contridipz=atmchgtmp*a(iatm)%z-zint
 		write(*,"(' X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Norm=',f12.6)") contridipx,contridipy,contridipz,dsqrt(contridipx**2+contridipy**2+contridipz**2)
-		write(*,"(' Atomic quadrupole moments (Cartesian form):')")
+		write(*,"(' Atomic quadrupole moments (Traceless Cartesian form):')")
 		QXX=(-3*xxint+rrint)/2
 		QYY=(-3*yyint+rrint)/2
 		QZZ=(-3*zzint+rrint)/2
-		write(*,"(' QXX=',f12.6,'  QXY=',f12.6,'  QXZ=',f12.6)") QXX,(-3*xyint)/2,(-3*xzint)/2
-		write(*,"(' QYX=',f12.6,'  QYY=',f12.6,'  QYZ=',f12.6)") (-3*xyint)/2,QYY,(-3*yzint)/2
-		write(*,"(' QZX=',f12.6,'  QZY=',f12.6,'  QZZ=',f12.6)") (-3*xzint)/2,(-3*yzint)/2,QZZ
-		write(*,"( ' The magnitude of atomic quadrupole moment (Cartesian form):',f12.6)") sqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
+		write(*,"(' XX=',f12.6,'  XY=',f12.6,'  XZ=',f12.6)") QXX,(-3*xyint)/2,(-3*xzint)/2
+		write(*,"(' YX=',f12.6,'  YY=',f12.6,'  YZ=',f12.6)") (-3*xyint)/2,QYY,(-3*yzint)/2
+		write(*,"(' ZX=',f12.6,'  ZY=',f12.6,'  ZZ=',f12.6)") (-3*xzint)/2,(-3*yzint)/2,QZZ
+		write(*,"(' Magnitude of the traceless quadrupole moment tensor:',f12.6)") sqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
 		R20=-(3*zzint-rrint)/2D0 !Notice that the negative sign, because electrons carry negative charge
 		R2n1=-dsqrt(3D0)*yzint
 		R2p1=-dsqrt(3D0)*xzint
@@ -807,9 +831,6 @@ do iatm=1,ncenter
 		write(*,"( ' Magnitude: |Q_3|=',f12.6)") dsqrt(R30**2+R3n1**2+R3p1**2+R3n2**2+R3p2**2+R3n3**2+R3p3**2)
 		write(*,*)
 		atmmono(iatm)=eleint
-		xintacc=xintacc+xint
-		yintacc=yintacc+yint
-		zintacc=zintacc+zint
 	
 	!Calculate atomic overlap matrix (AOM) for all tasks that require it
 	else if (isel==3.or.isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==9.or.isel==10.or.isel==11) then
@@ -869,6 +890,15 @@ do iatm=1,ncenter
 			end if
 		end if
 	end if
+    
+	!Show progress for integrating function. For electric multipole moment integration the process is not shown, because it prints data in the process
+	if (isel==12) then
+        ifinish=ifinish+1
+        call showprog(ifinish,naromatatm)
+    else if (isel/=2) then
+        ifinish=ifinish+1
+        call showprog(ifinish,natmcalclist)
+    end if
 	
 end do !End cycling atoms
 
@@ -1118,15 +1148,91 @@ else if (isel==103) then !SPECIAL: Quadratic and cubic Renyi relative entropy
 	write(*,"(' Molecular cubic Renyi relative entropy:    ',f18.8)") -log10(sum(rintval(:,2)))
 		
 else if (isel==2) then !Multipole moment integration
-	write(*,"(' Total number of electrons:',f14.6)") -sum(atmmono)
-	xmoldip=-xintacc+sum(a(:)%x*(atmmono(:)+a(:)%charge))
-	ymoldip=-yintacc+sum(a(:)%y*(atmmono(:)+a(:)%charge))
-	zmoldip=-zintacc+sum(a(:)%z*(atmmono(:)+a(:)%charge))
-	write(*,"(' Molecular dipole moment (a.u.): ',3f14.6)") xmoldip,ymoldip,zmoldip
-	write(*,"(' Molecular dipole moment (Debye):',3f14.6)") xmoldip*au2debye,ymoldip*au2debye,zmoldip*au2debye
-	xmoldipmag=sqrt(xmoldip**2+ymoldip**2+zmoldip**2)
-	write(*,"(' Magnitude of molecular dipole moment (a.u.&Debye):',2f14.6)") xmoldipmag,xmoldipmag*au2debye
-	
+    if (natmcalclist/=ncenter) then
+        write(*,"(a)") " Note: The word ""Molecular"" in this context corresponds to the fragment you defined by option -5"
+    else
+        write(*,"(a)") " Note: The word ""Molecular"" in this context corresponds to the entire current system"
+    end if
+    write(*,*) "             *****  Molecular dipole and multipole moments  *****"
+	write(*,"(' Total number of electrons:',f14.6,'   Net charge:',f12.6)") -sum(atmmono),sum(a(atmcalclist(1:natmcalclist))%index)+sum(atmmono)
+	!Combine nuclear contribution and electron contribution to obtain molecular multiple moment
+    do idx=1,natmcalclist
+        iatm=atmcalclist(idx)
+        xinttot=xinttot+a(iatm)%x*a(iatm)%index
+        yinttot=yinttot+a(iatm)%y*a(iatm)%index
+        zinttot=zinttot+a(iatm)%z*a(iatm)%index
+        xxinttot=xxinttot+a(iatm)%x*a(iatm)%x*a(iatm)%index
+        yyinttot=yyinttot+a(iatm)%y*a(iatm)%y*a(iatm)%index
+        zzinttot=zzinttot+a(iatm)%z*a(iatm)%z*a(iatm)%index
+        xyinttot=xyinttot+a(iatm)%x*a(iatm)%y*a(iatm)%index
+        yzinttot=yzinttot+a(iatm)%y*a(iatm)%z*a(iatm)%index
+        xzinttot=xzinttot+a(iatm)%x*a(iatm)%z*a(iatm)%index
+		xxxinttot=xxxinttot+a(iatm)%x*a(iatm)%x*a(iatm)%x*a(iatm)%index
+		yyyinttot=yyyinttot+a(iatm)%y*a(iatm)%y*a(iatm)%y*a(iatm)%index
+		zzzinttot=zzzinttot+a(iatm)%z*a(iatm)%z*a(iatm)%z*a(iatm)%index
+		yzzinttot=yzzinttot+a(iatm)%y*a(iatm)%z*a(iatm)%z*a(iatm)%index
+		xzzinttot=xzzinttot+a(iatm)%x*a(iatm)%z*a(iatm)%z*a(iatm)%index
+		xxzinttot=xxzinttot+a(iatm)%x*a(iatm)%x*a(iatm)%z*a(iatm)%index
+		yyzinttot=yyzinttot+a(iatm)%y*a(iatm)%y*a(iatm)%z*a(iatm)%index
+		xxyinttot=xxyinttot+a(iatm)%x*a(iatm)%x*a(iatm)%y*a(iatm)%index
+		xyyinttot=xyyinttot+a(iatm)%x*a(iatm)%y*a(iatm)%y*a(iatm)%index
+		xyzinttot=xyzinttot+a(iatm)%x*a(iatm)%y*a(iatm)%z*a(iatm)%index
+    end do
+	rrinttot=xxinttot+yyinttot+zzinttot
+	rrxinttot=xxxinttot+xyyinttot+xzzinttot
+	rryinttot=xxyinttot+yyyinttot+yzzinttot
+	rrzinttot=xxzinttot+yyzinttot+zzzinttot
+    
+	write(*,"(' Molecular dipole moment (a.u.): ',3f14.6)") xinttot,yinttot,zinttot
+	write(*,"(' Molecular dipole moment (Debye):',3f14.6)") xinttot*au2debye,yinttot*au2debye,zinttot*au2debye
+	dipmag=sqrt(xinttot**2+yinttot**2+zinttot**2)
+	write(*,"(' Magnitude of molecular dipole moment (a.u.&Debye):',2f14.6)") dipmag,dipmag*au2debye
+    write(*,"(' Molecular quadrupole moments (Standard Cartesian form):')")
+    fac=1
+    !fac=au2debye*b2a !If using this factor, result will be identical to "Quadrupole moment (field-independent basis, Debye-Ang):" printed by Gaussian
+	write(*,"(' XX=',f12.4,'  XY=',f12.4,'  XZ=',f12.4)") xxinttot*fac,xyinttot*fac,xzinttot*fac
+	write(*,"(' YX=',f12.4,'  YY=',f12.4,'  YZ=',f12.4)") xyinttot*fac,yyinttot*fac,yzinttot*fac
+	write(*,"(' ZX=',f12.4,'  ZY=',f12.4,'  ZZ=',f12.4)") xzinttot*fac,yzinttot*fac,zzinttot*fac
+    write(*,"(' Molecular quadrupole moments (Traceless Cartesian form):')")
+    !If removing the comment, the data will be identical to "Traceless Quadrupole moment (field-independent basis, Debye-Ang)" printed by Gaussian
+	QXX=(3*xxinttot-rrinttot)/2 !*au2debye*b2a/1.5D0
+	QYY=(3*yyinttot-rrinttot)/2 !*au2debye*b2a/1.5D0
+	QZZ=(3*zzinttot-rrinttot)/2 !*au2debye*b2a/1.5D0
+    QXY=3*xyinttot/2            !*au2debye*b2a/1.5D0
+    QXZ=3*xzinttot/2            !*au2debye*b2a/1.5D0
+    QYZ=3*yzinttot/2            !*au2debye*b2a/1.5D0
+	write(*,"(' XX=',f12.4,'  XY=',f12.4,'  XZ=',f12.4)") QXX,QXY,QXZ
+	write(*,"(' YX=',f12.4,'  YY=',f12.4,'  YZ=',f12.4)") QXY,QYY,QYZ
+	write(*,"(' ZX=',f12.4,'  ZY=',f12.4,'  ZZ=',f12.4)") QXZ,QYZ,QZZ
+	write(*,"(' Magnitude of the traceless quadrupole moment tensor:',f12.6)") sqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
+	R20=(3*zzinttot-rrinttot)/2D0 !Notice that the negative sign, because electrons carry negative charge
+	R2n1=dsqrt(3D0)*yzinttot
+	R2p1=dsqrt(3D0)*xzinttot
+	R2n2=dsqrt(3D0)*xyinttot
+	R2p2=dsqrt(3D0)/2D0*(xxinttot-yyinttot)
+	write(*,"(' Molecular quadrupole moments (Spherical harmonic form):')")
+	write(*,"(' Q_2,0 =',f12.4,'   Q_2,-1=',f12.4,'   Q_2,1=',f12.4)") R20,R2n1,R2p1
+	write(*,"(' Q_2,-2=',f12.4,'   Q_2,2 =',f12.4)") R2n2,R2p2
+	write(*,"( ' Magnitude: |Q_2|=',f12.4)") dsqrt(R20**2+R2n1**2+R2p1**2+R2n2**2+R2p2**2)
+	R30=(5*zzzinttot-3*rrzinttot)/2D0
+	R3n1=dsqrt(3D0/8D0)*(5*yzzinttot-rryinttot)
+	R3p1=dsqrt(3D0/8D0)*(5*xzzinttot-rrxinttot)
+	R3n2=dsqrt(15D0)*xyzinttot
+	R3p2=dsqrt(15D0)*(xxzinttot-yyzinttot)/2D0
+	R3n3=dsqrt(5D0/8D0)*(3*xxyinttot-yyyinttot)
+	R3p3=dsqrt(5D0/8D0)*(xxxinttot-3*xyyinttot)
+	write(*,"(' Molecular octopole moments (Cartesian form):')")
+    fac=1
+    !fac=au2debye*b2a*b2a !If using this factor, result will be identical to "Octapole moment (field-independent basis, Debye-Ang**2):" printed by Gaussian
+	write(*,"(' XXX=',f10.4,'  YYY=',f10.4,'  ZZZ=',f10.4,'  XYY=',f10.4,'  XXY=',f10.4)") &
+    xxxinttot*fac,yyyinttot*fac,zzzinttot*fac,xyyinttot*fac,xxyinttot*fac
+	write(*,"(' XXZ=',f10.4,'  XZZ=',f10.4,'  YZZ=',f10.4,'  YYZ=',f10.4,'  XYZ=',f10.4)") &
+    xxzinttot*fac,xzzinttot*fac,yzzinttot*fac,yyzinttot*fac,xyzinttot*fac
+	write(*,"(' Molecular octopole moments (Spherical harmonic form):')")
+	write(*,"(' Q_3,0 =',f11.4,'  Q_3,-1=',f11.4,'  Q_3,1 =',f11.4)") R30,R3n1,R3p1
+	write(*,"(' Q_3,-2=',f11.4,'  Q_3,2 =',f11.4,'  Q_3,-3=',f11.4,'  Q_3,3 =',f11.4)") R3n2,R3p2,R3n3,R3p3
+	write(*,"( ' Magnitude: |Q_3|=',f12.4)") dsqrt(R30**2+R3n1**2+R3p1**2+R3n2**2+R3p2**2+R3n3**2+R3p3**2)
+    
 else if (isel==3) then !Output AOM
 	open(10,file="AOM.txt",status="replace")
 	if (wfntype==0.or.wfntype==2.or.wfntype==3) then
@@ -1197,7 +1303,7 @@ else if (isel==4) then !Show LI and DI or fuzzy bond order
 				write(ioutid,*)
 			end if
 			if (selectyn=='n') then !Just output result to screen, choose if output result to plain text file
-				write(*,*) "If also output LI and DI to LIDI.txt in current folder? (y/n)"
+				write(*,*) "If also outputting LI and DI to LIDI.txt in current folder? (y/n)"
 				read(*,*) selectyn
 				if (selectyn=='y') then
 					open(10,file="LIDI.txt",status="replace")
@@ -1263,7 +1369,7 @@ else if (isel==4) then !Show LI and DI or fuzzy bond order
 			end if
 		end if
 		write(*,*)
-		write(*,*) "If output bond order matrix to bndmat.txt in current folder? (y/n)"
+		write(*,*) "If outputting bond order matrix to bndmat.txt in current folder? (y/n)"
 		read(*,*) selectyn
 		if (selectyn=='y'.or.selectyn=='Y') then
 			open(10,file="bndmat.txt",status="replace")
@@ -1434,7 +1540,7 @@ else if (isel==8) then !Integral in overlap region
 			write(*,"(' The bond order between fragment 1 and 2:',f12.6)") bndordfragtot
 		end if
 		write(*,*)
-		write(*,*) "If output bond order matrix to bndmat.txt in current folder? (y/n)"
+		write(*,*) "If outputting bond order matrix to bndmat.txt in current folder? (y/n)"
 		read(*,*) selectyn
 		if (selectyn=='y'.or.selectyn=='Y') then
 			open(10,file="bndmat.txt",status="replace")
@@ -1469,7 +1575,7 @@ else if (isel==8) then !Integral in overlap region
 		write(*,"('Summing up non-diagonal, matrix elements:',f20.8)") sumovlptot-sumdiagpos-sumdiagneg
 		write(*,"('Summing up all matrix elements:          ',f20.8)") sumovlptot
 		write(*,*)
-		write(*,*) "If also output above matrices to intovlp.txt in current folder? (y/n)"
+		write(*,*) "If also outputting above matrices to intovlp.txt in current folder? (y/n)"
 		read(*,*) selectyn
 		if (selectyn=='y'.or.selectyn=='Y') then
 			open(10,file="intovlp.txt",status="replace")
@@ -1487,7 +1593,7 @@ else if (isel==8) then !Integral in overlap region
 else if (isel==9) then !CLRK
 	call showmatgau(CLRK,"Condensed linear response kernel (CLRK) matrix",0,"f14.8")
 	write(*,*)
-	write(*,*) "If also output CLRK to CLRK.txt in current folder? (y/n)"
+	write(*,*) "If also outputting CLRK to CLRK.txt in current folder? (y/n)"
 	read(*,*) selectyn
 	if (selectyn=='y'.or.selectyn=='Y') then
 		open(10,file="CLRK.txt",status="replace")

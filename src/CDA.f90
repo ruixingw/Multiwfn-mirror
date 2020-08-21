@@ -492,7 +492,7 @@ end if
 1 continue
 
 
-!============= Post-process interface, but in fact CDA and ECDA are calculated by option 0
+!============= Post-processing interface, but in fact CDA and ECDA are calculated by option 0
 write(*,*)
 do while(.true.)
 	if (iout==6) write(*,*) "-2 Switch output destination (for options 0, 1, 6), current: Screen"
@@ -1107,7 +1107,7 @@ do while(.true.)
 			end if
 		end do
 
-	end if !End post-process interface
+	end if !End post-processing interface
 end do
 end subroutine
 

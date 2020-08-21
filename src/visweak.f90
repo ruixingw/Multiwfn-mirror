@@ -6,13 +6,15 @@ do while(.true.)
 	write(*,*)
 	write(*,*) "           ============ Visual study of weak interaction ============ "
 	write(*,*) "0 Return"
-	write(*,*) "1 NCI analysis (Also known as RDG analysis. JACS, 132, 6498)"
+	write(*,*) "1 NCI analysis (also known as RDG analysis. JACS, 132, 6498)"
 	write(*,*) "2 NCI analysis based on promolecular density (JACS, 132, 6498)"
-	write(*,*) "3 Averaged NCI analysis (NCI analysis for multiple frames. JCTC, 9 ,2226)"
+	write(*,*) "3 Averaged NCI analysis (NCI analysis for multiple frames. JCTC, 9, 2226)"
+	write(*,*) "4 Interaction region indicator (IRI) analysis"
 	write(*,*) "5 DORI analysis (JCTC, 10, 3745)"
 	write(*,*) "6 Visualization of van der Waals potential"
 	write(*,*) "9 Becke/Hirshfeld surface analysis (CrystEngComm, 11, 19)"
 	write(*,*) "10 IGM analysis based on promolecular density (PCCP 19, 17928)"
+	write(*,*) "11 IGM analysis based on Hirshfeld partition of molecular density (IGMH)"
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -22,6 +24,8 @@ do while(.true.)
 		call funcvsfunc(2)
 	else if (isel==3) then
 		call RDG_MD
+	else if (isel==4) then
+		call funcvsfunc(4)
 	else if (isel==5) then
 		call funcvsfunc(5)
     else if (isel==6) then
@@ -32,7 +36,9 @@ do while(.true.)
 		write(*,*) "Press ENTER button to continue"
 		read(*,*)
 	else if (isel==10) then
-		call IGM
+		call IGM(1)
+	else if (isel==11) then
+		call IGM(2)
 	end if
 end do
 end subroutine
@@ -69,8 +75,7 @@ avgdens=0D0
 avggrad=0D0
 avghess=0D0
 call walltime(walltime1)
-CALL CPU_TIME(time_begin)
-open(10,file=filename,access="sequential",status="old")
+open(10,file=filename,status="old")
 write(*,*)
 write(*,*) "Now calculate averaged density, density gradient and density Hessian"
 do ifps=1,ifpsend
@@ -136,9 +141,8 @@ do k=1,nz
 		end do
 	end do
 end do
-CALL CPU_TIME(time_end)
 call walltime(walltime2)
-write(*,"(' Calculation totally took up CPU time',f12.2,'s, wall clock time',i10,'s')") time_end-time_begin,walltime2-walltime1
+write(*,"(' Calculation totally took up wall clock time',i10,' s')") walltime2-walltime1
 
 deallocate(avghess) !avghess will not be used further, so release its memory
 allocate(scatterx(nx*ny*nz),scattery(nx*ny*nz))
@@ -209,12 +213,11 @@ do while (.true.)
 		write(*,*) "Done!"
 	else if (isel==7) then
 		call walltime(walltime1)
-		CALL CPU_TIME(time_begin)
 		write(*,*) "Calculating thermal fluctuation index..."
 		if (allocated(thermflu)) deallocate(thermflu)
 		allocate(thermflu(nx,ny,nz))
 		thermflu=0D0
-		open(10,file=filename,access="sequential",status="old")
+		open(10,file=filename,status="old")
 		!Calculate fluctuation square term of density and temporarily store it to thermflu array
 		do ifps=1,ifpsend
 			call readxyz(filename,1,0)
@@ -236,9 +239,8 @@ do while (.true.)
 		end do
 		close(10)
 		thermflu=dsqrt(thermflu/nfps)/avgdens
-		CALL CPU_TIME(time_end)
 		call walltime(walltime2)
-		write(*,"(' Totally took up CPU time',f12.2,'s, wall clock time',i10,'s',/)") time_end-time_begin,walltime2-walltime1
+		write(*,"(' Calculation totally took up wall clock time',i10,' s',/)") walltime2-walltime1
 		write(*,*) "Outputting thermal fluctuation index to thermflu.cub in current folder"
 		open(10,file="thermflu.cub",status="replace")
 		call outcube(thermflu,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
@@ -265,26 +267,31 @@ end subroutine
 !!------------------------------------------------------------------------------------------------
 !! ----------- Independent Gradient Model (IGM) analysis based on promolecular density -----------
 !!------------------------------------------------------------------------------------------------
-subroutine IGM
+!iIGMtype=1: Based on promolecular approximation
+!iIGMtype=2: Based on Hirshfeld partition of actual density
+subroutine IGM(iIGMtype)
 use function
 use util
 use defvar
 use GUI
 implicit real*8 (a-h,o-z)
 character c2000tmp*2000,selectyn
-real*8 grad(3),IGM_grad(3),IGM_grad_inter(3)
+real*8 grad(3),IGM_grad(3),IGM_grad_inter(3),vectmp(3)
+integer iIGMtype
 integer,allocatable :: IGMfrag(:,:),IGMfragsize(:) !Definition of each fragment used in IGM, and the number of atoms in each fragment
 real*8,allocatable :: frag_grad(:,:) !Temporarily store gradient vector of all defined fragments at a point
 real*8,allocatable :: dg_intra(:,:,:) !delta_g_intra of fragments
 real*8,allocatable :: dg_inter(:,:,:) !delta_g_inter between fragment 1 and 2
 real*8,allocatable :: dg(:,:,:) !delta_g
 real*8,allocatable :: sl2r(:,:,:) !sign(lambda2)rho
+real*8,allocatable :: rhogrid(:,:,:) !real density
+real*8,allocatable :: gradgrid(:,:,:,:) !real density gradient (1/2/3,i,j,k)
 real*8,allocatable :: scatterx(:),scattery(:),tmparr(:),scattery2(:)
 integer,allocatable :: tmpidx1(:),tmpidx2(:),allatm(:)
-real*8,allocatable :: atmpairdg(:,:) !(i,j) is integral of dg between ith atom in a fragment and jth atom in another fragment 
-integer atmpair(2)
+real*8,allocatable :: atmpairdg(:,:) !(i,j) is integral of dg between ith atom in a fragment and jth atom in another fragment
+real*8,allocatable :: IBSIWmat(:,:)
 write(*,*) "Citation: Phys. Chem. Chem. Phys., 19, 17928 (2017)"
-write(*,*) "Atomic unit is used for all outputs of this function"
+write(*,*) "Note: Atomic unit is used for all outputs of this function"
 write(*,*)
 
 !----- Define fragments
@@ -325,23 +332,30 @@ do iatm=1,ncenter
 end do
 deallocate(tmpidx1)
 
-isl2r=2
-if (allocated(b)) then
-	write(*,"(a)") " Your input file contains wavefunction information, which kind of sign(lambda2)rho would you like to use?"
-	write(*,*) "1 sign(lambda2)rho based on actual electron density"
-	write(*,*) "2 sign(lambda2)rho based on promolecular density"
-	read(*,*) isl2r
+if (iIGMtype==1) then
+    isl2r=2
+    if (allocated(b)) then
+	    write(*,"(a)") " Your input file contains wavefunction information, which kind of sign(lambda2)rho would you like to use?"
+	    write(*,*) "1 sign(lambda2)rho based on actual electron density"
+	    write(*,*) "2 sign(lambda2)rho based on promolecular density"
+        write(*,*) "Note: 1 is more accurate but more expensive"
+	    read(*,*) isl2r
+    end if
+else if (iIGMtype==2) then
+    isl2r=1
 end if
 
 !----- Set grid
 aug3D=2D0 !Smaller than default value
 call setgrid(0,igridsel)
 allocate(dg_intra(nx,ny,nz),dg_inter(nx,ny,nz),dg(nx,ny,nz),sl2r(nx,ny,nz))
+if (iIGMtype==2) allocate(rhogrid(nx,ny,nz),gradgrid(3,nx,ny,nz))
 
 !----- Calculate grid data
+call walltime(iwalltime1)
 write(*,*) "Calculating sign(lambda2)rho..."
 ifinish=0
-!$OMP PARALLEL DO SHARED(sl2r,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
+!$OMP PARALLEL DO SHARED(ifinish,sl2r,rhogrid,gradgrid) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
 do k=1,nz
 	tmpz=orgz+(k-1)*dz
 	do j=1,ny
@@ -349,7 +363,13 @@ do k=1,nz
 		do i=1,nx
 			tmpx=orgx+(i-1)*dx
 			if (isl2r==1) then
-				sl2r(i,j,k)=signlambda2rho(tmpx,tmpy,tmpz)
+                if (iIGMtype==1) then
+				    sl2r(i,j,k)=signlambda2rho(tmpx,tmpy,tmpz)
+                else
+                    !Store density and gradient to "rhogrid" and "gradgrid", which will be passed into IGMgrad_Hirsh, thus avoiding recalculate them later
+                    !This treatment is not applied to IGM, because it is quite cheap and often employed for quite large system, this strategy will double memory consuming
+                    call signlambda2rho_RDG(tmpx,tmpy,tmpz,sl2r(i,j,k),RDG,rhogrid(i,j,k),gradgrid(:,i,j,k))
+                end if
 			else
 				sl2r(i,j,k)=signlambda2rho_prodens(tmpx,tmpy,tmpz)
 			end if
@@ -360,7 +380,6 @@ do k=1,nz
 end do
 !$OMP END PARALLEL DO
 
-write(*,*)
 write(*,*) "Calculating delta_g, delta_g_inter and delta_g_intra..."
 ifinish=0
 dg_inter=0
@@ -373,13 +392,20 @@ do k=1,nz
 		do i=1,nx
 			tmpx=orgx+(i-1)*dx
 			!Calculate gradient and IGM gradient of whole system and get dg
-			call IGMprodens(1,tmpx,tmpy,tmpz,IGM_grad,allatm)
-			call IGMprodens(0,tmpx,tmpy,tmpz,grad,allatm)
+			if (iIGMtype==1) then
+                call IGMgrad_promol(tmpx,tmpy,tmpz,allatm,grad,IGM_grad)
+            else if (iIGMtype==2) then
+                call IGMgrad_Hirsh(tmpx,tmpy,tmpz,allatm,grad,IGM_grad,rhogrid(i,j,k),gradgrid(:,i,j,k))
+            end if
 			dg(i,j,k)=dsqrt(sum(IGM_grad**2))-dsqrt(sum(grad**2))
-			!Calculate gradient vector of fragments and get dg_inter
+			!Calculate IGM gradient of current fragment, and then get dg_inter by substracting actual gradient from it
 			IGM_grad_inter=0
 			do ifrag=1,nIGMfrag
-				call IGMprodens(0,tmpx,tmpy,tmpz,frag_grad(:,ifrag),IGMfrag(ifrag,1:IGMfragsize(ifrag)))
+                if (iIGMtype==1) then
+				    call IGMgrad_promol(tmpx,tmpy,tmpz,IGMfrag(ifrag,1:IGMfragsize(ifrag)),frag_grad(:,ifrag),vectmp(:))
+                else if (iIGMtype==2) then
+				    call IGMgrad_Hirsh(tmpx,tmpy,tmpz,IGMfrag(ifrag,1:IGMfragsize(ifrag)),frag_grad(:,ifrag),vectmp(:),rhogrid(i,j,k),gradgrid(:,i,j,k))
+                end if
 				IGM_grad_inter=IGM_grad_inter+abs(frag_grad(:,ifrag))
 			end do
 			dg_inter(i,j,k)=dsqrt(sum(IGM_grad_inter**2))-dsqrt(sum(grad**2))
@@ -389,7 +415,10 @@ do k=1,nz
     call showprog(ifinish,nz)
 end do
 !$OMP END PARALLEL DO
+
 dg_intra=dg-dg_inter
+call walltime(iwalltime2)
+write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 ymin=0.0D0
 ymax=maxval(dg)
 xmin=-0.6D0
@@ -406,7 +435,7 @@ do while (.true.)
 	write(*,*) "3 Output cube files to current folder"
 	write(*,*) "4 Show isosurface of grid data"
 	write(*,*) "5 Screen delta_g_intra at high density region"
-	write(*,*) "6 Evaluate contribution of atomic pairs and atoms to interfragment interaction"
+	write(*,"(a)") " 6 Evaluate contribution of atomic pairs and atoms to interfragment interaction (atom and atom pair dg indices as well as IBSIW index)"
 	write(*,*) "7 Set delta_g where value of sign(lambda2)rho is out of a certain range"
 	write(*,*) "8 Set delta_g_inter where value of sign(lambda2)rho is out of a certain range"
 	read(*,*) isel
@@ -450,7 +479,7 @@ do while (.true.)
 			if (itype==3) call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","${\delta}g$ (a.u.)")
 			if (itype==4) call drawscatter(scatterx,scattery2,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","${\delta}g^{inter/intra}$ (a.u.)",scatterx,scattery,nx*ny*nz)
 			isavepic=0
-			write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""DISLIN"" prefix in current directory"
+			write(*,"(a)") " Figure has been saved to "//trim(graphformat)//" file with ""DISLIN"" prefix in current directory"
 		end if
 	else if (isel==-2) then
 		write(*,*) "Input lower limit and upper limit of X axis  e.g. 0,1.5"
@@ -514,7 +543,8 @@ do while (.true.)
 			end do
 		end do
 		write(*,*) "Done!"
-	else if (isel==6) then
+        
+	else if (isel==6) then !Calculate and print atom and atom pair dg indices as well as IBSIW
 		if (nIGMfrag==2) then
 			ifrag=1
 			jfrag=2
@@ -522,67 +552,40 @@ do while (.true.)
 			write(*,*) "Input fragment index to select two fragments, e.g. 1,3"
 			read(*,*) ifrag,jfrag
 		end if
-		allocate(atmpairdg(IGMfragsize(ifrag),IGMfragsize(jfrag)))
+		ni=IGMfragsize(ifrag)
+		nj=IGMfragsize(jfrag)
+        
+        !Calculate atom pair delta-g indices
+		allocate(atmpairdg(ni,nj))
 		write(*,*) "Please wait..."
-		atmpairdg=0
-		ifinish=0
-		!$OMP PARALLEL DO SHARED(ifinish,atmpairdg) PRIVATE(i,j,k,tmpx,tmpy,tmpz,iatmtmp,iatm,jatmtmp,jatm,atmpair,IGM_grad,grad,tmpval) &
-		!$OMP schedule(dynamic) NUM_THREADS(nthreads)
-		do iatmtmp=1,IGMfragsize(ifrag)
-			iatm=IGMfrag(ifrag,iatmtmp)
-			atmpair(1)=iatm
-			do jatmtmp=1,IGMfragsize(jfrag)
-				jatm=IGMfrag(jfrag,jatmtmp)
-				atmpair(2)=jatm
-				if (distmat(iatm,jatm)> 2D0*(vdwr(a(iatm)%index)+vdwr(a(jatm)%index))) cycle
-				tmpval=0
-				do k=1,nz
-					tmpz=orgz+(k-1)*dz
-					do j=1,ny
-						tmpy=orgy+(j-1)*dy
-						do i=1,nx
-							tmpx=orgx+(i-1)*dx
-							call IGMprodens(1,tmpx,tmpy,tmpz,IGM_grad,atmpair)
-							call IGMprodens(0,tmpx,tmpy,tmpz,grad,atmpair)
-							tmpval=tmpval+dsqrt(sum(IGM_grad**2))-dsqrt(sum(grad**2))
-						end do
-					end do
-				end do
-				atmpairdg(iatmtmp,jatmtmp)=tmpval
-			end do
-			ifinish=ifinish+1
-			call showprog(ifinish,IGMfragsize(ifrag))
-		end do
-		!$OMP END PARALLEL DO
-		atmpairdg=atmpairdg*dx*dy*dz
+        call calcatmpairdg(iIGMtype,ni,IGMfrag(ifrag,:),nj,IGMfrag(jfrag,:),atmpairdg)
+        
 		open(10,file="atmdg.txt",status="replace")
 		!Output the first fragment
-		ni=IGMfragsize(ifrag)
 		allocate(tmparr(ni),tmpidx1(ni))
 		do iatmtmp=1,ni
 			tmparr(iatmtmp)=sum(atmpairdg(iatmtmp,:))
 			tmpidx1(iatmtmp)=IGMfrag(ifrag,iatmtmp)
 		end do
 		call sort(tmparr,list=tmpidx1) !Sort from small to large
-		write(10,"(/,' Atom dg index in fragment',i3,' (zero terms are not shown)')") ifrag
+		write(10,"(' Atom dg index in fragment',i3)") ifrag
 		do idx=ni,1,-1
 			write(10,"(' Atom',i5,' :',f12.6)") tmpidx1(idx),tmparr(idx)
 		end do
 		deallocate(tmparr,tmpidx1)
 		!Output the second fragment
-		nj=IGMfragsize(jfrag)
 		allocate(tmparr(nj),tmpidx1(nj))
 		do jatmtmp=1,nj
 			tmparr(jatmtmp)=sum(atmpairdg(:,jatmtmp))
 			tmpidx1(jatmtmp)=IGMfrag(jfrag,jatmtmp)
 		end do
 		call sort(tmparr,list=tmpidx1) !sort from small to large
-		write(10,"(/,' Atom dg index in fragment',i3,' (zero terms are not shown)')") jfrag
+		write(10,"(/,' Atom dg index in fragment',i3)") jfrag
 		do jdx=nj,1,-1
 			write(10,"(' Atom',i5,' :',f12.6)") tmpidx1(jdx),tmparr(jdx)
 		end do
 		deallocate(tmparr,tmpidx1)
-		!Output the atomic pair contribution
+		!Output atom pair dg indices
 		allocate(tmparr(ni*nj),tmpidx1(ni*nj),tmpidx2(ni*nj))
 		itmp=0
 		do iatmtmp=1,ni
@@ -599,11 +602,67 @@ do while (.true.)
 			if (tmparr(idx)==0) cycle
 			write(10,"(2i5,' :',f12.6)") tmpidx1(idx),tmpidx2(idx),tmparr(idx)
 		end do
-		deallocate(tmparr,tmpidx1,tmpidx2)
 		close(10)
-		write(*,*) "Done! The data have been outputted to atmdg.txt in current folder"
-		write(*,*)
-		write(*,"(a)") " If output the two fragments as atmdg.pdb in current folder with atomic contribution as B-factor field? (y/n)"
+        deallocate(tmparr,tmpidx1,tmpidx2)
+		write(*,"(a)") " Atom and atom pair delta-g indices have been outputted to atmdg.txt in current folder"
+        
+        !Calculate IBSIW index
+        allocate(IBSIWmat(ni,nj))
+		open(10,file="IBSIW.txt",status="replace")
+        !Convert atom pair dg indices to IBSIW
+		do idx=1,ni
+			do jdx=1,nj
+                dist=distmat(IGMfrag(ifrag,idx),IGMfrag(jfrag,jdx))*b2a
+                IBSIWmat(idx,jdx)=atmpairdg(idx,jdx)/dist**2*100
+			end do
+		end do
+		!Output the first fragment
+		allocate(tmparr(ni),tmpidx1(ni))
+		do iatmtmp=1,ni
+			tmparr(iatmtmp)=sum(IBSIWmat(iatmtmp,:))
+			tmpidx1(iatmtmp)=IGMfrag(ifrag,iatmtmp)
+		end do
+		call sort(tmparr,list=tmpidx1) !Sort from small to large
+		write(10,"(' Sum of related IBSIW for each atom in fragment',i3)") ifrag
+		do idx=ni,1,-1
+			write(10,"(' Atom',i5,' :',f12.6)") tmpidx1(idx),tmparr(idx)
+		end do
+		deallocate(tmparr,tmpidx1)
+		!Output the second fragment
+		allocate(tmparr(nj),tmpidx1(nj))
+		do jatmtmp=1,nj
+			tmparr(jatmtmp)=sum(IBSIWmat(:,jatmtmp))
+			tmpidx1(jatmtmp)=IGMfrag(jfrag,jatmtmp)
+		end do
+		call sort(tmparr,list=tmpidx1) !sort from small to large
+		write(10,"(/,' Sum of related IBSIW for each atom in fragment',i3)") jfrag
+		do jdx=nj,1,-1
+			write(10,"(' Atom',i5,' :',f12.6)") tmpidx1(jdx),tmparr(jdx)
+		end do
+		deallocate(tmparr,tmpidx1)
+		!Output atom pair dg indices
+		allocate(tmparr(ni*nj),tmpidx1(ni*nj),tmpidx2(ni*nj))
+		itmp=0
+		do iatmtmp=1,ni
+			do jatmtmp=1,nj
+				itmp=itmp+1
+				tmpidx1(itmp)=IGMfrag(ifrag,iatmtmp)
+				tmpidx2(itmp)=IGMfrag(jfrag,jatmtmp)
+				tmparr(itmp)=IBSIWmat(iatmtmp,jatmtmp)
+			end do
+		end do
+		call sort(tmparr,list=tmpidx1,list2=tmpidx2) !Sort from small to large
+		write(10,"(/,' IBSIW index (zero terms are not shown)')")
+		do idx=ni*nj,1,-1
+			if (tmparr(idx)==0) cycle
+			write(10,"(2i5,' :',f12.6)") tmpidx1(idx),tmpidx2(idx),tmparr(idx)
+		end do
+		close(10)
+        deallocate(IBSIWmat,tmparr,tmpidx1,tmpidx2)
+		write(*,*) "IBSIW have been outputted to IBSIW.txt in current folder"
+        write(*,*)
+        
+		write(*,"(a)") " If outputting the two fragments as atmdg.pdb in current folder with atomic contribution as B-factor field? (y/n)"
 		read(*,*) selectyn
 		open(10,file="atmdg.pdb",status="replace")
 		if (selectyn=='y') then
@@ -652,6 +711,201 @@ end subroutine
 
 
 
+!!------ Calculate atomic pair delta-g index of atom pairs between two lists atmlist1 and atmlist2
+! iIGMtype=1: IGM based on promolecular approximation; =2: IGM based on Hirshfeld partition (IGMH)
+subroutine calcatmpairdg(iIGMtype,natm1,atmlist1,natm2,atmlist2,atmpairdg)
+use defvar
+use util
+use function
+implicit real*8 (a-h,o-z)
+integer iIGMtype,natm1,natm2,atmlist1(natm1),atmlist2(natm2),atmpair(2)
+real*8 atmpairdg(natm1,natm2),grad(3),IGM_grad(3)
+type(content),allocatable :: gridatmorg(:),gridatm(:)
+real*8,allocatable :: dgmat(:,:,:),beckeweigrid(:)
+real*8 atmrho(ncenter),atmgrad(3,ncenter),gradtmp(3),gradIGMtmp(3)
+real*8 atmprorho(ncenter),atmprograd(3,ncenter)
+real*8 prorho,prograd(3),realrho,realgrad(3),hess(3,3),Hirshwei(ncenter)
+
+imethod=1 !Using multi-center grid integration
+iapprox=1 !Enable use approximation to accelerate calculation
+atmpairdg=0
+
+if (imethod==1) then !Calculate based on multi-center grid integration
+    nradpot_bk=radpot
+    nsphpot_bk=sphpot
+    write(*,*) "Select grid for integrating the delta-g_pair functions"
+    !IGMH has higher requirement on integration grid since distribution region is narrow
+    if (iIGMtype==2) write(*,*) "Note: Option 1 is deprecated since numerical accuracy is too low for IGMH"
+    write(*,*) "1 Medium quality (radial=30, angular=110. Cost=1.0 x)"
+    write(*,*) "2 High quality (radial=40, angular=170. Cost=2.1 x)"
+    write(*,*) "3 Ultrafine quality (radial=60, angular=302. Cost=5.5 x)"
+    write(*,*) "4 Perfect quality (radial=75, angular=434. Cost=9.9 x)"
+    write(*,*) "5 Use ""radpot"" and ""sphpot"" defined in settings.ini"
+    read(*,*) isel
+    if (isel==1) then !In fact this is already enough to guarantee quantitative accuracy
+        radpot=30
+        sphpot=110
+    else if (isel==2) then
+        radpot=40
+        sphpot=170
+    else if (isel==3) then
+        radpot=60
+        sphpot=302
+    else if (isel==4) then
+        radpot=75
+        sphpot=434
+    end if
+    allocate(dgmat(natm1,natm2,radpot*sphpot),beckeweigrid(radpot*sphpot),gridatm(radpot*sphpot),gridatmorg(radpot*sphpot))
+    write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+    call walltime(iwalltime1)
+    call gen1cintgrid(gridatmorg,iradcut)
+    call showprog(0,ncenter)
+    
+    !Becke's multi-center integration, cycling all atoms
+    do icen=1,ncenter
+        !If this center is far from any pair of closely contacted atoms among the two fragment, it will be skipped
+        if (iapprox==1) then
+            distmin=1E10
+            do itmp=1,natm1
+                iatm=atmlist1(itmp)
+                do jtmp=1,natm2
+                    jatm=atmlist2(jtmp)
+                    if (distmat(iatm,jatm)>9) cycle !The two atoms are closely contacted
+                    xmid=(a(iatm)%x+a(jatm)%x)/2
+                    ymid=(a(iatm)%y+a(jatm)%y)/2
+                    zmid=(a(iatm)%z+a(jatm)%z)/2
+                    dist=dsqrt((xmid-a(icen)%x)**2+(ymid-a(icen)%y)**2+(zmid-a(icen)%z)**2)
+                    if (dist<distmin) distmin=dist
+                end do
+            end do
+            if (distmin>6) cycle !This is found to be lowest acceptable threshold. The accuracy loss in this case is fully negligible
+        end if
+        
+        dgmat=0
+		gridatm%x=gridatmorg%x+a(icen)%x !Move quadrature point to actual position in molecule
+		gridatm%y=gridatmorg%y+a(icen)%y
+		gridatm%z=gridatmorg%z+a(icen)%z
+	    !$OMP parallel do shared(dgmat) private(ipt,rnowx,rnowy,rnowz,atmrho,atmgrad,itmp,jtmp,iatm,jatm,&
+        !$OMP gradtmp,gradIGMtmp,atmprorho,atmprograd,realrho,realgrad,prorho,prograd,Hirshwei,idir,t1,t2,t3,tmp) num_threads(nthreads)
+	    do ipt=1+iradcut*sphpot,radpot*sphpot
+		    rnowx=gridatm(ipt)%x
+            rnowy=gridatm(ipt)%y
+            rnowz=gridatm(ipt)%z
+            if (iIGMtype==1) then !Using promolecular approximation
+                !Calculate atomic gradient in this grid if it is involved in either atmlist1 or atmlist2
+                do iatm=1,ncenter
+                    if (any(atmlist1==iatm).or.any(atmlist2==iatm)) then
+                        call proatmgrad(iatm,rnowx,rnowy,rnowz,atmrho(iatm),atmgrad(:,iatm))
+                    end if
+                end do
+            else if (iIGMtype==2) then !Using Hirshfeld partition
+                !Calculate molecular density and its gradient. This is major overhead (>80%)
+                call calchessmat_dens(1,rnowx,rnowy,rnowz,realrho,realgrad,hess)
+                !Calculate atom density and gradient in free state
+                do iatm=1,ncenter
+                    if (iapprox==1) then !Ignore atom farther than 64 Bohr from current point, this is quite safe
+                        tmp=(rnowx-a(iatm)%x)**2+(rnowy-a(iatm)%y)**2+(rnowz-a(iatm)%z)**2
+                        if (tmp>64) then
+                            atmprorho(iatm)=0
+                            atmprograd(:,iatm)=0
+                            cycle
+                        end if
+                    end if
+                    call proatmgrad(iatm,rnowx,rnowy,rnowz,atmprorho(iatm),atmprograd(:,iatm))
+                end do
+                !Calculate promolecular density and gradient of molecule
+                prorho=sum(atmprorho(:))
+                do idir=1,3
+                    prograd(idir)=sum(atmprograd(idir,:))
+                end do
+                !Calculate Hirshfeld weight
+                do iatm=1,ncenter
+                    if (prorho==0) then
+                        Hirshwei(iatm)=0
+                    else
+                        Hirshwei(iatm)=atmprorho(iatm)/prorho
+                    end if
+                end do
+                !Calculate gradient of atomic density partitioned by Hirshfeld
+                do iatm=1,ncenter
+                    if (any(atmlist1==iatm).or.any(atmlist2==iatm)) then
+                        do idir=1,3
+                            t1=Hirshwei(iatm)*realgrad(idir)
+                            if (prorho==0) then
+                                t2=0;t3=0
+                            else
+                                t2=realrho/prorho*atmprograd(idir,iatm)
+                                t3=-realrho*atmprorho(iatm)/prorho**2 * prograd(idir)
+                            end if
+                            atmgrad(idir,iatm)=t1+t2+t3
+                        end do
+                    end if
+                end do
+            end if
+            !Calculate atom pair delta-g matrix contributed by this point
+            do itmp=1,natm1
+                iatm=atmlist1(itmp)
+                do jtmp=1,natm2
+                    jatm=atmlist2(jtmp)
+                    gradtmp(:)=atmgrad(:,iatm)+atmgrad(:,jatm)
+                    gradIGMtmp(:)=abs(atmgrad(:,iatm))+abs(atmgrad(:,jatm))
+                    dgmat(itmp,jtmp,ipt)=dsqrt(sum(gradIGMtmp**2))-dsqrt(sum(gradtmp**2))
+                end do
+            end do
+	    end do
+	    !$OMP end parallel do
+	    call gen1cbeckewei(icen,iradcut,gridatm,beckeweigrid)
+	    do ipt=1+iradcut*sphpot,radpot*sphpot
+		    atmpairdg(:,:)=atmpairdg(:,:)+dgmat(:,:,ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
+	    end do
+        call showprog(icen,ncenter)
+    end do
+    call walltime(iwalltime2)
+    write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+    radpot=nradpot_bk
+    sphpot=nsphpot_bk
+    
+else if (imethod==2) then !Old code based on evenly distributed grid. Not only slow but also inaccurate
+    !ifinish=0
+    !!$OMP PARALLEL DO SHARED(ifinish,atmpairdg) PRIVATE(i,j,k,tmpx,tmpy,tmpz,itmp,iatm,jtmp,jatm,atmpair,IGM_grad,grad,tmpval) &
+    !!$OMP schedule(dynamic) NUM_THREADS(nthreads)
+    !do itmp=1,natm1
+	   ! iatm=atmlist1(itmp)
+	   ! atmpair(1)=iatm
+	   ! do jtmp=1,natm2
+		  !  jatm=atmlist2(jtmp)
+		  !  atmpair(2)=jatm
+		  !  if (distmat(iatm,jatm)> 2D0*(vdwr(a(iatm)%index)+vdwr(a(jatm)%index))) cycle
+		  !  tmpval=0
+		  !  do k=1,nz
+			 !   tmpz=orgz+(k-1)*dz
+			 !   do j=1,ny
+				!    tmpy=orgy+(j-1)*dy
+				!    do i=1,nx
+				!	    tmpx=orgx+(i-1)*dx
+    !                    if (iIGMtype==1) then
+				!		    call IGMgrad_promol(tmpx,tmpy,tmpz,atmpair,grad,IGM_grad)
+    !                    else if (iIGMtype==2) then
+				!		    call IGMgrad_Hirsh(tmpx,tmpy,tmpz,atmpair,grad,IGM_grad)
+    !                    end if
+				!	    tmpval=tmpval+dsqrt(sum(IGM_grad**2))-dsqrt(sum(grad**2))
+				!    end do
+			 !   end do
+		  !  end do
+		  !  atmpairdg(itmp,jtmp)=tmpval
+	   ! end do
+	   ! ifinish=ifinish+1
+	   ! call showprog(ifinish,natm1)
+    !end do
+    !!$OMP END PARALLEL DO
+    !atmpairdg=atmpairdg*dx*dy*dz
+end if
+end subroutine
+
+
+
+
+
 !!-------------------------------------
 !!------ Calculate vdW potential ------
 !!-------------------------------------
@@ -662,10 +916,25 @@ use GUI
 implicit real*8 (a-h,o-z)
 real*8 parmA(ncenter),parmB(ncenter),UFF_A(103),UFF_B(103)
 real*8,allocatable :: repulgrid(:,:,:),dispgrid(:,:,:),vdwgrid(:,:,:)
-character outcubfile*200
+character outcubfile*200,c80tmp*80
+
+write(*,"(/,a)") " If this method is employed in your work, please cite this paper along with Multiwfn original paper:"
+write(*,"(a,/)") " Tian Lu, Qinxue Chen, van der Waals Potential: An Important Complement to Molecular Electrostatic &
+Potential in Studying Intermolecular Interactions. ChemRxiv (2020) DOI: 10.26434/chemrxiv.12148572"
+
+if (ivdwprobe==0) then
+    write(*,*) "Input name of probe atom, e.g. Ar"
+    read(*,*) c80tmp
+    do iele=1,nelesupp
+        if (ind2name(iele)==c80tmp(1:2)) then
+            ivdwprobe=iele
+            exit
+        end if
+    end do
+end if
 
 write(*,*) "Parameters of UFF forcefield are used in this module"
-write(*,"(' Element of probe atom: ',a,/)") ind2name(ivdwprobe)
+write(*,"(' Element of probe atom: ',a)") ind2name(ivdwprobe)
 
 !call setvdWparm(1,FFtype,parmA,parmB,istatus)
 call defineUFFparm(UFF_A,UFF_B)
@@ -675,6 +944,9 @@ do iatm=1,ncenter
 end do
 parmAj=UFF_A(ivdwprobe)
 parmBj=UFF_B(ivdwprobe)
+write(*,"(' UFF atomic well depth:',f10.3,' kcal/mol')") parmAj
+write(*,"(' UFF atomic radius:    ',f10.3,' Angstrom')") parmBj/2
+write(*,*)
 
 aug3D=8 !Use 8 Bohr as extension distance because vdW potential largely spread
 call setgrid(1,igridsel)

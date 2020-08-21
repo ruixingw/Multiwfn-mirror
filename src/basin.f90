@@ -36,7 +36,7 @@ do while(.true.)
 	if (numatt>0) write(*,*) "-6 Set parameter for attractor clustering or manually perform clustering"
 	if (numatt==0) write(*,*) "-6 Set parameter for attractor clustering"
 	if (numatt>0) write(*,*) "-5 Export basins as cube file"
-	if (numatt>0) write(*,*) "-4 Export attractors as pdb file"
+	if (numatt>0) write(*,*) "-4 Export attractors as pdb/pqr/txt file"
 	if (numatt>0) write(*,*) "-3 Show information of attractors"
 	if (numatt>0) write(*,*) "-2 Measure distances, angles and dihedral angles between attractors or atoms"
 	if (igridmethod==1) write(*,*) "-1 Select the method for generating basins, current: On-grid"
@@ -59,7 +59,10 @@ do while(.true.)
 			write(*,*) " 7 Integrate real space functions in AIM basins with mixed type of grids"
 			write(*,*) " 8 Calculate electric multipole moments in AIM basins with mixed type of grids"
 			write(*,*) " 9 Obtain atomic contribution to population of external basins"
+        else if (ifuncbasin==9) then
+            write(*,"(a)") " 10 Calculate high ELF localization domain population and volume (HELP, HELV)"
 		end if
+		write(*,*) "11 Calculate orbital compositions contributed by various basins"
 	end if
 	read(*,*) isel
 	if (numatt==0.and.(isel==-5.or.isel==-4.or.isel==-3.or.isel==-2.or.isel==0.or.isel==2.or.isel==3.or.isel==4.or.isel==5)) then
@@ -205,13 +208,40 @@ do while(.true.)
 		end if
 		
 	else if (isel==-4) then
-		open(10,file="attractors.pdb",status="replace")
-		do iatt=1,numatt
-			write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") "HETATM",iatt,' '//"C "//' ',"ATT",'A',attconv(iatt),attxyz(iatt,:)*b2a,1.0,0.0,"C "
-		end do
-		close(10)
-		write(*,*) "Done, all attractors have been exported to attractors.pdb in current folder"
-		write(*,*) "Note: The residue indices in the pdb file correspond to attractor indices"
+        write(*,*) "0 Return"
+        write(*,*) "1 Export coordinates of all attractors as attractors.pdb"
+        write(*,"(a)") " 2 Export coordinates and function values of all attractors as attractors.pqr"
+        write(*,"(a)") " 3 Export coordinates and function values of all attractors as attractors.txt"
+        read(*,*) isel2
+        if (isel2==0) then
+            continue
+        else if (isel2==1) then
+		    open(10,file="attractors.pdb",status="replace")
+		    do iatt=1,numatt
+			    write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") "HETATM",iatt,' '//"C "//' ',"ATT",'A',attconv(iatt),attxyz(iatt,:)*b2a,1.0,0.0,"C "
+		    end do
+		    close(10)
+		    write(*,*) "Done, all attractors have been exported to attractors.pdb in current folder"
+		    write(*,"(a)") " Note: The residue indices in the pdb file correspond to the attractor indices after clustering, &
+            while the atomic indices correspond to the raw attractor indices"
+        else if (isel2==2) then
+		    open(10,file="attractors.pqr",status="replace")
+		    do iatt=1,numatt
+			    write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,E18.8E3,f5.2,1x,a2)") "HETATM",iatt,' '//"C "//' ',"ATT",'A',attconv(iatt),attxyz(iatt,:)*b2a,attval(iatt),1.0,"C "
+		    end do
+		    close(10)
+		    write(*,*) "Done, all attractors have been exported to attractors.pqr in current folder"
+		    write(*,"(a)") " Note: The residue indices in the pqr file correspond to the attractor indices after clustering, &
+            while the atomic indices correspond to the raw attractor indices. The atomic charge column corresponds to function value"
+        else if (isel2==3) then
+		    open(10,file="attractors.txt",status="replace")
+		    do iatt=1,numatt
+                write(10,"(3f12.6,1PE18.8E3)") attxyz(iatt,:),attval(iatt)
+            end do
+		    close(10)
+		    write(*,*) "Done, all attractors have been exported to attractors.txt in current folder"
+            write(*,"(a)") " In this file, the first three columns correspond to X,Y,Z coordinate in Bohr, the final column is function value"
+        end if
 		
 	else if (isel==-3) then
 		write(*,*) "  Attractor       X,Y,Z coordinate (Angstrom)            Value"
@@ -481,11 +511,9 @@ do while(.true.)
 		write(*,*)
 		write(*,*) "Generating basins, please wait..."
 		call walltime(walltime1)
-		CALL CPU_TIME(time_begin)
 		call generatebasin(igridmethod) !Generate basins
-		CALL CPU_TIME(time_end)
 		call walltime(walltime2)
-		write(*,"(' Generating basins took up CPU time',f12.2,'s, wall clock time',i10,'s')") time_end-time_begin,walltime2-walltime1	
+		write(*,"(' Generating basins took up wall clock time',i10,' s')") walltime2-walltime1	
 		numunassign=count(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)
 		write(*,"(' The number of unassigned grids:',i12)") numunassign
 		numgotobound=count(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)
@@ -564,6 +592,10 @@ do while(.true.)
 ! 		call integratebasinrefine
 	else if (isel==9) then
 		call atmpopinbasin
+    else if (isel==10) then
+        call HELP_HELV
+    else if (isel==11) then
+        call basinorbcomp
 	end if
 end do
 
@@ -1807,7 +1839,6 @@ else if (ifuncint==-2) then
 end if
 
 call walltime(walltime1)
-CALL CPU_TIME(time_begin)
 write(*,*) "Integrating, please wait..."
 intval=0D0
 basinvol=0D0
@@ -1854,10 +1885,179 @@ write(*,"(' Sum of above values:',f20.8)") sum(intval(1:numrealatt))
 if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0)
 if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1)
 
-CALL CPU_TIME(time_end)
 call walltime(walltime2)
-write(*,"(' Integrating basins took up CPU time',f12.2,'s, wall clock time',i10,'s')") time_end-time_begin,walltime2-walltime1
+write(*,"(' Integrating basins took up wall clock time',i10,' s')") walltime2-walltime1
 end subroutine
+
+
+
+!!------- Calculate orbital compositions contributed by various basins by uniform grid integration
+subroutine basinorbcomp
+use defvar
+use util
+use basinintmod
+use function
+implicit real*8(a-h,o-z)
+real*8 intval(-1:numatt),intvalpriv(-1:numatt),orbcomp(ncenter)
+real*8 comparr(nmo,numrealatt),comparrpriv(nmo,numrealatt),orbval(nmo)
+integer att2atm(numrealatt),atm2att(ncenter)
+character c80tmp*80,c2000tmp*2000
+
+if (allocated(frag1)) deallocate(frag1)
+if (ifuncbasin==1) then
+    call calc_att2atm(att2atm)
+    atm2att=0 !If an atom doesn't have corresponding attractor, the attractor index will be 0
+    do irealatt=1,numrealatt
+        atm2att(att2atm(irealatt))=irealatt
+    end do
+end if
+dvol=dx*dy*dz
+
+do while(.true.)
+    write(*,*)
+	write(*,*) "Now input the orbital index to print orbital composition, e.g. 5"
+	write(*,"(a)") " You can also input:"
+	if (.not.allocated(frag1)) then
+	    write(*,"(a,i6)") " -9: Define fragment, current: undefined"
+	else
+    	write(*,"(a,i6)") " -9: Redefine fragment, current number of atoms:",size(frag1)
+    end if
+	write(*,"(a)") "  0: Return"
+	write(*,"(a)") " -1: Print basic information of all orbitals"
+	!write(*,"(a)") " -2: Print atom contribution to a batch of orbitals"
+	!write(*,"(a)") " -3: Print fragment contribution to a batch of orbitals"
+	write(*,"(a)") " -4: Export composition of every basin in every orbital to orbcomp.txt"
+	!write(*,"(a)") " -5: Print orbital delocalization index (ODI) for a batch of orbitals"
+    
+	read(*,*) isel
+    if (isel==0) then
+        if (allocated(frag1)) deallocate(frag1)
+        return
+    else if (isel==-1) then
+        call showorbinfo(1,nmo)
+        
+    else if (isel==-4) then
+        if (ifuncbasin/=1) then
+            write(*,"(a)") " Error: This option is meaningful only when the function used to partition the basins is electron density!"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            cycle
+        end if
+        comparr=0D0
+        ifinish=0
+        !$OMP PARALLEL private(ix,iy,iz,irealatt,rnowx,rnowy,rnowz,comparrpriv,orbval) shared(ifinish,comparr) NUM_THREADS(nthreads)
+        comparrpriv=0D0
+        !$OMP do schedule(DYNAMIC)
+        do iz=2,nz-1
+	        do iy=2,ny-1
+		        do ix=2,nx-1
+			        rnowx=orgx+(ix-1)*dx
+			        rnowy=orgy+(iy-1)*dy
+			        rnowz=orgz+(iz-1)*dz
+				    call orbderv(1,1,nmo,rnowx,rnowy,rnowz,orbval(:))
+			        irealatt=gridbas(ix,iy,iz)
+			        comparrpriv(:,irealatt)=comparrpriv(:,irealatt)+orbval(:)**2
+		        end do
+	        end do
+            ifinish=ifinish+1
+            call showprog(ifinish,nz-2)
+        end do
+        !$OMP end do
+        !$OMP CRITICAL
+            comparr=comparr+comparrpriv
+        !$OMP end CRITICAL
+        !$OMP END PARALLEL
+        comparr=comparr*dvol
+    
+		open(10,file="orbcomp.txt",status="replace")
+		do imo=1,nmo
+			write(10,"(' Orbital',i6)") imo
+            do iatm=1,ncenter
+                orbcomp(iatm)=comparr(imo,atm2att(iatm))
+            end do
+            valnorm=sum(comparr(imo,:)) !Since there may be NNA, normalization factor should use sum of all basins
+			do iatm=1,ncenter
+				write(10,"(i6,f11.3,' %')") iatm,orbcomp(iatm)/valnorm*100
+			end do
+		end do
+		close(10)
+		write(*,*) "Done! orbcomp.txt has been exported to current folder"
+        if (numrealatt/=ncenter) then
+            write(*,"(a)") " Note: The number of attractors is unequal to number of atoms, therefore the sum of atom contributions is not equal to 100 %"
+        end if
+        
+    else if (isel==-9) then
+        if (ifuncbasin/=1) then
+            write(*,"(a)") " Error: This option is meaningful only when the function used to partition the basins is electron density!"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            cycle
+        end if
+        call definefragment
+        
+    else
+        intval=0D0
+        ifinish=0
+        !$OMP PARALLEL private(ix,iy,iz,irealatt,rnowx,rnowy,rnowz,tmpval,intvalpriv) shared(intval,ifinish) NUM_THREADS(nthreads)
+        intvalpriv=0D0
+        !$OMP do schedule(DYNAMIC)
+        do iz=2,nz-1
+	        do iy=2,ny-1
+		        do ix=2,nx-1
+			        rnowx=orgx+(ix-1)*dx
+			        rnowy=orgy+(iy-1)*dy
+			        rnowz=orgz+(iz-1)*dz
+				    tmpval=fmo(rnowx,rnowy,rnowz,isel)**2
+			        irealatt=gridbas(ix,iy,iz)
+			        intvalpriv(irealatt)=intvalpriv(irealatt)+tmpval
+		        end do
+	        end do
+            ifinish=ifinish+1
+            call showprog(ifinish,nz-2)
+        end do
+        !$OMP end do
+        !$OMP CRITICAL
+            intval=intval+intvalpriv
+        !$OMP end CRITICAL
+        !$OMP END PARALLEL
+        intval=intval*dvol
+        sumcontri=sum(intval(1:numrealatt))
+        write(*,"(' Sum of raw contributions:',f18.3,' %')") sumcontri*100
+        intval=intval/sumcontri
+        write(*,*)
+        write(*,*) "Final data after normalization:"
+        do irealatt=1,numrealatt
+	        write(*,"(' Basin:',i8,'   Contribution:',f10.3,' %')") irealatt,intval(irealatt)*100
+        end do
+        !For AIM basins, also show atomic values
+        if (ifuncbasin==1) then
+            write(*,*)
+            write(*,*) "Contributions from atoms:"
+            do iatm=0,ncenter
+			    do iatt=1,numrealatt
+				    if (att2atm(iatt)==iatm) then
+                        if (iatm==0) then
+					        write(*,"(i7,' (NNA)   Contribution:',f8.3,' %')") iatt,intval(iatt)*100
+				        else
+				            write(*,"(i7,' (',a,')    Contribution:',f8.3,' %')") iatm,a(iatm)%name,intval(iatt)*100
+				        end if
+                    end if
+			    end do
+		    end do
+            write(*,*)
+            write(*,"(' Orbital delocalization index:',f8.2)") sum((intval(1:numrealatt)*100)**2)/100
+		    if (allocated(frag1)) then
+			    write(*,*)
+                compfrag=sum(intval(atm2att(frag1)))
+			    write(*,"(' Composition of the fragment:',f8.3,' %')") compfrag*100
+                orbdeloc=sum((intval(atm2att(frag1))*100/compfrag)**2)
+                write(*,"(' Orbital delocalization index of the fragment:',f8.2)") orbdeloc/100
+		    end if
+        end if
+    end if
+end do
+end subroutine
+
 
 
 
@@ -2558,7 +2758,7 @@ if (ioutid==10) then
 end if
 
 write(*,*)
-write(*,*) "If also output above information to LIDI.txt in current folder? (y/n)"
+write(*,*) "If also outputting above information to LIDI.txt in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
 	open(10,file="LIDI.txt",status="replace")
@@ -2645,7 +2845,6 @@ do while(.true.)
 end do
 
 call walltime(walltime1)
-CALL CPU_TIME(time_begin)
 write(*,*) "Integrating, please wait..."
 intval=0D0
 basinvol=0D0
@@ -2720,9 +2919,8 @@ write(*,"(' Sum of above values:',f20.8)") sum(intval(1:numrealatt))
 if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0)
 if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1)
 
-CALL CPU_TIME(time_end)
 call walltime(walltime2)
-write(*,"(' Integrating basins took up CPU time',f12.2,'s, wall clock time',i10,'s')") time_end-time_begin,walltime2-walltime1
+write(*,"(' Integrating basins took up wall clock time',i10,' s')") walltime2-walltime1
 end subroutine
 
 
@@ -2805,14 +3003,14 @@ att2atm=0
 !We use CPpos to record the center of the trust sphere
 write(*,*) "Integrating in trust sphere..."
 do iatt=1,numrealatt !Cycle each attractors
-	!Refine the crude position of attractor by exact newton method
+	!Refine the raw position of attractor by exact Newton method
 	do iatm=1,ncenter
 		disttest=dsqrt( (realattxyz(iatt,1)-a(iatm)%x)**2+(realattxyz(iatt,2)-a(iatm)%y)**2+(realattxyz(iatt,3)-a(iatm)%z)**2 )
 		if (disttest<0.3D0) then !If distance between attractor and a nucleus is smaller than 0.3 Bohr, then the attractor will belong to the atom
 			att2atm(iatt)=iatm
 			write(*,"(' Attractor',i6,' corresponds to atom',i6,' (',a,')')") iatt,iatm,a(iatm)%name
 			numcpold=numcp
-			call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,1,0)
+			call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,1)
 			if (numcp==numcpold) then
 				write(*,*) "Note: Unable to locate exact CP position! Use nuclear position"
 				numcp=numcp+1
@@ -2834,7 +3032,7 @@ do iatt=1,numrealatt !Cycle each attractors
 			return
 		else if (c80tmp==" ") then
 			numcpold=numcp
-			call findcp(realattxyz(iatt,1),realattxyz(iatt,2),realattxyz(iatt,3),1,0)
+			call findcp(realattxyz(iatt,1),realattxyz(iatt,2),realattxyz(iatt,3),1)
 			if (numcp==numcpold) then
 				write(*,*) "Unable to locate exact CP position! Exit..."
 				return
@@ -3713,7 +3911,7 @@ write(*,"(' Integrating basins took up CPU time',f12.2,'s, wall clock time',i10,
 
 if (itype==10) then
 	write(*,*)
-	write(*,*) "If also output the result to multipol.txt in current folder? y/n"
+	write(*,*) "If also outputting the result to multipol.txt in current folder? (y/n)"
 	read(*,*) selectyn
 	if (selectyn=='y'.or.selectyn=='Y') then
 		ioutid=10
@@ -3760,4 +3958,123 @@ do iz=1,nz
     call showprog(ifinish,nz)
 end do
 !$OMP END PARALLEL DO
+end subroutine
+
+
+
+!!------- Calculate high ELF localization domain populations and volumes (HELP and HELV), ChemPhysChem, 14, 3714 (2013)
+subroutine HELP_HELV
+use defvar
+use function
+use basinintmod
+use util
+implicit real*8(a-h,o-z)
+real*8 :: ELFthres=0.5D0,rhothres=0.001D0
+real*8 HELP,HELV,HELP_priv,HELV_priv
+character c2000tmp*2000
+integer tmparr(numrealatt)
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "    -------------------- Calculation of HELP and HELV --------------------"
+    write(*,*) "-1 Return"
+    write(*,*) " 0 Select basins and calculate their HELP and HELV"
+    write(*,"(a,f6.3)") "  1 Define threshold of ELF, current: >",ELFthres
+    write(*,"(a,f8.5,' a.u.')") "  2 Define threshold of electron density, current: >",rhothres
+    read(*,*) isel
+    if (isel==-1) then
+        return
+    else if (isel==1) then
+        write(*,*) "Input threshold of ELF, e.g. 0.5"
+        read(*,*) ELFthres
+    else if (isel==2) then
+        write(*,*) "Input threshold of electron density in a.u., e.g. 0.001"
+        read(*,*) rhothres
+    else if (isel==0) then
+        write(*,*) "Input indices of the ELF basins for which HELP and HELV will be calculated"
+        write(*,*) "e.g. 2,3,7-10,14"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,nselbasin,tmparr)
+
+        write(*,*) "Integrating, please wait patiently..."
+        do idx=1,nselbasin
+            ibasin=tmparr(idx)
+            HELP=0
+            HELV=0
+            basinpop=0
+            basinvol=0
+            !$OMP PARALLEL private(ix,iy,iz,irealatt,rnowx,rnowy,rnowz,HELP_priv,HELV_priv,basinpop_priv,basinvol_priv,rhotmp,ELFtmp) &
+            !$OMP shared(HELP,HELV,basinpop,basinvol) NUM_THREADS(nthreads)
+            HELP_priv=0
+            HELV_priv=0
+            basinpop_priv=0
+            basinvol_priv=0
+            !$OMP do schedule(DYNAMIC)
+            do iz=2,nz-1
+	            do iy=2,ny-1
+		            do ix=2,nx-1
+			            rnowx=orgx+(ix-1)*dx
+			            rnowy=orgy+(iy-1)*dy
+			            rnowz=orgz+(iz-1)*dz
+			            irealatt=gridbas(ix,iy,iz)
+                        rhotmp=fdens(rnowx,rnowy,rnowz)
+                        ELFtmp=ELF_LOL(rnowx,rnowy,rnowz,"ELF")
+                        if (irealatt==ibasin) then
+                            if (rhotmp>rhothres.and.ELFtmp>ELFthres) then
+                                HELP_priv=HELP_priv+rhotmp
+                                HELV_priv=HELV_priv+1
+                            end if
+                            basinpop_priv=basinpop_priv+rhotmp
+                            basinvol_priv=basinvol_priv+1
+                        end if
+		            end do
+	            end do
+            end do
+            !$OMP end do
+            !$OMP CRITICAL
+                HELP=HELP+HELP_priv
+                HELV=HELV+HELV_priv
+                basinpop=basinpop+basinpop_priv
+                basinvol=basinvol+basinvol_priv
+            !$OMP end CRITICAL
+            !$OMP END PARALLEL
+            dvol=dx*dy*dz
+            HELP=HELP*dvol
+            HELV=HELV*dvol
+            basinpop=basinpop*dvol
+            basinvol=basinvol*dvol
+            write(*,*)
+            if (nselbasin>1) write(*,"(a,i6)") " ------ Information of basin",ibasin
+            write(*,*) "Basin information: (constraints are not taken into account)"
+            write(*,"(' Population:',f8.4,'   Volume:',f10.4,' Bohr^3')") basinpop,basinvol
+            write(*,*)
+            write(*,"(' High ELF localization domain population (HELP):',f10.4)") HELP
+            write(*,"(' High ELF localization domain volume (HELV):    ',f10.4,' Bohr^3')") HELV
+        end do
+    end if
+end do
+
+end subroutine
+
+
+
+!!------------ Determine correspondence between attractor index and atom index
+!The passed in array is att2atm(numrealatt)
+!Returned arry att2atm(i)=k means real attractor i corresponds to atom k. If k=0, that means attractor i should be NNA
+subroutine calc_att2atm(att2atm)
+use defvar
+use basinintmod
+implicit real*8 (a-h,o-z)
+integer att2atm(numrealatt)
+att2atm=0
+crit=0.3D0 !If distance between attractor and a nucleus is smaller than 0.3 Bohr, then the attractor will belong to the atom
+do iatt=1,numrealatt !Cycle each attractors
+	do iatm=1,ncenter
+        disttest=dsqrt( (realattxyz(iatt,1)-a(iatm)%x)**2+(realattxyz(iatt,2)-a(iatm)%y)**2+(realattxyz(iatt,3)-a(iatm)%z)**2 )
+        if (disttest<0.3D0) then 
+	        att2atm(iatt)=iatm
+            exit
+        end if
+    end do
+end do
 end subroutine

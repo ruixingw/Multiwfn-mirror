@@ -24,7 +24,7 @@ real*8,parameter :: au2kcal=627.51D0,au2KJ=2625.5D0,au2eV=27.2113838D0,cal2J=4.1
 real*8,parameter :: masse=9.10938215D-31,chge=1.602176487D0,lightc=2.99792458D8,au2debye=2.5417462D0 !masse/chge: Mass/charge of an electron
 real*8,parameter :: planckc=6.62606896D-34,h_bar=1.054571628D-34,amu2kg=1.66053878D-27
 real*8,parameter :: boltzc=1.3806488D-23,boltzcau=3.1668114D-6,boltzceV=8.6173324D-5 !in J/K, in Hartree/K and in eV/K, respectively
-real*8,parameter :: avogacst=6.02214179D23
+real*8,parameter :: avogacst=6.02214179D23,eV2nm=1239.842D0,au2nm=45.563D0 !eV and nm can be interconverted by dividing eV2nm
 integer,parameter :: nelesupp=150 !The number of elements supported, ghost(index=0) is not taken into account
 real*8 ctrval(1000) !Value of contour lines
 
@@ -38,18 +38,22 @@ real*8,allocatable :: rhocub(:,:,:) !Specifically store electron density grid da
 real*8,allocatable :: gradd1(:,:),gradd2(:,:) !Gradient in direction1/2 for gradient line plot
 real*8,allocatable :: distmat(:,:) !Distance matrix, in Bohr
 character*200 filename,firstfilename !firstfilename is the filename loaded when Multiwfn boots up or in option -11 of main menu
-character*80 extctrsetting,cmdarg2 !cmdarg is the parameter of booting multiwfn
+character*80 extctrsetting !cmdarg is the parameter of booting multiwfn
 character,allocatable :: custommapname(:)*200,customop(:) !Custom operation for custom map/cube file
 logical alive
 integer :: ifragcontri=0,nfragatmnum=0,nfragatmnumbackup=0 !ifragcontri=1 if fragment has been defined by users
 integer,allocatable :: fragatm(:),fragatmbackup(:) !Store the index of atoms in fragment, used in various routines like setpromol. has no relationship with frag1/frag2. fragatmbackup is used to backup fragatm during custom operation
 integer,allocatable :: frag1(:),frag2(:) !These two fragments are only used for bond order analysis/composition analysis etc., store index of basis functions or atoms. Their size just fit their content
+integer nfrag1,nfrag2 !Currnt size of frag1 and frag2
 integer :: ncustommap=0,imodwfn=0 !if 1, means occupation number or orbital type or basis function information have been modified
 integer :: iorbsel=1 !Which orbital is selected, and its value will be calculated by fmo and calchessmat_mo
 integer :: iorbsel2=0 !Which orbital will be plotted together with iorbsel in plane map
-integer :: iorbvis=0 !The index of the orbital selected in main function 0 
+integer :: iorbvis=0 !The index of the orbital selected in main function 0
+integer :: if_initlibreta=0 !If LIBRETA has been initialized for present wavefunction by running "call initlibreta"
 
-character*10 :: colorname(15)=(/"Red","Green","Blue","White","Black","Gray","Cyan","Yellow","Orange","Magenta","Crimson","Dark green","Purple","Brown","Dark blue"/) !Color name involved setcolor/selcolor routine
+integer,parameter :: ncolormax=16,ngoodcolor=15
+character*10 :: colorname(ncolormax)=(/"Red","Green","Blue","White","Black","Gray","Cyan","Yellow","Orange","Magenta","Crimson","Dark green","Purple","Brown","Dark blue","Pink"/) !Color name involved setcolor/selcolor routine
+integer :: goodcolor(ngoodcolor)=(/5,1,3,12,9,10,14,13,11,15,16,2,7,8,6/) !Color list suitable for plotting lines, good colors appear prior to bad ones. Black,Red,Blue,Dark green,Orange,Magenta,Brown,Purple,Crimson,Dark blue,Pink,Green,Cyan,Yellow,Gray
 !The name for superheavy atoms are consistent with Stuttgart PP website: http://www.tc.uni-koeln.de/PP/clickpse.en.html
 character*2 :: ind2name(0:nelesupp)=(/ "Bq","H ","He", &   !Bq(number 0) is ghost atom. Bq is recorded in .fch, but X is not recorded
 "Li","Be","B ","C ","N ","O ","F ","Ne", & !3~10
@@ -164,19 +168,34 @@ real*8 :: YWTatomexp(18,3)=reshape((/ & !Corresponding exponent of YWTatom, the 
 0.5288D0,0.3379D0,0.1912D0,0.139D0,0.1059D0,0.0884D0,0.0767D0,0.0669D0,0.0608D0,0.0549D0,0.0496D0,0.0449D0,0.0411D0,0.0382D0,0.0358D0,0.0335D0,0.0315D0,0.0296D0, &
 1.0D0,1.0D0,0.9992D0,0.6945D0,0.53D0,0.548D0,0.4532D0,0.3974D0,0.3994D0,0.3447D0,0.2511D0,0.215D0,0.1874D0,0.1654D0,0.1509D0,0.1369D0,0.1259D0,0.1168D0, &
 1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0236D0,0.7753D0,0.5962D0,0.6995D0,0.5851D0,0.5149D0,0.4974D0,0.4412D0 /),(/18,3/))
-!Atomic masses/weights, from http://www.chem.qmul.ac.uk/iupac/AtWt/, the data is mainly based on Pure Appl. Chem., 81, 2131-2156 (2009)
-real*8 :: atmwei(0:nelesupp)=(/ 0D0,1.00794D0,4.0026D0,6.941D0,9.01218D0,10.811D0,12.0107D0,14.0067D0,15.9994D0,18.9984D0,20.1797D0,& !1~10
-22.98977D0,24.305D0,26.98154D0,28.0855D0,30.97376D0,32.065D0,35.453D0,39.948D0,39.0983D0,40.078D0,& !11~20
-44.95591D0,47.867D0,50.9415D0,51.9961D0,54.93805D0,55.845D0,58.93319D0,58.6934D0,63.546D0,65.38D0,& !21~30
-69.723D0,72.64D0,74.9216D0,78.96D0,79.904D0,83.798D0,85.4678D0,87.62D0,88.90585D0,91.224D0,& !31~40
-92.90638D0,95.96D0,98D0,101.07D0,102.9055D0,106.42D0,107.8682D0,112.411D0,114.818D0,118.71D0,& !41~50
-121.76D0,127.6D0,126.90447D0,131.293D0,132.90545D0,137.327D0,138.90547D0,140.116D0,140.90765D0,144.242D0,& !51~60
-145D0,150.36D0,151.964D0,157.25D0,158.92535D0,162.5D0,164.93032D0,167.259D0,168.93421D0,173.054D0,& !61~70
-174.9668D0,178.49D0,180.94788D0,183.84D0,186.207D0,190.23D0,192.217D0,195.084D0,196.96657D0,200.59D0,& !71~80
-204.3833D0,207.2D0,208.9804D0,209D0,210D0,222D0,223D0,226D0,227D0,232.03806D0,& !71~90
-231.03588D0,238.02891D0,237D0,244D0,243D0,247D0,247D0,251D0,252D0,257D0,258D0,259D0,262D0,265D0,268D0,271D0,272D0,270D0,276D0,& !91~109
-281D0,282D0,285D0,285D0,289D0,289D0,293D0,294D0,294D0,& !110~118
-(0D0,i=119,nelesupp) /) !119~all
+
+!Computed from abundance and isotope masses, the data was obtained from https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=&ascii=ascii2&isotype=all
+!For radioactive elements, the mass corresponds to longest-living isotope
+real*8 :: atmwei(0:nelesupp)=(/0D0,&
+  1.0079407541D0,  4.0026019321D0,  6.9400366029D0,  9.0121830650D0, 10.8110280464D0,&
+ 12.0107358967D0, 14.0067032114D0, 15.9994049243D0, 18.9984031627D0, 20.1800463805D0,&
+ 22.9897692820D0, 24.3050516198D0, 26.9815385300D0, 28.0854987057D0, 30.9737619984D0,&
+ 32.0647874061D0, 35.4529375826D0, 39.9477985636D0, 39.0983009101D0, 40.0780225110D0,&
+ 44.9559082800D0, 47.8667449627D0, 50.9414650374D0, 51.9961317554D0, 54.9380439100D0,&
+ 55.8451444339D0, 58.9331942900D0, 58.6933471099D0, 63.5460399458D0, 65.3777825295D0,&
+ 69.7230660726D0, 72.6275501647D0, 74.9215945700D0, 78.9593885570D0, 79.9035277805D0,&
+ 83.7979999953D0, 85.4676635956D0, 87.6166444696D0, 88.9058403000D0, 91.2236415971D0,&
+ 92.9063730000D0, 95.9597885412D0, 97.9072124000D0,101.0649401392D0,102.9054980000D0,&
+106.4153275073D0,107.8681496346D0,112.4115578183D0,114.8180866294D0,118.7101125930D0,&
+121.7597836735D0,127.6031264847D0,126.9044719000D0,131.2927614478D0,132.9054519610D0,&
+137.3268916286D0,138.9054688737D0,140.1157307379D0,140.9076576000D0,144.2415960318D0,&
+144.9127559000D0,150.3663557119D0,151.9643781264D0,157.2521306469D0,158.9253547000D0,&
+162.4994728194D0,164.9303288000D0,167.2590826497D0,168.9342179000D0,173.0541501663D0,&
+174.9668149579D0,178.4849787234D0,180.9478756362D0,183.8417775505D0,186.2067045456D0,&
+190.2248596282D0,192.2160516521D0,195.0844568649D0,196.9665687900D0,200.5991670346D0,&
+204.3834128394D0,207.2169080630D0,208.9803991000D0,208.9824308000D0,209.9871479000D0,&
+222.0175782000D0,223.0197360000D0,226.0254103000D0,227.0277523000D0,232.0380558000D0,&
+231.0358842000D0,238.0289104617D0,237.0481736000D0,244.0642053000D0,243.0613813000D0,&
+247.0703541000D0,247.0703073000D0,251.0795886000D0,252.0829800000D0,257.0951061000D0,&
+258.0984315000D0,259.1010300000D0,266.1198300000D0,267.1217900000D0,268.1256700000D0,&
+271.1339300000D0,270.1333600000D0,269.1337500000D0,278.1563100000D0,281.1645100000D0,&
+282.1691200000D0,285.1771200000D0,286.1822100000D0,289.1904200000D0,289.1936300000D0,&
+293.2044900000D0,294.2104600000D0,294.2139200000D0,(0D0,i=119,nelesupp)/)
  
 !Series of Lebedev-Laikov routines
 integer :: Lebelist(32)=(/ 6,14,26,38,50,74,86,110,146,170,194,230,266,302,350,434,590,770,974,1202,1454,1730,2030,2354,2702,3074,3470,3890,4334,4802,5294,5810 /)
@@ -234,8 +253,8 @@ type(primtype),allocatable :: b_EDF(:)
 real*8,allocatable :: CO_EDF(:)
 integer :: nEDFprims=0,nEDFelec=0 !Electrons represented by EDF
 !-------- Variables when basis functions are basis rather than primitive function as basis
-integer :: nbasis=0,nshell=0,nprimshell=0 !The number of basis, basis shell and primitive shell. SP shell is counted as S and P shell separately
-integer,allocatable :: shtype(:),shcon(:),shcen(:) !Type, contraction degree and attributed center of a basis shell
+integer :: nbasis=0,nbasisCar=0,nshell=0,nprimshell=0 !The number of basis (actual/Cartesian), basis shell and primitive shell. SP shell is counted as S and P shell separately
+integer,allocatable :: shtype(:),shtypeCar(:),shcon(:),shcen(:) !Type, contraction degree and attributed center of a basis shell
 real*8,allocatable :: primshexp(:),primshcoeff(:) !Exponent and contraction coefficient of a primitive shell
 integer,allocatable :: basshell(:) !The ith element is the shell index that the ith basis attributed to
 integer,allocatable :: bascen(:),bastype(:) !Center/type of basis, definition is the same as GTF
@@ -244,6 +263,8 @@ integer,allocatable :: primstart(:),primend(:) !The ith element means the GTF fr
 real*8,allocatable :: primconnorm(:) !element i means the contract. coeff. * normalization coeff. of GTF i, can be used for e.g. constructing basis integral from GTF integral
 real*8,allocatable :: Sbas(:,:),Sbas_org(:,:) !Overlap matrix and its backup
 real*8,allocatable,target :: Dbas(:,:,:) !Dipole moment integral matrix, the first index 1,2,3=X,Y,Z, the last two indices are basis index
+real*8,allocatable,target :: Quadbas(:,:,:) !Quadrupole moment integral matrix, the first index 1~6=XX,YY,ZZ,XY,YZ,XZ
+real*8,allocatable,target :: Octobas(:,:,:) !Octopole moment integral matrix, the first index 1~10=XXX,YYY,ZZZ,YZZ,XZZ,XXZ,YYZ,XXY,XYY,XYZ
 real*8,allocatable,target :: DorbA(:,:,:),DorbB(:,:,:) !Dipole moment integral matrix between orbitals, the first index 1,2,3=X,Y,Z. A/B corresponds to (closed or Alpha)/Beta orbitals
 real*8,allocatable,target :: Tbas(:,:) !Kinetic energy integral matrix
 real*8,allocatable,target :: Vbas(:,:) !Nuclear attraction potential integral matrix
@@ -254,6 +275,11 @@ real*8,allocatable,target :: CObasa(:,:),CObasb(:,:) !wfntype==0,2,3 only alloca
 real*8,allocatable,target :: CObasa_org(:,:),CObasb_org(:,:)
 real*8,allocatable,target :: Ptot(:,:),Palpha(:,:),Pbeta(:,:) !Density matrix of total/alpha/beta, for wfntype==0.or.wfntype==3, only Ptot is filled, for others, all of Ptot,Palpha and Pbeta are filled
 real*8,allocatable :: Palpha_org(:,:),Pbeta_org(:,:) !Backup P, e.g. for Wiberg bond order calculation
+!Some matrics based on GTF
+real*8,allocatable :: Ptot_prim(:,:),Palpha_prim(:,:),Pbeta_prim(:,:) !Density matrix of total/alpha/beta based on GTF
+real*8,allocatable :: Dprim(:,:,:) !Dipole moment integral matrix based on GTF, the first index 1,2,3=X,Y,Z, the last two indices are basis index
+real*8,allocatable :: Quadprim(:,:,:) !Quadrupole moment integral matrix based on GTF, the first index 1~6=XX,YY,ZZ,XY,YZ,XZ
+real*8,allocatable :: Octoprim(:,:,:) !Octopole moment integral matrix based on GTF, the first index 1~10=XXX,YYY,ZZZ,YZZ,XZZ,XXZ,YYZ,XXY,XYY,XYZ
 ! real*8,allocatable :: twoPDM(:) !Store two-particle density matrix by one-dimension array, Not use currently
 
 !-------- Connectivity matrix
@@ -309,6 +335,7 @@ real*8 :: disshowlabel=0.5D0,disshowCP=0.5D0,disshowpath=0.5D0
 real*8 :: bondclrR=0.1D0,bondclrG=1.0D0,bondclrB=0.1D0,atmlabclrR=0D0,atmlabclrG=0D0,atmlabclrB=0D0
 real*8 :: CPlabclrR=0.3D0,CPlabclrG=0.65D0,CPlabclrB=1D0 !CP label color
 real*8 :: CP3n3RGB(3)=(/0.72D0,0D0,0.72D0/),CP3n1RGB(3)=(/1D0,0.5D0,0D0/),CP3p1RGB(3)=(/1D0,1D0,0D0/),CP3p3RGB(3)=(/0D0,1D0,0D0/)
+real*8 :: CP3n3RGB_2D(3)=(/0.7D0,0.4D0,0.1D0/),CP3n1RGB_2D(3)=(/0D0,0D0,1D0/),CP3p1RGB_2D(3)=(/1D0,0.5D0,0D0/),CP3p3RGB_2D(3)=(/0D0,1D0,0D0/)
 real*8 :: atm3Dclr(0:nelesupp,3) !Colors of the atom spheres shown in 3D plots, set in "loadsetting" routine
 
 !Plotting Internal parameter
@@ -317,7 +344,7 @@ integer :: idrawbasinidx=0 !Draw which basin
 integer :: idrawinternalbasin=0 !=1 Draw internal part of the basin, =0 Only draw boundary grids
 integer :: ifixorbsign=0 !if 1, during generating orbital isosurface by drawmolgui, most part will always be positive (namely if sum(cubmat)<0 or sum(cubmattmp)<0, the data sign will be inverted)
 integer :: iatom_on_plane=0,iatom_on_plane_far=0,ibond_on_plane=0,plesel,IGRAD_ARROW=0,ILABEL_ON_CONTOUR,ncontour
-integer :: ictrlabsize=20,ivdwctrlabsize=0,iwidthvdwctr=10,iwidthposctr=1,iwidthnegctr=1,iwidthgradline=1,iclrindbndlab
+integer :: ictrlabsize=20,ivdwctrlabsize=0,iwidthvdwctr=10,iwidthposctr=1,iwidthnegctr=1,iwidthgradline=1,iclrindbndlab=14,plane_axistextsize=60,plane_axisnamesize=50,bondthick2D=10
 integer :: iclrindctrpos=5,iclrindctrneg=5,ivdwclrindctr=3,iclrindgradline=6,vdwctrstyle(2)=(/ 1,0 /),ctrposstyle(2)=(/ 1,0 /),ctrnegstyle(2)=(/ 10,15 /)
 integer :: isavepic=0,icurve_vertlinex=0,iclrindatmlab=1,imarkrefpos=0,ilog10y=0,iclrcurve=1
 integer :: inucespplot=0,idrawmol=1,idrawisosur=0,isosursec=0,idrawtype=1,idrawcontour=1
@@ -364,11 +391,11 @@ integer :: isys=1 !Windows
 #else
 integer :: isys=2 !Linux/MacOS
 #endif
-integer :: igenDbas=0,igenMagbas=0,igenP=1,iwfntmptype=1,outmedinfo=0,intmolcust=0,isilent=0,idelvirorb=1
+integer :: igenP=1,iwfntmptype=1,iESPcode=2,outmedinfo=0,iaddprefix=0,intmolcust=0,isilent=0,idelvirorb=1
 integer :: ifchprog=1,iloadascart=0,iloadGaugeom=0,maxloadexc=0,iprintLMOorder=0,iMCBOtype=0
 integer :: iuserfunc=0,iDFTxcsel=84,iKEDsel=0,ispheratm=1,ishowchgtrans=0,SpherIVgroup=0,MCvolmethod=2,readEDF=1,isupplyEDF=2,ishowptESP=1,imolsurparmode=1
 integer :: NICSnptlim=8000
-real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0,espprecutoff=0D0
+real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0
 integer :: nthreads=4
 integer*8 :: ompstacksize=200000000
 character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="",orca_2mklpath*200="",cubegendenstype*80="SCF"
@@ -376,7 +403,7 @@ character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="
 integer :: RDG_addminimal=1,ELF_addminimal=1,num1Dpoints=3000,atomdenscut=1,nprevorbgrid=120000,paircorrtype=3,pairfunctype=1,srcfuncmode=1
 integer :: ELFLOL_type=0,ipolarpara=0,iALIEdecomp=0,iskipnuc=0,ivdwprobe=6
 integer :: nKEDmax=24
-real*8 :: laplfac=1D0,uservar=0,orbwei_delta=0.1D0
+real*8 :: laplfac=1D0,uservar=0,uservar2=0,orbwei_delta=0.1D0
 real*8 :: RDG_maxrho=0.05D0,RDGprodens_maxrho=0.1D0,aug1D=1.5D0,aug2D=4.5D0,aug3D=6.0D0,radcut=10.0D0
 real*8 :: refx=0D0,refy=0D0,refz=0D0
 real*8 :: pleA=0D0,pleB=0D0,pleC=0D0,pleD=0D0 !!ABCD of the plane defined by main function 1000, used for special aims
@@ -389,7 +416,7 @@ real*8 :: boxlenX,boxlenY,boxlenZ,boxcenX,boxcenY,boxcenZ !For temporary exchang
 real*8 :: gridvec1(3),gridvec2(3),gridvec3(3) !1/2/3th translation vector. dx,dy,dz corresponds to 1(1), 2(2), 3(3) terms
 !For 2D plane map
 real*8 :: v1x,v1y,v2x,v2y,v1z,v2z,a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,d1,d2 !Translation vector 1 and 2, three point in self-defined plane for projecting label, d1,d2=Length of v1,v2
-real*8 :: orgx2D,orgy2D,orgz2D !Origin
+real*8 :: orgx2D,orgy2D,orgz2D !X, Y, Z coordinate of origin of the plane map in molecular Cartesian space
 integer :: ngridnum1=100,ngridnum2=100 !The number of points in two directions
 !Specific for Shubin's project
 real*8 :: steric_addminimal=1D-4,steric_potcutrho=0D0,steric_potcons=0D0

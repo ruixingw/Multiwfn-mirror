@@ -85,7 +85,7 @@ plot2abs=abslenx/plotlenx !The relationship between molecular coordinate and abs
 if (isavepic==0) then
 	call METAFL('CONS')
 	if (GUI_mode==6) call METAFL('CONS') !Namely showing basin, using opengl by default to accelerate displaying, however when savepic, if still use opengl, things cannot be properly shown
-	CALL setxid(idisgraph, 'WIDGET')
+	CALL setxid(idisgraph,'WIDGET')
 else if (isavepic==1) then
     if (iorbvis==0) then
         call setfil("dislin."//trim(graphformat))
@@ -903,11 +903,11 @@ CALL LABDIG(numdigx,"X")
 CALL LABDIG(numdigy,"Y")
 CALL LABDIG(numdigz,"Z")
 if (isavepic==0.and.isys==1) then
-	call height(60)
-	CALL HNAME(50)
+	call height(plane_axistextsize)
+	CALL HNAME(plane_axisnamesize)
 else !The text shown in graphic file is strangely larger than window, so slight decrease it
-	call height(50)
-	CALL HNAME(45)
+	call height(nint(plane_axistextsize*0.81))
+	CALL HNAME(nint(plane_axisnamesize*0.9))
 end if
 call ticks(iticks,"XYZ")
 if (ilenunit2D==1) CALL NAME('Length unit: Bohr', 'x')
@@ -1191,10 +1191,10 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 			if (CPtype(icp)==3.and.imark3p1==0) cycle
 			if (CPtype(icp)==4.and.imark3p3==0) cycle
 			if (iplaneoutall==0) then
-				if (CPtype(icp)==1) call setrgb(0.7D0,0.4D0,0.1D0)
-				if (CPtype(icp)==2) call color("blue")
-				if (CPtype(icp)==3) call color("orange")
-				if (CPtype(icp)==4) call color("green")
+				if (CPtype(icp)==1) call setrgb(CP3n3RGB_2D(1),CP3n3RGB_2D(2),CP3n3RGB_2D(3))
+				if (CPtype(icp)==2) call setrgb(CP3n1RGB_2D(1),CP3n1RGB_2D(2),CP3n1RGB_2D(3))
+				if (CPtype(icp)==3) call setrgb(CP3p1RGB_2D(1),CP3p1RGB_2D(2),CP3p1RGB_2D(3))
+				if (CPtype(icp)==4) call setrgb(CP3p3RGB_2D(1),CP3p3RGB_2D(2),CP3p3RGB_2D(3))
 			end if
 			posmarkx=CPpos(1,icp)*scll
 			posmarky=CPpos(2,icp)*scll
@@ -1264,7 +1264,7 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 
     !Plot bonds as lines only for the atoms whose labels are shown on the plane
     if (ibond_on_plane==1) then
-	    call setcolor(iclrindbndlab); call solid; call LINWID(10)
+	    call setcolor(iclrindbndlab); call solid; call LINWID(bondthick2D)
 	    do ipt=1,ncenter
 		    posmarkx=a(ipt)%x*scll
 		    posmarky=a(ipt)%y*scll
@@ -1407,7 +1407,6 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 	    call color("WHITE") !Restore to default
     end if
 
-
 !Relief map & shaded surface map with/without projection
 else if (idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
     call setcolortable(iclrtrans) !This routine must be invoked prior to GRAF
@@ -1454,15 +1453,17 @@ else if (idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
 		call surmsh("OFF") !Recover to default, otherwise when drawing molecule structure later, black lines will present on object surfaces
 	else if (idrawtype==4.or.idrawtype==5) then
 		if (idrawtype==5) then !Draw projection
+            !Note that it is not possible to use "call rlmess" to plot atomic label on the projected map, it only works for 2D map
             planetrunc2=planemat
             if (iclrtrans/=0) then !Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
 			    where (planetrunc2>end3) planetrunc2=end3-1D-10   !Augment by a minimal value to avoid numerical noise
 			    where (planetrunc2<init3) planetrunc2=init3+1D-10
 		    end if
 			CALL GRFINI(-1.0D0,-(end2-init2)/(end1-init1),-1.0D0, 1.0D0,-(end2-init2)/(end1-init1),-1.0D0, 1.0D0,(end2-init2)/(end1-init1),-1D0)
-			call SETGRF('none','none','none','none')
+			call SETGRF('none','none','none','none') !Do not show axis ticks around the plane map at bottom, since it has been show in 3D axis
 			call AUTRES(ngridnum1,ngridnum2)
 			call VKXBAR(170)
+	        call height(67) !Slightly increase text size of color bar
 			call GRAF3(init1,end1,init1-shiftx,planestpx, init2,end2,init2-shifty,planestpy, init3,end3,init3-shiftz,planestpz)
 			call CRVMAT(planetrunc2,ngridnum1,ngridnum2,fillcoloritpx,fillcoloritpy)
 			CALL GRFFIN
@@ -1502,7 +1503,7 @@ write(*,*) "7  = Cyan       8  = Yellow"
 write(*,*) "9  = Orange     10 = Magenta"
 write(*,*) "11 = Crimson    12 = Dark green"
 write(*,*) "13 = Purple     14 = Brown"
-write(*,*) "15 = Dark blue"
+write(*,*) "15 = Dark blue  16 = Pink"
 read(*,*) clrind
 end subroutine
 
@@ -1515,7 +1516,7 @@ if (clrind==2) call color('GREEN')
 if (clrind==3) call color('BLUE')
 if (clrind==4) call color('BLACK') !Due to current mode is REVERSE, so WHITE=BLACK
 if (clrind==5) call color('WHITE')
-if (clrind==6) call setRGB(0.65D0,0.65D0,0.7D0) !gray
+if (clrind==6) call setRGB(0.65D0,0.65D0,0.7D0) !Gray
 if (clrind==7) call color('CYAN')
 if (clrind==8) call color('YELLOW')
 if (clrind==9) call color('ORANGE')
@@ -1525,44 +1526,47 @@ if (clrind==12) call setRGB(0.0D0,0.7D0,0D0) !Dark green
 if (clrind==13) call setRGB(0.4D0,0.0D0,0.84D0) !Purple
 if (clrind==14) call setRGB(0.7D0,0.5D0,0.4D0) !Brown
 if (clrind==15) call setRGB(0.0D0,0.0D0,0.5D0) !Dark blue
+if (clrind==16) call setRGB(1D0,0.5D0,1D0) !Pink
 end subroutine
 
 
-!Translate color index (defined by colorname) to R,G,B components
+!------ Translate color index (defined by colorname) to R,G,B components
 subroutine clridx2RGB(iclrind,Rcomp,Gcomp,Bcomp)
 integer iclrind
 real*8 Rcomp,Gcomp,Bcomp
 Rcomp=0;Gcomp=0;Bcomp=0	!White
-if (iclrind==1) then
+if (iclrind==1) then !Red
 	Rcomp=1
-else if (iclrind==2) then
+else if (iclrind==2) then !Green
 	Gcomp=1
-else if (iclrind==3) then
+else if (iclrind==3) then !Blue
 	Bcomp=1
-else if (iclrind==4) then
+else if (iclrind==4) then !BLACK
 	Rcomp=1;Gcomp=1;Bcomp=1
-else if (iclrind==5) then
+else if (iclrind==5) then !WHITE
 	continue
-else if (iclrind==6) then
+else if (iclrind==6) then !Gray
 	Rcomp=0.65D0;Gcomp=0.65D0;Bcomp=0.7D0
-else if (iclrind==7) then
+else if (iclrind==7) then !CYAN
 	Gcomp=1D0;Bcomp=1D0
-else if (iclrind==8) then
+else if (iclrind==8) then !YELLOW
 	Rcomp=1D0;Gcomp=1D0
-else if (iclrind==9) then
+else if (iclrind==9) then !ORANGE
 	Rcomp=1D0;Gcomp=0.5D0
-else if (iclrind==10) then
+else if (iclrind==10) then !MAGENTA
 	Rcomp=1D0;Bcomp=1D0
-else if (iclrind==11) then
+else if (iclrind==11) then !Crimson
 	Rcomp=0.7D0
-else if (iclrind==12) then
+else if (iclrind==12) then !Dark green
 	Gcomp=0.7D0
-else if (iclrind==13) then
+else if (iclrind==13) then !Purple
 	Rcomp=0.4D0;Bcomp=0.84D0
-else if (iclrind==14) then
+else if (iclrind==14) then !Brown
 	Rcomp=0.7D0;Gcomp=0.5D0;Bcomp=0.4D0
-else if (iclrind==15) then
+else if (iclrind==15) then !Dark blue
 	Bcomp=0.5D0
+else if (iclrind==16) then !Pink
+	Rcomp=1D0;Gcomp=0.5D0;Bcomp=1D0
 end if
 end subroutine
 
