@@ -131,7 +131,7 @@ do j=1,nprims
 	GTFval=sftx*sftz*expterm
 	else if (b(j)%type==10) then
 	GTFval=sfty*sftz*expterm
-	else !If above condition is not satisfied(Angular moment higher than f), the function will calculated explicitly
+	else !If above conditions are not satisfied (angular moment higher than f), the function will be calculated explicitly
 	GTFval=sftx**ix *sfty**iy *sftz**iz *expterm
 	end if
 	!Calculate orbital wavefunction value
@@ -280,6 +280,98 @@ do j=1,nprims
 	end if !end runtype>=2
 end do
 end subroutine
+
+
+
+!!!----------- Calculate wavefunction value of all basis functions at a point. Adapted from subroutine "orbdev"
+!COtr matrix must 
+!Before using this, one should make CO correspond to basis function expressions, namely:
+!  Cobasa_org=CObasa
+!  CObasa=0
+!  do ibas=1,nbasis
+!      CObasa(ibas,ibas)=1
+!  end do
+!  call CObas2CO(1)
+!    Then after using this routine, recover to original coefficients:
+!  CObasa=CObasa_org
+!  CO=CO_org
+!In fact, using below code can realize identical purpose, but slower because not optimized for present purpose
+!  call orbderv(1,1,nbasis,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,basval), where basval has length of nmo
+subroutine calcbasval(x,y,z,basval)
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 x,y,z,basval(nbasis),GTFvalarr(nprims)
+
+GTFvalarr=0D0
+do j=1,nprims
+	ix=type2ix(b(j)%type)
+	iy=type2iy(b(j)%type)
+	iz=type2iz(b(j)%type)
+	ep=b(j)%exp
+	
+	if (b(j)%center/=lastcen) then
+		sftx=x-a(b(j)%center)%x
+		sfty=y-a(b(j)%center)%y
+		sftz=z-a(b(j)%center)%z
+		sftx2=sftx*sftx
+		sfty2=sfty*sfty
+		sftz2=sftz*sftz
+		rr=sftx2+sfty2+sftz2
+	end if
+	if (expcutoff>0.or.-ep*rr>expcutoff) then
+		expterm=exp(-ep*rr)
+	else
+		expterm=0D0
+	end if
+	lastcen=b(j)%center
+	if (expterm==0D0) cycle
+	
+	if (b(j)%type==1) then
+	GTFval=expterm
+	else if (b(j)%type==2) then
+	GTFval=sftx*expterm
+	else if (b(j)%type==3) then
+	GTFval=sfty*expterm
+	else if (b(j)%type==4) then
+	GTFval=sftz*expterm
+	else if (b(j)%type==5) then
+	GTFval=sftx2*expterm
+	else if (b(j)%type==6) then
+	GTFval=sfty2*expterm
+	else if (b(j)%type==7) then
+	GTFval=sftz2*expterm
+	else
+	GTFval=sftx**ix *sfty**iy *sftz**iz *expterm
+	end if
+    GTFvalarr(j)=GTFval
+end do
+
+if (isphergau==1) then !For each basis function, only loops GTFs in the same shell for reducing cost
+    ibas=0
+    iGTF=0
+    do ish=1,nshell
+        nshbas=shtype2nbas(shtype(ish))
+        nshbasCar=shtype2nbas(shtypeCar(ish))
+        nshGTF=nshbasCar*shcon(ish)
+        is=iGTF+1
+        ie=iGTF+nshGTF
+        do jbas=ibas+1,ibas+nshbas
+            !basval(jbas)=sum( GTFvalarr(is:ie)*CO(jbas,is:ie) )
+            basval(jbas)=sum( GTFvalarr(is:ie)*COtr(is:ie,jbas) )
+        end do
+        ibas=ibas+nshbas
+        iGTF=iGTF+nshGTF
+    end do
+else !All basis functions are Cartesian, below code is faster than the above general code
+    do ibas=1,nbasisCar
+        is=primstart(ibas)
+        ie=primend(ibas)
+        basval(ibas)=sum( GTFvalarr(is:ie)*COtr(is:ie,ibas) )
+    end do
+end if
+
+end subroutine
+
 
 
 !!!----------- Calculate contribution from EDFs (recorded in wfx file) to density and corresponding derivatives (up to third-order)
@@ -657,7 +749,7 @@ case (38) !The angle between the second eigenvector of rho and the plane defined
     userfunc=Ang_rhoeigvec_ple(x,y,z,2)
 case (39) !ESP without contribution of nuclues "iskipnuc"
     userfunc=totespskip(x,y,z,iskipnuc)
-case (40) !Steric energy
+case (40) !Steric energy density
     userfunc=weizsacker(x,y,z)
 case (41) !Steric potential
     userfunc=stericpot(x,y,z)
@@ -702,10 +794,10 @@ case (66) !The magnitude of electrostatic force
 case (67) !Electrostatic charge
     userfunc=elestatcharge(x,y,z)
 case (68) !Energy density of electronic part of electrostatic term (Ee) of SBL's energy decomposition
-    userfunc=fdens(x,y,z)*totesp(x,y,z)
-case (69) !Energy density of quantum term (Eq) of SBL's energy decomposition
+    userfunc=-fdens(x,y,z)*totesp(x,y,z)
+case (69) !Energy density of quantum term (Eq) of SBL's energy decomposition using Hamiltonian kinetic energy
     userfunc=Hamkin(x,y,z,0)-weizsacker(x,y,z)+DFTxcfunc(x,y,z)
-case (-69) !Energy density of quantum term (Eq) of SBL's energy decomposition
+case (-69) !Energy density of quantum term (Eq) of SBL's energy decomposition using Lagrangian kinetic energy
     userfunc=Lagkin(x,y,z,0)-weizsacker(x,y,z)+DFTxcfunc(x,y,z)
 case (70) !Phase-space-defined Fisher information density
     userfunc=4.5D0*fdens(x,y,z)**2/lagkin(x,y,z,0)
@@ -774,6 +866,22 @@ case (102) !Negative part of ESP
 case (103) !Magnitude of electric field
 	call gencalchessmat(1,12,x,y,z,value,vec,mat) !Get gradient of ESP
 	userfunc=dsqrt(sum(vec**2))
+    
+case (110) !Total energy density of the energy components defined by SBL (steric + electrostatic + quantum)
+    !That is, userfunc(40) + userfunc(68) + userfunc(69)
+    !userfunc = weizsacker(x,y,z) - fdens(x,y,z)*totesp(x,y,z) + (Hamkin(x,y,z,0)-weizsacker(x,y,z)+DFTxcfunc(x,y,z)) !Original expression
+    userfunc = -fdens(x,y,z)*totesp(x,y,z) + Hamkin(x,y,z,0) + DFTxcfunc(x,y,z)
+case (111) !Total potential of the energy components defined by SBL (steric + electrostatic + quantum)
+    !That is, userfunc(41) - totesp + userfunc(63)
+    !userfunc = stericpot(x,y,z) - totesp(x,y,z) + (totesp(x,y,z)-weizpot(x,y,z)) !Original expression
+case (112) !Total charge of the energy components defined by SBL (steric + electrostatic + quantum)
+    !That is, userfunc(42) + userfunc(67) + userfunc(65)
+    userfunc = stericcharge(x,y,z) + elestatcharge(x,y,z) + quantumcharge(x,y,z)
+case (113) !Magnitude of total force of the energy components defined by SBL (steric + electrostatic + quantum)
+    !That is, vector sum of userfunc(43), userfunc(66), userfunc(64)
+    !userfunc= stericforce(x,y,z) + elestatforce(x,y,z) + quantumforce(x,y,z) !This is sum of magnitude, not what we want
+    userfunc = SBLallforce(x,y,z)
+    
 case (802:807)
     userfunc=funcvalLSB(x,y,z,iuserfunc-800)
 case (812:817)
@@ -1247,6 +1355,7 @@ do iatm=1,ncenter
 	Xij=dsqrt(parmB(iatm)*parmBj) !vdW distance
 	repul=repul+Dij*(Xij/dist)**12 !Repulsion
 	disp=disp-2*Dij*(Xij/dist)**6 !Dispersion
+	!disp=disp-2*Dij*(Xij/dist)**3 !Dispersion, this can result in better effect on coloring dispersion potential on vdW surface
 end do
 if (itype==1) vdwpotfunc=repul+disp
 if (itype==2) vdwpotfunc=repul
@@ -3288,7 +3397,7 @@ else
 	weizsacker=sum(gradrho(:)**2)/8/rho
 end if
 end function
-!!!--- Weizsacker potential
+!!!--- Weizsacker potential, essentially identical to stericpot(x,y,z)
 real*8 function weizpot(x,y,z)
 real*8 x,y,z,wfnval(nmo),wfnderv(3,nmo),wfnhess(3,3,nmo),gradrho(3),laplx,laply,laplz,lapltot
 rho=0D0
@@ -3310,7 +3419,7 @@ weizpot=sum(gradrho(:)**2)/8D0/rho**2-lapltot/4D0/rho
 end function
 
 
-!!!--- Steric potential (J. Chem. Phys., 126, 244103), which negative value is one-electron potential
+!!!--- Steric potential (J. Chem. Phys., 126, 244103), which negative value is one-electron potential, essentially identical to weizpot(x,y,z)
 real*8 function stericpot(x,y,z)
 real*8 x,y,z,gradrho(3),hessrho(3,3),lapltot
 call calchessmat_dens(2,x,y,z,rho,gradrho,hessrho)
@@ -3617,6 +3726,28 @@ xcomp=(valuexaddadd-2*value+valuexminmin)/(2*diff)**2
 ycomp=(valueyaddadd-2*value+valueyminmin)/(2*diff)**2
 zcomp=(valuezaddadd-2*value+valuezminmin)/(2*diff)**2
 elestatcharge=(xcomp+ycomp+zcomp)/(-4*pi)
+end function
+
+
+!!!----- Calculate magnitude of vector sum of steric force, electrostatic force and quantum force
+real*8 function SBLallforce(x,y,z)
+real*8 x,y,z,sterderv(3)
+call stericderv(x,y,z,sterderv)
+
+diff=2D-5
+eforcex=-(totesp(x+diff,y,z)-totesp(x-diff,y,z))/(2*diff)
+eforcey=-(totesp(x,y+diff,z)-totesp(x,y-diff,z))/(2*diff)
+eforcez=-(totesp(x,y,z+diff)-totesp(x,y,z-diff))/(2*diff)
+
+qforcex=-(quantumpot(x+diff,y,z)-quantumpot(x-diff,y,z))/(2*diff)
+qforcey=-(quantumpot(x,y+diff,z)-quantumpot(x,y-diff,z))/(2*diff)
+qforcez=-(quantumpot(x,y,z+diff)-quantumpot(x,y,z-diff))/(2*diff)
+
+fx=-sterderv(1) + eforcex + qforcex
+fy=-sterderv(2) + eforcey + qforcey
+fz=-sterderv(3) + eforcez + qforcez
+
+SBLallforce=dsqrt(fx**2+fy**2+fz**2)
 end function
 
 

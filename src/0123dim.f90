@@ -843,7 +843,12 @@ do while(.true.)
 			cycle
 		end if
 		rangle=acos( abs(v1x*v2x+v1y*v2y+v1z*v2z)/(rnorm1*rnorm2) )
-		if (idrawtype==6.or.idrawtype==7) then !adjust aug2D/aug2D2
+        !For gradient line map plotted by "stream" of DISLIN, we must make lengths (d1,d2) of the two dimensions of the plotting
+        !region identical here, so modify aug2D/aug2D2 to realize this aim. Because even if the passed arrays are completely correct and cover the whole
+        !plotting region, gradient lines will still only appear in a cubic region whose side length is identical to min(dist1,dist2),
+        !making a ugly blank region in the map. This should be a bug of DISLIN. I find it is impossible to overcome this by manually define
+        !the so called starting point arrays in the "stream"
+		if (idrawtype==6) then !adjust aug2D/aug2D2
 			sup=rnorm1-rnorm2*cos(pi/2-rangle)
 			if (sup>0) aug2D2=aug2D+sup/2
 			if (sup<0) aug2D=aug2D-sup/2
@@ -896,7 +901,6 @@ do while(.true.)
 			orgy2D=ycen-dist1/2D0*v1y/d1-dist2/2D0*v2y/d2
 			orgz2D=zcen-dist1/2D0*v1z/d1-dist2/2D0*v2z/d2
 		end if
-		
 	else if (plesel==6) then
 		write(*,*) "Input origin of x,y,z in Bohr, e.g. 3.5,-1,0.2"
 		read(*,*) orgx2D,orgy2D,orgz2D
@@ -1024,7 +1028,7 @@ if (iplaneextdata==1) then !Export plane data to external file, and then load da
 	close(10)
 	
 else !Start calculation of plane data
-	if (ifuncsel/=4) call delvirorb(1) !Delete high-lying virtual orbitals for faster calculation, but don't do this for analyzing MO
+	if (ifuncsel/=4) call delvirorb(1) !Delete high-lying virtual orbitals for faster calculation, but don't do this when analyzing MO
 	write(*,*) "Calculating plane data, please wait..."	
 	if (ifuncsel/=12.and.expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff
 	call walltime(iwalltime1)
@@ -1185,6 +1189,7 @@ else !Start calculation of plane data
 		gradd2=(d2add-d2min)/2/diff
 	end if
 	
+    call delvirorb_back(1) !delvirorb may have taken effect, now restore to previous wavefunction
 	call walltime(iwalltime2)
 	write(*,"(/,' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
 end if
@@ -2032,7 +2037,8 @@ if (igridsel==100) then !Calculate value on a set of points loaded from external
 			fragatm=fragatmbackup
 		end if
 	end if
-	
+    
+	call delvirorb_back(1) !delvirorb may have taken effect, now restore to previous wavefunction
 	call walltime(iwalltime2)
 	write(*,"(' Calculation is finished, took up wall clock time',i10,'s')") iwalltime2-iwalltime1
 	
@@ -2103,13 +2109,13 @@ else !Calculate grid data
 			if (icustom==0) then !first time
 			!Note: For promolecular property, x,y,z has not been saved in cubmat at first time, while after calculation of atoms, cubmat already has %x,%y,%z
 				cubmattmp=cubmat
-			else if (icustom/=0) then !not first time
+			else if (icustom/=0) then !Not first time
 				if (customop(icustom)=='+') cubmattmp=cubmattmp+cubmat
 				if (customop(icustom)=='-') cubmattmp=cubmattmp-cubmat
 				if (customop(icustom)=='x'.or.customop(icustom)=='*') cubmattmp=cubmattmp*cubmat
 				if (customop(icustom)=='/') cubmattmp=cubmattmp/cubmat
 			end if
-			if (icustom/=ncustommap) then !not last time
+			if (icustom/=ncustommap) then !Not last time
 				icustom=icustom+1
 				filename=custommapname(icustom)
 				call dealloall
@@ -2142,6 +2148,7 @@ else !Calculate grid data
 			end if
 		end if
 	end if
+    call delvirorb_back(1) !delvirorb may have taken effect, now restore to previous wavefunction
 
 	outcubfile="griddata.cub" !General name
 	if (ifuncsel==1) then
@@ -2165,7 +2172,6 @@ else !Calculate grid data
 		write(*,"(' Y component:    ',f12.6,' a.u.',f12.6,' Debye')") dipy,dipy*au2debye
 		write(*,"(' Z component:    ',f12.6,' a.u.',f12.6,' Debye')") dipz,dipz*au2debye
 		write(*,"(' Total magnitude:',f12.6,' a.u.',f12.6,' Debye')") dsqrt(dipx**2+dipy**2+dipz**2),dsqrt(dipx**2+dipy**2+dipz**2)*au2debye
-		write(*,*)
 	else if (ifuncsel==2) then
 		outcubfile="gradient.cub"
 	else if (ifuncsel==3) then
@@ -2223,6 +2229,7 @@ else !Calculate grid data
 
 	temp=minval(cubmat)
 	call findvalincub(cubmat,temp,i,j,k)
+    write(*,*)
 	write(*,"(' The minimum is',E16.8,' at',3f10.5,' Bohr')") temp,orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz
 	temp=maxval(cubmat)
 	call findvalincub(cubmat,temp,i,j,k)

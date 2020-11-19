@@ -3907,8 +3907,8 @@ if (ifiletype/=1) then
 	read(*,*)
 	return
 end if
-write(*,*) "Input type of density, e.g. SCF, MP2, CI, CC, MP4..."
-write(*,*) "e.g. If the .fch was produced under MP2, you may input ""SCF"" or ""MP2"""
+write(*,*) "Input the type of density matrix, e.g. SCF, MP2, CI, CC, MP4..."
+write(*,"(a)") " e.g. If the .fch was produced by Gaussian at MP2 level, you may input ""SCF"" or ""MP2"""
 read(*,"(a)") denstype
 write(locstr,"('Total ',a,' Density')") trim(denstype)
 open(10,file=filename,status="old")
@@ -3957,16 +3957,16 @@ write(*,*) "Density matrix was loaded from .fch/.fchk file"
 call gennatorb(iNOtype,1)
 write(*,*) "Done! Basis function information now correspond to natural orbitals"
 
-write(*,"(/,a)") " If next you intend to analyze real space functions based on the NOs, you should export new.molden &
+write(*,"(/,a)") " If next you intend to analyze real space functions based on the NOs, you should export new.mwfn &
 in current folder and then reload it, so that GTF information will also correspond to NOs"
 write(*,*) "Would you like to do this immediately? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y') then
-	call outmolden("new.molden",10)
-	write(*,*) "The NOs have been exported to new.molden in current folder"
+    call outmwfn("new.mwfn",10,0)
+	write(*,*) "The NOs have been exported to new.mwfn in current folder"
 	call dealloall
-	write(*,*) "Loading new.molden..."
-	call readmolden("new.molden",1)
+	write(*,*) "Loading new.mwfn..."
+	call readmwfn("new.mwfn",1)
 	write(*,"(a)") " Loading finished, now you can use main function 0 to visualize NOs as isosurfaces"
 end if
 end subroutine
@@ -4602,7 +4602,7 @@ implicit real*8 (a-h,o-z)
 character c2000tmp*2000,selectyn
 integer,allocatable :: chainatm(:),atmseq(:),atmtmp(:)
 real*8,allocatable :: PSmat(:,:),PSmata(:,:),PSmatb(:,:)
-integer :: cenind(12)
+integer :: cenind(2000)
 
 write(*,*) "Input atom indices in the chain (the sequence is arbitrary)"
 write(*,*) "e.g. 2,14,16-17,19,21,23-24"
@@ -4981,7 +4981,7 @@ if (selectyn=='y'.or.selectyn=='Y') then
     call readinfile("NAdOs.mwfn",1)
     write(*,"(a)") " Done! Now you can use e.g. main function 0 to visualize orbitals. Occupation numbers correspond to eigenvalues"
 else
-    write(*,*) "Reloading "//trim(filename)//" to recover initial status..."
+    write(*,"(a)") " Reloading "//trim(filename)//" to recover initial status..."
     call readinfile(filename,1)
     write(*,*) "Loading finished!"
 end if

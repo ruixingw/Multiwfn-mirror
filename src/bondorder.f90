@@ -16,9 +16,9 @@ do while(.true.)
 	end if
 	write(*,*) "0 Return"
 	write(*,*) "1 Mayer bond order analysis"
-	write(*,*) "2 Multicenter bond order analysis (up to 12 centers)"
-	write(*,*) "-2 Multicenter bond order analysis in NAO basis (up to 12 centers)"
-! 	write(*,*) "-3 Multicenter bond order analysis in Lowdin orthogonalized basis (up to 12 centers)" !Can be used, but not very meaningful, so not shown
+	write(*,*) "2 Multicenter bond order analysis"
+	write(*,*) "-2 Multicenter bond order analysis in NAO basis"
+! 	write(*,*) "-3 Multicenter bond order analysis in Lowdin orthogonalized basis" !Can be used, but not very meaningful, so not shown
 	write(*,*) "3 Wiberg bond order analysis in Lowdin orthogonalized basis"
 	write(*,*) "4 Mulliken bond order analysis"
 	write(*,*) "5 Decompose Mulliken bond order between two atoms to orbital contributions"
@@ -100,7 +100,7 @@ do while(.true.)
 		write(*,*) "Please wait..."
 		call mayerbndord
 	else if (ibondana==2) then
-		call multicenter
+		call multicenter(2)
 	else if (ibondana==-2) then
 		call multicenterNAO
 	else if (ibondana==3.or.ibondana==-3) then
@@ -119,7 +119,7 @@ do while(.true.)
 			write(*,*) "Calculating Wiberg bond order..."
 			call mayerbndord
 		else if (ibondana==-3) then
-			call multicenter
+			call multicenter(-3)
 		end if
         write(*,*) "Regenerating original density matrix..."
         write(*,*)
@@ -303,36 +303,62 @@ end subroutine
 
 
 !! ----------- Multi-center bond order analysis
-subroutine multicenter
+!ientry denotes how this module is entered. =2 Normal MCBO =-3 MCBO under Lowdin symmetrized basis
+subroutine multicenter(ientry)
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-real*8 :: PSmat(nbasis,nbasis),PSmata(nbasis,nbasis),PSmatb(nbasis,nbasis),PSmattot(nbasis,nbasis),maxbndord
-integer cenind(12),maxcenind(12) !maxcenind is used to store the combination that has the maximum bond order in automatical search
-integer itype
-character c1000tmp*1000
+real*8,allocatable :: PSmat(:,:),PSmata(:,:),PSmatb(:,:),PSmattot(:,:)
+real*8 maxbndord
+integer ientry
+integer cenind(2000) !Can maximally deal with 2000 centers
+integer maxcenind(2000) !Used to store the combination that has the maximum bond order during automatic search
+character c2000tmp*2000
 
-write(*,*) "Please wait..."
+allocate(PSmat(nbasis,nbasis),PSmattot(nbasis,nbasis))
 ntime=1 !Closed-shell
-PSmattot=matmul(Ptot,Sbas)
+if (ientry==2) then
+    write(*,*) "Calculating PS matrix, please wait..."
+    PSmattot=matmul_blas(Ptot,Sbas,nbasis,nbasis,0,0)
+else
+    PSmattot=Ptot
+end if
 if (wfntype==1.or.wfntype==2.or.wfntype==4) then !Open-shell
+    allocate(PSmata(nbasis,nbasis),PSmatb(nbasis,nbasis))
 	ntime=3
-	PSmata=matmul(Palpha,Sbas)
-	PSmatb=matmul(Pbeta,Sbas)
+    if (ientry==2) then
+        PSmata=matmul_blas(Palpha,Sbas,nbasis,nbasis,0,0)
+        PSmatb=matmul_blas(Pbeta,Sbas,nbasis,nbasis,0,0)
+    else
+        PSmata=Palpha
+        PSmatb=Pbeta
+    end if
+end if
+
+if (iMCBOtype==0) then
+    if (ientry==2) write(*,"(a)") " Note: Because the PS matrix may be not symmetric, the result may be dependent of &
+    inputting order of atomic indices. Settings the iMCBOtype in settings.ini to 1 is recommended, in this case the results corresponding &
+    to forward and reverse inputting orders will be automatically averaged"
+else if (iMCBOtype==1) then
+    write(*,"(a)") " Note: Since iMCBOtype in settings.ini has been set to 1, the multi-center bond order will be &
+    reported after averaging the results corresponding to forward and reverse inputting directions"
+else if (iMCBOtype==2) then
+    write(*,"(a)") " Note: Since iMCBOtype in settings.ini has been set to 2, the multi-center bond order will be &
+    reported by taking all possible permutations into account"
 end if
 
 do while(.true.)
 	write(*,*)
-	write(*,*) "Input atom indices, e.g. 3,4,7,8,10   (2~12 centers are supported)"
-    write(*,*) "Note: The input order must be in consistency with atomic connectivity"
+	write(*,*) "Input atom indices, e.g. 3,4,7,8,10   (number of centers is arbitrary)"
+    write(*,"(a)") " Note: The input order must be in consistency with atomic connectivity. You can also input e.g. 4-10 if the indices are contiguous"
 	write(*,*) "Input -3/-4/-5/-6 will search all possible three/four/five/six-center bonds"
 	write(*,*) "Input 0 can return to upper level menu"
-	read(*,"(a)") c1000tmp
+	read(*,"(a)") c2000tmp
 
-	if (c1000tmp(1:1)=='0') then
+	if (c2000tmp(1:1)=='0') then
 		Return
-	else if (c1000tmp(1:1)/='-') then
-		call str2arr(c1000tmp,nbndcen,cenind)
+	else if (c2000tmp(1:1)/='-') then
+		call str2arr(c2000tmp,nbndcen,cenind)
 		
 		do itime=1,ntime
 			if (wfntype==0.or.wfntype==3) then
@@ -342,30 +368,43 @@ do while(.true.)
 				if (itime==2) PSmat=PSmata
 				if (itime==3) PSmat=PSmatb
 			end if
-			if (nbndcen>=8) write(*,*) "Please wait..."
 			call calcmultibndord(nbndcen,cenind,PSmat,nbasis,accum) !accum is pristine result without any factor
 			if (itime==1) bndordmix=accum
 			if (itime==2) bndordalpha=accum*2**(nbndcen-1)
 			if (itime==3) bndordbeta=accum*2**(nbndcen-1)
 		end do
 		if (wfntype==0.or.wfntype==3) then
-			write(*,"(a,f16.10)") " The multicenter bond order:",accum
+            if (accum>1D-8) then
+			    write(*,"(a,f16.10)") " The multicenter bond order:",accum
+            else
+			    write(*,"(a,1PE20.10)") " The multicenter bond order:",accum
+            end if
 			!Normalized multicenter bond order, see Electronic Aromaticity Index for Large Rings DOI: 10.1039/C6CP00636A
 			!When it is negative, first obtain **(1/n) using its absolute value, then multiply it by -1
 			write(*,"(a,f16.10)") " The normalized multicenter bond order:",accum/abs(accum) * (abs(accum)**(1D0/nbndcen))
 			
 		else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
-			write(*,"(a,f13.7)") " The multicenter bond order from alpha density matrix:",bndordalpha
-			write(*,"(a,f13.7)") " The multicenter bond order from beta density matrix: ",bndordbeta
 			totbndorder=bndordalpha+bndordbeta
-			write(*,"(a,f13.7)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
+            if (totbndorder>1D-5) then
+			    write(*,"(a,f13.7)") " The multicenter bond order from alpha density matrix:",bndordalpha
+			    write(*,"(a,f13.7)") " The multicenter bond order from beta density matrix: ",bndordbeta
+			    write(*,"(a,f13.7)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
+            else
+			    write(*,"(a,1PE20.10)") " The multicenter bond order from alpha density matrix:",bndordalpha
+			    write(*,"(a,1PE20.10)") " The multicenter bond order from beta density matrix: ",bndordbeta
+			    write(*,"(a,1PE20.10)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
+            end if
 			write(*,"(a,f13.7)") " Above result in normalized form:",totbndorder/abs(totbndorder) * (abs(totbndorder)**(1D0/nbndcen))
-			write(*,"(a,f13.7)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
+            if (bndordmix>1D-5) then
+			    write(*,"(a,f13.7)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
+            else
+			    write(*,"(a,1PE13.6)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
+            end if
 			write(*,"(a,f13.7)") " Above result in normalized form:",bndordmix/abs(bndordmix) * (abs(bndordmix)**(1D0/nbndcen))
 		end if
 		
-	else if (c1000tmp(1:1)=='-') then !Automatic search
-		read(c1000tmp,*) nbndcen
+	else if (c2000tmp(1:1)=='-') then !Automatic search
+		read(c2000tmp,*) nbndcen
 		nbndcen=abs(nbndcen)
 		PSmat=PSmattot
 		!Search all combinations. Owing to simplicity and efficiency consideration, for open-shell system, compulsory to use mixed alpha&beta density matrix
@@ -520,8 +559,8 @@ use defvar
 use util
 use NAOmod
 implicit real*8 (a-h,o-z)
-integer cenind(12)
-character :: c1000tmp*1000
+integer cenind(2000) !Can maximally deal with 2000 centers
+character :: c2000tmp*2000
 
 !Load NAO and DMNAO information
 open(10,file=filename,status="old")
@@ -538,17 +577,22 @@ allocate(basstart(ncenter),basend(ncenter))
 basstart=NAOinit
 basend=NAOend
 
+if (iMCBOtype==2) then
+    write(*,"(a)") " Note: Since iMCBOtype in settings.ini has been set to 2, the multi-center bond order will be &
+    reported by taking all possible permutations into account"
+end if
+
 do while(.true.)
 	write(*,*)
-	write(*,*) "Input atom indices, e.g. 3,4,7,8,10    (2~12 centers)"
+	write(*,*) "Input atom indices, e.g. 3,4,7,8,10   (number of centers is arbitrary)"
+    write(*,"(a)") " Note: The input order must be in consistency with atomic connectivity. You can also input e.g. 4-10 if the indices are contiguous"
 	write(*,*) "Input 0 can exit"
-	read(*,"(a)") c1000tmp
-	if (c1000tmp(1:1)=='0') then
+	read(*,"(a)") c2000tmp
+	if (c2000tmp(1:1)=='0') then
 		deallocate(basstart,basend)
 		return
 	else
-		call str2arr(c1000tmp,nbndcen,cenind)
-		if (nbndcen>=7) write(*,*) "Please wait..."
+		call str2arr(c2000tmp,nbndcen,cenind)
 
 		if (.not.allocated(DMNAOb)) then !Closed shell
 			call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndord)
@@ -559,8 +603,11 @@ do while(.true.)
 				write(*,"(a,f16.10)") " The normalized multicenter bond order:",bndord/abs(bndord) * (abs(bndord)**(1D0/nbndcen))
 			end if
 		else !Open shell
+            write(*,*) "Calculating based on alpha density matrix..."
 			call calcmultibndord(nbndcen,cenind,DMNAOa,numNAO,bndordalpha)
+            write(*,*) "Calculating based on beta density matrix..."
 			call calcmultibndord(nbndcen,cenind,DMNAOb,numNAO,bndordbeta)
+            write(*,*) "Calculating based on mixed alpha&beta density matrix..."
 			call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndordmix)
 			bndordalpha=bndordalpha*2**(nbndcen-1)
 			bndordbeta=bndordbeta*2**(nbndcen-1)
@@ -586,7 +633,7 @@ end subroutine
 
 
 
-!---- A general routine directly calculates two- or multi-center bond order without complex things, up to 12 centers
+!---- A general routine directly calculates two- or multi-center bond order without complex things
 !This is a wrapper of subroutine "calcmultibndord_do" for returning different definitions of multi-center bond order
 !Shared by subroutine multicenter, multicenterNAO, AV1245 and others
 !MCBOtype=0, return the MCBO in usual manner
@@ -595,14 +642,14 @@ end subroutine
 !Note that for open-shell cases, the returned result should then be multiplied by a proper factor
 !  Input variables:
 !nbndcen: Actual number of atoms to be calculated
-!PSmat: commonly constructed as e.g. matmul(Ptot,Sbas)
-!cenind: Atomic indices, must be size of 12
-!matdim: commonly is nbasis
+!PSmat: Commonly constructed as e.g. matmul(Ptot,Sbas)
+!cenind: Atomic indices, must be size of 2000
+!matdim: Commonly is nbasis
 subroutine calcmultibndord(nbndcen,cenind,PSmat,matdim,result)
 use defvar
 use util
 implicit real*8(a-h,o-z)
-integer nbndcen,cenind(12),cenindtmp(12),matdim
+integer nbndcen,cenind(2000),cenindtmp(2000),matdim
 real*8 PSmat(matdim,matdim),result
 integer,allocatable :: allperm(:,:)
 
@@ -624,7 +671,6 @@ else if (iMCBOtype==2) then
     do iperm=1,nperm
         cenindtmp(1:nbndcen)=cenind(allperm(iperm,:))
         call calcmultibndord_do(nbndcen,cenindtmp,PSmat,matdim,resulttmp)
-        !write(*,*) cenindtmp(1:nbndcen),resulttmp
         !$OMP CRITICAL
         result=result+resulttmp
         !$OMP END CRITICAL
@@ -634,203 +680,290 @@ else if (iMCBOtype==2) then
 end if
 end subroutine
 
+
+!Extremely SLOW, foolish, lengthy code! In addition, compiling this code is very slow under ifort with O1 or O2
+!!---- The actual working horse for multi-center bond order calculation
+!subroutine calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
+!use defvar
+!implicit real*8(a-h,o-z)
+!integer nbndcen,cenind(12),matdim
+!real*8 PSmat(matdim,matdim),result
+!
+!result=0D0
+!if (nbndcen==2) then
+!	do ib=basstart(cenind(2)),basend(cenind(2))
+!		do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ia)
+!		end do
+!	end do
+!else if (nbndcen==3) then
+!	do ic=basstart(cenind(3)),basend(cenind(3))
+!		do ib=basstart(cenind(2)),basend(cenind(2))
+!			do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,ia)
+!			end do
+!		end do
+!	end do
+!else if (nbndcen==4) then
+!	do id=basstart(cenind(4)),basend(cenind(4))
+!		do ic=basstart(cenind(3)),basend(cenind(3))
+!			do ib=basstart(cenind(2)),basend(cenind(2))
+!				do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ia)
+!				end do
+!			end do
+!		end do
+!	end do
+!else if (nbndcen==5) then
+!	do ie=basstart(cenind(5)),basend(cenind(5))
+!		do id=basstart(cenind(4)),basend(cenind(4))
+!			do ic=basstart(cenind(3)),basend(cenind(3))
+!				do ib=basstart(cenind(2)),basend(cenind(2))
+!					do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,ia)
+!					end do
+!				end do
+!			end do
+!		end do
+!	end do
+!else if (nbndcen==6) then
+!	do i_f=basstart(cenind(6)),basend(cenind(6))
+!		do ie=basstart(cenind(5)),basend(cenind(5))
+!			do id=basstart(cenind(4)),basend(cenind(4))
+!				do ic=basstart(cenind(3)),basend(cenind(3))
+!					do ib=basstart(cenind(2)),basend(cenind(2))
+!						do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,ia)
+!						end do
+!					end do
+!				end do
+!			end do
+!		end do
+!	end do
+!else if (nbndcen==7) then
+!	itmp=0
+!	ntot=basend(cenind(7))-basstart(cenind(7))+1
+!	do i_g=basstart(cenind(7)),basend(cenind(7))
+!		call showprog(itmp,ntot)
+!		do i_f=basstart(cenind(6)),basend(cenind(6))
+!			do ie=basstart(cenind(5)),basend(cenind(5))
+!				do id=basstart(cenind(4)),basend(cenind(4))
+!					do ic=basstart(cenind(3)),basend(cenind(3))
+!						do ib=basstart(cenind(2)),basend(cenind(2))
+!							do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,ia)
+!							end do
+!						end do
+!					end do
+!				end do
+!			end do
+!		end do
+!		itmp=itmp+1
+!	end do
+!else if (nbndcen==8) then
+!	itmp=0
+!	ntot=basend(cenind(8))-basstart(cenind(8))+1
+!	do i_h=basstart(cenind(8)),basend(cenind(8))
+!		call showprog(itmp,ntot)
+!		do i_g=basstart(cenind(7)),basend(cenind(7))
+!			do i_f=basstart(cenind(6)),basend(cenind(6))
+!				do ie=basstart(cenind(5)),basend(cenind(5))
+!					do id=basstart(cenind(4)),basend(cenind(4))
+!						do ic=basstart(cenind(3)),basend(cenind(3))
+!							do ib=basstart(cenind(2)),basend(cenind(2))
+!								do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,ia)
+!								end do
+!							end do
+!						end do
+!					end do
+!				end do
+!			end do
+!		end do
+!		itmp=itmp+1
+!	end do
+!else if (nbndcen==9) then
+!	itmp=0
+!	ntot=basend(cenind(9))-basstart(cenind(9))+1
+!	do i_i=basstart(cenind(9)),basend(cenind(9))
+!		call showprog(itmp,ntot)
+!		do i_h=basstart(cenind(8)),basend(cenind(8))
+!			do i_g=basstart(cenind(7)),basend(cenind(7))
+!				do i_f=basstart(cenind(6)),basend(cenind(6))
+!					do ie=basstart(cenind(5)),basend(cenind(5))
+!						do id=basstart(cenind(4)),basend(cenind(4))
+!							do ic=basstart(cenind(3)),basend(cenind(3))
+!								do ib=basstart(cenind(2)),basend(cenind(2))
+!									do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,ia)
+!									end do
+!								end do
+!							end do
+!						end do
+!					end do
+!				end do
+!			end do
+!		end do
+!		itmp=itmp+1
+!	end do
+!else if (nbndcen==10) then
+!	itmp=0
+!	ntot=basend(cenind(10))-basstart(cenind(10))+1
+!	do i_j=basstart(cenind(10)),basend(cenind(10))
+!		call showprog(itmp,ntot)
+!		do i_i=basstart(cenind(9)),basend(cenind(9))
+!			do i_h=basstart(cenind(8)),basend(cenind(8))
+!				do i_g=basstart(cenind(7)),basend(cenind(7))
+!					do i_f=basstart(cenind(6)),basend(cenind(6))
+!						do ie=basstart(cenind(5)),basend(cenind(5))
+!							do id=basstart(cenind(4)),basend(cenind(4))
+!								do ic=basstart(cenind(3)),basend(cenind(3))
+!									do ib=basstart(cenind(2)),basend(cenind(2))
+!										do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,ia)
+!										end do
+!									end do
+!								end do
+!							end do
+!						end do
+!					end do
+!				end do
+!			end do
+!		end do
+!		itmp=itmp+1
+!	end do
+!else if (nbndcen==11) then
+!	itmp=0
+!	ntot=( basend(cenind(11))-basstart(cenind(11))+1 ) * ( basend(cenind(10))-basstart(cenind(10))+1 )
+!	do i_k=basstart(cenind(11)),basend(cenind(11))
+!		do i_j=basstart(cenind(10)),basend(cenind(10))
+!			call showprog(itmp,ntot)
+!			do i_i=basstart(cenind(9)),basend(cenind(9))
+!				do i_h=basstart(cenind(8)),basend(cenind(8))
+!					do i_g=basstart(cenind(7)),basend(cenind(7))
+!						do i_f=basstart(cenind(6)),basend(cenind(6))
+!							do ie=basstart(cenind(5)),basend(cenind(5))
+!								do id=basstart(cenind(4)),basend(cenind(4))
+!									do ic=basstart(cenind(3)),basend(cenind(3))
+!										do ib=basstart(cenind(2)),basend(cenind(2))
+!											do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,i_k)*PSmat(i_k,ia)
+!											end do
+!										end do
+!									end do
+!								end do
+!							end do
+!						end do
+!					end do
+!				end do
+!			end do
+!			itmp=itmp+1
+!		end do
+!	end do
+!else if (nbndcen==12) then
+!	itmp=0
+!	ntot=( basend(cenind(12))-basstart(cenind(12))+1 ) * ( basend(cenind(11))-basstart(cenind(11))+1 ) * ( basend(cenind(10))-basstart(cenind(10))+1 )
+!	do i_l=basstart(cenind(12)),basend(cenind(12))
+!		do i_k=basstart(cenind(11)),basend(cenind(11))
+!			do i_j=basstart(cenind(10)),basend(cenind(10))
+!				call showprog(itmp,ntot)
+!				do i_i=basstart(cenind(9)),basend(cenind(9))
+!					do i_h=basstart(cenind(8)),basend(cenind(8))
+!						do i_g=basstart(cenind(7)),basend(cenind(7))
+!							do i_f=basstart(cenind(6)),basend(cenind(6))
+!								do ie=basstart(cenind(5)),basend(cenind(5))
+!									do id=basstart(cenind(4)),basend(cenind(4))
+!										do ic=basstart(cenind(3)),basend(cenind(3))
+!											do ib=basstart(cenind(2)),basend(cenind(2))
+!												do ia=basstart(cenind(1)),basend(cenind(1))
+!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,i_k)*PSmat(i_k,i_l)*PSmat(i_l,ia)
+!												end do
+!											end do
+!										end do
+!									end do
+!								end do
+!							end do
+!						end do
+!					end do
+!				end do
+!				itmp=itmp+1
+!			end do
+!		end do
+!	end do
+!end if
+!if (nbndcen>=7) then
+!    call showprog(ntot,ntot)
+!    write(*,*)
+!end if
+!end subroutine
+
+
 !!---- The actual working horse for multi-center bond order calculation
 subroutine calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
 use defvar
 implicit real*8(a-h,o-z)
-integer nbndcen,cenind(12),matdim
+integer nbndcen,cenind(2000),matdim !Can maximally deal with 2000 centers
 real*8 PSmat(matdim,matdim),result
+real*8,allocatable :: mat1(:,:),mat2(:,:)
 
-result=0D0
-if (nbndcen==2) then
+result=0
+if (nbndcen==2) then !Special case, only two atoms
 	do ib=basstart(cenind(2)),basend(cenind(2))
 		do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ia)
+	        result=result+PSmat(ia,ib)*PSmat(ib,ia)
 		end do
 	end do
-else if (nbndcen==3) then
-	do ic=basstart(cenind(3)),basend(cenind(3))
-		do ib=basstart(cenind(2)),basend(cenind(2))
-			do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,ia)
-			end do
-		end do
-	end do
-else if (nbndcen==4) then
-	do id=basstart(cenind(4)),basend(cenind(4))
-		do ic=basstart(cenind(3)),basend(cenind(3))
-			do ib=basstart(cenind(2)),basend(cenind(2))
-				do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ia)
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==5) then
-	do ie=basstart(cenind(5)),basend(cenind(5))
-		do id=basstart(cenind(4)),basend(cenind(4))
-			do ic=basstart(cenind(3)),basend(cenind(3))
-				do ib=basstart(cenind(2)),basend(cenind(2))
-					do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,ia)
-					end do
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==6) then
-	do i_f=basstart(cenind(6)),basend(cenind(6))
-		do ie=basstart(cenind(5)),basend(cenind(5))
-			do id=basstart(cenind(4)),basend(cenind(4))
-				do ic=basstart(cenind(3)),basend(cenind(3))
-					do ib=basstart(cenind(2)),basend(cenind(2))
-						do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,ia)
-						end do
-					end do
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==7) then
-	do i_g=basstart(cenind(7)),basend(cenind(7))
-		do i_f=basstart(cenind(6)),basend(cenind(6))
-			do ie=basstart(cenind(5)),basend(cenind(5))
-				do id=basstart(cenind(4)),basend(cenind(4))
-					do ic=basstart(cenind(3)),basend(cenind(3))
-						do ib=basstart(cenind(2)),basend(cenind(2))
-							do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,ia)
-							end do
-						end do
-					end do
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==8) then
-	do i_h=basstart(cenind(8)),basend(cenind(8))
-		do i_g=basstart(cenind(7)),basend(cenind(7))
-			do i_f=basstart(cenind(6)),basend(cenind(6))
-				do ie=basstart(cenind(5)),basend(cenind(5))
-					do id=basstart(cenind(4)),basend(cenind(4))
-						do ic=basstart(cenind(3)),basend(cenind(3))
-							do ib=basstart(cenind(2)),basend(cenind(2))
-								do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,ia)
-								end do
-							end do
-						end do
-					end do
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==9) then
-	do i_i=basstart(cenind(9)),basend(cenind(9))
-		do i_h=basstart(cenind(8)),basend(cenind(8))
-			do i_g=basstart(cenind(7)),basend(cenind(7))
-				do i_f=basstart(cenind(6)),basend(cenind(6))
-					do ie=basstart(cenind(5)),basend(cenind(5))
-						do id=basstart(cenind(4)),basend(cenind(4))
-							do ic=basstart(cenind(3)),basend(cenind(3))
-								do ib=basstart(cenind(2)),basend(cenind(2))
-									do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,ia)
-									end do
-								end do
-							end do
-						end do
-					end do
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==10) then
-	itmp=0
-	ntot=basend(cenind(10))-basstart(cenind(10))+1
-	do i_j=basstart(cenind(10)),basend(cenind(10))
-		itmp=itmp+1
-		call showprog(itmp,ntot)
-		do i_i=basstart(cenind(9)),basend(cenind(9))
-			do i_h=basstart(cenind(8)),basend(cenind(8))
-				do i_g=basstart(cenind(7)),basend(cenind(7))
-					do i_f=basstart(cenind(6)),basend(cenind(6))
-						do ie=basstart(cenind(5)),basend(cenind(5))
-							do id=basstart(cenind(4)),basend(cenind(4))
-								do ic=basstart(cenind(3)),basend(cenind(3))
-									do ib=basstart(cenind(2)),basend(cenind(2))
-										do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,ia)
-										end do
-									end do
-								end do
-							end do
-						end do
-					end do
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==11) then
-	itmp=0
-	ntot=( basend(cenind(11))-basstart(cenind(11))+1 ) * ( basend(cenind(10))-basstart(cenind(10))+1 )
-	do i_k=basstart(cenind(11)),basend(cenind(11))
-		do i_j=basstart(cenind(10)),basend(cenind(10))
-			itmp=itmp+1
-			call showprog(itmp,ntot)
-			do i_i=basstart(cenind(9)),basend(cenind(9))
-				do i_h=basstart(cenind(8)),basend(cenind(8))
-					do i_g=basstart(cenind(7)),basend(cenind(7))
-						do i_f=basstart(cenind(6)),basend(cenind(6))
-							do ie=basstart(cenind(5)),basend(cenind(5))
-								do id=basstart(cenind(4)),basend(cenind(4))
-									do ic=basstart(cenind(3)),basend(cenind(3))
-										do ib=basstart(cenind(2)),basend(cenind(2))
-											do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,i_k)*PSmat(i_k,ia)
-											end do
-										end do
-									end do
-								end do
-							end do
-						end do
-					end do
-				end do
-			end do
-		end do
-	end do
-else if (nbndcen==12) then
-	itmp=0
-	ntot=( basend(cenind(12))-basstart(cenind(12))+1 ) * ( basend(cenind(11))-basstart(cenind(11))+1 ) * ( basend(cenind(10))-basstart(cenind(10))+1 )
-	do i_l=basstart(cenind(12)),basend(cenind(12))
-		do i_k=basstart(cenind(11)),basend(cenind(11))
-			do i_j=basstart(cenind(10)),basend(cenind(10))
-				itmp=itmp+1
-				call showprog(itmp,ntot)
-				do i_i=basstart(cenind(9)),basend(cenind(9))
-					do i_h=basstart(cenind(8)),basend(cenind(8))
-						do i_g=basstart(cenind(7)),basend(cenind(7))
-							do i_f=basstart(cenind(6)),basend(cenind(6))
-								do ie=basstart(cenind(5)),basend(cenind(5))
-									do id=basstart(cenind(4)),basend(cenind(4))
-										do ic=basstart(cenind(3)),basend(cenind(3))
-											do ib=basstart(cenind(2)),basend(cenind(2))
-												do ia=basstart(cenind(1)),basend(cenind(1))
-	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,i_k)*PSmat(i_k,i_l)*PSmat(i_l,ia)
-												end do
-											end do
-										end do
-									end do
-								end do
-							end do
-						end do
-					end do
-				end do
-			end do
-		end do
-	end do
+    return
 end if
+
+allocate(mat1(matdim,matdim),mat2(matdim,matdim))
+
+!jatm is the atom index to be looped and summed up in each time of contraction
+!mat1 and mat2 are two matrices used alternately to perform tensor contraction
+iatm=nbndcen-1
+katm=1
+kbeg=basstart(cenind(katm))
+kend=basend(cenind(katm))
+do icontract=1,nbndcen-2
+    !write(*,"(' Doing contraction',i3)") icontract
+    ibeg=basstart(cenind(iatm))
+    iend=basend(cenind(iatm))
+    jatm=iatm+1
+    jbeg=basstart(cenind(jatm))
+    jend=basend(cenind(jatm))
+    if (icontract==1) then !Initialize
+        icalc=1
+        mat2=PSmat
+    end if
+    
+    if (icalc==1) then
+        do ibas=ibeg,iend
+            do kbas=kbeg,kend
+                mat1(ibas,kbas)=sum(PSmat(ibas,jbeg:jend)*mat2(jbeg:jend,kbas))
+            end do
+        end do
+        icalc=2
+    else if (icalc==2) then
+        do ibas=ibeg,iend
+            do kbas=kbeg,kend
+                mat2(ibas,kbas)=sum(PSmat(ibas,jbeg:jend)*mat1(jbeg:jend,kbas))
+            end do
+        end do
+        icalc=1
+    end if
+    iatm=iatm-1
+end do
+
+result=0
+do ibas=basstart(cenind(1)),basend(cenind(1))
+    jbeg=basstart(cenind(2))
+    jend=basend(cenind(2))
+    if (icalc==1) then
+        result=result+sum(PSmat(ibas,jbeg:jend)*mat2(jbeg:jend,ibas))
+    else if (icalc==2) then
+        result=result+sum(PSmat(ibas,jbeg:jend)*mat1(jbeg:jend,ibas))
+    end if
+end do
 end subroutine
 
 
@@ -1218,19 +1351,20 @@ use NAOmod
 implicit real*8 (a-h,o-z)
 character c2000tmp*2000
 integer,allocatable :: atmarr(:),atmarrorg(:)
-integer cenind(12),minidx(4)
+integer cenind(2000),minidx(4)
 real*8,allocatable :: PSmat(:,:),PSmatA(:,:),PSmatB(:,:)
 
 iopsh=0
 if (allocated(CObasa)) then !Calculate AV1245 in original basis
+    write(*,*) "Calculating PS matrix, please wait..."
     if (allocated(Palpha)) then !Open shell
         iopsh=1
         allocate(PSmatA(nbasis,nbasis),PSmatB(nbasis,nbasis))
-        PSmatA=matmul(Palpha,Sbas)
-        PSmatB=matmul(Pbeta,Sbas)
+        PSmatA=matmul_blas(Palpha,Sbas,nbasis,nbasis,0,0)
+        PSmatB=matmul_blas(Pbeta,Sbas,nbasis,nbasis,0,0)
     else
         allocate(PSmat(nbasis,nbasis))
-        PSmat=matmul(Ptot,Sbas)
+        PSmat=matmul_blas(Ptot,Sbas,nbasis,nbasis,0,0)
     end if
     ifNAO=0
 else !Load NAO and DMNAO information

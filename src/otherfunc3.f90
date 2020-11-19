@@ -10,6 +10,7 @@ do while(.true.)
     write(*,*) "3 Visualize (hyper)polarizability via unit sphere and vector representations"
     write(*,*) "4 Simulating scanning tunneling microscope (STM) image"
     write(*,*) "5 Calculate electric dipole, quadrupole and octopole moments analytically"
+    write(*,*) "6 Calculate energies of the present orbitals"
     
 	read(*,*) isel
 	if (isel==0) then
@@ -24,6 +25,8 @@ do while(.true.)
         call STM
     else if (isel==5) then
         call calc_multipole
+    else if (isel==6) then
+        call calc_orb_energy
 	end if
 end do
 end subroutine
@@ -372,6 +375,7 @@ do while(.true.)
     read(*,*) isel
     
     if (isel==0) then
+	    call delvirorb_back(1)
         return
     else if (isel==2) then
         if (ifunctype==1) then
@@ -1620,6 +1624,26 @@ use defvar
 use util
 implicit real*8 (a-h,o-z)
 
+if (ispecial==1) then
+    xnucdip=0
+    ynucdip=0
+    znucdip=0
+    do iatm=1,ncenter
+        xnucdip=xnucdip+a(iatm)%x*a(iatm)%charge
+        ynucdip=ynucdip+a(iatm)%y*a(iatm)%charge
+        znucdip=znucdip+a(iatm)%z*a(iatm)%charge
+    end do
+    write(*,"(/,' Dipole moment from nuclear charges (a.u.): ',3f11.6)") xnucdip,ynucdip,znucdip
+    write(*,"(a)") " Because ispecial=1, now displacing nuclear coordinates to make their contributions to dipole moment vanishing"
+    sumnuc=sum(a%charge)
+    do iatm=1,ncenter
+        a(iatm)%x=a(iatm)%x-xnucdip/sumnuc
+        a(iatm)%y=a(iatm)%y-ynucdip/sumnuc
+        a(iatm)%z=a(iatm)%z-znucdip/sumnuc
+    end do
+    write(*,*) "Done!"
+end if
+
 if (allocated(CObasa)) then
     write(*,*) "Calculating electric dipole moment integral matrix..."
     call genDbas_curr
@@ -1686,10 +1710,13 @@ else
 end if
 
 !Combine nuclear contribution and electron contribution to obtain multiple moments
+xnucdip=0
+ynucdip=0
+znucdip=0
 do iatm=1,ncenter
-    xinttot=xinttot+a(iatm)%x*a(iatm)%charge
-    yinttot=yinttot+a(iatm)%y*a(iatm)%charge
-    zinttot=zinttot+a(iatm)%z*a(iatm)%charge
+    xnucdip=xnucdip+a(iatm)%x*a(iatm)%charge
+    ynucdip=ynucdip+a(iatm)%y*a(iatm)%charge
+    znucdip=znucdip+a(iatm)%z*a(iatm)%charge
     xxinttot=xxinttot+a(iatm)%x*a(iatm)%x*a(iatm)%charge
     yyinttot=yyinttot+a(iatm)%y*a(iatm)%y*a(iatm)%charge
     zzinttot=zzinttot+a(iatm)%z*a(iatm)%z*a(iatm)%charge
@@ -1712,6 +1739,11 @@ rrxinttot=xxxinttot+xyyinttot+xzzinttot
 rryinttot=xxyinttot+yyyinttot+yzzinttot
 rrzinttot=xxzinttot+yyzinttot+zzzinttot
 
+write(*,"(/,' Dipole moment from nuclear charges (a.u.): ',3f11.6)") xnucdip,ynucdip,znucdip
+write(*,"(' Dipole moment from electrons (a.u.):       ',3f11.6)") xinttot,yinttot,zinttot
+xinttot=xinttot+xnucdip
+yinttot=yinttot+ynucdip
+zinttot=zinttot+znucdip
 write(*,*)
 write(*,"(' Dipole moment (a.u.): ',3f14.6)") xinttot,yinttot,zinttot
 write(*,"(' Dipole moment (Debye):',3f14.6)") xinttot*au2debye,yinttot*au2debye,zinttot*au2debye
@@ -1767,4 +1799,67 @@ write(*,"( ' Magnitude: |Q_3|=',f12.4)") dsqrt(R30**2+R3n1**2+R3p1**2+R3n2**2+R3
 
 write(*,*)
 write(*,*) "Note: Unless otherwise specified, all data shown above are in a.u."
+end subroutine
+
+
+
+    
+!!------------ A general routine for obtaining energies of present orbitals in memory based on loaded Fock matrix    
+subroutine calc_orb_energy
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 orbene(nmo),Emat(nbasis,nbasis)
+
+if (.not.allocated(CObasa)) then
+    write(*,"(a)") " Error: To use this function, the input file must contain basis function information! See Section 2.5 of Multiwfn manual for detail"
+    write(*,*) "Press ENTER button to return"
+    return
+end if
+
+call loadFockfile(istat)
+if (istat==0) then
+	write(*,*) "Unable to evaluate orbital energies!"
+else
+	Emat=matmul(matmul(transpose(CObasa),FmatA),CObasa)
+	do iorb=1,nbasis
+		orbene(iorb)=Emat(iorb,iorb)
+	end do
+    if (allocated(CObasb)) then
+	    Emat=matmul(matmul(transpose(CObasb),FmatB),CObasb)
+	    do iorb=1,nbasis
+		    orbene(nbasis+iorb)=Emat(iorb,iorb)
+	    end do
+    end if
+	write(*,*) "Orbital energies have been successfully evaluated!"
+    write(*,*)
+    write(*,*) "0 Do nothing"
+    write(*,*) "1 Export orbital energies to orbene.txt in current folder"
+    write(*,*) "2 Replace the original orbital energies in memory by the newly evaluated ones"
+    write(*,*) "3 Do both 1 and 2"
+    read(*,*) isel
+    if (isel==1.or.isel==3) then
+        open(10,file="orbene.txt")
+        if (wfntype==0.or.wfntype==2.or.wfntype==3) then
+            do iorb=1,nbasis
+                write(10,"(i7,'  Occ=',f8.4,'  E=',f16.8,' Hartree',f12.4,' eV')") iorb,MOocc(iorb),orbene(iorb),orbene(iorb)*au2eV
+            end do
+        else
+            write(10,*) "===== Alpha orbitals ====="
+            do iorb=1,nbasis
+                write(10,"(i7,'  Occ=',f8.4,'  E=',f16.8,' Hartree',f12.4,' eV')") iorb,MOocc(iorb),orbene(iorb),orbene(iorb)*au2eV
+            end do
+            write(10,*)
+            write(10,*) "===== Beta orbitals ====="
+            do iorb=1,nbasis
+                write(10,"(i7,'  Occ=',f8.4,'  E=',f16.8,' Hartree',f12.4,' eV')") iorb,MOocc(nbasis+iorb),orbene(nbasis+iorb),orbene(nbasis+iorb)*au2eV
+            end do
+        end if
+        close(10)
+        write(*,*) "The new orbital energies have been exported to orbene.txt in current folder!"
+    end if
+    if (isel==2.or.isel==3) then
+        MOene=orbene
+        write(*,*) "The original orbital energies in memory have been replaced by the new ones!"
+    end if
+end if
 end subroutine

@@ -1420,6 +1420,7 @@ else !U case
 end if
 call showorbsel(id,iorbvis)
 end subroutine
+
 !Extract string from orbital selection box and plot orbital orbital by calling showorbsel
 !The select orbital is recorded as global variable "iorbvis"
 subroutine showorbselbox(id)
@@ -1456,13 +1457,16 @@ else !U case
 end if
 call showorbsel(id,iorbvis)
 end subroutine
+
 !Calculate grid data of selected orbital and plot it as isosurface
 subroutine showorbsel(id,iorb)
 use function
+use defvar
 integer id,iorb
 real*8 molxlen,molylen,molzlen
 character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
 character*6 :: symstr
+
 ! Set grid for calculating cube data
 molxlen=(maxval(a%x)-minval(a%x))+2*aug3D
 molylen=(maxval(a%y)-minval(a%y))+2*aug3D

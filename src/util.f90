@@ -240,7 +240,7 @@ end function
 !!--------- Input four points, return dihedral angle (in degree)
 !Note that the value is always positive and within [0,180]
 real*8 function xyz2dih(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4)
-real*8 :: x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,pi=3.141592653589793D0,phi
+real*8 :: x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,pi=3.141592653589793D0,phi,tmp
 v12x=x1-x2
 v12y=y1-y2
 v12z=z1-z2
@@ -252,7 +252,9 @@ v34y=y3-y4
 v34z=z3-z4
 call vecprod(v12x,v12y,v12z,v23x,v23y,v23z,p1x,p1y,p1z)
 call vecprod(v23x,v23y,v23z,v34x,v34y,v34z,p2x,p2y,p2z)
-phi=acos( (p1x*p2x+p1y*p2y+p1z*p2z)/(sqrt(p1x*p1x+p1y*p1y+p1z*p1z)*sqrt(p2x*p2x+p2y*p2y+p2z*p2z)) )
+tmp=(p1x*p2x+p1y*p2y+p1z*p2z)/(sqrt(p1x*p1x+p1y*p1y+p1z*p1z)*sqrt(p2x*p2x+p2y*p2y+p2z*p2z))
+if (tmp>1D0) tmp=1D0 !In extremely rara case, due to numerical precision reason, the tmp may be marginally larger than 1 making acos return NaN, not fix it
+phi=acos(tmp)
 xyz2dih=phi/pi*180
 end function
 
@@ -635,6 +637,28 @@ do ipos=1,len_trim(inpstr)
 		end if
 		icommaold=icommanew
 	end if
+end do
+end subroutine
+
+
+!-------- Convert an array containing integers to a compact string (str)
+!"str" must have large enough characters
+subroutine arr2str(array,str)
+character(len=*) str
+character c80tmp*80
+integer :: array(:)
+nele=size(array)
+ipos=1
+str=" "
+do iele=1,nele
+    write(c80tmp,*) array(iele)
+    nlen=len_trim(adjustl(c80tmp))
+    if (iele<nele) then
+        str(ipos:ipos+nlen)=trim(adjustl(c80tmp))//','
+        ipos=ipos+nlen+1
+    else
+        str(ipos:ipos+nlen-1)=trim(adjustl(c80tmp))
+    end if
 end do
 end subroutine
 
@@ -1581,6 +1605,7 @@ subroutine loclabelfinal(fileid,label,nfound)
 integer fileid,nfound,ifound
 character(len=*) label
 nfound=0
+rewind(fileid)
 do while(.true.)
     call loclabel(fileid,label,ifound,0)
     if (ifound==0) then
@@ -1590,9 +1615,10 @@ do while(.true.)
         read(fileid,*)
     end if
 end do
+rewind(fileid)
 do ifound=1,nfound
-    call loclabel(fileid,label)
-    read(fileid,*)
+    call loclabel(fileid,label,inouse,0)
+    if (ifound<nfound) read(fileid,*)
 end do
 end subroutine
 
@@ -1691,23 +1717,23 @@ end subroutine
 !1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 0=Undetermined
 subroutine outputprog(ifileid,iprog)
 integer ifileid,iprog
-call loclabel(ifileid,"Gaussian, Inc",ifound,maxline=200)
+call loclabel(ifileid,"Gaussian, Inc",ifound,maxline=300)
 if (ifound==0) call loclabel(ifileid,"Entering Gaussian System",ifound,maxline=200)
 if (ifound==1) then
     iprog=1
     return
 end if
-call loclabel(ifileid,"O   R   C   A",ifound,maxline=200)
+call loclabel(ifileid,"O   R   C   A",ifound,maxline=300)
 if (ifound==1) then
     iprog=2
     return
 end if
-call loclabel(ifileid,"GAMESS VERSION =",ifound,maxline=200)
+call loclabel(ifileid,"GAMESS VERSION =",ifound,maxline=300)
 if (ifound==1) then
     iprog=3
     return
 end if
-call loclabel(ifileid,"Firefly Project",ifound,maxline=200)
+call loclabel(ifileid,"Firefly Project",ifound,maxline=300)
 if (ifound==1) then
     iprog=4
     return
@@ -1731,6 +1757,7 @@ else if (ifuncsel==100) then
     if (iuserfunc>=60.and.iuserfunc<=68) ifdoESP=.true.
     if (iuserfunc==101) ifdoESP=.true.
     if (iuserfunc==102) ifdoESP=.true.
+    if (iuserfunc==103) ifdoESP=.true.
 end if
 end function
 
@@ -1878,7 +1905,7 @@ end subroutine
 !ifound=1/0: Not found the argument
 subroutine getarg_int(argname,argval,ifound)
 implicit real*8 (a-h,o-z)
-character c80tmp,c200tmp*200
+character c80tmp*80,c200tmp*200
 character(len=*) argname
 integer ifound,argval
 narg=command_argument_count()

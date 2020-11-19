@@ -11,7 +11,7 @@ character c2000tmp*2000
 integer :: maxcyc=80,ireload=1,idoene=0,idocore=1,imethod=1,domark(4),iPMexp=2,ilmocen=0
 real*8 :: arrayi(nbasis),arrayj(nbasis),crit=1D-4,tmpbasarr(nbasis),tmpprimarr(nprims),bastot(nbasis)
 real*8,pointer :: Cmat(:,:)
-real*8,allocatable :: FLMOA(:,:),FLMOB(:,:),Xmat(:,:),Xmatinv(:,:),SC(:,:)
+real*8,allocatable :: FLMOA(:,:),FLMOB(:,:),Xmat(:,:),Xmatinv(:,:),SC(:,:),AOMbas(:,:,:)
 real*8 :: orbcomp(ncenter,nbasis) !Used in printing major orbital character
 integer :: orbtype(nmo) !LMO type determined according to composition, 0=other, 1=one-center, 2=two-center
 integer :: orbatm(2,nmo) !The index of the atom mainly involved in the LMO. one-center LMO has first element, two-center LMO has two elements
@@ -21,6 +21,9 @@ real*8 :: crit1c=0.85D0,crit2c=0.80D0
 integer :: thres_1c=90,thres_2c=85,icompmethod=2
 character c200tmp*200,typestr*4,selectyn
 integer orblist(nmo),norblist !Record the index of MOs included in the localization
+integer orblist_did(nmo) !If the orbital is involved in orbital localization, it will be set to 1, otherwise 0
+!Used by PM-Becke
+real*8 tmpmat(1,nbasis),mat11(1,1),veccoeffi(1,nbasis),veccoeffj(1,nbasis)
 !Below for calculating LMO centers and dipole moments
 real*8,allocatable :: orbvalpt(:,:)
 real*8 LMOpos(3,nmo),tmpvec(3)
@@ -50,12 +53,13 @@ do while(.true.)
     if (icompmethod==3) write(*,*) "-9 Set the method for calculating orbital composition, current: Becke"
 	if (ilmocen==1) write(*,*) "-8 If calculating center position and dipole moment of LMOs, current: Yes"
 	if (ilmocen==0) write(*,*) "-8 If calculating center position and dipole moment of LMOs, current: No"
-	!By default exponent of 2 is used for PM. exponent of 4 can also be used by option -7. However, according to my test, 
-	!p=4 converges slower than p=2 for both Mulliken and Lowdin populations, and the localization is not as substantial, idea as p=2, 
-	!so I finally decide not to expose this option to users
-! 	if (imethod==1.or.imethod==2) write(*,"(a,i3)") " -7 Set exponent of Pipek-Mezey method, current:",iPMexp
+	!By default exponent of 2 is used for PM. Exponent of 4 can also be chosen by option -7.
+    !According to my test, p=4 converges slower than p=2 for PM-Mulliken and PM-Lowdin,
+    !and the degree of localization is not as substantial as p=2, so I finally decide not to expose this option to users
+! 	if (imethod==1.or.imethod==2.or.imethod==3) write(*,"(a,i3)") " -7 Set exponent of Pipek-Mezey method, current:",iPMexp
 	if (imethod==1) write(*,*) "-6 Set localization method, current: Pipek-Mezey with Mulliken population"
 	if (imethod==2) write(*,*) "-6 Set localization method, current: Pipek-Mezey with Lowdin population"
+	if (imethod==3) write(*,*) "-6 Set localization method, current: Pipek-Mezey with Becke population"
 	if (imethod==10) write(*,*) "-6 Set localization method, current: Foster-Boys"
 	if (idocore==1) write(*,*) "-5 If also localizing core orbitals, current: Yes"
 	if (idocore==0) write(*,*) "-5 If also localizing core orbitals, current: No"
@@ -70,6 +74,7 @@ do while(.true.)
 	write(*,*) "2 Localizing both occupied and unoccupied orbitals separately"
 	write(*,*) "3 Localizing specific set of orbitals"
 	read(*,*) isel
+    
 	if (isel==0) then
 		return
 	else if (isel==-1) then
@@ -88,7 +93,7 @@ do while(.true.)
 		if (idoene==1) then
 			idoene=0
 		else if (idoene==0) then
-			call loadFock47(idoene)
+			call loadFockfile(idoene)
 		end if
 	else if (isel==-5) then
 		if (idocore==1) then
@@ -97,19 +102,17 @@ do while(.true.)
 			idocore=1
 		end if
 	else if (isel==-6) then
-		write(*,*) "Select orbital localization method"
-		write(*,"(a)") " Hint: 2 is the fastest, but not suitable when diffuse functions are presented. &
-		10 is the lowest, but fully compatible with diffuse functions"
+		write(*,*) "Please select orbital localization method"
+		write(*,"(a,/)") " Hint: 1 and 2 are very fast, but may not well work when diffuse functions are presented. 10 &
+        is evidently slower, and 3 is quite time-consuming for large systems, but they are but fully compatible &
+        with diffuse functions. Only 10 is unable to give sigma-pi separated LMOs"
 		write(*,*) "1 Pipek-Mezey based on Mulliken type of population"
 		write(*,*) "2 Pipek-Mezey based on Lowdin type of population"
+		write(*,*) "3 Pipek-Mezey based on Becke population"
 		write(*,*) "10 Foster-Boys"
 		read(*,*) imethod
-		if (imethod==10.and.(.not.(allocated(Dbas)))) then
-			write(*,*) "Generating electric dipole moment integral matrix..."
-			call genDbas_curr
-		end if
 	else if (isel==-7) then
-		write(*,*) "Input exponent of Pipek-Mezey method. 2 and 4 is allowed"
+		write(*,*) "Input exponent of Pipek-Mezey method. 2 or 4 is allowed"
 		write(*,"(a)") " Note: Original paper of PM method use exponent of 2, while 4 is shown to give LMO with more localized character"
 		read(*,*) iPMexp
 		if (iPMexp/=2.and.iPMexp/=4) then
@@ -144,8 +147,10 @@ do while(.true.)
 		write(*,"(a)") " Input thresholds for identifying one- and two-center LMOs. For example, &
 		inputting 0.9,0.85 means using 90% and 85%, respectively"
 		read(*,*) crit1c,crit2c
+        
 	else if (isel==1.or.isel==2) then
 		exit
+        
 	else if (isel==3) then
         write(*,*) "Select type of orbitals"
         if (wfntype==0) then
@@ -165,8 +170,6 @@ do while(.true.)
         exit
 	end if
 end do
-
-call walltime(iwalltime1)
 
 !Will perform Alpha/total-occ, Alpha/total-vir, Beta-occ, Beta-vir, set a label to indicate which part will actually done
 domark=0
@@ -201,15 +204,29 @@ else if (imethod==2) then !PM with Lowdin
 	write(*,*) "Performing Lowdin orthonormalization..."
 	allocate(Xmat(nbasis,nbasis),Xmatinv(nbasis,nbasis))
 	call symmorthomat(Sbas,Xmat,Xmatinv)
-	CObasa=matmul(Xmat,CObasa)
-	if (allocated(CObasb)) CObasb=matmul(Xmat,CObasb)
+    CObasa=matmul_blas(Xmat,CObasa,nbasis,nbasis,0,0)
+	!CObasa=matmul(Xmat,CObasa)
+    if (allocated(CObasb)) CObasb=matmul_blas(Xmat,CObasb,nbasis,nbasis,0,0)
+	!if (allocated(CObasb)) CObasb=matmul(Xmat,CObasb)
 	Sbas_org=Sbas
 	Sbas=0
 	forall (i=1:nbasis) Sbas(i,i)=1
+else if (imethod==3) then !PM with Becke
+    allocate(AOMbas(nbasis,nbasis,ncenter))
+    write(*,*) "Generating atomic overlap matrix of basis functions..."
+    call genAOMbas(AOMbas)
+else if (imethod==10) then !Foster-Boys
+	if (.not.allocated(Dbas)) then
+		write(*,*) "Generating electric dipole moment integral matrix..."
+		call genDbas_curr
+	end if
 end if
+
+call walltime(iwalltime1)
 
 !Carry out localization
 !Alpha-occ,Alpha-vir,Beta-occ,Beta-vir
+orblist_did=0
 do itime=1,4
 	if (domark(itime)==0) cycle
 	if (itime<=2) then
@@ -237,9 +254,13 @@ do itime=1,4
         norblist=nmoend-nmobeg+1
         forall(i=1:norblist) orblist(i)=nmobeg-1+i
     else if (isel==3) then
-        continue !orblist has already been set
+        continue !orblist has already been defined by user
     end if
-	if (imethod==1) SC=matmul(Sbas,Cmat) !Generate intermediate matrix SC for PM-Mulliken for lowering cost from N^4 to N^3
+    orblist_did(orblist(1:norblist))=1
+	if (imethod==1) then
+        write(*,*) "Please wait..."
+        SC=matmul_blas(Sbas,Cmat,nbasis,nbasis,0,0) !Generate intermediate matrix SC for PM-Mulliken for lowering cost from N^4 to N^3
+    end if
 	
 	if (wfntype==0) then
 		if (itime==1) write(*,"(/,a)") " Localizing occupied orbitals..."
@@ -257,15 +278,22 @@ do itime=1,4
             imo=orblist(idx)
 			do jdx=idx+1,norblist
                 jmo=orblist(jdx)
-				if (imethod==1) then !Pipek-Mezey with Mulliken population
-					Aval=0
-					Bval=0
+                
+                !PM-Mulliken and PM-Lowdin. Working equation is Journal of Computational Chemistry, 14, 6, 736 (1993)
+				if (imethod==1.or.imethod==2) then
+				    Aval=0;Bval=0
 					do iatm=1,ncenter
-						istart=basstart(iatm)
-						iend=basend(iatm)
-						Qij=0.5D0*sum(Cmat(istart:iend,jmo)*SC(istart:iend,imo)+Cmat(istart:iend,imo)*SC(istart:iend,jmo))
-						Qii=sum(Cmat(istart:iend,imo)*SC(istart:iend,imo))
-						Qjj=sum(Cmat(istart:iend,jmo)*SC(istart:iend,jmo))
+						is=basstart(iatm)
+						ie=basend(iatm)
+                        if (imethod==1) then !Mulliken population
+						    Qij=0.5D0*sum(Cmat(is:ie,jmo)*SC(is:ie,imo)+Cmat(is:ie,imo)*SC(is:ie,jmo))
+						    Qii=sum(Cmat(is:ie,imo)*SC(is:ie,imo))
+						    Qjj=sum(Cmat(is:ie,jmo)*SC(is:ie,jmo))
+                        else if (imethod==2) then !Lowdin population
+						    Qij=sum(Cmat(is:ie,imo)*Cmat(is:ie,jmo))
+						    Qii=sum(Cmat(is:ie,imo)*Cmat(is:ie,imo))
+						    Qjj=sum(Cmat(is:ie,jmo)*Cmat(is:ie,jmo))
+                        end if
 						if (iPMexp==2) then
 							Aval=Aval+( Qij**2-(Qii-Qjj)**2/4D0 )
 							Bval=Bval+( Qij*(Qii-Qjj) )
@@ -274,42 +302,61 @@ do itime=1,4
 							Bval=Bval+4*Qij*(Qii**3-Qjj**3)
 						end if
 					end do
-				else if (imethod==2) then !Pipek-Mezey with Lowdin population
-					Aval=0
-					Bval=0
-					do iatm=1,ncenter
-						istart=basstart(iatm)
-						iend=basend(iatm)
-						Qij=sum(Cmat(istart:iend,imo)*Cmat(istart:iend,jmo))
-						Qii=sum(Cmat(istart:iend,imo)*Cmat(istart:iend,imo))
-						Qjj=sum(Cmat(istart:iend,jmo)*Cmat(istart:iend,jmo))
+                !PM-Becke. See Eqs. 14 and 17 in J. Chem. Theory Comput., 10, 642 (2014)
+                else if (imethod==3) then
+				    Aval=0;Bval=0
+                    veccoeffi(1,:)=Cmat(:,imo)
+                    veccoeffj(1,:)=Cmat(:,jmo)
+                    !$OMP parallel private(iatm,Avaltmp,Bvaltmp,tmpmat,mat11,Qij,Qii,Qjj) num_threads(nthreads)
+					Avaltmp=0
+					Bvaltmp=0
+                    !$OMP do schedule(dynamic)
+					do iatm=1,ncenter !Note: Constructing tmpmat is the most time-consuming step of PM-Becke method, especially for large system
+                        tmpmat=matmul_blas(veccoeffi(1:1,:),AOMbas(:,:,iatm),1,nbasis,0,0)
+                        mat11=matmul_blas(tmpmat(1:1,:),Cmat(:,jmo:jmo),1,1,0,0)
+                        Qij=mat11(1,1)
+                        mat11=matmul_blas(tmpmat(1:1,:),Cmat(:,imo:imo),1,1,0,0)
+                        Qii=mat11(1,1)
+                        tmpmat=matmul_blas(veccoeffj(1:1,:),AOMbas(:,:,iatm),1,nbasis,0,0)
+                        mat11=matmul_blas(tmpmat(1:1,:),Cmat(:,jmo:jmo),1,1,0,0)
+                        Qjj=mat11(1,1)
 						if (iPMexp==2) then
-							Aval=Aval+( Qij**2-(Qii-Qjj)**2/4D0 )
-							Bval=Bval+( Qij*(Qii-Qjj) )
+							Avaltmp=Avaltmp+( Qij**2-(Qii-Qjj)**2/4D0 )
+							Bvaltmp=Bvaltmp+( Qij*(Qii-Qjj) )
 						else if (iPMexp==4) then
-							Aval=Aval-Qii**4-Qjj**4+6*(Qii**2+Qjj**2)*Qij**2+Qii**3*Qjj+Qjj**3*Qii
-							Bval=Bval+4*Qij*(Qii**3-Qjj**3)
+							Avaltmp=Avaltmp-Qii**4-Qjj**4+6*(Qii**2+Qjj**2)*Qij**2+Qii**3*Qjj+Qjj**3*Qii
+							Bvaltmp=Bvaltmp+4*Qij*(Qii**3-Qjj**3)
 						end if
 					end do
-				else if (imethod==10) then !Boys
+                    !$OMP end do
+                    !$OMP CRITICAL
+	                Aval=Aval+Avaltmp
+	                Bval=Bval+Bvaltmp
+                    !$OMP end CRITICAL
+                    !$OMP end parallel
+                !Foster-Boys localization
+				else if (imethod==10) then
 					call boysdipint(iri,jrj,irj,imo,jmo,Cmat)
 					Aval=sum(irj**2)-sum((iri-jrj)**2)/4
 					Bval=sum(irj*(iri-jrj))
 				end if
+                
 				if (Aval**2+Bval**2<1D-12) cycle
 				gamma=sign(1D0,Bval)*acos(-Aval/dsqrt(Aval**2+Bval**2))/4D0
 				arrayi=cos(gamma)*Cmat(:,imo)+sin(gamma)*Cmat(:,jmo) !Rotate imo and jmo by angle gamma to yield a new orbital
 				arrayj=-sin(gamma)*Cmat(:,imo)+cos(gamma)*Cmat(:,jmo)
 				Cmat(:,imo)=arrayi !Update current coefficient matrix by new mixed orbital
 				Cmat(:,jmo)=arrayj
-				if (imethod==1) then !For PM-Mulliken, also correspondingly update intermediate matrix SC
+				if (imethod==1) then !For PM-Mulliken, also correspondingly update auxiliary matrix SC
 					arrayi=cos(gamma)*SC(:,imo)+sin(gamma)*SC(:,jmo)
 					arrayj=-sin(gamma)*SC(:,imo)+cos(gamma)*SC(:,jmo)
 					SC(:,imo)=arrayi
 					SC(:,jmo)=arrayj
 				end if
+                
 			end do
 		end do
+        
 		Pval=0
 		do idx=1,norblist
             imo=orblist(idx)
@@ -318,10 +365,12 @@ do itime=1,4
 			end do
 		end do
 		deltaPval=Pval-Pvalold
+        
 		write(*,"(' Cycle:',i5,'  P:',f16.8,'  Delta P:',f16.8)") icyc,Pval,deltaPval
 		if (abs(deltaPval)<crit) exit
 		Pvalold=Pval
 	end do
+    
 	if (icyc==maxcyc+1) then
 		write(*,*) "Warning: Convergence failed!"
 	else
@@ -329,14 +378,16 @@ do itime=1,4
 	end if
 end do
 
-if (imethod==2) then !PM with lowdin. Back convert CObas from orthonormal basis to original basis
-	CObasa=matmul(Xmatinv,CObasa)
-	if (allocated(CObasb)) CObasb=matmul(Xmatinv,CObasb)
+if (imethod==2) then !PM with Lowdin. Back convert CObas from orthonormal basis to original basis
+	!CObasa=matmul(Xmatinv,CObasa)
+	!if (allocated(CObasb)) CObasb=matmul(Xmatinv,CObasb)
+    CObasa=matmul_blas(Xmatinv,CObasa,nbasis,nbasis,0,0)
+	if (allocated(CObasb)) CObasb=matmul_blas(Xmatinv,CObasb,nbasis,nbasis,0,0)
 	Sbas=Sbas_org
 end if
 
 call walltime(iwalltime2)
-write(*,"(/,' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
+write(*,"(/,' Orbital localization took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 
 
 !Print orbital energies, sort orbitals according to energies
@@ -369,9 +420,10 @@ if (idoene==1) then
 			end if
 		end do
 	end do
+    write(*,*)
 	write(*,*) "Energies of localized orbitals:"
 	do iorb=nmobeg,nmoend
-        if (all(orblist(1:norblist)/=iorb)) cycle
+        if (orblist_did(iorb)==0) cycle
 		typestr="A+B"
 		if (wfntype==1)	typestr="A"
 		write(*,"(i6,'   Energy:',f13.7,' a.u.',f13.4,' eV   Type: ',a,'  Occ:',f4.1)") &
@@ -498,6 +550,7 @@ if (icompmethod>0) then
 			    end if
             end do
         else if (icompmethod==2.or.icompmethod==3) then
+            write(*,*)
             if (icompmethod==2) itmp=1 !Hirshfeld
             if (icompmethod==3) itmp=2 !Becke
             allocate(CO_tmp(nmo,nprims))
@@ -521,7 +574,7 @@ if (icompmethod>0) then
 			call invarr(orbcomp(:,iorb),iatmarr(:,iorb)) !Then become from large to small
 		end do
 		
-        write(*,"(/,a)") " Hint: If you hope to print the LMOs in the order of atoms and atom pairs, &
+        if (itime==1) write(*,"(/,a)") " Hint: If you hope to print the LMOs in the order of atoms and atom pairs, &
         set ""iprintLMOorder"" in settings.ini to 1 prior to the analysis"
 		if (wfntype==0) then
 			if (itime==1) write(*,"(/,a)") " **** Major character of occupied LMOs:"
@@ -574,9 +627,9 @@ if (icompmethod>0) then
         end if
 		if (mod(itmp,3)/=0) write(*,*)
 		if (itmp==0) write(*,*) "None!"
-		write(*,*)
 		
 		if (all(istatarr(orblist(1:norblist))==1)) cycle
+		write(*,*)
 		write(*,"(' Almost two-center LMOs: (Sum of two largest contributions >',f5.1,'%)')") crit2c*100
 		itmp=0
         if (iprintLMOorder==0) then !Print LMO in original order
@@ -634,9 +687,9 @@ if (icompmethod>0) then
         end if
 		if (mod(itmp,2)/=0) write(*,*)
 		if (itmp==0) write(*,*) "None!"
-		write(*,*)
 		
 		if (all(istatarr(orblist(1:norblist))==1)) cycle
+		write(*,*)
 		write(*,*) "More delocalized LMOs: (Three largest contributions are printed)"
 		do idx=1,norblist
             iorb=orblist(idx)
@@ -646,11 +699,10 @@ if (icompmethod>0) then
 			iatmarr(2,iorb),a(iatmarr(2,iorb))%name,orbcomp(2,iorb)*100,&
 			iatmarr(3,iorb),a(iatmarr(3,iorb))%name,orbcomp(3,iorb)*100
 		end do
-		write(*,*)
 	end do
 end if
 
-
+write(*,*)
 write(*,*) "Exporting localized orbitals to new.fch in current folder..."
 call outfch("new.fch",10,1)
 

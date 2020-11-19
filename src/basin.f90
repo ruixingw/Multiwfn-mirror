@@ -27,8 +27,6 @@ ishow3p3=0
 !and hence messed up grid setting (orgx/y/z,dx/y/z...), so all of the functions in this module that rely on grid setting will be totally wrong
 numatt=0
 
-call delvirorb(1)
-
 do while(.true.)
 	write(*,*)
 	write(*,*) "                 ============= Basin analysis ============="
@@ -69,6 +67,8 @@ do while(.true.)
 		write(*,*) "Error: You should use option 1 to generate basins first!"
 		cycle
 	end if
+    
+    if ((isel>=1.and.isel<=4).or.(isel>=7.and.isel<=10)) call delvirorb(1)
 
 	if (isel==-10) then
 		idrawbasinidx=-10 !Don't display interbasin in any other GUI
@@ -597,6 +597,9 @@ do while(.true.)
     else if (isel==11) then
         call basinorbcomp
 	end if
+    
+    !Because delvirorb has been called before using some options, restore previous orbital information here
+    if ((isel>=1.and.isel<=4).or.(isel>=7.and.isel<=10)) call delvirorb_back(1)
 end do
 
 end subroutine
@@ -3520,18 +3523,21 @@ if (itype==2.or.itype==3) then
 										end if
 									end do
 									!Check if the closest grid and its 26 neighbours have the same attribution, if yes, employ its attribution then exit
+                                    !Find the closest grid to current position as (ixtest,iytest,iztest)
 									do ixtest=2,nx-1
 										tmpdist=abs(xtmp-xarr(ixtest))
-										if (tmpdist<dx/2D0) exit
+										if (tmpdist<1.01*dx/2D0) exit
+                                        !write(*,*) ixtest,tmpdist,xtmp,xarr(ixtest),dx/2D0
 									end do
 									do iytest=2,ny-1
 										tmpdist=abs(ytmp-yarr(iytest))
-										if (tmpdist<dy/2D0) exit
+										if (tmpdist<1.01*dy/2D0) exit
 									end do
 									do iztest=2,nz-1
 										tmpdist=abs(ztmp-zarr(iztest))
-										if (tmpdist<dz/2D0) exit
+										if (tmpdist<1.01*dz/2D0) exit
 									end do
+                                    if (ixtest==nx.or.iytest==ny.or.iztest==nz) cycle !Current position is far away from any grid, usually the initial case
 									iattref=gridbas(ixtest,iytest,iztest)
 									do imove=1,26
 										if ( gridbas(ixtest+vec26x(imove),iytest+vec26y(imove),iztest+vec26z(imove))/=iattref ) exit
@@ -3542,7 +3548,6 @@ if (itype==2.or.itype==3) then
 ! 									write(*,*) "Warning: Exceeded the step limit of steepest ascent process!" !may frighten users, so comment
 									iattref=gridbas(ix,iy,iz) !Use its original attribution
 								end if
-! 								write(*,*) irk4
 							end if
 							gridbas(ix,iy,iz)=iattref !Update attribution of boundary grids
 							!Calculate switching function at current grid
@@ -3564,12 +3569,12 @@ if (itype==2.or.itype==3) then
 							switchwei=1-switchwei
 							basinvolp(iattref)=basinvolp(iattref)+1D0/ndiv !Calculate boundary basin volume
 							if (cubmat(ix,iy,iz)>0.001D0) basinvdwvolp(iattref)=basinvdwvolp(iattref)+1D0/ndiv
-							if (ispecial==2.or.ifuncint==-1) then
+							if (ispecial==2.or.ifuncint==-1) then !Only for Shubin
 								continue !Don't calculate function value, but only update attribution of boundary grids at this stage
 							else if (ispecial==0) then
 								tmpval=calcfuncall(ifuncint,rnowxtmp,rnowytmp,rnowztmp)
 								intvalp(iattref,1)=intvalp(iattref,1)+tmpval*switchwei/ndiv
-							else if (ispecial==1) then
+							else if (ispecial==1) then !Only for Shubin
 								tmpval=infoentro(2,rnowxtmp,rnowytmp,rnowztmp) !Shannon entropy density, see JCP,126,191107 for example
 								tmpval2=Fisherinfo(1,rnowxtmp,rnowytmp,rnowztmp) !Fisher information density, see JCP,126,191107 for example
 								tmpval3=weizsacker(rnowxtmp,rnowytmp,rnowztmp) !Steric energy

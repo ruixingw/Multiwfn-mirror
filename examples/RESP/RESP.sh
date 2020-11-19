@@ -63,16 +63,6 @@ $keyword_SP geom=allcheck guess=read
 
 EOF
 
-$Gaussian < gau.gjf > gau.out
-
-if grep -Fq "Normal termination" gau.out
-then
-	echo Done!
-else
-	echo The task has failed! Exit the script...
-	exit 1
-fi
-
 echo Running single point task via Gaussian...
 $Gaussian < gau.gjf > gau.out
 

@@ -1076,13 +1076,13 @@ if (isel==1) then
 	sumval=sum(rintval(:,1))
 	sumabsval=sum(abs(rintval(:,1)))
 	write(*,*) "  Atomic space        Value                % of sum            % of sum abs"
-	if (any(rintval(:,1)>1D9).or.all(rintval(:,1)<1D-7))then
+	if (any(abs(rintval(:,1))>1D9).or.all(abs(rintval(:,1))<1D-7)) then
 		do iatm=1,ncenter
 			write(*,"(i6,'(',a2,')  ',D20.10,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
 		end do
 		write(*,"(' Summing up above values:',D20.10)") sumval
 		write(*,"(' Summing up absolute value of above values:',D20.10)") sumabsval
-		else
+    else
 		do iatm=1,ncenter
 			write(*,"(i6,'(',a2,')  ',f20.8,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
 		end do

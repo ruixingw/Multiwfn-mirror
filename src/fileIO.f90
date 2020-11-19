@@ -270,7 +270,7 @@ use defvar
 use util
 implicit real*8 (a-h,o-z)
 character(len=*) name
-character selectyn,c80*80,fchtitle*79,levelstr*80 !c80 for temporary store text
+character selectyn,c80*80,fchtitle*79,levelstr*80
 integer,allocatable :: shelltype(:),shell2atom(:),shellcon(:) !Degree of shell contraction
 integer,allocatable :: tmparrint(:)
 real*8,allocatable :: primexp(:),concoeff(:),SPconcoeff(:),amocoeff(:,:),bmocoeff(:,:),tmpmat(:,:),tmparr(:)
@@ -741,6 +741,15 @@ end if
 if (infomode==0) write(*,*) "Generating overlap matrix..."
 call genSbas_curr
 
+!Check wavefunction sanity
+devtmp=abs(sum(Sbas*Ptot)-nint(nelec))
+if (devtmp>0.01D0) then
+	write(*,"(' Deviation of Tr(S*P) to the total number of electrons:',f12.6)") devtmp
+	write(*,"(/,a)") " Warning: The loaded wavefunction is incorrect! That means this file is problematic"
+	write(*,"(a)") " If you really want to proceed, press ENTER button now, but the result may be incorrect"
+	read(*,*)
+end if
+
 !Output summary of present wavefunction
 if (infomode==0) then
 	write(*,*)
@@ -772,7 +781,6 @@ call getHOMOidx !Find out index of HOMO, will be used in some cases
 end subroutine
 
 
-
 !!--------------------------------------------------------------------
 !!-------------- Read Gaussian formatted check file for AdNDP analysis
 !Cobasa is not read from .fch file, which has already written by AdNDP module, which contains AO expansion coefficients of candidate or saved orbitals
@@ -780,8 +788,9 @@ subroutine readfchadndp(fchfilename,iusespin,orbocc,adndpCObas,numorb)
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-character fchfilename*200,c80*80
-integer iusespin
+character(len=*) fchfilename
+character c80*80
+integer iusespin,numorb
 real*8 orbocc(numorb),adndpCObas(nbasis,numorb)
 integer,allocatable :: shelltype(:),shell2atom(:),shellcon(:) !Degree of shell contraction
 real*8,allocatable :: primexp(:),concoeff(:),SPconcoeff(:)
@@ -862,6 +871,7 @@ if (isphergau==1) then
 		nbasis=nbasis+shtype2nbas(shelltype(i))
 	end do
 end if
+if (allocated(shtypeCar)) deallocate(shtypeCar)
 allocate(shtypeCar(nbasis)) !Store shell information of Cartesian basis into global array, which may be used later
 shtypeCar=shelltype
 nbasisCar=nbasis
@@ -1545,7 +1555,15 @@ allocate(prmshlexp(nprimshell),cs(nprimshell),cp(nprimshell),cd(nprimshell),cf(n
 allocate(bastype31(nshell*15)) !We don't know how many basis before read the file, so use the maximum value(up to g function)
 read(10,*)
 do i=1,ncenter
-	read(10,*) a(i)%index,a(i)%x,a(i)%y,a(i)%z
+	read(10,*,iostat=ierror) a(i)%index,a(i)%x,a(i)%y,a(i)%z
+    if (ierror/=0) then
+        write(*,"(a,i5,a)") " Error: Coordinate of atom",i," cannot be normally loaded!"
+        write(*,"(a)") " Please open .31 file by text editor and check if coordinate of this atom (and may be other ones) is ******. &
+        If yes, you should manually replace it with actual coordinate"
+        write(*,*) "Press ENTER button to exit"
+        read(*,*)
+        stop
+    end if
 	a(i)%charge=a(i)%index !.31 doesn't record charge and index separately, so we have to make them indentical
 end do
 a%name=ind2name(a%index)
@@ -1628,6 +1646,7 @@ if (chartemp(1:11)==" ALPHA SPIN".or.chartemp(1:11)==" alpha spin") then
 		else
 			nNAOs=nbasis
 		end if
+        !write(*,*) nNAOs,nload,nbasis
 		read(10,*) MOocc(1:nNAOs)
 	end if
 	if (chartemp(1:11)==" ALPHA SPIN") then
@@ -3352,7 +3371,7 @@ if (iorca==1) then !ORCA only uses spherical harmonic type and thus need not to 
 else
     imaxL=maxval(shelltype)
     if (infomode==0) write(*,"(' The highest angular moment basis functions is ',a)") shtype2name(imaxL) 
-    if (imaxL>=2) then
+    if (imaxL>=2) then !Containing d or higher basis functions
 	    rewind(10)
 	    do while(.true.)
 		    read(10,"(a)") c80
@@ -3367,12 +3386,12 @@ else
 		    i7F=1
 		    if (i10Flabel==1) i7F=0
 	    end if
-        if (i7F==1.and.i9G==0) then
-            write(*,"(a)") " Note: f functions are harmonic spherical but [9G] label is missing. All g functions are assumed to be harmonic spherical type"
+        if (imaxL==4.and.i7F==1.and.i9G==0) then
+            write(*,"(a)") " Note: f functions are harmonic spherical but [9G] label was not found. All g functions are assumed to be harmonic spherical type"
             i9G=1
         end if
-        if (i9G==1.and.i11H==0) then
-            write(*,"(a)") " Note: g functions are harmonic spherical but [11H] label is missing. All h functions are assumed to be harmonic spherical type"
+        if (imaxL==5.and.i9G==1.and.i11H==0) then
+            write(*,"(a)") " Note: g functions are harmonic spherical but [11H] label was not found. All h functions are assumed to be harmonic spherical type"
             i11H=1
         end if
     end if
@@ -3859,6 +3878,7 @@ if (tmpnet>18.and.any(a%index>18)) then
 end if
 
 end subroutine
+
 
 !--- Purify symmetry label to meet Multiwfn standard, used by readmolden. e.g. 61a1g --> A1g
 subroutine corrsymlab(symnew,symorg)

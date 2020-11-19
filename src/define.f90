@@ -234,7 +234,7 @@ integer :: shtype2nbas(-5:5)=(/ 11,9,7,5,4,1,3,6,10,15,21 /)
 !-------- Variables for wfn information(_org means using for backuping the first loaded molecule)
 integer :: ibasmode=0 !0/1 = GTO/STO is used in current wavefunction
 integer :: nmo=0,nprims=0,ncenter=0,ncenter_org=0,nmo_org=0,nprims_org=0 !Number of orbitals, primitive functions, nuclei
-integer :: idxHOMO=0,idxHOMOb=0 !For fch and molden (or may be others), record the index of alpha and beta HOMO (idxHOMOb>nbasis), etc.
+integer :: idxHOMO=0,idxHOMOb=0 !Index of total/alpha and beta-HOMO. Can be determined by subroutine getHOMOidx
 integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd/dx/vti=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13, mwfn=14, gro=15
 integer :: wfntype=0 !0/1/2= R/U/RO single determinant wavefunction, 3/4=R/U multiconfiguration wavefunction
 real*8 :: totenergy=0,virialratio=2,nelec=0,naelec=0,nbelec=0
@@ -247,6 +247,7 @@ integer,allocatable :: MOtype(:) !The type of orbitals, (alpha&beta)=0/alpha=1/b
 character*10 :: orbtypename(0:2)=(/ "Alpha&Beta","Alpha","Beta" /)
 character*4,allocatable :: MOsym(:) !The symmetry of orbitals, meaningful when .mwfn/molden/gms is used
 real*8,allocatable :: CO(:,:),CO_org(:,:),CO_tmp(:,:) !Coefficient matrix of primitive basis functions, including both normalization and contraction coefficients
+real*8,allocatable :: COtr(:,:) !Transposed CO matrix, which is used in some routines for faster calculation than using CO. Must be deallocated after using
 !Note: Row/column of CO denote MO/GTF respectively, in contrary to convention
 !-------- Describe inner electron density in EDF section
 type(primtype),allocatable :: b_EDF(:)
@@ -280,7 +281,13 @@ real*8,allocatable :: Ptot_prim(:,:),Palpha_prim(:,:),Pbeta_prim(:,:) !Density m
 real*8,allocatable :: Dprim(:,:,:) !Dipole moment integral matrix based on GTF, the first index 1,2,3=X,Y,Z, the last two indices are basis index
 real*8,allocatable :: Quadprim(:,:,:) !Quadrupole moment integral matrix based on GTF, the first index 1~6=XX,YY,ZZ,XY,YZ,XZ
 real*8,allocatable :: Octoprim(:,:,:) !Octopole moment integral matrix based on GTF, the first index 1~10=XXX,YYY,ZZZ,YZZ,XZZ,XXZ,YYZ,XXY,XYY,XYZ
-! real*8,allocatable :: twoPDM(:) !Store two-particle density matrix by one-dimension array, Not use currently
+!Back up some information prior to calling delvirorb, so that can be restored via delvirorb_back
+integer :: nmo_back,ifdelvirorb=0 !If "delvirorb" has been called, then ifdelvirorb=1, otherwise 0
+real*8,allocatable :: MOene_back(:),MOocc_back(:)
+integer,allocatable :: MOtype_back(:)
+real*8,allocatable :: CO_back(:,:)
+
+
 
 !-------- Connectivity matrix
 !Loaded from .mol/mol2 using readmol/readmol2 or readmolconn (from mol), value is formal bond order; can also be guessed via genconnmat, value is 1/0 (connected, not connected)

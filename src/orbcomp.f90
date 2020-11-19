@@ -1448,7 +1448,7 @@ do while(.true.)
 			end do
 			write(*,"(' Oxidation state of atom',i4,'(',a,') :',i3)") iatm,a(iatm)%name,nint(oxdstat(iatm))
 		end do
-		write(*,"(' The sum of oxidation states:',i4)") sum(nint(oxdstat))
+		write(*,"(' The sum of oxidation states:',i6)") sum(nint(oxdstat))
 		if (allocated(fragLOBA)) then
 			oxdfrag=0
 			do iatmidx=1,nfragLOBA

@@ -1199,7 +1199,7 @@ if (imapfunc==1.or.imapfunc==3) then
 	write(*,"(' Balance of charges (nu):',f13.8)") balencechg
 	write(*,"(' Product of sigma^2_tot and nu: ',f12.8,' a.u.^2 (',f11.5,' (kcal/mol)^2)')") balencechg*variall,balencechg*variall*au2kcal**2
 	write(*,"(' Internal charge separation (Pi):',f13.8,' a.u. (',f13.5,' kcal/mol)')") chgsep,chgsep*au2kcal
-    write(*,"(' Molecular polarity index:',f13.8,' eV (',f13.5,' kcal/mol)')") polaridx*au2eV,polaridx*au2kcal
+    write(*,"(' Molecular polarity index (MPI):',f13.8,' eV (',f13.5,' kcal/mol)')") polaridx*au2eV,polaridx*au2kcal
     write(*,"(' Nonpolar surface area (|ESP| <= 10 kcal/mol):',f10.2,' Angstrom^2  (',f6.2,' %)')") surfareanonpol*b2a*b2a,surfareanonpol/surfareaall*100
     write(*,"(' Polar surface area (|ESP| > 10 kcal/mol):    ',f10.2,' Angstrom^2  (',f6.2,' %)')") surfareapol*b2a*b2a,surfareapol/surfareaall*100
 else if (imapfunc==2) then
@@ -1217,7 +1217,9 @@ write(*,*)
 write(*,*) "Surface analysis finished!"
 
 call walltime(iclktime2)
-write(*,"(' The total wall clock time passed during the task:',i6,'s')") iclktime2-iclktime1
+write(*,"(' Total wall clock time passed during this task:',i6,'s')") iclktime2-iclktime1
+if (imapfunc/=0.and.imapfunc/=4.and.imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call delvirorb_back(1)
+if (imapfunc==1) write(*,"(a)") " Citation of molecular polarity index (MPI): Carbon, 171, 514 (2021)"
 
 
 !============= Post-processing stage

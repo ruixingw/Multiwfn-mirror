@@ -18,7 +18,7 @@ integer,allocatable :: tmparr(:)
 real*8 :: hesstmp(3,3),gradtmp(3) !Temporarily used for calculating curvature
 integer :: ishowsearchpath=0
 
-!Don't need virtual orbitals, delete them for faster calculation
+!Don't need virtual orbitals (though some real space functions do need virtual orbitals), delete them for faster calculation
 call delvirorb(1)
 
 !Initialize searching and plotting parameters
@@ -129,6 +129,7 @@ do while(.true.)
 		end if
         
 	else if (isel==-10) then
+        call delvirorb_back(1)
 		exit
 !-9 -9 -9 -9 -9 -9 -9
 	else if (isel==-9) then
@@ -625,7 +626,7 @@ do while(.true.)
 			if (ishowsearchlevel==1) write(*,"(a)") " 7 Set printing level of details of CP searching: Minor detail"
 			if (ishowsearchlevel==2) write(*,"(a)") " 7 Set printing level of details of CP searching: Some detail"
 			if (ishowsearchlevel==3) write(*,"(a)") " 7 Set printing level of details of CP searching: All detail"
-			write(*,"(a,1PE15.8)") " 8 Criteria for determining if Hessian matrix is singular:",singularcrit
+			write(*,"(a,1PE15.8)") " 8 Set criterion for determining if Hessian matrix is singular:",singularcrit
 			if (CPsearchlow==CPsearchhigh) then
 				write(*,*) "9 Set value range for reserving CPs, current: Reserve All CPs"
 			else
@@ -679,7 +680,8 @@ do while(.true.)
 				read(*,*) ishowsearchlevel
 				if (nthreads>1) write(*,*) "Warning: The printed details may be messed up since parallel mode is enabled!"
 			else if (isel2==8) then
-				write(*,"(a)") " Input a value, if absolute value of determinant of Hessiant matrix is lower than this value, then it will be regarded as singular, e.g. 1D-21"
+				write(*,"(a)") " Input a value, if absolute value of determinant of Hessiant matrix is lower than this value, &
+                then the Hessian will be regarded as singular, and the CP search will stop. e.g. 1E-15"
 				read(*,*) singularcrit
 			else if (isel2==9) then
 				write(*,"(a)") " Input lower and upper limits. For example, if you input 0.05,0.22, &

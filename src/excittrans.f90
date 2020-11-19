@@ -11,7 +11,7 @@ character :: excitfilename*200=" " !"D:\CM\my_program\Multiwfn\x\excittrans\4-Ni
 integer :: ifiletypeexc !1=Gaussian output; 2=ORCA output; 3=Plain text file; 4=Firefly output file
 integer :: iORCAsTD=0 !1=ORCA with sTDA/sTDDFT, 0: Common ORCA TDA/TDDFT
 integer :: nstates=0 !The total number of excited states (for ORCA, if triplet keyword is used, only one set of spin multiplicity states is loaded)
-integer numexcgeom !The number of geometries in excited state optimization task of Gaussian/ORCA (1 corresponds to only one structure)
+integer numexctime !The number of times of excited state printing of Gaussian/ORCA (1 corresponds to only once). >1 may due to geometry optimization or using state specific model
 real*8,allocatable :: allexcene(:) !Excitation energies
 real*8,allocatable :: allexcf(:) !Oscillator strength
 integer,allocatable :: allexcmulti(:) !Multiplicity of the states. 0 means the multiplicity is undefined (i.e. unrestricted reference state)
@@ -197,27 +197,12 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 				read(*,*)
 				return
 			end if
-			call loclabel(10,"GradGradGradGradGradGradGradGradGrad",ifound,maxline=2000)
-			if (ifound==1) then
-				write(*,"(a)") " Note: This file is seemingly an optimization or frequency task of excited state, &
-                for the former case, only the electron excitation information at the final step will be loaded"
-                !Determine how many steps are there, the data at final step will be loaded
-                numexcgeom=0 !The number of geometries
-		        do while(.true.)
-			        call loclabel(10,"Excitation energies and oscillator strengths",ifound,0)
-			        if (ifound==0) exit
-			        numexcgeom=numexcgeom+1
-                    read(10,*)
-		        end do
-                write(*,"(' The number of geometries is',i6)") numexcgeom
-            else
-                numexcgeom=1
-			end if
-            rewind(10)
-            do igeom=1,numexcgeom
-                call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
-                read(10,*)
-            end do
+            call loclabelfinal(10,"Excitation energies and oscillator strengths",numexctime)
+            if (numexctime>1) then
+			    write(*,"(a,i4,a)") " Note: Electron excitation information can be found",numexctime," times in the file, &
+                only the information printed last time will be loaded"
+            end if
+            read(10,*)
 		else if (ifiletypeexc==3) then !Plain text file
 			call loclabel(10,"Excited State",ifound)
 			if (ifound==0) then
@@ -254,22 +239,13 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
         else
             read(10,"(50x,i7)") nstates
 		end if
-        call loclabel(10,"* Geometry Optimization Run *",ifound,maxline=10000)
-		if (ifound==1) then
-			write(*,"(a)") " Note: This file is seemingly an optimization task of excited state, &
-            only the electron excitation information at the final step will be loaded"
-            !Determine how many steps are there, the data at final step will be loaded
-            numexcgeom=0 !The number of geometries
-		    do while(.true.)
-			    call loclabel(10,"Number of roots to be determined",ifound,0)
-			    if (ifound==0) exit
-			    numexcgeom=numexcgeom+1
-                read(10,*)
-		    end do
-            write(*,"(' The number of geometries is',i6)") numexcgeom
-        else
-            numexcgeom=1
-		end if
+        !This label is the most safest way of determining how many times of electronic excitation calculations have done
+        !If singlet and triplet are both calculated, will be count once
+        call loclabelfinal(10,"TD-DFT XC SETUP",numexctime)
+        if (numexctime>1) then
+			write(*,"(a,i4,a)") " Note: Electron excitation information can be found",numexctime," times in the file, &
+            only the information printed last time will be loaded"
+        end if
 	else if (ifiletypeexc==4) then !Firefly output file
 		call loclabel(10,"NUMBER OF STATES REQUESTED =",ifound)
 		if (ifound==0) then
@@ -305,7 +281,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 	!Load excitation energy, multiplicity, the number of MO pairs of each excited state
 	if (ifiletypeexc==1) then !Gaussian output file
         rewind(10)
-        do igeom=1,numexcgeom
+        do igeom=1,numexctime
 		    call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
             read(10,*)
         end do
@@ -353,7 +329,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 			    end if
 		    end if
             rewind(10)
-            do igeom=1,numexcgeom
+            do igeom=1,numexctime
                 call loclabel(10,"Number of roots to be determined",ifound,0)
                 read(10,*)
             end do
@@ -523,7 +499,7 @@ else
 	!Notice that for unrestricted case, A and B are combined as single index, namely if orbital index is larger than nbasis, then it is B, else A
 	if (ifiletypeexc==1.or.ifiletypeexc==3) then
 		if (ifiletypeexc==1) then !Gaussian output file
-            do igeom=1,numexcgeom
+            do igeom=1,numexctime
 		        call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
                 read(10,*)
             end do
@@ -573,8 +549,8 @@ else
         if (iORCAsTD==0) then !Regular case
 		    !Worthnotingly, in at least ORCA 4.0, de-excitation is not separately outputted as <-, but combined into ->
 		    !Here we still check <-, because hopefully Neese may change the convention of ORCA output in the future...
-            do igeom=1,numexcgeom
-                call loclabel(10,"Number of roots to be determined",ifound,0)
+            do igeom=1,numexctime
+                call loclabel(10,"TD-DFT XC SETUP",ifound,0)
                 read(10,*)
             end do
 		    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
@@ -822,7 +798,7 @@ if (ioutinfo==1) write(*,"(' Loading configuration coefficients of excited state
 !Notice that for unrestricted case, A and B are combined as single index, namely if orbital index is larger than nbasis, then it is B, else A
 if (ifiletypeexc==1.or.ifiletypeexc==3) then
 	if (ifiletypeexc==1) then
-        do igeom=1,numexcgeom
+        do igeom=1,numexctime
 		    call loclabel(10,"Excitation energies and oscillator strengths:",ifound,0)
             read(10,*)
         end do
@@ -1148,8 +1124,8 @@ call loadallexcinfo(1)
 call selexcit(istate)
 call loadexccoeff(istate,1)
 write(*,*)
-write(*,*) "Please cite hole-electron analysis:"
-write(*,*) "Carbon, 165, 461-467 (2020) DOI: 10.1016/j.carbon.2020.05.023"
+write(*,"(a)") " !!! Please cite hole-electron analysis as follows, the supplemental material presents a concise introduction of this analysis"
+write(*,*) "Carbon, 165, 461 (2020) DOI: 10.1016/j.carbon.2020.05.023"
 
 10 do while(.true.)
 	write(*,*)
@@ -3079,24 +3055,30 @@ write(*,*)
 write(*,*) "0 Return"
 write(*,*) "1 Output NTO orbitals to .molden file"
 write(*,*) "2 Output NTO orbitals to .fch file"
+write(*,*) "3 Output NTO orbitals to .mwfn file (recommended)"
 read(*,*) iselNTO
 if (iselNTO==1) then
 	write(*,*) "Input the file path to output, e.g. C:\S1.molden"
 	read(*,"(a)") c200tmp
 	call outmolden(c200tmp,10)
-	write(*,"(a)") " Exporting Molden input file finished! Now you can load the newly generated .molden file to visualize NTOs"
+	write(*,"(a)") " Exporting .molden file finished!"
 else if (iselNTO==2) then
 	write(*,*) "Input the file path to output, e.g. C:\S1.fch"
 	read(*,"(a)") c200tmp
 	call outfch(c200tmp,10,1)
-	write(*,"(a)") " Exporting Molden input file finished! Now you can load the newly generated .fch file to visualize NTOs"
+	write(*,"(a)") " Exporting .fch file finished!"
+else if (iselNTO==3) then
+	write(*,*) "Input the file path to output, e.g. C:\S1.mwfn"
+	read(*,"(a)") c200tmp
+	call outmwfn(c200tmp,10,0)
+	write(*,"(a)") " Exporting .mwfn file finished!"
 end if
+write(*,"(a)") " Now you can load the newly generated file to visualize NTOs. Note that in this file the orbital energies correspond to NTO eigenvalues"
 write(*,*)
-write(*,*) "Reloading "//trim(filename)//" to recover initial status..."
+write(*,"(a)") " Reloading "//trim(filename)//" to recover initial status..."
 call dealloall
 call readinfile(filename,1)
 write(*,*) "Loading finished!"
-write(*,*)
 end subroutine
 
 
@@ -3317,6 +3299,7 @@ end do
 !$OMP END PARALLEL DO
 call walltime(iwalltime2)
 write(*,"(' (Stage 3 took up wall clock time',i10,' s)',/)") iwalltime2-iwalltime1
+write(*,"(a,/)") " Note: The transition dipole moments reported below only correspond to spatial part, the spin part is not taken into account"
 
 if (all(allexcmulti==allexcmulti(1))) then !All states have the same spin, in this case all options are available
 	if (isel==1.or.isel==2) then !Output transition dipole moment between various states
@@ -4868,7 +4851,7 @@ if (.not.allocated(CObasa)) then
 end if
 
 call loadallexcinfo(1)
-write(*,"(a)") " Input indices of the excited states, for which the natural orbitals will be generated and exported to .molden file, e.g. 1,4,6-8"
+write(*,"(a)") " Input indices of the excited states, for which the natural orbitals will be generated and exported to .mwfn file, e.g. 1,4,6-8"
 read(*,"(a)") c2000tmp
 call str2arr(c2000tmp,nexcsel)
 allocate(excarr(nexcsel))
@@ -4924,9 +4907,9 @@ do iexc=1,nexcsel
 		call gennatorb(2,0) !Generate alpha and beta NOs
 	end if
 
-	write(c200tmp,"('NO_',i4.4,'.molden')") istate
+	write(c200tmp,"('NO_',i4.4,'.mwfn')") istate
 	write(*,"(' Exporting ',a,'...')") trim(c200tmp) 
-	call outmolden(c200tmp,10)
+	call outmwfn(c200tmp,10,0)
 	write(*,"(a,i4,a)") " The natural orbitals of excited state",istate," have been exported to "//trim(c200tmp)//" in current folder"
 	
 	call dealloall
@@ -4934,7 +4917,7 @@ do iexc=1,nexcsel
 	write(*,"(' Reloading: ',a)") trim(firstfilename)
 	call readinfile(firstfilename,1)
 end do
-write(*,"(/,a)") " Done! Molden files containing natural orbitals of all selected excited states have been successfully generated!"
+write(*,"(/,a)") " Done! .mwfn files containing natural orbitals of all selected excited states have been successfully generated!"
 end subroutine
 
 

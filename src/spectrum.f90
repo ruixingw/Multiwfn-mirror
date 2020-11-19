@@ -500,6 +500,10 @@ do while(.true.)
 			    call str2arr(c200tmp,ntmparr2)
 			    allocate(tmparr2(ntmparr2))
 			    call str2arr(c200tmp,ntmparr2,tmparr2)
+            else
+                ntmparr2=1
+			    allocate(tmparr2(ntmparr2))
+                tmparr2=1
 			end if
 			write(*,*) "Input index range of transitions"
 			write(*,*) "e.g. 1,3-6,22 means selecting modes 1,3,4,5,6,22"
@@ -515,8 +519,7 @@ do while(.true.)
 				    strall(imol,tmparr(j))=tmpval
 			    end do
             end do
-			deallocate(tmparr)
-            if (allocated(tmparr2)) deallocate(tmparr2)
+			deallocate(tmparr,tmparr2)
 			write(*,*) "Done!"
 		end if
 	else if (isel==0) then !Draw curve
@@ -1182,7 +1185,7 @@ do while(.true.)
 			if (nsystem==1) then
 				open(10,file="spectrum_curve.txt",status="replace")
 				do ipt=1,num1Dpoints
-					write(10,"(2f13.5)") curvex(ipt),curvey(ipt)
+					write(10,"(f13.5,1PE16.8)") curvex(ipt),curvey(ipt)
 				end do
 				close(10)
 				write(*,*) "Curve data has been written to spectrum_curve.txt in current folder"
@@ -1190,7 +1193,7 @@ do while(.true.)
 				if (any(weight/=1)) then !Output weighted spectrum 
 					open(10,file="spectrum_curve.txt",status="replace")
 					do ipt=1,num1Dpoints
-						write(10,"(2f13.5)") curvex(ipt),curvey(ipt)
+						write(10,"(f13.5,1PE16.8)") curvex(ipt),curvey(ipt)
 					end do
 					close(10)
 					write(*,"(a)") " The curve data corresponding to weighted spectrum has been written to spectrum_curve.txt in current folder"
@@ -1199,7 +1202,7 @@ do while(.true.)
 				do ipt=1,num1Dpoints
 					write(10,"(f13.5)",advance="no") curvex(ipt)
 					do imol=1,nsystem
-						write(10,"(f13.5)",advance="no") curveyall(imol,ipt)
+						write(10,"(1PE16.8)",advance="no") curveyall(imol,ipt)
 					end do
 					write(10,*)
 				end do
@@ -1210,9 +1213,9 @@ do while(.true.)
 			open(10,file="spectrum_curve.txt",status="replace")
 			do ipt=1,num1Dpoints
 				write(10,"(f13.5)",advance="no") curvex(ipt)
-				write(10,"(f13.5)",advance="no") curvey(ipt)
+				write(10,"(1PE16.8)",advance="no") curvey(ipt)
 				do iindband=1,numindband
-					write(10,"(f13.5)",advance="no") indcurve(ipt,iindband)
+					write(10,"(1PE16.8)",advance="no") indcurve(ipt,iindband)
 				end do
 				write(10,*)
 			end do
@@ -1253,7 +1256,7 @@ do while(.true.)
 		open(10,file="spectrum_line.txt",status="replace")
 		do imol=1,nsystem
 			do ipt=1,3*numdataall(imol)
-				write(10,"(2f16.5)") linexall(imol,ipt),lineyall(imol,ipt)
+				write(10,"(f16.5,1PE16.8)") linexall(imol,ipt),lineyall(imol,ipt)
 			end do
 			write(10,*)
 		end do
@@ -2457,7 +2460,7 @@ do while(.true.)
 	if (ishowcurve==0) write(*,*) "13 Toggle showing curves, current: OFF"
     write(*,*) "14 Set colors of curves and spikes"
 	write(*,*) "15 Set thickness of curves/lines/texts/axes/grid"
-	 write(*,*) "16 Change setting of labelling atoms"
+	write(*,*) "16 Change setting of labelling atoms"
 	if (any(weight/=1)) write(*,*) "17 Set status of showing weighted spectrum and that of individual systems"
     write(*,*) "18 Other plotting settings"
     

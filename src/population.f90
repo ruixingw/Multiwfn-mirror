@@ -819,7 +819,7 @@ if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7) then
 	write(*,*)
 	call walltime(nwalltime1)
 	do iatm=1,ncenter !Cycle each atom to calculate their charges and dipole
-		call delvirorb(0) !For faster calculation, remove virtual MOs in whole system, will not affect result
+		call delvirorb(0) !For faster calculation, remove high-lying virtual MOs in whole system, do not affect result
 		atmx=a(iatm)%x
 		atmy=a(iatm)%y
 		atmz=a(iatm)%z
@@ -860,6 +860,7 @@ if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7) then
 			call dealloall
 			call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule) to calc real rho again
 		end if
+		call delvirorb_back(0) !Restore to wavefunction before using delvirorb (if used)
 		!Now we have needed data in hand, calculate atomic charges and atomic dipole moments
 		tmpcharge=0D0
 		dipx=0D0
@@ -1368,6 +1369,15 @@ real*8 bondedmat(ncenter,ncenter) !1/0 means the two atoms are bonded / not bond
 integer H_list(5) !Temporarily record index
 integer nCHlist,CHlist(ncenter) !Record index of sp3 carbons, methyl carbons, and hydrogens attached to them, they are atoms to be fitted in RESP stage 2. nCHlist is actual length
 integer neqvlist_H,eqvlistlen_H(ncenter),eqvlist_H(10,ncenter) !Constraint hydrogens in -CH3, =CH2, -CH2- to be equivalent
+
+if (.not.allocated(b).and.ifiletype/=4) then
+    write(*,"(a)") " Error: Your input file does not contain wavefunction information at all, &
+evidently the RESP charges cannot be calculated! You should use &
+e.g. .wfn/wfx/mwfn/fch/molden... as input file, see Section 2.5 of Multiwfn manual"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
 
 !By default, only one conformer
 nconf=1
@@ -2396,6 +2406,15 @@ real*8,allocatable :: Bvec(:),Amat(:,:),Amatinv(:,:),qvec(:)
 real*8,allocatable :: fitcenvdwr(:)
 real*8,allocatable :: cenchg(:) !Final result
 real*8,allocatable :: ESPerr(:)
+
+if (.not.allocated(b).and.ifiletype/=4) then
+    write(*,"(a)") " Error: Your input file does not contain wavefunction information at all, &
+    evidently the electrostatic potential fitted charges cannot be calculated! You should use &
+    e.g. .wfn/wfx/mwfn/fch/molden... as input file, see Section 2.5 of Multiwfn manual"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
 
 iaddcen=0 !If give additional centers
 naddcen=0

@@ -88,6 +88,7 @@ write(*,"(' The number of NAOs: ',i10)") numNAO
 call dealloNAONBO(1)
 allocate(NAOinit(ncenter_NAO),NAOend(ncenter_NAO),NAOcen(numNAO),NAOcenname(numNAO))
 allocate(NAOset(numNAO,0:2),NAOtype(numNAO),NAOshname(numNAO),NAOocc(numNAO,0:2),NAOene(numNAO,0:2),atmname_NAO(ncenter_NAO))
+NAOene=0 !For multiconfiguration method, there is no NAO energy, and thus NAO energies will be 0
 
 !Load initial and ending index of NAOs corresponding to various atoms
 call loclabel(10,"NATURAL POPULATIONS")
@@ -144,7 +145,8 @@ do iatm=1,ncenter_NAO
             call uc2lc(NAOshname(iNAO)(ic:ic))
         end do
         if (iopshNAO==0) then
-            read(c80tmp(i2+1:),*) NAOocc(iNAO,ispin),NAOene(iNAO,ispin)
+            read(c80tmp(i2+1:),*,iostat=ierror) NAOocc(iNAO,ispin),NAOene(iNAO,ispin) !For multiconfiguration method, there is no NAO energy
+            if (ierror/=0) read(c80tmp(i2+1:),*,iostat=ierror) NAOocc(iNAO,ispin)
         else
 		    read(c80tmp(i2+1:),*) NAOocc(iNAO,ispin)
             NAOene(iNAO,ispin)=0
@@ -171,7 +173,8 @@ if (iopshNAO==1) then
 		        else if (index(c80tmp,"Ryd")/=0) then
 			        NAOset(iNAO,ispin)="Ryd"
 		        end if
-                read(c80tmp(i2+1:),*) NAOocc(iNAO,ispin),NAOene(iNAO,ispin)
+                read(c80tmp(i2+1:),*,iostat=ierror) NAOocc(iNAO,ispin),NAOene(iNAO,ispin) !For multiconfiguration method, there is no NAO energy
+                if (ierror/=0) read(c80tmp(i2+1:),*,iostat=ierror) NAOocc(iNAO,ispin)
                 !write(*,"(i6,a5,i5,2x,a7,a3,'(',a,')',f12.5,f14.5)") &
                 !iNAO,NAOcenname(iNAO),NAOcen(iNAO),NAOtype(iNAO),NAOset(iNAO,ispin),NAOshname(iNAO),NAOocc(iNAO,ispin),NAOene(iNAO,ispin)
             end do

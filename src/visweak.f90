@@ -11,7 +11,7 @@ do while(.true.)
 	write(*,*) "3 Averaged NCI analysis (NCI analysis for multiple frames. JCTC, 9, 2226)"
 	write(*,*) "4 Interaction region indicator (IRI) analysis"
 	write(*,*) "5 DORI analysis (JCTC, 10, 3745)"
-	write(*,*) "6 Visualization of van der Waals potential"
+	write(*,*) "6 Visualization of van der Waals potential (JMM, 26, 315)"
 	write(*,*) "9 Becke/Hirshfeld surface analysis (CrystEngComm, 11, 19)"
 	write(*,*) "10 IGM analysis based on promolecular density (PCCP 19, 17928)"
 	write(*,*) "11 IGM analysis based on Hirshfeld partition of molecular density (IGMH)"
@@ -352,6 +352,7 @@ allocate(dg_intra(nx,ny,nz),dg_inter(nx,ny,nz),dg(nx,ny,nz),sl2r(nx,ny,nz))
 if (iIGMtype==2) allocate(rhogrid(nx,ny,nz),gradgrid(3,nx,ny,nz))
 
 !----- Calculate grid data
+call delvirorb(1)
 call walltime(iwalltime1)
 write(*,*) "Calculating sign(lambda2)rho..."
 ifinish=0
@@ -417,6 +418,8 @@ end do
 !$OMP END PARALLEL DO
 
 dg_intra=dg-dg_inter
+
+call delvirorb_back(1)
 call walltime(iwalltime2)
 write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 ymin=0.0D0
@@ -918,9 +921,9 @@ real*8 parmA(ncenter),parmB(ncenter),UFF_A(103),UFF_B(103)
 real*8,allocatable :: repulgrid(:,:,:),dispgrid(:,:,:),vdwgrid(:,:,:)
 character outcubfile*200,c80tmp*80
 
-write(*,"(/,a)") " If this method is employed in your work, please cite this paper along with Multiwfn original paper:"
+write(*,"(/,a)") " !!! If this method is employed in your work, please cite this paper along with Multiwfn original paper:"
 write(*,"(a,/)") " Tian Lu, Qinxue Chen, van der Waals Potential: An Important Complement to Molecular Electrostatic &
-Potential in Studying Intermolecular Interactions. ChemRxiv (2020) DOI: 10.26434/chemrxiv.12148572"
+Potential in Studying Intermolecular Interactions. J. Mol. Model., 26, 315 (2020) DOI: 10.1007/s00894-020-04577-0"
 
 if (ivdwprobe==0) then
     write(*,*) "Input name of probe atom, e.g. Ar"

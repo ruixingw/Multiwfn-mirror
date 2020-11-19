@@ -4,7 +4,7 @@ use util
 use GUI
 implicit real*8(a-h,o-z)
 character nowdate*20,nowtime*20,c200tmp*200,c2000tmp*2000,lovername*80,settingpath*200,strtmp*3
-real*8,allocatable :: tmparr(:),tmparr2(:),tmpmat(:,:),tmpmat2(:,:) !For debug purpose
+real*8,allocatable :: tmparr(:),tmparr2(:),tmpmat(:,:),tmpmat2(:,:),tmpmat3D(:,:,:) !For debug purpose
 integer,allocatable :: tmparri(:),tmparr2i(:),tmpmati(:,:),tmpmat2i(:,:)
 
 call kmp_set_warnings_off() !In rare case, "Cannot open message catalog "1041\libiomp5ui.dll"" may occurs, this calling avoid this problem, or user should set KMP_WARNINGS environment variable to 0
@@ -25,7 +25,7 @@ end if
 10 call loadsetting
 
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.7, release date: 2020-Aug-14"
+write(*,*) "Version 3.8(dev), release date: 2020-Nov-13"
 write(*,"(a)") " Project leader: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -180,10 +180,10 @@ if (allocated(a)) then
     if (ncenter<200.and.all(a%index>0)) then !Too large system will take evidently cost
         allocate(tmpmat(3,ncenter),tmpmat2i(ncenter,ncenter),tmparri(ncenter))
         tmpmat(1,:)=a%x*b2a;tmpmat(2,:)=a%y*b2a;tmpmat(3,:)=a%z*b2a
-        !Tolerance of 0.001 is suitable for most systems. Though it may be too tight to detect point group for difficult case, &
+        !Tolerance of 0.0025 is suitable for most systems. Though it may be too tight to detect point group for difficult case, &
         !if the criterion is loosen, in rare case (e.g. C32) the SYVA routine will ceaselessly show &
         !"ERROR: Too many symmetry operations. Try a lower tolerance" and doesn't work or even make Multiwfn crash
-        call PG_eqvatm(ncenter,a%index,tmpmat,0.001D0,strtmp,ncls,tmparri,tmpmat2i)
+        call PG_eqvatm(ncenter,a%index,tmpmat,0.0025D0,strtmp,ncls,tmparri,tmpmat2i)
         if (strtmp==" ".and.ncenter<50) then
             do i=1,20
                 !write(*,"(' Loosen the tolerance of determining point group to',f12.6)") i*0.003D0
@@ -207,7 +207,7 @@ if (allocated(a)) then
 end if
 
 !Special treatment
-!call sys1eprop
+!call orbloc
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
@@ -477,6 +477,7 @@ do while(.true.) !Main loop
             write(*,*) "12 Add a Bq atom to specific position"
             write(*,*) "13 Convert bndmat.txt in current folder to Gaussian .gjf file with bond orders"
             write(*,*) "14 Convert current wavefunction to .rad file"
+            write(*,*) "15 Make orbitals equivalent to basis functions"
 		    write(*,*) "90 Calculate nuclear attractive energy between a fragment and an orbital"
 		    write(*,*) "91 Exchange orbital energies and occupations"
 		    write(*,*) "92 Calculate result of various kinetic energy functionals"
@@ -484,6 +485,7 @@ do while(.true.) !Main loop
 		    write(*,*) "97 Generate natural orbitals based on density matrix outputted by MRCC program"
 		    write(*,*) "99 Show EDF information (if any)"
 		    write(*,*) "100 Check the sanity of present wavefunction"
+            !write(*,*) "201 Ring-ring statistical for a trajectory" !Only used by Sobereva in C18 work
 		    read(*,*) i
 		    if (i==1) then
 			    write(*,*) "Input x,y,z in Bohr, e.g. 3.0,0.0,1.3"
@@ -578,6 +580,23 @@ do while(.true.) !Main loop
                 write(*,"(a)") " Converting to "//filename(1:ipos)//"rad"
                 call atmwfn2atmrad(filename,filename(1:ipos)//"rad")
                 write(*,*) "Done!"
+            else if (i==15) then
+                if (.not.allocated(CObasa)) then
+                    write(*,*) "Error: The input file must contain basis function information!"
+                    write(*,*) "Press ENTER button to return"
+                    read(*,*)
+                    cycle
+                end if
+                CObasa=0
+                do ibas=1,nbasis
+                    CObasa(ibas,ibas)=1
+                end do
+                call CObas2CO(1)
+                if (wfntype==0.or.wfntype==2.or.wfntype==3) then
+                    write(*,"(a)") " Done! Now each orbital corresponds to a basis function, index of orbitals is identical to index of basis functions"
+                else
+                    write(*,"(a)") " Done! Now each alpha orbital corresponds to a basis function, index of alpha orbitals is identical to index of basis functions"
+                end if
 		    else if (i==90) then
 			    call attene_orb_fragnuc
 		    else if (i==91) then
@@ -616,6 +635,8 @@ do while(.true.) !Main loop
 			    end if
 		    else if (i==100) then
 			    call wfnsanity
+            else if (i==201) then
+                call ringring_geom
 		    end if
 	    end if
     end if

@@ -742,7 +742,7 @@ do while(.true.)
 			do j=1,nmo !Where the first beta orbital appear now
 				if (motype(j)==2) exit
 			end do
-			MOocc(1:j+ninnerele/2-1)=0D0
+			MOocc(j:j+ninnerele/2-1)=0D0
 			write(*,"(' The occupation of',i7,' lowest energy orbitals have been set to zero')") ninnerele
 		else if (wfntype==0.or.wfntype==2.or.wfntype==3) then !restricted(=0) or RO(=2) or post-R(=3) wavefunction
 			MOocc(1:ninnerele/2)=0D0
@@ -1270,10 +1270,7 @@ if (ifdoESP(functype).and.iESPcode==2) then
     call doinitlibreta
     if (isys==1.and.nthreads>10) nthreads=10
 end if
-if (infomode==0) then
-    write(*,*)
-    call showprog(0,nz)
-end if
+if (infomode==0) call showprog(0,nz)
 
 !$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
 do k=1,nz
@@ -2418,39 +2415,66 @@ end subroutine
 
 
 !!!------------------- Delete virtual orbitals higher than LUMO+10 for HF/DFT wavefunctions
+!Each time delvirob has been called, delvirorb_back should be then called to recover previous wavefunction status
 !infomode=1 means show prompt
 subroutine delvirorb(infomode)
 use defvar
 implicit real*8 (a-h,o-z)
-integer :: infomode,nvirsave=10 !Lowest nvirsave virtual orbitals will be reserved
+integer :: infomode,nvirsave=10 !Lowest "nvirsave" virtual orbitals will be reserved
 if (.not.allocated(CObasa)) return !Only works when all orbitals are available, which implies CObasa is allocated
-if (idelvirorb==0) return
+if (idelvirorb==0) return !Do not delete orbitals as explicitly requested in settings.ini
 !Linear response kernel, local electron affinity, orbital-weighted Fukui/dual descriptor require all orbital information
-if (iuserfunc==24.or.iuserfunc==27.or.iuserfunc==95.or.iuserfunc==96.or.iuserfunc==97.or.iuserfunc==98) return 
-if (imodwfn==1) return !Don't make things more complicated!
+if (iuserfunc==24.or.iuserfunc==27.or.iuserfunc==28.or.iuserfunc==29.or.iuserfunc==95.or.iuserfunc==96.or.iuserfunc==97.or.iuserfunc==98) return
+!if (imodwfn==1) return !Wavefunction has been modified, don't make thing more complicated!
+if (wfntype==3.or.wfntype==4) return !This routine doesn't work for post-HF cases
+if (ifdelvirorb==1) return !This routine has already been called while delvirorb_back was not used after that
 
+allocate(CO_back(nmo,nprims),MOene_back(nmo),MOocc_back(nmo),MOtype_back(nmo))
+nmo_back=nmo
+CO_back=CO
+MOene_back=MOene
+MOocc_back=MOocc
+MOtype_back=MOtype
+
+call getHOMOidx !Return idxHOMO (RHF, ROHF), or idxHOMO and idxHOMOb (UHF)
 if (wfntype==0.or.wfntype==2) then !RHF, ROHF
-	if (nmo<=naelec+nvirsave) return
-	nmo=naelec+10 !Simply shield those virtual orbitals
-else if (wfntype==1) then !Perserve up to LUMO+10 for alpha, and identical number of orbitals for beta
-	if (nmo/2<=naelec+nvirsave) return !naelec is always >= nbelec
-	nperserve=naelec+nvirsave
-	!Cobasa and Cobasb are needn't to be modified
-	CO(naelec+11:naelec+nvirsave+nperserve,:)=CO(nmo/2+1:nmo/2+nperserve,:)
-	MOene(naelec+nvirsave+1:naelec+nvirsave+nperserve)=MOene(nmo/2+1:nmo/2+nperserve)
-	MOocc(naelec+nvirsave+1:naelec+nvirsave+nperserve)=MOocc(nmo/2+1:nmo/2+nperserve)
-	MOtype(naelec+nvirsave+1:naelec+nvirsave+nperserve)=MOtype(nmo/2+1:nmo/2+nperserve)
+	if (nmo<=idxHOMO+nvirsave) return
+	nmo=idxHOMO+nvirsave !Simply shield those virtual orbitals
+else if (wfntype==1) then !Reserve up to LUMO+10 for alpha, and identical number of orbitals for beta
+	if (nmo/2<=idxHOMO+nvirsave) return !naelec is always >= nbelec
+	nperserve=idxHOMO+nvirsave
+	!Cobasa and Cobasb needn't to be modified, because they are not directly involved in real space function calculation
+	CO(nperserve+1:2*nperserve,:)=CO(nmo/2+1:nmo/2+nperserve,:)
+	MOene(nperserve+1:2*nperserve)=MOene(nmo/2+1:nmo/2+nperserve)
+	MOocc(nperserve+1:2*nperserve)=MOocc(nmo/2+1:nmo/2+nperserve)
+	MOtype(nperserve+1:2*nperserve)=MOtype(nmo/2+1:nmo/2+nperserve)
 	nmo=2*nperserve
-else !This routine doesn't work for post-HF instances
-    return
 end if
 
-imodwfn=1 !Will not call this routine again
-if (infomode==1) then
-	write(*,"(a)") " Note: Virtual orbitals higher than LUMO+10 have been discarded for saving computational time"
-	write(*,*)
+ifdelvirorb=1 !delvirorb has taken effect
+if (infomode==1) write(*,"(a,/)") " Note: Virtual orbitals higher than LUMO+9 have been temporarily discarded for saving computational time"
+end subroutine
+
+
+
+!!!------------------- Recover status prior to calling delvirorb
+!infomode=1 means show prompt
+subroutine delvirorb_back(infomode)
+use defvar
+implicit real*8 (a-h,o-z)
+integer infomode
+if (ifdelvirorb==1) then
+    nmo=nmo_back
+    CO=CO_back
+    MOene=MOene_back
+    MOocc=MOocc_back
+    MOtype=MOtype_back
+    deallocate(CO_back,MOene_back,MOocc_back,MOtype_back)
+    ifdelvirorb=0 !Has been restored
+    if (infomode==1) write(*,"(a)") " Note: Previous orbital information has been restored"
 end if
 end subroutine
+
 
 
 
@@ -2497,6 +2521,7 @@ end subroutine
 !!-------- Deallocate all arrays about wavefunction except for the _org ones
 subroutine dealloall
 use defvar
+call delvirorb_back(0) !If delvirorb has taken effect, use this routine to deallocate relevant arrays
 if (allocated(a)) deallocate(a)
 if (allocated(b)) deallocate(b)
 if (allocated(CO)) deallocate(CO)
@@ -3168,16 +3193,17 @@ end subroutine
 
 
 
-!!---------- Load Fock matrix from NBO .47 file or plain text file
+!!---------- Load Fock or Kohn-Sham matrix from NBO .47 file or plain text file
 !istatus=0 means successfully loaded. =1 means failed
-subroutine loadFock47(istatus)
+subroutine loadFockfile(istatus)
 use defvar
 use util
 character c200tmp*200
 integer istatus
 do while(.true.)
-	write(*,"(a)") " Input the file recording Fock matrix in original basis functions in lower triangular form, e.g. C:\fock.txt"
-	write(*,*) "Note: If the suffix is .47, the Fock matrix will be directly loaded from it"
+	write(*,"(a)") " Input the file recording Fock/KS matrix in original basis functions in lower triangular form, e.g. C:\Fock.txt"
+	write(*,*) "Note: If the suffix is .47, the Fock/KS matrix will be directly loaded from it"
+    write(*,"(a)") "       If this is an ORCA output file using ""%output Print[P_Iter_F] 1 end"", Fock/KS matrix at last iteration will be loaded" 
 	read(*,"(a)") c200tmp
 	inquire(file=c200tmp,exist=alive)
 	if (alive==.false.) then
@@ -3186,38 +3212,75 @@ do while(.true.)
 	end if
 	exit
 end do
+
 open(10,file=c200tmp,status="old")
+call outputprog(10,iprog)
 if (allocated(FmatA)) deallocate(FmatA)
 allocate(FmatA(nbasis,nbasis))
-if (index(c200tmp,".47")/=0) then
-	write(*,*) "Trying to load Fock matrix from .47 file..."
-	call loclabel(10,"$FOCK",ifound)
-	if (ifound==0) then
-		write(*,*) "Error: Unable to find $FOCK field in this file!"
+if (iprog==2) then
+    write(*,*) "This file is recognized as an ORCA output file"
+    call loclabelfinal(10,"Fock matrix for operator 0",nfound)
+    if (nfound==0) then
+		write(*,*) "Error: Unable to locate ""Fock matrix for operator 0"" in this file!"
 		close(10)
 		istatus=0
 		return
-	end if
-	read(10,*)
+    end if
+    if (wfntype==0) write(*,*) "Loading Fock/KS matrix (Fock matrix for operator 0)..."
+    if (wfntype==1) write(*,*) "Loading alpha Fock/KS matrix (Fock matrix for operator 0)..."
+    call readmatgau(10,FmatA,0,"?",10,6)
+    call ORCAmatconv(nbasis,FmatA)
+else
+    if (index(c200tmp,".47")/=0) then
+	    if (wfntype==0) write(*,*) "Trying to load Fock/KS matrix from .47 file..."
+	    if (wfntype==1) write(*,*) "Trying to load alpha Fock/KS matrix from .47 file..."
+	    call loclabel(10,"$FOCK",ifound)
+	    if (ifound==0) then
+		    write(*,*) "Error: Unable to find $FOCK field in this file!"
+		    close(10)
+		    istatus=0
+		    return
+	    end if
+	    read(10,*)
+    end if
+    read(10,*) ((FmatA(i,j),j=1,i),i=1,nbasis) !Load total or alpha Fock matrix
+    do i=1,nbasis !Fill upper triangular part
+	    do j=i+1,nbasis
+		    FmatA(i,j)=FmatA(j,i)
+	    end do
+    end do
 end if
-read(10,*) ((FmatA(i,j),j=1,i),i=1,nbasis) !Load total or alpha Fock matrix
-do i=1,nbasis !Fill upper triangular part
-	do j=i+1,nbasis
-		FmatA(i,j)=FmatA(j,i)
-	end do
-end do
+!Checking detail of loaded Fock matrix
+!call showmatgau(FmatA,form="f14.6")
+!ibas=0
+!do ish=1,nshell
+!    ishtype=shtype(ish)
+!    nshbas=shtype2nbas(ishtype)
+!    if (shtype(ish)==-3) then
+!        call showmatgau(FmatA(:,ibas+1:ibas+nshbas),form="f14.6")
+!        exit
+!    end if
+!    ibas=ibas+nshbas
+!end do
 if (wfntype==1) then
 	if (allocated(FmatB)) deallocate(FmatB)
 	allocate(FmatB(nbasis,nbasis))
-	read(10,*) ((FmatB(i,j),j=1,i),i=1,nbasis) !Load beta Fock matrix
-	do i=1,nbasis
-		do j=i+1,nbasis
-			FmatB(i,j)=FmatB(j,i)
-		end do
-	end do
+    if (iprog==2) then
+        write(*,*) "Loading beta Fock/KS matrix (Fock matrix for operator 1)..."
+        call readmatgau(10,FmatB,0,"?",10,6)
+        call ORCAmatconv(nbasis,FmatB)
+    else
+	    write(*,*) "Trying to load beta Fock/KS matrix from .47 file..."
+	    read(10,*) ((FmatB(i,j),j=1,i),i=1,nbasis) !Load beta Fock matrix
+	    do i=1,nbasis
+		    do j=i+1,nbasis
+			    FmatB(i,j)=FmatB(j,i)
+		    end do
+	    end do
+    end if
 end if
 close(10)
-write(*,*) "Fock matrix loaded successfully!"
+write(*,*) "Fock/KS matrix loaded successfully!"
 istatus=1
 end subroutine
 
@@ -3358,7 +3421,6 @@ end do
 
 do imo=1,nbasis
     do ibas=1,nbasis_cart
-        !if (imo==1) write(*,*) ibas,primstart(ibas),primend(ibas)
         if (ispin==1.or.ispin==3) then
             do iGTF=primstart(ibas),primend(ibas)
                 CO(imo,iGTF)=CObasa_cart(ibas,imo)*primconnorm(iGTF)
@@ -3457,6 +3519,12 @@ if (allocated(a)) then
 else
     write(*,"(a)") " Unable to generate bonding relationship because there is no atom information!"
 end if
+
+!do i=1,ncenter
+!    do j=i+1,ncenter
+!        if (connmat(i,j)==1) write(*,*) i,j,connmat(i,j)
+!    end do
+!end do
 end subroutine
 
 
@@ -3605,11 +3673,11 @@ end subroutine
 
 
 
-
 !!-------- Input index of an atom, then the indices of all atoms in the fragment will be returned
 !"iatm" is the selected atom, "iffrag" has length of ncenter, if an atom is in the fragment, the value is 1, else 0
 subroutine getfragatoms(iselatm,iffrag)
 use defvar
+use util
 implicit real*8 (a-h,o-z)
 integer iselatm,iffrag(ncenter)
 iffrag=0
@@ -3621,7 +3689,7 @@ do while(.true.)
         if (iffrag(iatm)==1) cycle
         do jatm=1,ncenter !Cycle neighbouring atoms
             if (jatm==iatm) cycle
-            if (connmat(iatm,jatm)==1.and.iffrag(jatm)==1) then
+            if (connmat(iatm,jatm)>0.and.iffrag(jatm)==1) then
                 iffrag(iatm)=1
                 inew=inew+1
                 exit
@@ -3634,20 +3702,46 @@ end subroutine
 
 
 
-!!-------- Determine HOMO index. idxHOMO and idxHOMOb are global variables
+!!-------- Determine HOMO index for single-determinant wavefunction using the safest way. idxHOMO and idxHOMOb are global variables
+!Can be used for the case of only GTF information and that containing basis function information
+!idxHOMO: HOMO of RHF, or highest SOMO of ROHF, or alpha-HOMO of UHF
+!idxHOMOb: beta-HOMO. For RHF, it is equivalent to idxHOMO. If there is no beta electron, idxHOMOb will return 0
+!Note that for UHF, actual HOMO energy should be max(MOene(idxHOMO),MOene(idxHOMOb)), because beta-HOMO may be higher than alpha-HOMO
 subroutine getHOMOidx
 use defvar
 if (wfntype==0) then
     do idxHOMO=nmo,1,-1
 	    if (nint(MOocc(idxHOMO))==2) exit
     end do
-else if (wfntype==1) then
-    do idxHOMO=nbasis,1,-1
+    idxHOMOb=idxHOMO
+else if (wfntype==1) then !U
+    ealow=-1E20
+    eblow=-1E20
+    idxHOMO=0
+    idxHOMOb=0
+    do imo=1,nmo
+        if (nint(MOocc(imo))==0) cycle
+        if (MOtype(imo)==1) then
+            if (MOene(imo)>ealow) then
+                idxHOMO=imo
+                ealow=MOene(imo)
+            end if
+        else if (MOtype(imo)==2) then
+            if (MOene(imo)>eblow) then
+                idxHOMOb=imo
+                eblow=MOene(imo)
+            end if
+        end if
+    end do
+else if (wfntype==2) then !RO
+    do idxHOMO=nmo,1,-1
 	    if (nint(MOocc(idxHOMO))==1) exit
     end do
-    do idxHOMOb=nmo,nbasis+1,-1
-	    if (nint(MOocc(idxHOMOb))==1) exit
+    do idxHOMOb=nmo,1,-1
+	    if (nint(MOocc(idxHOMOb))==2) exit
     end do
+else
+    !write(*,"(a)") " Note: Unable to determine HOMO index because this is not a single-determinant wavefunction"
 end if
 end subroutine
 
@@ -3681,6 +3775,7 @@ end if
 end subroutine
 
 
+
 !!--------- Show basic information for a range of orbitals (from ibeg to iend)
 subroutine showorbinfo(ibeg,iend)
 use defvar
@@ -3689,6 +3784,7 @@ do i=1,nmo
 	write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") i,MOene(i),MOocc(i),orbtypename(MOtype(i))
 end do
 end subroutine
+
 
 
 !!--------- Initialize LIBRETA for present wavefunction if haven't and show some notices
@@ -3714,4 +3810,162 @@ if (isys==1.and.nthreads>10) then
     severely degrade when more than 10 CPU cores are used, therefore 10 cores are used in the following ESP calculation. &
     If you want to pursue better performance by utilizing more cores, please use Linux version instead!"
 end if
+end subroutine
+
+
+
+!!------------- Convert matrix loaded from ORCA output file to the basis function order in Multiwfn
+!Order of ORCA matrices:
+!s    
+!pz,px,py   
+!dz2,dxz,dyz,dx2y2,dxy  
+!f0,f+1,f-1,f+2,f-2,f+3,f-3  
+!g0,g+1,g-1,g+2,g-2,g+3,g-3,g+4,g-4
+!Clearly, we only need to alter the sequence of P shell to make the order as px,py,pz
+!  Notice that F(+3) and F(-3) are normalized to -1, therefore the relevant matrix elements must invert sign, &
+!while the elements between these two basis functions should keep unchanged due to cancellation
+!Simiarly for G(+3,-3,+4,-4) and H(+3,-3,+4,-4)
+subroutine ORCAmatconv(ndim,mat)
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 mat(ndim,ndim),tmparr(ndim)
+
+ibas=0
+do ish=1,nshell
+    ishtype=shtype(ish)
+    nshbas=shtype2nbas(ishtype)
+    if (ishtype==1) then
+        !Reorder row
+        tmparr(:)=mat(ibas+1,:) !Backup pz
+        mat(ibas+1,:)=mat(ibas+2,:)
+        mat(ibas+2,:)=mat(ibas+3,:)
+        mat(ibas+3,:)=tmparr(:)
+        !Reorder column
+        tmparr(:)=mat(:,ibas+1) !Backup pz
+        mat(:,ibas+1)=mat(:,ibas+2)
+        mat(:,ibas+2)=mat(:,ibas+3)
+        mat(:,ibas+3)=tmparr(:)
+    else if (ishtype==-3) then !F, invert F(+3,-3)
+        mat(ibas+6:ibas+7,:)=-mat(ibas+6:ibas+7,:)
+        mat(:,ibas+6:ibas+7)=-mat(:,ibas+6:ibas+7)
+    else if (ishtype==-4) then !G, invert G(+3,-3,+4,-4)
+        mat(ibas+6:ibas+9,:)=-mat(ibas+6:ibas+9,:)
+        mat(:,ibas+6:ibas+9)=-mat(:,ibas+6:ibas+9)
+    else if (ishtype==-5) then !H, invert H(+3,-3,+4,-4)
+        mat(ibas+6:ibas+9,:)=-mat(ibas+6:ibas+9,:)
+        mat(:,ibas+6:ibas+9)=-mat(:,ibas+6:ibas+9)
+    end if
+    ibas=ibas+nshbas
+end do
+end subroutine
+
+
+
+!!--------- Generate atomic overlap matrix of basis functions for every atom
+subroutine genAOMbas(AOMbas)
+use defvar
+use function
+use util
+implicit real*8 (a-h,o-z)
+real*8 AOMbas(nbasis,nbasis,ncenter),AOMtmp(nbasis,nbasis),basval(nbasis)
+real*8 atmspcweight(radpot*sphpot)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+
+if (.not.allocated(Cobasa_org)) allocate(Cobasa_org(nbasis,nbasis))
+Cobasa_org=CObasa
+CObasa=0
+do ibas=1,nbasis
+    CObasa(ibas,ibas)=1
+end do
+call CObas2CO(1)
+if (.not.allocated(COtr)) allocate(COtr(nprims,nmo))
+COtr=transpose(CO) !Global matrix, which will be used in calcbasval for faster calculation
+
+!Decreasing grid quality was found to hinder localization convergence, so do not use this trick
+!if (iautointgrid==1) then
+!	radpot=45
+!	sphpot=170
+!end if
+
+!Using grid distance cutoff may hinder localization convergence for e.g. Li6 cluster (deviation of normalization to 1 of this case is quite large)
+!So, force to disable this trick. This is probably the contribution of basis function overlap far from atomic center is nonnegligible for sparse system
+radcut_old=radcut
+radcut=0
+call gen1cintgrid(gridatmorg,iradcut) !Generate integration grid
+
+write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+call walltime(nwalltime1)
+
+AOMbas=0
+ifinish=0
+call showprog(0,ncenter)
+!Cycle each atom
+do iatm=1,ncenter
+	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+    gridatm%value=gridatmorg%value
+	call gen1cbeckewei(iatm,iradcut,gridatm,atmspcweight)
+    
+    !$OMP parallel shared(AOMbas) private(ipt,ibas,jbas,AOMtmp,basval,weitmp,weitmp2) num_threads(nthreads)
+    AOMtmp=0D0
+    !$OMP do schedule(dynamic)
+    do ipt=1+iradcut*sphpot,radpot*sphpot
+        weitmp=atmspcweight(ipt)*gridatm(ipt)%value
+	    !call orbderv(1,1,nbasis,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,basval)
+        call calcbasval(gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,basval) !Faster than using above line
+        !Original version, slower
+     !   do ibas=1,nbasis
+     !       weitmp2=basval(ibas)*weitmp
+		   ! do jbas=ibas,nbasis
+			  !  AOMtmp(ibas,jbas)=AOMtmp(ibas,jbas)+basval(jbas)*weitmp2
+		   ! end do
+	    !end do
+        
+		do jbas=1,nbasis
+            AOMtmp(jbas:nbasis,jbas)=AOMtmp(jbas:nbasis,jbas)+basval(jbas:nbasis)*basval(jbas)*weitmp
+	    end do
+    end do
+    !$OMP end do
+    !$OMP CRITICAL
+	    AOMbas(:,:,iatm)=AOMbas(:,:,iatm)+AOMtmp(:,:)
+    !$OMP end CRITICAL
+    !$OMP end parallel
+    
+    ifinish=ifinish+1
+    call showprog(ifinish,ncenter)
+end do !End cycling atoms
+    
+!Original version, slower
+!do ibas=1,nbasis
+!    do jbas=ibas+1,nbasis
+!        AOMbas(jbas,ibas,:)=AOMbas(ibas,jbas,:)
+!    end do
+!end do
+do jbas=1,nbasis
+    do ibas=jbas,nbasis
+		AOMbas(jbas,ibas,:)=AOMbas(ibas,jbas,:)
+	end do
+end do
+
+call walltime(nwalltime2)
+write(*,"(' Generation of atomic overlap matrix took up',i8,' seconds wall clock time')") nwalltime2-nwalltime1
+
+!Check quality of AOMbas
+!do iatm=1,ncenter
+!    call showmatgau(AOMbas(:,:,iatm),form="f14.6")
+!end do
+devmax=0
+do ibas=1,nbasis
+    tmp=sum(AOMbas(ibas,ibas,:))
+    !write(*,"(' Basis function:',i6,'    Normalization:',f16.10)") ibas,tmp
+    if (abs(1-tmp)>devmax) devmax=abs(1-tmp)
+end do
+write(*,"(a,f12.8)") " Maximal deviation of normalization of basis function to unity:",devmax
+
+deallocate(COtr)
+CObasa=CObasa_org
+CO=CO_org
+radcut=radcut_old
+
 end subroutine

@@ -17,7 +17,7 @@ do while(.true.)
 	write(*,*) "9 Evaluate interatomic connectivity and atomic coordination number"
 ! 	write(*,*) "10 Generate spherically averaged atomic radial density" !Rarely used, so, hidden
 	write(*,*) "11 Calculate overlap and centroid distance between two orbitals"
-	write(*,*) "12 Perform biorthogonalization between alpha and beta orbitals"
+	write(*,*) "12 Biorthogonalization between alpha and beta orbitals"
 	write(*,*) "13 Calculate HOMA and Bird aromaticity index"
 	write(*,*) "14 Calculate LOLIPOP (LOL Integrated Pi Over Plane)"
 	write(*,*) "15 Calculate intermolecular orbital overlap"
@@ -414,6 +414,7 @@ else !Calculate grid data
 		write(*,"(a)") " Calculating "//trim(f1name)//"..."
 		call savecubmat(iselfunc1,0,iorbsel1)
 	end if
+	call delvirorb_back(1)
 end if
 
 !Store grid data to array
@@ -1345,7 +1346,7 @@ write(*,*)
 write(*,*) "Would you also want to evaluate energy of the biorthogonalized orbitals? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
-	call loadFock47(istat)
+	call loadFockfile(istat)
 	if (istat==0) then
 		write(*,*) "Unable to evaluate orbital energies!"
 	else
@@ -1708,7 +1709,7 @@ do while(.true.)
 	write(*,"(' X/Y/Z of centroid of electron density (Angstrom)')")
 	write(*,"(' Orbital',i6,':',3f12.6)") iorb,cenpos(:,1)*b2a
 	write(*,"(' Orbital',i6,':',3f12.6)") jorb,cenpos(:,2)*b2a
-	write(*,"(' Centroid distance between the two orbitals:',f12.6,' Angstrom')") dsqrt(sum((cenpos(:,1)-cenpos(:,2))**2))
+	write(*,"(' Centroid distance between the two orbitals:',f12.6,' Angstrom')") dsqrt(sum((cenpos(:,1)-cenpos(:,2))**2))*b2a
 	write(*,"(' Overlap integral of norm of the two orbitals:',f16.10)") intval(1)
 	write(*,"(' Overlap integral of square of the two orbitals:',f16.10)") intval(2)
 	write(*,*)
@@ -2202,7 +2203,8 @@ end subroutine
 
 
 !!!------------ Calculate LOLIPOP (LOL Integrated Pi Over Plane), see Chem. Commun., 48, 9239-9241 (2012)
-!!!------ Kawaii moe loli, pop, pop!
+!The selected plane is not necessarily parallel to XY plane, because grid data will be automatically projected
+!------ Kawaii moe loli, pop, pop!
 subroutine LOLIPOP
 use defvar
 use util
@@ -2210,50 +2212,82 @@ use GUI
 implicit real*8 (a-h,o-z)
 real*8 :: intradi=1.94D0,grdspc=0.08D0,LOLiso=0.55D0,disaway=0.5D0,vdwmulti=0.8D0
 real*8 :: MOocc_old(nmo)
-integer :: piorb(nmo),npiorb=0
+integer :: piorb(nmo),npiorb=0,ivisisosur=0
 integer :: ringidx(100),nringidx=0
 character*3000 c3000tmp
-! piorb(1:3)=(/ 17,20,21 /)
-! npiorb=3
+integer :: ioutpt=0,iside=0
+logical,allocatable :: gridconsider(:,:,:)
+
+!Debug
+!ivisisosur=1
+!npiorb=7
+!ioutpt=1
+!piorb(1:7)=(/121,136,143,147,149,150,152/)
+!grdspc=0.4D0
+
 write(*,*) "## Kawaii moe loli, pop, pop!"
-write(*,*)
-write(*,*) "           =================  Calculate LOLIPOP  ================="
 do while(.true.)
+    write(*,*)
+    write(*,*) "           =================  Calculate LOLIPOP  ================="
 	write(*,*) "-1 Return"
 	write(*,*) "0 Start calculation!"
 	write(*,"(a,i7)") " 1 Choose pi orbitals, current number:",npiorb
 	write(*,"(a,f8.4,a)") " 2 Set grid spacing, current:",grdspc," Bohr"
 	write(*,"(a,f8.4,a)") " 3 Set integration radius, current:",intradi," Angstrom"
 	write(*,"(a,f8.4,a)") " 4 Set the distance away the plane, current:",disaway," Angstrom"
+    if (iside==0) write(*,*) "5 Choose side of the points to be taken into account, current: Both sides"
+    if (iside==1) write(*,*) "5 Choose side of the points to be taken into account, current: Side 1"
+    if (iside==2) write(*,*) "5 Choose side of the points to be taken into account, current: Side 2"
+	if (ioutpt==0) write(*,*) "6 Toggle outputting actually considered points to pt.xyz, current: No"
+	if (ioutpt==1) write(*,*) "6 Toggle outputting actually considered points to pt.xyz, current: Yes"
+	if (ivisisosur==0) write(*,*) "7 Visualize LOL-pi isosurface after calculation, current: No"
+	if (ivisisosur==1) write(*,*) "7 Visualize LOL-pi isosurface after calculation, current: Yes"
 	read(*,*) isel
 
 	if (isel==-1) then
 		return
 	else if (isel==1) then
-		write(*,*) "Input the indices of pi orbitals, e.g. 17,20-25,36,37"
+		write(*,*) "Input indices of the pi orbitals, e.g. 17,20-25,36,37"
 		read(*,"(a)") c3000tmp
 		call str2arr(c3000tmp,npiorb,piorb)
 	else if (isel==2) then
 		write(*,*) "Input grid spacing in Bohr, e.g. 0.05"
 		read(*,*) grdspc
 	else if (isel==3) then
-		write(*,*) "Input integration radius in Angstrom, e.g. 1.94"
+		write(*,*) "Input integration radius with respect to ring center in Angstrom, e.g. 1.94"
 		read(*,*) intradi
 	else if (isel==4) then
-		write(*,*) "Input the distance away the plane in Angstrom, e.g. 0.5"
+		write(*,*) "Input the distance away from the plane in Angstrom, e.g. 0.5"
 		read(*,*) disaway
+	else if (isel==5) then
+        write(*,*) "Integrate LOL-pi in which side of the ring?"
+        write(*,*) "0 Both sides"
+        write(*,*) "1 Side 1"
+        write(*,*) "2 Side 2"
+        read(*,*) iside
+    else if (isel==6) then
+        if (ioutpt==1) then
+            ioutpt=0
+        else
+            ioutpt=1
+        end if
+    else if (isel==7) then
+        if (ivisisosur==0) then        
+            ivisisosur=1
+            sur_value=0.55D0
+        else
+            ivisisosur=0
+        end if
 		
 	else if (isel==0) then
 		if (npiorb==0) then
-			write(*,*) "Error: You have to use option 1 to choose which orbitals are pi orbitals"
+			write(*,*) "Error: You should use option 1 first to choose which orbitals are pi orbitals"
 			write(*,*)
 			cycle
 		end if
-		write(*,*) "Input the indices of the atoms constituted the ring, e.g. 4,5,6,7,8,9"
+		write(*,*) "Input indices of the atoms constituting the ring, e.g. 4,5,6,7,8,9"
 		read(*,"(a)") c3000tmp
 		call str2arr(c3000tmp,nringidx,ringidx)
-! 		nringidx=6
-! 		ringidx(1:6)=(/1,2,3,4,5,6/)
 		cenx=sum(a( ringidx(1:nringidx) )%x)/nringidx
 		ceny=sum(a( ringidx(1:nringidx) )%y)/nringidx
 		cenz=sum(a( ringidx(1:nringidx) )%z)/nringidx
@@ -2265,11 +2299,11 @@ do while(.true.)
 		orgy=minval( a(ringidx(1:nringidx))%y-vdwmulti*vdwr(a(ringidx(1:nringidx))%index) )
 		orgz=minval( a(ringidx(1:nringidx))%z-vdwmulti*vdwr(a(ringidx(1:nringidx))%index) )
 		dvol=grdspc**3
-		write(*,"('Spatial range of grid data:')")
-		write(*,"('X is from',f10.4,'  to',f10.4,' Bohr')") orgx,endx
-		write(*,"('Y is from',f10.4,'  to',f10.4,' Bohr')") orgy,endy
-		write(*,"('Z is from',f10.4,'  to',f10.4,' Bohr')") orgz,endz
-		write(*,"('Differential element:',f12.6,' Bohr**3')") dvol
+		write(*,"(' Spatial range of grid data to be calculated:')")
+		write(*,"(' X is from',f10.4,'  to',f10.4,' Bohr')") orgx,endx
+		write(*,"(' Y is from',f10.4,'  to',f10.4,' Bohr')") orgy,endy
+		write(*,"(' Z is from',f10.4,'  to',f10.4,' Bohr')") orgz,endz
+		write(*,"(' Differential element:',f12.6,' Bohr**3')") dvol
 		xlength=endx-orgx
 		ylength=endy-orgy
 		zlength=endz-orgz
@@ -2279,17 +2313,23 @@ do while(.true.)
 		nx=nint(xlength/dx)+1
 		ny=nint(ylength/dy)+1
 		nz=nint(zlength/dz)+1
-		write(*,"('Number of point in x,y,z:',3i6,'  Total:',i10)") nx,ny,nz,nx*ny*nz
+		if (allocated(cubmat)) deallocate(cubmat)
+		allocate(cubmat(nx,ny,nz),gridconsider(nx,ny,nz))
+        gridconsider=.false.
+        
+		write(*,"(' Number of points in x,y,z:',3i6,'  Total:',i10)") nx,ny,nz,nx*ny*nz
 		write(*,*)
 		write(*,"(' Pi orbitals:')")
 		write(*,"(15i5)") piorb(1:npiorb)
-		if (allocated(cubmat)) deallocate(cubmat)
-		allocate(cubmat(nx,ny,nz))
+        
 		MOocc_old=MOocc !Backup
 		do imo=1,nmo
 			if (all(piorb(1:npiorb)/=imo)) MOocc(imo)=0D0 !Set occupation number of all orbitals to zero except for pi orbitals
 		end do
+        call delvirorb(0) !For saving time
 		call savecubmat(10,0,1) !Calculate LOL
+        call delvirorb_back(0)
+        
 		write(*,*)
 		accum=0D0
 		atm1x=a(ringidx(1))%x !Use 1,3,5 atoms in the ring to define the ring plane
@@ -2303,6 +2343,18 @@ do while(.true.)
 		atm5z=a(ringidx(5))%z
 		disple2crit=(disaway/b2a)**2
 		discen2crit=(intradi/b2a)**2
+        ncount=0
+        
+        !Construct two points for testing the current point is in which side by checking which one is closest to the current point
+        call pointABCD(atm1x,atm1y,atm1z,atm3x,atm3y,atm3z,atm5x,atm5y,atm5z,pleA,pleB,pleC,pleD)
+        valnorm=dsqrt(pleA**2+pleB**2+pleC**2)
+        test1x=pleA/valnorm+cenx
+        test1y=pleB/valnorm+ceny
+        test1z=pleC/valnorm+cenz
+        test2x=-pleA/valnorm+cenx
+        test2y=-pleB/valnorm+ceny
+        test2z=-pleC/valnorm+cenz
+        
 		do iz=1,nz
 			do iy=1,ny
 				do ix=1,nx
@@ -2310,20 +2362,51 @@ do while(.true.)
 					ytmp=orgy+(iy-1)*dy
 					ztmp=orgz+(iz-1)*dz
 					valtmp=cubmat(ix,iy,iz)
-					call pointprjple(atm1x,atm1y,atm1z,atm3x,atm3y,atm3z,atm5x,atm5y,atm5z,xtmp,ytmp,ztmp,xprj,yprj,zprj) !project grid point to the plane defined by atom 1,3,5
+					call pointprjple(atm1x,atm1y,atm1z,atm3x,atm3y,atm3z,atm5x,atm5y,atm5z,xtmp,ytmp,ztmp,xprj,yprj,zprj) !Project grid point to the plane defined by atoms 1,3,5 in the ring
 					if (valtmp>LOLiso) then
 						disple2=(xtmp-xprj)**2+(ytmp-yprj)**2+(ztmp-zprj)**2 !The vertical distance**2 to the plane
-						discen2=(xtmp-cenx)**2+(ytmp-ceny)**2+(ztmp-cenz)**2 !The distance**2 to ring center
-						if (disple2>disple2crit.and.discen2<discen2crit) accum=accum+valtmp
+						discen2=(xprj-cenx)**2+(yprj-ceny)**2+(zprj-cenz)**2 !The distance**2 of the projected point to ring center
+						if (disple2>disple2crit.and.discen2<discen2crit) then
+                            if (iside/=0) then
+                                distest1=(xtmp-test1x)**2+(ytmp-test1y)**2+(ztmp-test1z)**2
+                                distest2=(xtmp-test2x)**2+(ytmp-test2y)**2+(ztmp-test2z)**2
+                                if ((iside==1.and.distest1>distest2).or.(iside==2.and.distest1<distest2)) cycle
+                            end if
+                            accum=accum+valtmp
+                            ncount=ncount+1
+                            gridconsider(ix,iy,iz)=.true.
+                        end if
 					end if
 				end do
 			end do
 		end do
-! 		call drawisosurgui(1) !If you want to visualize isosurface, just comment out this line
+        
+        write(*,"(' Number of points actually considered in the LOLIPOP integration:',i10)") count(gridconsider==.true.)
+        !Output points to pt.xyz for visual examination
+        if (ioutpt==1) then
+            open(10,file="pt.xyz",status="replace")
+            write(10,*) ncount
+            write(10,"(a,f12.6)") "Exported by Multiwfn, LOLIPOP value is",accum*dvol
+		    do iz=1,nz
+			    do iy=1,ny
+				    do ix=1,nx
+					    xtmp=orgx+(ix-1)*dx
+					    ytmp=orgy+(iy-1)*dy
+					    ztmp=orgz+(iz-1)*dz
+					    if (gridconsider(ix,iy,iz)==.true.) write(10,"(a,3f12.6)") "C ",xtmp*b2a,ytmp*b2a,ztmp*b2a
+				    end do
+			    end do
+		    end do
+            close(10)
+            write(*,"(a,/)") " Done! pt.xyz has been exported to current folder. You may use VMD program to load the file to visualize distribution of the points"
+        end if
+        
 		write(*,"(' LOLIPOP value is',f12.6)") accum*dvol
-		MOocc=MOocc_old !Recover occupation number
+		MOocc=MOocc_old !Recover original occupation number
+        
+        deallocate(gridconsider)
+        if (ivisisosur==1) call drawisosurgui(1)
 	end if
-	write(*,*)
 end do
 end subroutine
 
@@ -2690,7 +2773,7 @@ integer piorblist(nmo) !1 means this orbital is expected pi orbital
 real*8,allocatable :: tmparr(:)
 real*8 :: thresdens=0.01D0,thressingle=0.85D0
 integer :: ionlyocc=1,idebug=0,icompmethod=1
-integer,allocatable :: atmrange(:)
+integer,allocatable :: atmrange(:),tmpidx(:)
 character c2000tmp*2000,c200tmp*200,selectyn
 real*8 CObasa_LMO(nbasis,nbasis),CObasb_LMO(nbasis,nbasis),atmcomp(ncenter,nmo)
 
@@ -2712,7 +2795,8 @@ read(*,*) iorbform
 
 piorblist=0
 pinelec=0D0
-tolerpara=0.1D0
+!tolerpara=0.1D0 !Too stringent, e.g. failed to detect all pi orbitals for cyclo[18]carbon under 0.029 a.u. field
+tolerpara=0.15D0
 tolerperp=80
 if (iorbform==0) then !Delocalized case
     thres=0.05D0
@@ -2922,7 +3006,21 @@ write(*,"(' Total number of electrons in pi orbitals:',f12.6)") pinelec
 if (iorbform==0.and.imodwfn==0) then !Only for MOs, one can safely separate inner and valence orbitals
 	call getninnerele(ninnerele,0)
 	ndelelec=ninnerele/2
-	write(*,"(' Total number of inner electrons:',i6)") ninnerele
+	write(*,"(' Total number of inner-core electrons:',i6)") ninnerele
+end if
+if (npiorb/=0) then
+    allocate(tmpidx(npiorb))
+    nidx=0
+    do imo=1,nmo
+        if (piorblist(imo)==1.and.MOocc(imo)/=0) then
+            nidx=nidx+1
+            tmpidx(nidx)=imo
+        end if
+    end do
+    call arr2str(tmpidx(1:nidx),c2000tmp)
+    write(*,*) "Indices of occupied LMOs:"
+    write(*,"(1x,a)") trim(c2000tmp)
+    deallocate(tmpidx)
 end if
 write(*,*)
 
@@ -4168,6 +4266,7 @@ use function
 use util
 implicit real*8 (a-h,o-z)
 character keywords*200,c200tmp*200,inpname*200,selectyn
+character*200 wfnfile(4)
 integer charge(4),spin(4) !Charge and spin multiplicity for N,N+1,N-1 states
 integer :: iwcubic=0,iQCprog=1
 real*8 atmchg(ncenter,3) !Hirshfeld charges of N,N+1,N-1 states
@@ -4178,7 +4277,6 @@ real*8 nucleophi,expterm(nmo)
 real*8,allocatable :: rhoN(:,:,:),rhoNp1(:,:,:),rhoNn1(:,:,:),OW_fpos(:,:,:),OW_fneg(:,:,:)
 real*8 OWfposgrid(radpot*sphpot),OWfneggrid(radpot*sphpot),promol(radpot*sphpot),tmpdens(radpot*sphpot),selfdens(radpot*sphpot),wfnval(nmo)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
-logical alivewfn(4)
 cubfac=1D0
 
 do while(.true.)
@@ -4189,8 +4287,8 @@ do while(.true.)
     if (iwcubic==0) write(*,*) "-1 Toggle calculating w_cubic electrophilicity index by option 2, current: No"
     if (iwcubic==1) write(*,*) "-1 Toggle calculating w_cubic electrophilicity index by option 2, current: Yes"
     write(*,*) "0 Return"
-    if (iwcubic==0) write(*,*) "1 Generate .wfn files for N, N+1, N-1 electronic states"
-    if (iwcubic==1) write(*,*) "1 Generate .wfn files for N, N+1, N-1, N-2 electronic states"
+    if (iwcubic==0) write(*,*) "1 Generate .wfn files for N, N+1, N-1 electrons states"
+    if (iwcubic==1) write(*,*) "1 Generate .wfn files for N, N+1, N-1, N-2 electrons states"
     if (iwcubic==0) write(*,*) "2 Calculate various quantitative indices"
     if (iwcubic==1) write(*,*) "2 Calculate various quantitative indices including w_cubic"
     write(*,*) "3 Calculate grid data of Fukui function and dual descriptor"
@@ -4212,18 +4310,64 @@ do while(.true.)
         else
             iwcubic=1
         end if
-    else if (isel==2.or.isel==3) then
-        alivewfn=.true.
-        inquire(file="N.wfn",exist=alivewfn(1))
-        inquire(file="N+1.wfn",exist=alivewfn(2))
-        inquire(file="N-1.wfn",exist=alivewfn(3))
-        if (iwcubic==1) inquire(file="N-2.wfn",exist=alivewfn(4))
-        if (any(alivewfn==.false.)) then
-            if (iwcubic==0) write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn and N-1.wfn must all be presented in current folder!"
-            if (iwcubic==1) write(*,"(a)") " Error: To use this function, N.wfn, N+1.wfn, N-1.wfn and N-2.wfn must all be presented in current folder!"
-            write(*,*) "Press ENTER button to cancel current analysis"
-            read(*,*)
-            cycle
+    else if (isel==2.or.isel==3) then !Determine paths of wavefunction files
+        wfnfile(1)="N.wfn"
+        inquire(file=wfnfile(1),exist=alive)
+        if (alive==.false.) then
+            write(*,"(/,a)") " Unable to find N.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N electrons state, e.g. /sob/N.fch"
+            read(*,"(a)") c200tmp
+            inquire(file=c200tmp,exist=alive)
+            if (alive==.false.) then
+                write(*,*) "Error: Unable to find this file!"
+                cycle
+            end if
+            wfnfile(1)=c200tmp
+        else
+            write(*,*) "N.wfn has been found in current folder"
+        end if
+        wfnfile(2)="N+1.wfn"
+        inquire(file=wfnfile(2),exist=alive)
+        if (alive==.false.) then
+            write(*,"(/,a)") " Unable to find N+1.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N+1 electrons state, e.g. /sob/N+1.fch"
+            read(*,"(a)") c200tmp
+            inquire(file=c200tmp,exist=alive)
+            if (alive==.false.) then
+                write(*,*) "Error: Unable to find this file!"
+                cycle
+            end if
+            wfnfile(2)=c200tmp
+        else
+            write(*,*) "N+1.wfn has been found in current folder"
+        end if
+        wfnfile(3)="N-1.wfn"
+        inquire(file=wfnfile(3),exist=alive)
+        if (alive==.false.) then
+            write(*,"(/,a)") " Unable to find N-1.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N-1 electrons state, e.g. /sob/N-1.fch"
+            read(*,"(a)") c200tmp
+            inquire(file=c200tmp,exist=alive)
+            if (alive==.false.) then
+                write(*,*) "Error: Unable to find this file!"
+                cycle
+            end if
+            wfnfile(3)=c200tmp
+        else
+            write(*,*) "N-1.wfn has been found in current folder"
+        end if
+        if (iwcubic==1) then
+            wfnfile(4)="N-2.wfn"
+            inquire(file=wfnfile(4),exist=alive)
+            if (alive==.false.) then
+                write(*,"(/,a)") " Unable to find N-2.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N-2 electrons state, e.g. /sob/N-1.fch"
+                read(*,"(a)") c200tmp
+                inquire(file=c200tmp,exist=alive)
+                if (alive==.false.) then
+                    write(*,*) "Error: Unable to find this file!"
+                    cycle
+                end if
+                wfnfile(4)=c200tmp
+            else
+                write(*,*) "N-2.wfn has been found in current folder"
+            end if
         end if
     end if
     
@@ -4314,6 +4458,7 @@ do while(.true.)
             write(*,*)
             write(*,"(a)") " Do you want to invoke Gaussian to calculate these .gjf files now to yield .wfn &
             files, and then automatically delete the .gjf and .out files? (y/n)"
+            write(*,*) "Note: You can manually edit the .gjf files before choosing ""y"""
             read(*,*) selectyn
             if (selectyn=='y'.or.selectyn=='Y') then
                 call runGaussian("N.gjf",isuccess1)
@@ -4409,34 +4554,38 @@ do while(.true.)
         end if
     
     else if (isel==2) then
-        write(*,"(' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
+        write(*,"(/,' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
         call dealloall
         !N electrons
-        call readinfile("N.wfn",1)
+        call readinfile(wfnfile(1),1)
         ene(1)=totenergy
-        E_HOMO(1)=maxval(MOene)
+        call getHOMOidx
+        E_HOMO(1)=max(MOene(idxHOMO),MOene(idxHOMOb))
         write(*,*) "Calculating Hirshfeld charges for N electrons state..."
         call genHirshfeld(atmchg(:,1))
         call dealloall
         !N+1 electrons
-        call readinfile("N+1.wfn",1)
+        call readinfile(wfnfile(2),1)
         ene(2)=totenergy
-        E_HOMO(2)=maxval(MOene)
+        call getHOMOidx
+        E_HOMO(2)=max(MOene(idxHOMO),MOene(idxHOMOb))
         write(*,*) "Calculating Hirshfeld charges for N+1 electrons state..."
         call genHirshfeld(atmchg(:,2))
         call dealloall
         !N-1 electrons
-        call readinfile("N-1.wfn",1)
+        call readinfile(wfnfile(3),1)
         ene(3)=totenergy
-        E_HOMO(3)=maxval(MOene)
+        call getHOMOidx
+        E_HOMO(3)=max(MOene(idxHOMO),MOene(idxHOMOb))
         write(*,*) "Calculating Hirshfeld charges for N-1 electrons state..."
         call genHirshfeld(atmchg(:,3))
         call dealloall
         !N-2 electrons
         if (iwcubic==1) then
-            call readinfile("N-2.wfn",1)
+            call readinfile(wfnfile(4),1)
             ene(4)=totenergy
-            E_HOMO(4)=maxval(MOene)
+            call getHOMOidx
+            E_HOMO(4)=max(MOene(idxHOMO),MOene(idxHOMOb))
             call dealloall
         end if
         write(*,*) "Loading the file initially loaded after booting up Multiwfn..."
@@ -4474,7 +4623,11 @@ do while(.true.)
         end if
         
         open(10,file="CDFT.txt",status="replace")
-        write(10,"(a)") " Note: the E(HOMO) of TCE used for evaluating nucleophilicity index is the value evaluated at B3LYP/6-31G* level"
+        if (wfntype==0.or.wfntype==1.or.wfntype==2) then
+            write(10,"(a)") " Note: the E(HOMO) of TCE used for evaluating nucleophilicity index is the value evaluated at B3LYP/6-31G* level"
+        else
+            write(10,"(a)") " Note: Nucleophilicity index was not calculated because E(HOMO) is not available at present theoretical method"
+        end if
         write(10,*)
         write(10,*) "Hirshfeld charges, condensed Fukui functions and condensed dual descriptors"
         write(10,*) "Units used below are ""e"" (elementary charge)"
@@ -4508,9 +4661,11 @@ do while(.true.)
         write(10,"(a,f14.6,' Hartree')") " E(N):  ",ene(1)
         write(10,"(a,f14.6,' Hartree')") " E(N+1):",ene(2)
         write(10,"(a,f14.6,' Hartree')") " E(N-1):",ene(3)
-        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N):  ",E_HOMO(1),E_HOMO(1)*au2eV
-        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N+1):",E_HOMO(2),E_HOMO(2)*au2eV
-        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N-1):",E_HOMO(3),E_HOMO(3)*au2eV
+        if (wfntype==0.or.wfntype==1.or.wfntype==2) then
+            write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N):  ",E_HOMO(1),E_HOMO(1)*au2eV
+            write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N+1):",E_HOMO(2),E_HOMO(2)*au2eV
+            write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " E_HOMO(N-1):",E_HOMO(3),E_HOMO(3)*au2eV
+        end if
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical IP:",VIP,VIP*au2eV
         if (iwcubic==1) write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical second IP:",VIP2,VIP2*au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Vertical EA:",VEA,VEA*au2eV
@@ -4519,7 +4674,7 @@ do while(.true.)
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Hardness (=fundamental gap):",hardness,hardness*au2eV
         write(10,"(a,f12.6,' Hartree^-1,',f10.4,' eV^-1')") " Softness:",softness,softness/au2eV
         write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Electrophilicity index:",electphi,electphi*au2eV
-        write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Nucleophilicity index: ",nucleophi,nucleophi*au2eV
+       if (wfntype==0.or.wfntype==1.or.wfntype==2) write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Nucleophilicity index: ",nucleophi,nucleophi*au2eV
         if (iwcubic==1) write(10,"(a,f12.6,' Hartree,',f10.4,' eV')") " Cubic electrophilicity index (w_cubic):",w_cubic,w_cubic*au2eV
         close(10)
         write(*,*) "Done! Data have been outputted to CDFT.txt in current folder!"
@@ -4528,24 +4683,25 @@ do while(.true.)
         if (allocated(cubmat)) deallocate(cubmat)
         aug3Dold=aug3D
         aug3D=3 !Commonly 3 Bohr extension distance is adequate
+        write(*,*)
         call setgrid(1,inouse)
         aug3D=aug3Dold
         allocate(rhoN(nx,ny,nz),rhoNp1(nx,ny,nz),rhoNn1(nx,ny,nz),cubmat(nx,ny,nz))
         call dealloall
         !N electrons
-        call readinfile("N.wfn",1)
+        call readinfile(wfnfile(1),1)
         write(*,*) "Calculating electron density grid data for N electrons state..."
         call savecubmat(1,1,0)
         rhoN=cubmat
         call dealloall
         !N+1 electrons
-        call readinfile("N+1.wfn",1)
+        call readinfile(wfnfile(2),1)
         write(*,*) "Calculating electron density grid data for N+1 electrons state..."
         call savecubmat(1,1,0)
         rhoNp1=cubmat
         call dealloall
         !N electrons
-        call readinfile("N-1.wfn",1)
+        call readinfile(wfnfile(3),1)
         write(*,*) "Calculating electron density grid data for N-1 electrons state..."
         call savecubmat(1,1,0)
         rhoNn1=cubmat
@@ -4613,7 +4769,12 @@ do while(.true.)
         read(*,*) orbwei_delta
         
     else if (isel==5.or.isel==6) then
-        idxHOMO=nint(naelec) !It is assumed that the occupation has not been altered
+        if (wfntype/=0) then
+            write(*,"(a)") " Error: This function is only available for closed-shell single-determinant wavefunction! Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        call getHOMOidx
         idxLUMO=idxHOMO+1
         chempot=(MOene(idxHOMO)+MOene(idxLUMO))/2
         do imo=1,nmo
@@ -4658,7 +4819,7 @@ do while(.true.)
             end if
             write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
             write(*,*)
-            write(*,*) " Atom index        OW f+          OW f-          OW f0          OW DD"
+            write(*,*) " Atom index       OW f+          OW f-          OW f0          OW DD"
             call gen1cintgrid(gridatmorg,iradcut)
             sumpos=0
             sumneg=0
@@ -4708,7 +4869,7 @@ do while(.true.)
                 sumneg=sumneg+OW_condfneg
                 write(*,"(i6,'(',a')',4f15.5)") iatm,a(iatm)%name,OW_condfpos,OW_condfneg,OW_condfzero,OW_condDD
             end do
-            write(*,"(' Sum of orbital weighted f+',f12.6)") sumpos
+            write(*,"(/,' Sum of orbital weighted f+',f12.6)") sumpos
             write(*,"(' Sum of orbital weighted f-',f12.6)") sumneg
             if (iautointgrid==1) then
                 sphpot=ioldsphpot
@@ -4718,6 +4879,11 @@ do while(.true.)
         end if
         
     else if (isel==7) then
+        if (wfntype/=0) then
+            write(*,"(a)") " Error: This function is only available for closed-shell single-determinant wavefunction! Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
         if (allocated(cubmat)) deallocate(cubmat)
         aug3Dold=aug3D
         aug3D=3 !Commonly 3 Bohr extension distance is adequate
@@ -4725,6 +4891,7 @@ do while(.true.)
         aug3D=aug3Dold
         allocate(OW_fpos(nx,ny,nz),OW_fneg(nx,ny,nz),cubmat(nx,ny,nz))
         iolduserfunc=iuserfunc
+        write(*,*)
         write(*,*) "Calculating grid data of orbital-weighted f+..."
         iuserfunc=95
         call savecubmat(100,0,0)
@@ -4781,3 +4948,73 @@ end do
     
 end subroutine
 
+
+
+
+!!------- Load a .xyz trajectory, calculate distance between geometic center of two rings (fragments), and angle between the &
+! normal vector of plane fitted for ring 1 and the line connecting the geometric centers of the two rings
+subroutine ringring_geom
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer,allocatable :: tmparr(:)
+real*8 geomcen1(3),geomcen2(3),vec1(3),vec2(3)
+
+write(*,*) "Input number of frames, e.g. 4001"
+read(*,*) nframetraj
+allocate(traj(3,ncenter,nframetraj))
+
+allocate(frag1(ncenter),frag2(ncenter))
+write(*,*) "Input index of the atoms in fragment 1, e.g. 2,3,7-10"
+!c2000tmp="1-18"
+read(*,"(a)") c2000tmp
+call str2arr(c2000tmp,nfrag1,frag1)
+write(*,*) "Input index of the atoms in fragment 2, e.g. 2,3,7-10"
+!c2000tmp="19-36"
+read(*,"(a)") c2000tmp
+call str2arr(c2000tmp,nfrag2,frag2)
+
+
+open(10,file=filename,status="old")
+open(11,file="distangle.txt",status="replace")
+
+call showprog(0,nframetraj)
+do iframe=1,nframetraj
+	call readxyz(filename,1,0)
+    
+    geomcen1(1)=sum(a(frag1(1:nfrag1))%x)/nfrag1
+    geomcen1(2)=sum(a(frag1(1:nfrag1))%y)/nfrag1
+    geomcen1(3)=sum(a(frag1(1:nfrag1))%z)/nfrag1
+    geomcen2(1)=sum(a(frag2(1:nfrag2))%x)/nfrag2
+    geomcen2(2)=sum(a(frag2(1:nfrag2))%y)/nfrag2
+    geomcen2(3)=sum(a(frag2(1:nfrag2))%z)/nfrag2
+    cendist=dsqrt(sum((geomcen1-geomcen2)**2))*b2a
+    
+    vec1=geomcen2-geomcen1
+    
+    call ptsfitplane(frag1,nfrag1,vec2(1),vec2(2),vec2(3),rnouse,rmsfit)
+    !write(*,"(' RMS error of the plane fitting:',f12.6,' Angstrom')") rmsfit*b2a
+    
+    !facnorm=sqrt(sum(vec1**2))
+    !vec1=vec1/facnorm
+    !write(*,"(' The vector 1 is',3f12.6)") vec1(:)
+    !facnorm=sqrt(sum(vec2**2))
+    !vec2=vec2/facnorm
+    !write(*,"(' The vector 2 is',3f12.6,/)") vec2(:)
+    
+    angle=vecang(vec1(1),vec1(2),vec1(3),vec2(1),vec2(2),vec2(3))
+    if (angle>90) angle=180-angle
+    
+    write(11,"(i10,2f12.6)") iframe,cendist,angle
+    
+    call showprog(iframe,nframetraj)
+end do
+close(10)
+close(11)
+write(*,*) "Results have been exported to cendist.txt in current folder"
+write(*,*) "Column 1: Frame index"
+write(*,*) "Column 2: Distance (Angstrom) between geometric centers of the two fragments"
+write(*,"(a)") " Column 3: Angle (degree) between normal vector of fragment 1 and linking line between geometric centers of the two fragments"
+deallocate(traj,frag1,frag2)
+end subroutine
