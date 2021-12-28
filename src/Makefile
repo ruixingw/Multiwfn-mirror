@@ -9,10 +9,11 @@ EXE = Multiwfn
 LIBRETAPATH = ./libreta_slow
 
 objects = define.o util.o plot.o Bspline.o sym.o libreta.o function.o GUI.o sub.o integral.o Lebedev-Laikov.o \
-DFTxclib.o edflib.o fileIO.o spectrum.o DOS.o Multiwfn.o 0123dim.o LSB.o \
+DFTxclib.o edflib.o fparser.o fileIO.o spectrum.o DOS.o Multiwfn.o 0123dim.o LSB.o \
 population.o orbcomp.o bondorder.o topology.o excittrans.o otherfunc.o \
 otherfunc2.o otherfunc3.o surfana.o procgriddata.o AdNDP.o fuzzy.o CDA.o basin.o \
-orbloc.o visweak.o EDA.o atmraddens.o NAONBO.o minpack.o ean.o hrr_012345.o eanvrr_012345.o boysfunc.o
+orbloc.o visweak.o EDA.o CDFT.o ETS_NOCV.o atmraddens.o NAONBO.o grid.o PBC.o hyper_polar.o deloc_aromat.o \
+minpack.o ean.o hrr_012345.o eanvrr_012345.o boysfunc.o
 
 default : $(objects) 
 	$(FC) $(OPT) $(objects) $(LIB) -o $(EXE)
@@ -73,6 +74,9 @@ atmraddens.o : atmraddens.f90
 
 minpack.o : minpack.f90
 	$(FC) $(OPT) -c minpack.f90
+	
+fparser.o : fparser.f90
+	$(FC) $(OPT) -c fparser.f90
 	
 
 #Others
@@ -152,8 +156,26 @@ visweak.o : visweak.f90 $(modules)
 EDA.o : EDA.f90 $(modules)
 	$(FC) $(OPT) -c EDA.f90
 
+CDFT.o : CDFT.f90 $(modules)
+	$(FC) $(OPT) -c CDFT.f90
+
+ETS_NOCV.o : ETS_NOCV.f90 $(modules)
+	$(FC) $(OPT) -c ETS_NOCV.f90
+
 NAONBO.o : NAONBO.f90 $(modules)
 	$(FC) $(OPT) -c NAONBO.f90
+
+grid.o : grid.f90 $(modules)
+	$(FC) $(OPT) -c grid.f90
+
+PBC.o : PBC.f90 $(modules)
+	$(FC) $(OPT) -c PBC.f90
+
+hyper_polar.o : hyper_polar.f90 $(modules)
+	$(FC) $(OPT) -c hyper_polar.f90
+	
+deloc_aromat.o : deloc_aromat.f90 $(modules)
+	$(FC) $(OPT) -c deloc_aromat.f90
 
 
 

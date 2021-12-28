@@ -2,11 +2,11 @@ set terminal postscript landscape enhanced color 'Helvetica' 20
 set encoding iso_8859_1
 set output 'RDGscatter.ps' 
 set key 
-set ylabel 'RDG (a.u)' font "Helvetica, 20" 
-set xlabel 'sign({/Symbol l}_2){/Symbol r} (a.u.)' font "Helvetica, 20"
+set ylabel 'RDG' font "Helvetica, 20" 
+set xlabel 'sign({/Symbol-Oblique l}_2){/Symbol-Oblique r} (a.u.)' font "Helvetica, 20"
 set pm3d map
 set palette defined (-0.035 "blue",-0.0075 "green", 0.02 "red")
-set format y "%.2f"
+set format y "%.1f"
 set format x "%.2f"
 set format cb "%.3f"
 set border lw 2

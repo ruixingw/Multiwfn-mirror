@@ -12,3 +12,4 @@ color Display Background white
 axes location Off
 display depthcue off
 display rendermode GLSL
+light 3 on

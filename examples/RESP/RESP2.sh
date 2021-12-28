@@ -1,6 +1,6 @@
 # A script to calculate RESP2 charges by invoking Gaussian and Multiwfn
 # Written by Tian Lu (sobereva@sina.com)
-# Last update: 2020-Feb-1
+# Last update: 2021-Dec-16
 # RESP2(0.5) for singlet neutral molecule with water solvent: ./RESP2.sh maki.pdb
 # RESP2(0.5) for triplet neutral molecule with water solvent: ./RESP2.sh nozomi.xyz 0 3
 # RESP2(0.5) for singlet anion with ethanol solvent: ./RESP2.sh nico.mol -1 1 ethanol
@@ -163,8 +163,9 @@ echo RESP charge in solvent phase has been outputted to solv.chg
 #### Calculate RESP2
 chgname=${1//$suffix/chg}
 
-paste gas.chg solv.chg |awk '{printf $1 " " $2 " " $3 " " $4 " " (1-d)*$5+d*$10 "\n"}' d=$delta > $chgname
+paste gas.chg solv.chg |awk '{printf ("%-3s %12.6f %12.6f %12.6f %15.10f\n",$1,$2,$3,$4,(1-d)*$5+d*$10)}' d=$delta > $chgname
 rm gau.gjf gau.fchk gau.chk gau.out
 
 echo
 echo Finished! The optimized atomic coordinates with RESP2 charges \(the last column\) have been exported to $chgname in current folder
+echo Please properly cite Multiwfn in your publication according to \"How to cite Multiwfn.pdf\" in Multiwfn package

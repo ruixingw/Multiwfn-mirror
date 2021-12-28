@@ -31,30 +31,43 @@ end subroutine
 
 
 
-!=====================================================================
-!==== Energy decomposition analysis based on molecular forcefield ====
-!=====================================================================
+
+
+
+
+!==============================================================================
+!==== Energy decomposition analysis based on molecular forcefield (EDA-FF) ====
+!==============================================================================
+
+!------ Module for EDA-FF
+module EDA_FF_mod
+integer :: ielemode=1,ivdwmode=2
+real*8,allocatable :: parmA(:),parmB(:)
+end module
+
 subroutine EDA_forcefield
 use defvar
 use util
+use EDA_FF_mod
 implicit real*8 (a-h,o-z)
-integer :: ielemode=1,ivdwmode=2,nfrag=0,ishowatmpair=0,ioutatmpqr=0
+integer :: nfrag=0,ishowatmpair=0,ioutatmpqr=0
 character c200tmp*200,c200tmp2*200,c2000tmp*2000
 integer,allocatable :: frag(:,:),fragnatm(:)
 real*8,allocatable :: elemat(:,:),repmat(:,:),dispmat(:,:),totmat(:,:) !Interfragment interaction matrix of electrostatic, repulsive, dispersion and total interaction
+real*8 eleatm(ncenter),repatm(ncenter),dispatm(ncenter),totatm(ncenter)
 !vdW parameter of each atom, for UFF they are well depths and vdW distance; For AMBER/GAFF they are well depths and vdW radii
-real*8 parmA(ncenter),parmB(ncenter)
 character*2 c2tmp,FFtype(ncenter) !Force field atom types, only needed by AMBER and GAFF
-real*8 distmatA(ncenter,ncenter)
-real*8 elematatm(ncenter,ncenter),repmatatm(ncenter,ncenter),dispmatatm(ncenter,ncenter),totmatatm(ncenter,ncenter) !Interatomic interaction matrix
 
 FFtype="?"
-distmatA=distmat*b2a !Distance matrix in Angstrom
 if (ifiletype/=4) a%charge=0 !If the input file is not chg or pqr format, assume atomic charges to be zero
+allocate(parmA(ncenter),parmB(ncenter))
 
 10 do while(.true.)
 	write(*,*)
-	write(*,*) " -------- Energy decomposition analysis based on molecular forcefield -------"
+    write(*,"(a)") " If this analysis is employed in your work, please cite the following paper, which briefly described and employed EDA-FF analysis"
+    write(*,"(a)") "   Mat. Sci. Eng. B-Adv., 273, 115425 (2021) DOI: 10.1016/j.mseb.2021.115425"
+    write(*,*)
+	write(*,*) "---- Energy decomposition analysis based on molecular forcefield (EDA-FF) ----"
 	if (ioutatmpqr==1) write(*,*) "-4 Toggle if outputting atom contributions to .pqr files, current: Yes"
 	if (ioutatmpqr==0) write(*,*) "-4 Toggle if outputting atom contributions to .pqr files, current: No"
 	if (ishowatmpair==1) write(*,*) "-3 Toggle if outputting atom pairwise interactions to interatm.txt,current:Yes"
@@ -238,7 +251,6 @@ if (ifiletype/=4) a%charge=0 !If the input file is not chg or pqr format, assume
 		end do
 		write(*,*) "Loading finished!"
 		if (iatm/=ncenter) write(*,"(' Warning: Only',i5,' atomic charges have been loaded, however there are'i5' atoms in current system!')") iatm,ncenter
-		write(*,*)
 		
 	else if (isel==4) then !Show current atomic charges and types
 		if (allocated(frag)) then
@@ -271,78 +283,46 @@ end do
 
 !================== Now start analysis!
 allocate(elemat(nfrag,nfrag),repmat(nfrag,nfrag),dispmat(nfrag,nfrag),totmat(nfrag,nfrag))
-elemat=0;repmat=0;dispmat=0
-elematatm=0;repmatatm=0;dispmatatm=0
 
-!! Stage 1: Setup vdW parameters
+!! Setup vdW parameters
 call setvdWparm(ivdwmode,FFtype,parmA,parmB,istatus)
 if (istatus==1) then !Some parameters are missing
 	deallocate(elemat,repmat,dispmat,totmat)
 	goto 10
 end if
 
-!! Stage 2: Evaluate electrostatic interactions
+!! Evaluate interactions between fragments
+elemat=0;repmat=0;dispmat=0
+eleatm=0;repatm=0;dispatm=0
 do ifrag=1,nfrag
 	do jfrag=ifrag+1,nfrag
 		do idx=1,fragnatm(ifrag)
 			iatm=frag(ifrag,idx)
 			do jdx=1,fragnatm(jfrag)
 				jatm=frag(jfrag,jdx)
-				if (ielemode==1) then
-					tmpval=a(iatm)%charge*a(jatm)%charge/distmat(iatm,jatm)
-				else
-					tmpval=a(iatm)%charge*a(jatm)%charge/distmat(iatm,jatm)**2
-				end if
-				elematatm(iatm,jatm)=tmpval;elematatm(jatm,iatm)=tmpval
-				elemat(ifrag,jfrag)=elemat(ifrag,jfrag)+tmpval
+                call calcAAele(iatm,jatm,eleval)
+				elemat(ifrag,jfrag)=elemat(ifrag,jfrag)+eleval
+                eleatm(iatm)=eleatm(iatm)+eleval
+                eleatm(jatm)=eleatm(jatm)+eleval
+                call calcAAvdW(iatm,jatm,repval,dispval)
+                repmat(ifrag,jfrag)=repmat(ifrag,jfrag)+repval
+                dispmat(ifrag,jfrag)=dispmat(ifrag,jfrag)+dispval
+                repatm(iatm)=repatm(iatm)+repval
+                repatm(jatm)=repatm(jatm)+repval
+                dispatm(iatm)=dispatm(iatm)+dispval
+                dispatm(jatm)=dispatm(jatm)+dispval
 			end do
 		end do
 		elemat(jfrag,ifrag)=elemat(ifrag,jfrag)
+        repmat(jfrag,ifrag)=repmat(ifrag,jfrag)
+        dispmat(jfrag,ifrag)=dispmat(ifrag,jfrag)
 	end do
 end do
-elemat=elemat*au2kJ
-elematatm=elematatm*au2kJ
-
-!! Stage 3: Evaluate repulsive and dispersion interactions
-do ifrag=1,nfrag
-	do jfrag=ifrag+1,nfrag
-		do idx=1,fragnatm(ifrag)
-			iatm=frag(ifrag,idx)
-			do jdx=1,fragnatm(jfrag)
-				jatm=frag(jfrag,jdx)
-				dist=distmatA(iatm,jatm)
-				if (ivdwmode==1) then !UFF. The unit obtained here is temporarily in kcal/mol
-					Dij=dsqrt(parmA(iatm)*parmA(jatm)) !Well depth
-					Xij=dsqrt(parmB(iatm)*parmB(jatm)) !vdW distance
-					repval=Dij*(Xij/dist)**12 !Repulsive
-					dispval=-2*Dij*(Xij/dist)**6 !Dispersion
-				else if (ivdwmode==2) then !AMBER99 & GAFF
-					Dij=dsqrt(parmA(iatm)*parmA(jatm)) !Well depth
-					Xij=parmB(iatm)+parmB(jatm) !vdW distance obtained by sum of vdW radius
-					repval=Dij*(Xij/dist)**12 !Repulsive
-					dispval=-2*Dij*(Xij/dist)**6 !Dispersion
-				end if
-! 				if (ishowatmpair==1) write(*,"(2i4,' Dij:',f6.3,' Xij:',f6.3,' Dist:',f8.3,' Rep:',f12.6,' Disp:',f12.6)") &
-! 				iatm,jatm,Dij,Xij,dist,repval,dispval !For debug
-				repmatatm(iatm,jatm)=repval;repmatatm(jatm,iatm)=repval
-				repmat(ifrag,jfrag)=repmat(ifrag,jfrag)+repval
-				dispmatatm(iatm,jatm)=dispval;dispmatatm(jatm,iatm)=dispval
-				dispmat(ifrag,jfrag)=dispmat(ifrag,jfrag)+dispval
-			end do
-		end do
-		repmat(jfrag,ifrag)=repmat(ifrag,jfrag)
-		dispmat(jfrag,ifrag)=dispmat(ifrag,jfrag)
-	end do
-end do
-
-!Convert result to kJ/mol
-repmat=repmat*4.184D0
-repmatatm=repmatatm*4.184D0
-dispmat=dispmat*4.184D0
-dispmatatm=dispmatatm*4.184D0
-
+eleatm=eleatm/2
+repatm=repatm/2
+dispatm=dispatm/2
 totmat=elemat+repmat+dispmat
-totmatatm=elematatm+repmatatm+dispmatatm
+totatm=eleatm+repatm+dispatm
 
 !! Final stage: Output result
 write(*,*) "Note: All energies shown below are in kJ/mol!"
@@ -359,8 +339,9 @@ if (ishowatmpair==1) then
 				iatm=frag(ifrag,idx)
 				do jdx=1,fragnatm(jfrag)
 					jatm=frag(jfrag,jdx)
-					write(10,"(2i7,':  ',f8.3,4f13.2)") iatm,jatm,distmatA(iatm,jatm),elematatm(iatm,jatm),&
-					repmatatm(iatm,jatm),dispmatatm(iatm,jatm),totmatatm(iatm,jatm)
+                    call calcAAele(iatm,jatm,eleval)
+                    call calcAAvdW(iatm,jatm,repval,dispval)
+					write(10,"(2i7,':  ',f8.3,4f13.2)") iatm,jatm,atomdistA(iatm,jatm),eleval,repval,dispval,eleval+repval+dispval
 				end do
 			end do
 		end do
@@ -370,58 +351,50 @@ if (ishowatmpair==1) then
 end if
 
 !Output contribution of each atom to total interfragment interaction energy
-write(*,*)
-write(*,"(a)") " Contribution of each atom in defined fragments to overall interfragment interaction energies:"
+write(*,"(/,a)") " Contribution of each atom in defined fragments to overall interfragment interaction energies:"
 do ifrag=1,nfrag
 	do idx=1,fragnatm(ifrag)
 		iatm=frag(ifrag,idx)
-		tmpele=sum(elematatm(iatm,:))/2 !Divided by two to avoid double-counting, so that sum of all atomic contributions just equals total E_interfrag
-		tmprep=sum(repmatatm(iatm,:))/2
-		tmpdisp=sum(dispmatatm(iatm,:))/2
-		tmptot=tmpele+tmprep+tmpdisp
-		write(*,"(' Atom',i5,'(',a,')   Elec:',f8.2,'  Rep:',f8.2,'  Disp:',f8.2,'  Total:',f8.2)") iatm,ind2name(a(iatm)%index),tmpele,tmprep,tmpdisp,tmptot
+		write(*,"(' Atom',i5,'(',a,')   Elec:',f8.2,'  Rep:',f8.2,'  Disp:',f8.2,'  Total:',f8.2)") &
+        iatm,ind2name(a(iatm)%index),eleatm(iatm),repatm(iatm),dispatm(iatm),totatm(iatm)
 	end do
 end do
+
 !Output .pqr files
 if (ioutatmpqr==1) then
 	open(10,file="atmint_tot.pqr",status="replace")
 	write(10,"('REMARK   Generated by Multiwfn, totally',i10,' atoms')") ncenter
 	do i=1,ncenter
-		tmpval=sum(totmatatm(i,:))/2
 		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.4,f9.4,a2)") &
-		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,tmpval,vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
+		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,totatm(i),vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
 	end do
 	write(10,"('END')")
 	open(10,file="atmint_ele.pqr",status="replace")
 	write(10,"('REMARK   Generated by Multiwfn, totally',i10,' atoms')") ncenter
 	do i=1,ncenter
-		tmpval=sum(elematatm(i,:))/2
 		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.4,f9.4,a2)") &
-		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,tmpval,vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
+		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,eleatm(i),vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
 	end do
 	write(10,"('END')")
 	open(10,file="atmint_rep.pqr",status="replace")
 	write(10,"('REMARK   Generated by Multiwfn, totally',i10,' atoms')") ncenter
 	do i=1,ncenter
-		tmpval=sum(repmatatm(i,:))/2
 		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.4,f9.4,a2)") &
-		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,tmpval,vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
+		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,repatm(i),vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
 	end do
 	write(10,"('END')")
 	open(10,file="atmint_disp.pqr",status="replace")
 	write(10,"('REMARK   Generated by Multiwfn, totally',i10,' atoms')") ncenter
 	do i=1,ncenter
-		tmpval=sum(dispmatatm(i,:))/2
 		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.4,f9.4,a2)") &
-		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,tmpval,vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
+		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,dispatm(i),vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
 	end do
 	write(10,"('END')")
 	open(10,file="atmint_vdW.pqr",status="replace")
 	write(10,"('REMARK   Generated by Multiwfn, totally',i10,' atoms')") ncenter
 	do i=1,ncenter
-		tmpval=sum(dispmatatm(i,:))/2+sum(repmatatm(i,:))/2
 		write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.4,f9.4,a2)") &
-		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,tmpval,vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
+		"HETATM",i,' '//ind2name_up(a(i)%index)//' ',"MOL",'A',1,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,repatm(i)+dispatm(i),vdwr(a(i)%index)*b2a,adjustr(ind2name_up(a(i)%index))
 	end do
 	write(10,"('END')")
 	write(*,*)
@@ -444,6 +417,41 @@ end do
 deallocate(elemat,repmat,dispmat,totmat)
 goto 10
 
+end subroutine
+
+
+!!----- Calculate atom-atom electrostatic interaction using forcefield
+subroutine calcAAele(iatm,jatm,eleval)
+use defvar
+use EDA_FF_mod
+implicit real*8 (a-h,o-z)
+integer iatm,jatm
+real*8 eleval
+if (ielemode==1) then
+	eleval=a(iatm)%charge*a(jatm)%charge/atomdist(iatm,jatm)
+else
+	eleval=a(iatm)%charge*a(jatm)%charge/atomdist(iatm,jatm)**2
+end if
+eleval=eleval*au2kJ
+end subroutine
+
+!!----- Calculate atom-atom exchange-repulsion (repval) and dispersion interaction (dispval) using forcefield
+subroutine calcAAvdW(iatm,jatm,repval,dispval)
+use defvar
+use EDA_FF_mod
+implicit real*8 (a-h,o-z)
+integer iatm,jatm
+real*8 repval,dispval
+if (ivdwmode==1) then !UFF. The unit obtained here is temporarily in kcal/mol
+	Dij=dsqrt(parmA(iatm)*parmA(jatm))*cal2J !Well depth in kJ/mol
+	Xij=dsqrt(parmB(iatm)*parmB(jatm)) !vdW distance
+else if (ivdwmode==2) then !AMBER99 & GAFF
+	Dij=dsqrt(parmA(iatm)*parmA(jatm))*cal2J !Well depth in kJ/mol
+	Xij=parmB(iatm)+parmB(jatm) !vdW distance obtained by sum of vdW radius
+end if
+tmpval=(Xij/atomdistA(iatm,jatm))**6
+repval=Dij*tmpval**2 !Exchange-repulsion
+dispval=-2*Dij*tmpval !Dispersion
 end subroutine
 
 
@@ -674,12 +682,12 @@ write(*,"(/,a,f16.6,' Hartree')") " E_total:        ",E_tot
 !I found for G16 A.03 with M06-2X, the E_tot shown above, which is exactly equals to "ETot=" printed by L608, is remarkably
 !different to the single point energy printed in either output file or fch file. By comparing with G09, I found the reason is
 !that the "Ec=" shown by G16 with M06-2X is incorrect
-!Same problem was found for G03 E.01+B3LYP and G16 A.03+B3LYP, while G09 D01 works normally with B3LYP
+!Same problem was found for G03 E.01+B3LYP and G16 A.03+B3LYP, while G09 D.01 works normally with B3LYP and M06-2X
 diff=totenergy-E_tot
 if (abs(diff)>1D-4) then
 	write(*,"(/,a,f14.6,a)") " Warning: The total energy shown above is detectably different to the total energy (",totenergy," a.u.) in fch/fchk file! &
 	This issue is known in some versions of Gaussian for certain DFT functionals, the reason is that the &
-	correlation energy printed by Link 608 is inaccurate. You are suggested to either try to use other Gaussian version, or try to use other functional"
+	correlation energy printed by Link 608 is inaccurate. You are suggested to either try to use other Gaussian version (G09 D.01 seems always gives correct result), or try to use other functionals"
 	write(*,*) "Press ENTER button to continue"
 	read(*,*)
 end if

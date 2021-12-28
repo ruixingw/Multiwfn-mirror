@@ -56,3 +56,19 @@ incr k
 }
 $sel delete
 }
+
+proc labcpidx {cpidx {labsize 1.8} {offsetx -0.1} {offsety 0.0}} {
+label delete Atoms all
+color Labels Atoms blue
+label textthickness 2.000000
+label textsize $labsize
+set sel [atomselect 0 "serial $cpidx"]
+set k 0
+foreach i [$sel list] {
+label add Atoms 0/$i
+label textformat Atoms $k { %1i }
+label textoffset Atoms $k "$offsetx $offsety"
+incr k
+}
+$sel delete
+}

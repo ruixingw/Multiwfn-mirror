@@ -49,7 +49,7 @@ do while(.true.)
 	else if (inpstring(1:1)=='d') then
 		write(*,*) "Input X,Y,Z of the point, e.g. 3.3,2.0,-0.3"
 		read(*,*) xin,yin,zin
-		write(*,*) "You inputted coordinate is in which unit?  1:Bohr  2:Angstrom"
+		write(*,*) "You inputted coordinate is in which unit?  1: Bohr  2: Angstrom"
 		read(*,*) iunit
 		if (iunit==2) then
 			xin=xin/b2a
@@ -58,8 +58,12 @@ do while(.true.)
 		end if
 		call decompptprop(xin,yin,zin)
 	else
-		read(inpstring,*) xin,yin,zin
-		write(*,*) "You inputted coordinate is in which unit?  1:Bohr  2:Angstrom"
+		read(inpstring,*,iostat=ierror) xin,yin,zin
+        if (ierror/=0) then
+			write(*,*) "Error: Unable to recognize your input!"
+			cycle
+        end if
+		write(*,*) "You inputted coordinate is in which unit?  1: Bohr  2: Angstrom"
 		read(*,*) iunit
 		if (iunit==2) then
 			xin=xin/b2a
@@ -90,8 +94,9 @@ subroutine study1dim
 use defvar
 use function
 use plot
+use util
 implicit real*8 (a-h,o-z)
-character :: c200tmp*200,c400tmp*400,filename_tmp*200,graphformat_old*4
+character c80tmp*80,c200tmp*200,c400tmp*400,filename_tmp*200,graphformat_old*4
 
 !Clean custom operation setting (global)that possibly defined by other modules
 ncustommap=0
@@ -165,8 +170,13 @@ do while(.true.)
 		exit
 	else if (isel2==2) then
 		write(*,*) "Input x1,y1,z1,x2,y2,z2 to define two points (in Bohr)"
-		write(*,*) "e.g. 0,0,3.2,-1,-0.26,2.8"
-		read(*,*) x1,y1,z1,x2,y2,z2
+		write(*,*) "e.g. 0.5,0,3.2,-1,-0.26,2.8"
+        write(*,*) "To input coorindates in Angstrom, you can add "" A"" suffix, e.g. 0,0,0,0,0,5 A"
+        read(*,"(a)") c80tmp
+		read(c80tmp,*) x1,y1,z1,x2,y2,z2
+        if (index(c80tmp,'A')/=0) then
+            x1=x1/b2a;y1=y1/b2a;z1=z1/b2a;x2=x2/b2a;y2=y2/b2a;z2=z2/b2a
+        end if
 		orgx1D=x1
 		orgy1D=y1
 		orgz1D=z1
@@ -184,7 +194,11 @@ if (isel==12) then !Calculate ESP is time consuming, so decrease the number of p
 	write(*,*) "Please wait..."
 else
 	npointcurve=num1Dpoints !The number of data to plot. num1Dpoints is defined in settings.ini
-	if (expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored ')") expcutoff
+    if (ifPBC>0) then
+	    if (expcutoff_PBC<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff_PBC
+    else
+    	if (expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff
+    end if
 end if
 
 if (allocated(curvex)) deallocate(curvex)
@@ -255,11 +269,7 @@ else !Common case
 			    close(10)
 			
 			    !Delete intermediate files
-			    if (isys==1) then
-				    call system("del cubegenpt.txt ESPresult.cub nouseout /Q")
-			    else
-				    call system("rm cubegenpt.txt ESPresult.cub nouseout -f")
-			    end if
+				call delfile("cubegenpt.txt ESPresult.cub nouseout")
 		
 		    else !Normal case, use internal code to calculate data
                 nthreads_old=nthreads
@@ -268,7 +278,8 @@ else !Common case
                     call doinitlibreta
                     if (isys==1.and.nESPthreads>10) nthreads=10
                 end if
-			    !$OMP parallel do shared(curvex,curvey) private(ipt,rnowx,rnowy,rnowz) num_threads(nthreads)
+                ifinish=0
+			    !$OMP parallel do shared(curvex,curvey,ifinish) private(ipt,rnowx,rnowy,rnowz) num_threads(nthreads)
 			    do ipt=1,npointcurve  !Calculate data for line plot
 				    rnowx=orgx1D+(ipt-1)*transx
 				    rnowy=orgy1D+(ipt-1)*transy
@@ -279,6 +290,10 @@ else !Common case
 				    else
 					    curvey(ipt)=calcfuncall(isel,rnowx,rnowy,rnowz)
 				    end if
+                    !$OMP critical
+                    ifinish=ifinish+1
+                    call showprog(ifinish,npointcurve)
+                    !$OMP end critical
 			    end do
 			    !$OMP end parallel do
                 nthreads=nthreads_old
@@ -303,17 +318,14 @@ else !Common case
 		    if (icustom/=ncustommap) then !Not the last time
 			    icustom=icustom+1
 			    filename=custommapname(icustom)
+                call savePBCinfo
 			    call dealloall
 			    write(*,"(' Loading: ',a)") trim(filename)
 			    call readinfile(filename,1)
-			    !Generate temporary fragatm
-			    if (allocated(fragatm)) deallocate(fragatm)
-			    nfragatmnum=ncenter
-			    allocate(fragatm(nfragatmnum))
-			    forall (iatm=1:nfragatmnum) fragatm(iatm)=iatm
+                call loadPBCinfo
 			    !Input the MO index for current file. Since the MO index may be not the same as the first loaded one
 			    if (isel==4) then
-				    write(*,"(' Input the index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
+				    write(*,"(' Input index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
 				    read(*,*) iorbsel
 			    end if
 		    else !Last time
@@ -321,11 +333,6 @@ else !Common case
 			    call dealloall
 			    write(*,"(' Reloading: ',a)") trim(firstfilename)
 			    call readinfile(firstfilename,1)
-			    !Recovery user-defined fragatm from the backup
-			    deallocate(fragatm)
-			    nfragatmnum=nfragatmnumbackup
-			    allocate(fragatm(nfragatmnum))
-			    fragatm=fragatmbackup
 			    exit
 		    end if
 	    end if
@@ -515,7 +522,7 @@ use function
 use GUI
 implicit real*8 (a-h,o-z)
 integer,allocatable :: tmparrint(:)
-character c200tmp*200,c2000tmp*2000,selectyn
+character c80tmp*80,c200tmp*200,c2000tmp*2000,selectyn
 real*8 vec1old(3),vec2old(3),vec1(3),vec2(3)
 real*8,allocatable :: d1add(:,:),d1min(:,:),d2add(:,:),d2min(:,:),d1addtmp(:,:),d1mintmp(:,:),d2addtmp(:,:),d2mintmp(:,:) !Store temporary data for drawing gradient map
 real*8,allocatable :: planemat_cust(:,:) !For storing temporary data of doing custom map
@@ -530,8 +537,8 @@ ipromol=0
 do while(.true.)
 	write(*,*) "-10 Return to main menu"
 	if (ncustommap==0) then
-		write(*,*) "-2 Obtain of deformation property"
-		write(*,*) "-1 Obtain of promolecule property"
+		write(*,*) "-2 Obtain deformation property"
+		write(*,*) "-1 Obtain promolecule property"
 		write(*,*) "0 Set custom operation"
 	end if
 	call selfunc_interface(2,ifuncsel) !Interface of selecting real space function
@@ -612,7 +619,7 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then  !Initial
 	ilabel_on_contour=0
 	if (ifuncsel==9.or.ifuncsel==10) then  !A special contour setting suitable for ELF and LOL
         call gencontour(1,0D0,0D0,0)
-	else  !General contour setting for other real space functions
+	else !General contour setting for other real space functions
         call gencontour(0,0D0,0D0,0)
 	end if
 else if (idrawtype==-10) then
@@ -823,11 +830,32 @@ do while(.true.)
 			a3z=a(i3)%z
 		else if (plesel==5) then
 			write(*,*) "Input x,y,z of point 1 (in Bohr, e.g. 1.2,1.3,0.0)"
-			read(*,*) a1x,a1y,a1z
+            write(*,*) "To input coorindates in Angstrom, you can add "" A"" suffix, e.g. 0.23,0.5,-1 A"
+            read(*,"(a)") c80tmp
+			read(c80tmp,*) a1x,a1y,a1z
+            if (index(c80tmp,'A')/=0) then
+				a1x=a1x/b2a
+				a1y=a1y/b2a
+				a1z=a1z/b2a
+            end if
 			write(*,*) "Input x,y,z of point 2 (in Bohr)"
-			read(*,*) a2x,a2y,a2z
+            write(*,*) "To input coorindates in Angstrom, you can add "" A"" suffix, e.g. 0.23,0.5,-1 A"
+            read(*,"(a)") c80tmp
+			read(c80tmp,*) a2x,a2y,a2z
+            if (index(c80tmp,'A')/=0) then
+				a2x=a2x/b2a
+				a2y=a2y/b2a
+				a2z=a2z/b2a
+            end if
 			write(*,*) "Input x,y,z of point 3 (in Bohr)"
-			read(*,*) a3x,a3y,a3z
+            write(*,*) "To input coorindates in Angstrom, you can add "" A"" suffix, e.g. 0.23,0.5,-1 A"
+            read(*,"(a)") c80tmp
+			read(c80tmp,*) a3x,a3y,a3z
+            if (index(c80tmp,'A')/=0) then
+				a3x=a3x/b2a
+				a3y=a3y/b2a
+				a3z=a3z/b2a
+            end if
 		end if
 		v1x=a1x-a2x
 		v1y=a1y-a2y
@@ -1030,7 +1058,13 @@ if (iplaneextdata==1) then !Export plane data to external file, and then load da
 else !Start calculation of plane data
 	if (ifuncsel/=4) call delvirorb(1) !Delete high-lying virtual orbitals for faster calculation, but don't do this when analyzing MO
 	write(*,*) "Calculating plane data, please wait..."	
-	if (ifuncsel/=12.and.expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff
+	if (ifuncsel/=12) then
+        if (ifPBC>0) then
+	        if (expcutoff_PBC<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff_PBC
+        else
+    	    if (expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff
+        end if
+    end if
 	call walltime(iwalltime1)
 	icustom=0
 	planemat=0D0 !For promolecular property, first clean up planemat
@@ -1148,17 +1182,12 @@ else !Start calculation of plane data
 		if (icustom/=ncustommap) then !Not the final time
 			icustom=icustom+1
 			filename=custommapname(icustom)
+            call savePBCinfo
 			call dealloall
 			write(*,"(' Loading: ',a)") trim(filename)
 			call readinfile(filename,1)
+            call loadPBCinfo
 			if (ifuncsel/=4) call delvirorb(0)
-			!Generate temporary fragatm
-			deallocate(fragatm)
-			nfragatmnum=ncenter
-			allocate(fragatm(nfragatmnum))
-			do iatm=1,ncenter
-				fragatm(iatm)=iatm
-			end do
 			!Input the MO index for current file. Since the MO index may be not the same as the first loaded one
 			if (ifuncsel==4) then
 				write(*,"(' Input index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
@@ -1176,11 +1205,6 @@ else !Start calculation of plane data
 			call dealloall
 			write(*,"(' Reloading: ',a)") trim(firstfilename)
 			call readinfile(firstfilename,1)
-			!Recovery user-defined fragatm from the backup
-			deallocate(fragatm)
-			nfragatmnum=nfragatmnumbackup
-			allocate(fragatm(nfragatmnum))
-			fragatm=fragatmbackup
 		end if
 	end if
 
@@ -1249,13 +1273,13 @@ else if (ifuncsel==17) then
 else if (ifuncsel==18) then
 	drawlowlim=0D0
 	drawuplim=2D0
+else if (ifuncsel==22.or.ifuncsel==23) then !delta-g
+	drawlowlim=0D0
+	drawuplim=0.5D0
 else if (ifuncsel==111.or.ifuncsel==112) then !Becke/Hirshfeld weight
 	drawlowlim=0D0
 	drawuplim=1D0
-else if (ifuncsel==100.and.iuserfunc==20) then !DORI
-	drawlowlim=0D0
-	drawuplim=1D00
-else if (ifuncsel==100.and.iuserfunc==99) then !IRI
+else if (ifuncsel==100.and.(iuserfunc==20.or.iuserfunc==99)) then !DORI/IRI
 	drawlowlim=0D0
 	drawuplim=1D00
 else !Including ifuncsel==100
@@ -1298,6 +1322,11 @@ nple3n1path=0
 cp2ple3n1path=0
 if (allocated(ple3n1path)) deallocate(ple3n1path)
 i=-1
+
+if (numcp>0) then
+	write(*,"(/,a)") " If you did not modify ""CP_RGB_2D"" in settings.ini, then brown, blue, orange and green dots in this map (if any) &
+    correspond to position of (3,-3), (3,-1), (3,+1) and (3,+3) type of critical points, respectively"
+end if
 
 !----------------- post-processing menu, use plane data to draw graph
 do while(.true.)
@@ -1373,8 +1402,12 @@ do while(.true.)
 		if (numcp>0.and.idrawintbasple==1) write(*,*) "6 Delete interbasin paths"
 		if (numcp>0.and.idrawintbasple==0) write(*,*) "7 Set stepsize and maximal iteration for interbasin path generation"
 		if (ibond_on_plane==0) write(*,*) "8 Enable showing bonds"
-		if (ibond_on_plane==1) write(*,*) "8 Disable showing bonds" 
-
+		if (ibond_on_plane==1) write(*,*) "8 Disable showing bonds"
+        if (idrawcontour==1) then
+            if (ifillctrline==0) write(*,*) "9 Enable filling colors for contour lines"
+            if (ifillctrline==1) write(*,*) "9 Set status of filling colors between the contour lines"
+        end if
+        
 		if (idrawtype==6) then
 			if (igrad_arrow==0) write(*,*) "10 Show arrow on the gradient lines"
 			if (igrad_arrow==1) write(*,*) "10 Do not show arrow on the gradient lines"
@@ -1534,7 +1567,11 @@ do while(.true.)
 	else if (i==-4) then
         call saveload2Dplottingsetting(drawlowlim,drawuplim)
 	else if (i==-3) then
-        call plane_othersetting
+        if (idrawtype==1.or.(idrawtype==2.and.ifillctrline==1).or.idrawtype==3.or.idrawtype==4.or.idrawtype==5) then
+            call plane_othersetting(1)
+        else
+            call plane_othersetting(0)
+        end if
 	else if (i==-2) then
 		if (idrawtype==1.or.idrawtype==4.or.idrawtype==5) then
 			write(*,"(a)") " Input the stepsize between the labels in X,Y,Z axes, e.g. 1.5,2.0,0.1"
@@ -1657,7 +1694,7 @@ do while(.true.)
 					ilabel_on_contour=1
 					write(*,*) "Input label size, e.g. 30"
 					read(*,*) ictrlabsize
-					write(*,"(a)") " Hint: The number of digits after the decimal point of label on contour lines can be set by ""numdigctr"" in settings.ini"
+					write(*,"(a)") " Note: The number of decimal places of labels on contour lines can be set by ""numdigctr"" in settings.ini"
 				end if
 			else if (i==3) then  !! Change isovalues of contour line
 				call setcontour
@@ -1714,6 +1751,41 @@ do while(.true.)
 				write(*,*) "Input stepsize (Bohr) and maximal iterations, e.g. 0.01, 200"
 				write(*,"(a,f8.5,',',i6)") " Current values:",ple3n1pathstpsiz,n3n1plept
 				read(*,*) ple3n1pathstpsiz,n3n1plept
+            else if (i==9) then
+                if (ifillctrline==0) then
+                    ifillctrline=1
+                else
+                    do while(.true.)
+                        write(*,*)
+                        write(*,*) "0 Return"
+                        write(*,*) "1 Disable coloring contour lines"
+                        write(*,"(a,1PE13.5,a,1PE13.5)") " 2 Set lower and upper limits of filling, current:",drawlowlim," to",drawuplim
+                        write(*,"(a,a)") " 3 Set color transition, current: ",trim(clrtransname(iclrtrans))
+                        if (ishowclrfill_bar==1) write(*,*) "4 Toggle showing color bar, current: Yes"
+                        if (ishowclrfill_bar==0) write(*,*) "4 Toggle showing color bar, current: No"
+                        if (ishowclrfill_bar==1) write(*,*) "5 Set stepsize of color bar"
+                        read(*,*) itmp
+                        if (itmp==0) then
+                            exit
+                        else if (itmp==1) then
+                            ifillctrline=0
+                        else if (itmp==2) then
+                            write(*,*) "Input lower and upper limits of color scale, e.g. -0.3,0.3"
+                            read(*,*) drawlowlim,drawuplim
+                        else if (itmp==3) then
+                            call selcolortable
+                        else if (itmp==4) then
+                            if (ishowclrfill_bar==1) then
+                                ishowclrfill_bar=0
+                            else
+                                ishowclrfill_bar=1
+                            end if
+                        else if (itmp==5) then
+                            write(*,*) "Input stepsize, e.g. 0.2"
+                            read(*,*) planestpz
+                        end if
+                    end do
+                end if
 			end if
 			
 			!Option only for idrawtype 6 ===========
@@ -1823,26 +1895,29 @@ end subroutine
 
 
 !----- Interface of change other settings
-subroutine plane_othersetting
+!If this plane plotting involve Z-axis, iZaxis should be 1, otherwise 0
+subroutine plane_othersetting(iZaxis)
 use defvar
 implicit real*8 (a-h,o-z)
+integer iZaxis
 do while(.true.)
     write(*,*)
-    write(*,*) "                 ------------- Other plotting settings -------------"
+    write(*,*) "               ------------- Other plotting settings -------------"
     write(*,*) "0 Return"
     if (itickreverse==0) write(*,*) "1 Toggle reversing ticks, current: No"
     if (itickreverse==1) write(*,*) "1 Toggle reversing ticks, current: Yes"
-    write(*,*) "2 Set number of digits after the decimal point for the labels"
+    write(*,*) "2 Set number of decimal places of tick labels"
     write(*,"(a,2i6)") " 3 Set pixel for weight and height of the exported figure, current:",graph2Dwidth,graph2Dheight
 	write(*,"(a,i3)") " 4 Set the number of ticks between the labels, current:",iticks-1
-    write(*,"(a,i3)") " 5 Set text size in the axes, current:",plane_axistextsize
-    write(*,"(a,i3)") " 6 Set size of the axis names, current:",plane_axisnamesize
+    write(*,"(a,i3)") " 5 Set text size of tick labels, current:",plane_axistextsize
+    write(*,"(a,i3)") " 6 Set text size of axis names, current:",plane_axisnamesize
 	if (iatmlabtype==1) write(*,*) "7 Change style of atomic labels: Only plot element symbol"
 	if (iatmlabtype==2) write(*,*) "7 Change style of atomic labels: Only plot atomic index"
 	if (iatmlabtype==3) write(*,*) "7 Change style of atomic labels: Plot both element symbol and atomic index"
     write(*,"(a,i4)") " 8 Set size of atomic labels, current:",pleatmlabsize
     write(*,"(a,i3)") " 9 Set thick of bonds, current:",bondthick2D
-	write(*,*) "10 Set format of exported image file, current: "//graphformat
+	write(*,*) "10 Set format of exporting image file, current: "//graphformat
+	if (idrawtype==2) write(*,"(a,i3)") " 11 Set number of decimal places of isovalue labels on contours, current:",numdigctr
     read(*,*) isel2
     
     if (isel2==0) then
@@ -1862,9 +1937,11 @@ do while(.true.)
         write(*,*) "Input number of digits after the decimal point for Y axis, e.g. 2"
         write(*,"(' Current value:',i3)") numdigy
         read(*,*) numdigy
-        write(*,*) "Input number of digits after the decimal point for Z axis, e.g. 3"
-        write(*,"(' Current value:',i3)") numdigz
-        read(*,*) numdigz
+        if (iZaxis==1) then
+            write(*,*) "Input number of digits after the decimal point for Z axis, e.g. 3"
+            write(*,"(' Current value:',i3)") numdigz
+            read(*,*) numdigz
+        end if
         write(*,*) "Done!"
     else if (isel2==3) then
         write(*,*) "Note: The default value can be set by ""graph2Dsize"" parameter in settings.ini"
@@ -1907,6 +1984,11 @@ do while(.true.)
         read(*,*) bondthick2D
     else if (isel2==10) then
         call setgraphformat
+    else if (isel2==11) then
+        write(*,*) "Input number of decimal places on labels, e.g. 4"
+        write(*,"(' Current value:',i3)") numdigctr
+        write(*,*) "Note: The default value can be set by ""numdigctr"" parameter in settings.ini"
+        read(*,*) numdigctr
     end if
 end do
 end subroutine
@@ -1938,8 +2020,8 @@ ipromol=0
 	
 do while(.true.)
     write(*,*) "-10 Return to main menu"
-	write(*,*) "-2 Obtain of deformation property"
-	write(*,*) "-1 Obtain of promolecule property"
+	write(*,*) "-2 Obtain deformation property"
+	write(*,*) "-1 Obtain promolecule property"
 	write(*,*) "0 Set custom operation"
 	call selfunc_interface(1,ifuncsel)
 	
@@ -2008,20 +2090,15 @@ if (igridsel==100) then !Calculate value on a set of points loaded from external
 		if (icustom/=ncustommap) then
 			icustom=icustom+1
 			filename=custommapname(icustom)
+            call savePBCinfo
 			call dealloall
 			write(*,"(' Loading:  ',a)") trim(filename)
 			call readinfile(filename,1)
+            call loadPBCinfo
 			if (ifuncsel/=4) call delvirorb(0)
-			!Generate temporary fragatm
-			deallocate(fragatm)
-			nfragatmnum=ncenter
-			allocate(fragatm(nfragatmnum))
-			do iatm=1,ncenter
-				fragatm(iatm)=iatm
-			end do
 			!Input the MO index for current file. Since the MO index may be not the same as the first loaded one
 			if (ifuncsel==4) then
-				write(*,"(' Input the index of the orbital to be calculated for ',a,'   e.g. 3')") trim(filename)
+				write(*,"(' Input index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
 				read(*,*) iorbsel
 			end if
 			goto 500
@@ -2030,17 +2107,12 @@ if (igridsel==100) then !Calculate value on a set of points loaded from external
 			call dealloall
 			write(*,"(' Reloading:  ',a)") trim(firstfilename)
 			call readinfile(firstfilename,1)
-			!Recovery user-defined fragatm from the backup
-			deallocate(fragatm)
-			nfragatmnum=nfragatmnumbackup
-			allocate(fragatm(nfragatmnum))
-			fragatm=fragatmbackup
 		end if
 	end if
     
 	call delvirorb_back(1) !delvirorb may have taken effect, now restore to previous wavefunction
 	call walltime(iwalltime2)
-	write(*,"(' Calculation is finished, took up wall clock time',i10,'s')") iwalltime2-iwalltime1
+	write(*,"(' Calculation is finished, took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 	
 	write(*,"(a)") " Output the points with function values to which file? e.g. C:\ltwd.txt"
 	read(*,"(a)") c200tmp
@@ -2061,11 +2133,9 @@ else !Calculate grid data
 	
 	if (ifuncsel==111) then !Becke's weight
 		do k=1,nz
-			tmpz=orgz+(k-1)*dz
 			do j=1,ny
-				tmpy=orgy+(j-1)*dy
 				do i=1,nx
-					tmpx=orgx+(i-1)*dx
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 					cubmat(i,j,k)=beckewei(tmpx,tmpy,tmpz,iatmbecke1,iatmbecke2)
 					!cubmat(i,j,k)=beckewei(tmpx,tmpy,tmpz,iatmbecke1,iatmbecke2)*ELF_LOL(tmpx,tmpy,tmpz,"ELF")  !Becke's weight multiplied by ELF
 				end do
@@ -2078,13 +2148,11 @@ else !Calculate grid data
 		open(20,file="stericforce.txt",status="replace")
 		do k=1,nz
 			call showprog(k,nz)
-			tmpz=orgz+(k-1)*dz
 			do j=1,ny
-				tmpy=orgy+(j-1)*dy
 				do i=1,nx
-					tmpx=orgx+(i-1)*dx
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 					call stericderv(tmpx,tmpy,tmpz,tmpvec)
-					write(20,"(7f12.6)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,-tmpvec, dsqrt(sum(tmpvec**2))
+					write(20,"(7f12.6)") tmpx*b2a,tmpy*b2a,tmpz*b2a,-tmpvec,dsqrt(sum(tmpvec**2))
 				end do
 			end do
 		end do
@@ -2118,20 +2186,15 @@ else !Calculate grid data
 			if (icustom/=ncustommap) then !Not last time
 				icustom=icustom+1
 				filename=custommapname(icustom)
+                call savePBCinfo !In order to keep PBC status of atom identical to the whole system, saving PBC of the whole system, and then apply to atom after loading atomic wfn file
 				call dealloall
 				write(*,"(' Loading:  ',a)") trim(filename)
 				call readinfile(filename,1)
+                call loadPBCinfo
 				if (ifuncsel/=4) call delvirorb(0)
-				!Generate temporary fragatm
-				deallocate(fragatm)
-				nfragatmnum=ncenter
-				allocate(fragatm(nfragatmnum))
-				do iatm=1,ncenter
-					fragatm(iatm)=iatm
-				end do
 				!Input the MO index for current file. Since the MO index may be not the same as the first loaded one
 				if (ifuncsel==4) then
-					write(*,"(' Input the index of the orbital to be calculated for ',a,'   e.g. 3')") trim(filename)
+					write(*,"(' Input index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
 					read(*,*) iorbsel
 				end if
 				goto 510
@@ -2140,16 +2203,12 @@ else !Calculate grid data
 				call dealloall
 				write(*,"(' Reloading:  ',a)") trim(firstfilename)
 				call readinfile(firstfilename,1)
-				!Recovery user-defined fragatm from the backup
-				deallocate(fragatm)
-				nfragatmnum=nfragatmnumbackup
-				allocate(fragatm(nfragatmnum))
-				fragatm=fragatmbackup
 			end if
 		end if
 	end if
     call delvirorb_back(1) !delvirorb may have taken effect, now restore to previous wavefunction
-
+    
+    call calc_dvol(dvol)
 	outcubfile="griddata.cub" !General name
 	if (ifuncsel==1) then
 		outcubfile="density.cub"
@@ -2157,21 +2216,28 @@ else !Calculate grid data
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
-					dipx=dipx-cubmat(i,j,k)*(orgx+(i-1)*dx)
-					dipy=dipy-cubmat(i,j,k)*(orgy+(j-1)*dy)
-					dipz=dipz-cubmat(i,j,k)*(orgz+(k-1)*dz)
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					dipx=dipx-cubmat(i,j,k)*tmpx
+					dipy=dipy-cubmat(i,j,k)*tmpy
+					dipz=dipz-cubmat(i,j,k)*tmpz
 				end do
 			end do
 		end do
-		dipx=sum(a%charge*a%x)+dipx*dx*dy*dz
-		dipy=sum(a%charge*a%y)+dipy*dx*dy*dz
-		dipz=sum(a%charge*a%z)+dipz*dx*dy*dz
+        if (allocated(b_EDF)) then
+		    dipx=sum(a%index*a%x)+dipx*dvol
+		    dipy=sum(a%index*a%y)+dipy*dvol
+		    dipz=sum(a%index*a%z)+dipz*dvol
+        else
+		    dipx=sum(a%charge*a%x)+dipx*dvol
+		    dipy=sum(a%charge*a%y)+dipy*dvol
+		    dipz=sum(a%charge*a%z)+dipz*dvol
+        end if
 		write(*,*)
 		write(*,*) "Electric dipole moment estimated by integrating electron density"
-		write(*,"(' X component:    ',f12.6,' a.u.',f12.6,' Debye')") dipx,dipx*au2debye
-		write(*,"(' Y component:    ',f12.6,' a.u.',f12.6,' Debye')") dipy,dipy*au2debye
-		write(*,"(' Z component:    ',f12.6,' a.u.',f12.6,' Debye')") dipz,dipz*au2debye
-		write(*,"(' Total magnitude:',f12.6,' a.u.',f12.6,' Debye')") dsqrt(dipx**2+dipy**2+dipz**2),dsqrt(dipx**2+dipy**2+dipz**2)*au2debye
+		write(*,"(' X component:    ',f14.6,' a.u.',f14.6,' Debye')") dipx,dipx*au2debye
+		write(*,"(' Y component:    ',f14.6,' a.u.',f14.6,' Debye')") dipy,dipy*au2debye
+		write(*,"(' Z component:    ',f14.6,' a.u.',f14.6,' Debye')") dipz,dipz*au2debye
+		write(*,"(' Total magnitude:',f14.6,' a.u.',f14.6,' Debye')") dsqrt(dipx**2+dipy**2+dipz**2),dsqrt(dipx**2+dipy**2+dipz**2)*au2debye
 	else if (ifuncsel==2) then
 		outcubfile="gradient.cub"
 	else if (ifuncsel==3) then
@@ -2229,17 +2295,18 @@ else !Calculate grid data
 
 	temp=minval(cubmat)
 	call findvalincub(cubmat,temp,i,j,k)
-    write(*,*)
-	write(*,"(' The minimum is',E16.8,' at',3f10.5,' Bohr')") temp,orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz
+    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+	write(*,"(/,' The minimum is',E16.8,' at',3f10.5,' Bohr')") temp,tmpx,tmpy,tmpz
 	temp=maxval(cubmat)
 	call findvalincub(cubmat,temp,i,j,k)
-	write(*,"(' The maximum is',E16.8,' at',3f10.5,' Bohr')") temp,orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz
+    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+	write(*,"(' The maximum is',E16.8,' at',3f10.5,' Bohr')") temp,tmpx,tmpy,tmpz
 	write(*,"(' Summing up all value and multiply differential element:')") 
-	write(*,*) sum(cubmat)*dx*dy*dz
+	write(*,*) sum(cubmat)*dvol
 	write(*,"(' Summing up positive value and multiply differential element:')")
-	write(*,*) sum(cubmat,mask=cubmat>0)*dx*dy*dz
+	write(*,*) sum(cubmat,mask=cubmat>0)*dvol
 	write(*,"(' Summing up negative value and multiply differential element:')")
-	write(*,*) sum(cubmat,mask=cubmat<0)*dx*dy*dz
+	write(*,*) sum(cubmat,mask=cubmat<0)*dvol
 
 	!Reinitialize plot parameter
 	bondcrit=1.15D0
@@ -2279,9 +2346,11 @@ else !Calculate grid data
 		else if (i==2) then
             if (iaddprefix==1) call addprefix(outcubfile)
 			open(10,file=outcubfile,status="replace")
-			call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+			call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 			close(10)
 			write(*,"(' Done! Grid data has been exported to ',a,' in current folder')") trim(outcubfile)
+            if (iaddprefix==0) write(*,"(a)") " Hint: If you want to add input file name as prefix of the outputted &
+            cube file, you can set ""iaddprefix"" in settings.ini to 1"
 		else if (i==3) then
             c200tmp="output.txt"
             if (iaddprefix==1) call addprefix(c200tmp)
@@ -2351,6 +2420,7 @@ do while(.true.)
 	write(*,*) "2 Change value of a contour line"
 	write(*,*) "3 Add a new contour line"
 	write(*,*) "4 Delete some contour lines"
+    write(*,*) "5 Use built-in contour values suitable for special purpose"
 	write(*,*) "6 Save contour setting to external file"
 	write(*,*) "7 Load contour setting from external file"
 	write(*,*) "8 Generate contour value by arithmetic progression"
@@ -2400,6 +2470,49 @@ do while(.true.)
 				where(tmparr>ictr) tmparr=tmparr-1
 			end do
 		end if
+	else if (isel==5) then
+		write(*,*) "Use which built-in contour line values?"
+        write(*,*) "-1 Default contour line values"
+        write(*,*) "0 Return"
+        write(*,*) "1 For plotting ELF and LOL (0.0 to 1.0 with step size of 0.1)"
+        write(*,*) "2 For plotting ELF and LOL (0.0 to 1.0 with step size of 0.05)"
+        write(*,*) "3 For plotting orbital wavefunction (+ and - 0.01*2^(i-1), i=1-28)"
+        write(*,*) "4 For plotting density difference (+ and - 0.001*2^i, i=1-20)"
+        write(*,*) "5 For plotting density difference (+ and - 0.0001*2^i, i=1-23)"
+        read(*,*) isel2
+        if (isel2==-1) then
+			call gencontour(0,0D0,0D0,0)
+        else if (isel2==0) then
+			cycle
+        else if (isel2==1) then
+			ncontour=11
+            do idx=1,ncontour
+				ctrval(idx)=0.1D0*(idx-1)
+            end do
+        else if (isel2==2) then
+			ncontour=21
+            do idx=1,ncontour
+				ctrval(idx)=0.05D0*(idx-1)
+            end do
+        else if (isel2==3) then
+            do idx=1,28
+				ctrval(idx)=0.01D0*2**(idx-1)
+				ctrval(28+idx)=-0.01D0*2**(idx-1)
+            end do
+			ncontour=56
+        else if (isel2==4) then
+            do idx=1,20
+				ctrval(idx)=0.001D0*2**idx
+				ctrval(20+idx)=-0.001D0*2**idx
+            end do
+			ncontour=40
+        else if (isel2==5) then
+            do idx=1,23
+				ctrval(idx)=0.0001D0*2**idx
+				ctrval(23+idx)=-0.0001D0*2**idx
+            end do
+			ncontour=46
+        end if
 	else if (isel==6) then
 		write(*,*) "Input file path for exporting current setting, e.g. C:\ltwd.txt"
 		read(*,*) outfilename
@@ -2500,11 +2613,12 @@ end subroutine
 
 
 
-!!------------------ Set marker of CPs and paths on contour/gradient map
+!!------------------ Set marker of critical points (CPs) and paths on contour/gradient map
 subroutine settopomark
 use defvar
 implicit real*8 (a-h,o-z)
 do while(.true.)
+	write(*,*)
 	write(*,*) "0 Return"
 	if (imark3n3==0) write(*,*) "1 Enable showing (3,-3) CPs"
 	if (imark3n3==1) write(*,*) "1 Disable showing (3,-3) CPs"
@@ -2523,6 +2637,7 @@ do while(.true.)
 	write(*,"(a,a)") " 12 Set color of topology paths, current: ",trim(colorname(iclrpath))
 	write(*,"(a,i3)") " 13 Set thickness of the interbasin paths derived from (3,-1), current: ",sizemark3n1path
 	write(*,"(a,a)") " 14 Set color of the interbasin paths derived from (3,-1), current: ",trim(colorname(iclr3n1path))
+    write(*,*) "15 Set color for CPs"
 	read(*,*) isel
 
 	if (isel==0) then
@@ -2578,6 +2693,28 @@ do while(.true.)
 	else if (isel==14) then
 		write(*,*) "Use which color for topology paths?"
 		call selcolor(iclr3n1path)
+	else if (isel==15) then
+		write(*,*) "Hint: The default CP colors can be changed by ""CP_RGB_2D"" in settings.ini"
+        write(*,*)
+		write(*,*) "Set color for which kind of CP?"
+        write(*,*) "1 (3,-3)"
+        write(*,*) "2 (3,-1)"
+        write(*,*) "3 (3,+1)"
+        write(*,*) "4 (3,+3)"
+        read(*,*) iCPtype
+        write(*,*) "Change to which color?"
+        call selcolor(iclrind)
+		call clridx2RGB(iclrind,Rcomp,Gcomp,Bcomp)
+        if (iCPtype==1) then
+			CP3n3RGB_2D=(/Rcomp,Gcomp,Bcomp/)
+        else if (iCPtype==2) then
+			CP3n1RGB_2D=(/Rcomp,Gcomp,Bcomp/)
+        else if (iCPtype==3) then
+			CP3p1RGB_2D=(/Rcomp,Gcomp,Bcomp/)
+        else if (iCPtype==4) then
+			CP3p3RGB_2D=(/Rcomp,Gcomp,Bcomp/)
+        end if
+        write(*,*) "Done!"
 	end if
 end do
 end subroutine
@@ -2665,11 +2802,13 @@ end subroutine
 !  xlow,xhigh,ylow,yhigh: Lower and upper limits of X and Y axis in the map
 !  zlow and zhigh: Color scale range
 !Before using this, below data should be initialized:
+!  orgx,orgy,dx,dy: They should be defined like usual plane map
 !  ngridnum1 and ngridnum2: Number of grids of planemat
-!  plesel: Type of plane (XY, YZ...)
+!  plesel: Type of plane (XY, YZ...), like usual plane map in main function 4
 !  Contour lines should be initialized by subroutine "gencontour"
 !  planestpx,planestpy,planestpz: Stepsize in X,Y,Z
 !  orgx2D,orgy2D,orgz2D: X, Y, Z of origin of the plane in molecular Cartesian space, used to determine if showing atomic labels, etc.
+!  idrawtype and idrawcontour should be properly set, see code of this routine
 subroutine planemap_interface(mapname,outfilename,xlow,xhigh,ylow,yhigh,zlow,zhigh)
 use defvar
 use plot
@@ -2677,9 +2816,6 @@ implicit real*8 (a-h,o-z)
 character(len=*) mapname,outfilename
 character selectyn
 real*8 xlow,xhigh,ylow,yhigh,zlow,zhigh
-
-idrawtype=1
-idrawcontour=0
 
 do while(.true.)
     write(*,*)
@@ -2741,13 +2877,17 @@ do while(.true.)
 		read(*,*) scaleval
         planemat=planemat*scaleval
     else if (isel==-3) then
-        call plane_othersetting
+        if (idrawtype==1) then
+            call plane_othersetting(1) !Involve Z-axis
+        else if (idrawtype==2) then
+            call plane_othersetting(0) !Do not involve Z-axis
+        end if
     else if (isel==-2) then
         open(10,file=outfilename//".txt",status="replace")
         do ix=1,nx
-            xpos=orgx+(ix-1)*dx
+            xpos=orgx2D+(ix-1)*dx
             do iy=1,ny
-                ypos=orgy+(iy-1)*dy
+                ypos=orgy2D+(iy-1)*dy
                 write(10,"(2f12.6,f16.8)") xpos*b2a,ypos*b2a,planemat(ix,iy)
             end do
         end do
@@ -2852,6 +2992,7 @@ end subroutine
 !The clrlow and clrhigh are lower and upper limits of color scale. They are arguments since they are not global variables
 subroutine saveload2Dplottingsetting(clrlow,clrhigh)
 use defvar
+use util
 implicit real*8 (a-h,o-z)
 real*8 clrlow,clrhigh
 character c200tmp*200,strtmp*20
@@ -2932,6 +3073,10 @@ do while(.true.)
         write(10,"('iclrpath',i6)") iclrpath
         write(10,"('sizemark3n1path',i6)") sizemark3n1path
         write(10,"('iclr3n1path',i6)") iclr3n1path
+        write(10,"('CP3n3RGB_2D',3f10.6)") CP3n3RGB_2D
+        write(10,"('CP3n1RGB_2D',3f10.6)") CP3n1RGB_2D
+        write(10,"('CP3p1RGB_2D',3f10.6)") CP3p1RGB_2D
+        write(10,"('CP3p3RGB_2D',3f10.6)") CP3p3RGB_2D
         !Related to contour lines
         write(10,"('ictrlabsize',i5)") ictrlabsize
         write(10,"('iclrindctrpos',i5)") iclrindctrpos
@@ -2940,6 +3085,8 @@ do while(.true.)
         write(10,"('iwidthnegctr',i5)") iwidthnegctr
         write(10,"('ctrposstyle',2i5)") ctrposstyle(:)
         write(10,"('ctrnegstyle',2i5)") ctrnegstyle(:)
+        write(10,"('ifillctrline',i5)") ifillctrline
+        write(10,"('ishowclrfill_bar',i5)") ishowclrfill_bar
         write(10,"('ncontour',i5)") ncontour
         do ictr=1,ncontour
 	        write(10,"(1PE18.8)") ctrval(ictr)
@@ -3014,18 +3161,22 @@ do while(.true.)
         read(10,*) strtmp,iclrpath
         read(10,*) strtmp,sizemark3n1path
         read(10,*) strtmp,iclr3n1path
+        call readoption_vec_float(10,"CP3n3RGB_2D",' ',CP3n3RGB_2D)
+        call readoption_vec_float(10,"CP3n1RGB_2D",' ',CP3n1RGB_2D)
+        call readoption_vec_float(10,"CP3p1RGB_2D",' ',CP3p1RGB_2D)
+        call readoption_vec_float(10,"CP3p3RGB_2D",' ',CP3p3RGB_2D)
         !Related to contour lines
-        read(10,*) strtmp,ictrlabsize
-        read(10,*) strtmp,iclrindctrpos
-        read(10,*) strtmp,iclrindctrneg
-        read(10,*) strtmp,iwidthposctr
-        read(10,*) strtmp,iwidthnegctr
-        read(10,*) strtmp,ctrposstyle(:)
-        read(10,*) strtmp,ctrnegstyle(:)
-        read(10,*) strtmp,ncontour
-        do ictr=1,ncontour
-	        read(10,*) ctrval(ictr)
-        end do
+        call readoption_int(10,"ictrlabsize",' ',ictrlabsize)
+        call readoption_int(10,"iclrindctrpos",' ',iclrindctrpos)
+        call readoption_int(10,"iclrindctrneg",' ',iclrindctrneg)
+        call readoption_int(10,"iwidthposctr",' ',iwidthposctr)
+        call readoption_int(10,"iwidthnegctr",' ',iwidthnegctr)
+        call readoption_vec_int(10,"ctrposstyle",' ',ctrposstyle)
+        call readoption_vec_int(10,"ctrnegstyle",' ',ctrnegstyle)
+        call readoption_int(10,"ifillctrline",' ',ifillctrline)
+        call readoption_int(10,"ishowclrfill_bar",' ',ishowclrfill_bar)
+        call readoption_int(10,"ncontour",' ',ncontour)
+	    read(10,*) ctrval(1:ncontour)
         close(10)
         write(*,"(a)") " Done! Plotting settings have been retrieved from "//trim(c200tmp)
     end if

@@ -158,7 +158,7 @@ potpledis=dsqrt((x0-prjx)**2+(y0-prjy)**2+(z0-prjz)**2)
 end function
 
 
-!!---------- Project a point (x0,y0,z0) to a plane defined by x/y/z-1/2/3, prjx/y/z are results
+!!---------- Project a point (x0,y0,z0) to a plane defined by x/y/z-1/2/3, prjx/y/z are XYZ of the resulting point
 subroutine pointprjple(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz)
 real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz,A,B,C,D,t
 call pointABCD(x1,y1,z1,x2,y2,z2,x3,y3,z3,A,B,C,D)
@@ -167,6 +167,17 @@ t=(D+A*x0+B*y0+C*z0)/(A**2+B**2+C**2)
 prjx=x0-t*A
 prjy=y0-t*B
 prjz=z0-t*C
+end subroutine
+
+
+!!---------- Get distance of a point to the plane defined by point A*x+B*y+C*z+D=0
+!See https://en.wikipedia.org/wiki/Plane_(geometry)
+!imode=0: Return the absolute distance  =1: Consider sign
+subroutine pointABCDdis(x,y,z,pleA,pleB,pleC,pleD,dist,imode)
+real*8 x,y,z,pleA,pleB,pleC,pleD,dist
+integer imode
+if (imode==0) dist=abs(pleA*x+pleB*y+pleC*z+pleD)/dsqrt(pleA**2+pleB**2+pleC**2)
+if (imode==1) dist=(pleA*x+pleB*y+pleC*z+pleD)/dsqrt(pleA**2+pleB**2+pleC**2)
 end subroutine
 
 
@@ -216,14 +227,15 @@ end function
 
 !!--------- Input two points, return their distance in Bohr
 real*8 function xyz2dist(x1,y1,z1,x2,y2,z2)
-real*8 :: x1,y1,z1,x2,y2,z2
+real*8 x1,y1,z1,x2,y2,z2
 xyz2dist=dsqrt((x1-x2)**2+(y1-y2)**2+(z1-z2)**2)
 end function
 
 
 !!--------- Input three points, return angle between 1-2 and 2-3 (in degree)
 real*8 function xyz2angle(x1,y1,z1,x2,y2,z2,x3,y3,z3)
-real*8 :: x1,y1,z1,x2,y2,z2,x3,y3,z3,pi=3.141592653589793D0
+real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3
+real*8 :: pi=3.141592653589793D0
 vec1x=x1-x2
 vec1y=y1-y2
 vec1z=z1-z2
@@ -233,14 +245,18 @@ vec2z=z3-z2
 dotprod=vec1x*vec2x+vec1y*vec2y+vec1z*vec2z
 rnormv1=dsqrt( vec1x**2+vec1y**2+vec1z**2 )
 rnormv2=dsqrt( vec2x**2+vec2y**2+vec2z**2 )
-xyz2angle=acos(dotprod/(rnormv1*rnormv2))/pi*180
+tmp=dotprod/(rnormv1*rnormv2)
+if (tmp>1D0) tmp=1D0
+if (tmp<-1D0) tmp=-1D0
+xyz2angle=acos(tmp)/pi*180
 end function
 
 
 !!--------- Input four points, return dihedral angle (in degree)
 !Note that the value is always positive and within [0,180]
 real*8 function xyz2dih(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4)
-real*8 :: x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,pi=3.141592653589793D0,phi,tmp
+real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,phi,tmp
+real*8 :: pi=3.141592653589793D0
 v12x=x1-x2
 v12y=y1-y2
 v12z=z1-z2
@@ -252,10 +268,39 @@ v34y=y3-y4
 v34z=z3-z4
 call vecprod(v12x,v12y,v12z,v23x,v23y,v23z,p1x,p1y,p1z)
 call vecprod(v23x,v23y,v23z,v34x,v34y,v34z,p2x,p2y,p2z)
+!a¡¤b=|a||b|cos¦È, so ¦È=acos[a¡¤b/(|a||b|)]
 tmp=(p1x*p2x+p1y*p2y+p1z*p2z)/(sqrt(p1x*p1x+p1y*p1y+p1z*p1z)*sqrt(p2x*p2x+p2y*p2y+p2z*p2z))
-if (tmp>1D0) tmp=1D0 !In extremely rara case, due to numerical precision reason, the tmp may be marginally larger than 1 making acos return NaN, not fix it
+if (tmp>1D0) tmp=1D0 !acos(x) should <1 and >-1, the x may marginally violate this condition due to numerical reason, making acos return NaN, so fix it
+if (tmp<-1D0) tmp=-1D0 
 phi=acos(tmp)
 xyz2dih=phi/pi*180
+end function
+
+
+!!--------- Input four points, return dihedral angle (in degree)
+!The value is in line with internal coordinate dihedral sign rule
+real*8 function xyz2dih_sign(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4)
+real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,phi,tmp
+real*8 :: pi=3.141592653589793D0
+v12x=x2-x1
+v12y=y2-y1
+v12z=z2-z1
+v23x=x3-x2
+v23y=y3-y2
+v23z=z3-z2
+v34x=x4-x3
+v34y=y4-y3
+v34z=z4-z3
+call vecprod(v12x,v12y,v12z,v23x,v23y,v23z,p1x,p1y,p1z)
+call vecprod(v23x,v23y,v23z,v34x,v34y,v34z,p2x,p2y,p2z)
+tmp=(p1x*p2x+p1y*p2y+p1z*p2z)/(sqrt(p1x*p1x+p1y*p1y+p1z*p1z)*sqrt(p2x*p2x+p2y*p2y+p2z*p2z))
+if (tmp>1D0) tmp=1D0
+if (tmp<-1D0) tmp=-1D0 
+phi=acos(tmp)
+xyz2dih_sign=phi/pi*180
+call vecprod(p1x,p1y,p1z,p2x,p2y,p2z,tx,ty,tz)
+tmp=tx*v23x+ty*v23y+tz*v23z
+if (tmp<0) xyz2dih_sign=-xyz2dih_sign
 end function
 
 
@@ -305,6 +350,114 @@ gettetravol=abs(vec1x*vec2x3x+vec1y*vec2x3y+vec1z*vec2x3z)/6D0
 end function
 
 
+!!----- Generate rotation matrix using the algorithm "Efficiently Building a Matrix to Rotate One Vector to Another (1999)"
+!vec1 will point towards to vec2, return rotation matrix "mat"
+subroutine rotmat_vec1_vec2(vec1,vec2,mat)
+implicit real*8 (a-h,o-z)
+real*8 vec1(3),vec2(3),mat(3,3)
+real*8 vecv(3),vecu(3),vecc(3),vecx(3)
+
+dotp=dsqrt(sum(vec1*vec2))
+
+if (dotp<0.99D0) then !The two inputted vectors are not nearly orthogonal with each other
+	call vecprod(vec1(1),vec1(2),vec1(3),vec2(1),vec2(2),vec2(3),vecv(1),vecv(2),vecv(3))
+	vecu=vecv/dsqrt(sum(vecv**2))
+	valc=sum(vec1*vec2)
+	valh=(1-valc)/(1-valc**2)
+	vx=vecv(1)
+	vy=vecv(2)
+	vz=vecv(3)
+	mat(1,1)=valc+valh*vx**2
+	mat(1,2)=valh*vx*vy-vz
+	mat(1,3)=valh*vx*vz+vy
+	mat(2,1)=valh*vx*vy+vz
+	mat(2,2)=valc+valh*vy**2
+	mat(2,3)=valh*vy*vz-vx
+	mat(3,1)=valh*vx*vz-vy
+	mat(3,2)=valh*vy*vz+vx
+	mat(3,3)=valc+valh*vz**2
+    
+else
+	!Find vecx, which is the Cartesian axis most nearly orthgonal with vec1
+	ixdir=1
+    absmin=abs(vec1(1))
+	do i=2,3
+		if (abs(vec1(i))<absmin) then
+			ixdir=i
+            absmin=abs(vec1(i))
+        end if
+    end do
+    vecx=0
+    if (ixdir==1) vecx(1)=1
+    if (ixdir==2) vecx(2)=1
+    if (ixdir==3) vecx(3)=1
+	vecu=vecx-vec1
+	vecv=vecx-vec2
+    vecusqr=sum(vecu**2)
+    vecvsqr=sum(vecv**2)
+    do i=1,3
+		do j=1,3
+			deltmp=0
+            if (i==j) deltmp=1
+			mat(i,j)= deltmp - 2*vecu(i)*vecu(j)/vecusqr - 2*vecv(i)*vecv(j)/vecvsqr + 4*sum(vecu*vecv)/vecusqr/vecvsqr*vecv(i)*vecu(j)
+        end do
+    end do
+end if
+end subroutine
+
+
+!!---------- Get rotation matrix by rotating specific angle around Z,Y,X axis
+!See "General rotations" of https://en.wikipedia.org/wiki/Rotation_matrix
+!a,b,c are rotation angle around Z,Y,X axis in degree, mat is rotation matrix
+subroutine get_rotmat_aroundXYZ(ain,bin,cin,mat)
+implicit real*8 (a-h,o-z)
+real*8 a,b,c,ain,bin,cin,mat(3,3)
+real*8 :: pi=3.141592653589793D0
+a=ain/180*pi
+b=bin/180*pi
+c=cin/180*pi
+sina=sin(a)
+sinb=sin(b)
+sinc=sin(c)
+cosa=cos(a)
+cosb=cos(b)
+cosc=cos(c)
+mat(1,1)=cosa*cosb
+mat(1,2)=cosa*sinb*sinc-sina*cosc
+mat(1,3)=cosa*sinb*cosc+sina*sinc
+mat(2,1)=sina*cosb
+mat(2,2)=sina*sinb*sinc+cosa*cosc
+mat(2,3)=sina*sinb*cosc-cosa*sinc
+mat(3,1)=-sinb
+mat(3,2)=cosb*sinc
+mat(3,3)=cosb*cosc
+end subroutine
+
+
+!!---------- Get rotation matrix by rotating specific angle around a vector
+!See "Rotation matrix from axis and angle" of https://en.wikipedia.org/wiki/Rotation_matrix
+!rotdeg is rotation angle around the vector (vec) in degree, mat is rotation matrix
+subroutine get_rotmat_aroundvec(vec,rotdeg,mat)
+implicit real*8 (a-h,o-z)
+real*8 vec(3),rotdeg,mat(3,3)
+real*8 :: pi=3.141592653589793D0
+cosv=cos(rotdeg/180*pi)
+sinv=sin(rotdeg/180*pi)
+vec=vec/dsqrt(sum(vec**2)) !Normalize
+vx=vec(1)
+vy=vec(2)
+vz=vec(3)
+mat(1,1)=cosv+vx**2*(1-cosv)
+mat(1,2)=vx*vy*(1-cosv)-vz*sinv
+mat(1,3)=vx*vz*(1-cosv)+vy*sinv
+mat(2,1)=vy*vx*(1-cosv)+vz*sinv
+mat(2,2)=cosv+vy**2*(1-cosv)
+mat(2,3)=vy*vz*(1-cosv)-vx*sinv
+mat(3,1)=vz*vx*(1-cosv)-vy*sinv
+mat(3,2)=vz*vy*(1-cosv)-vx*sinv
+mat(3,3)=cosv+vz**2*(1-cosv)
+end subroutine
+
 
 !!---------- Input a set of atoms to fit a best plane. Return A, B, C, D of plane equation A*x+B*y+C*z+D=0
 !"atmarr" with size of "natm" is the array containing atom indices in the ring. rmsfit measures RMS fitting error in Bohr
@@ -314,10 +467,9 @@ end function
 subroutine ptsfitplane(atmarr,natm,planeA,planeB,planeC,planeD,rmsfit)
 use defvar
 implicit real*8 (a-h,o-z)
-integer atmarr(natm)
+integer natm,atmarr(natm)
 real*8 planeA,planeB,planeC,planeD,rmsfit
 real*8 tmpmat(3,natm),singval(3),matU(3,3),matV(natm,natm)
-
 cenx=sum(a(atmarr(:))%x)/natm
 ceny=sum(a(atmarr(:))%y)/natm
 cenz=sum(a(atmarr(:))%z)/natm
@@ -333,13 +485,11 @@ planeB=matU(2,ileast)
 planeC=matU(3,ileast)
 planeD=-(planeA*cenx+planeB*ceny+planeC*cenz)
 
-!write(*,"(4f12.6)") planeA,planeB,planeC,planeD
 !Check fitting quality using A*x+B*y+C*z+D=0
 accum=0
 do iatm=1,natm
     tmp=planeA*a(atmarr(iatm))%x + planeB*a(atmarr(iatm))%y + planeC*a(atmarr(iatm))%z + planeD 
     accum=accum+abs(tmp)
-    !write(*,*) iatm,atmarr(iatm),tmp
 end do
 rmsfit=dsqrt(accum/natm)
 end subroutine
@@ -546,7 +696,7 @@ covarray=sum((array1-avg1)*(array2-avg2))/size(array1)
 end function
 
 
-!--- Vector/cross product, input two vectors, return a new vector (x,y,z)
+!--- Cross product (vector product) of two vectors, return a new vector (x,y,z)
 subroutine vecprod(x1,y1,z1,x2,y2,z2,x,y,z)
 real*8 x1,y1,z1,x2,y2,z2,x,y,z
 ! |i  j  k |
@@ -555,6 +705,14 @@ real*8 x1,y1,z1,x2,y2,z2,x,y,z
 x=  y1*z2-z1*y2
 y=-(x1*z2-z1*x2)
 z=  x1*y2-y1*x2
+end subroutine
+
+
+!--- Calculate area defined by two vectors, namely |v1 x v2|
+subroutine vec2area(vec1,vec2,area)
+real*8 vec1(3),vec2(3),vecnew(3),area
+call vecprod(vec1(1),vec1(2),vec1(3),vec2(1),vec2(2),vec2(3),vecnew(1),vecnew(2),vecnew(3))
+area=dsqrt(vecnew(1)**2+vecnew(2)**2+vecnew(3)**2)
 end subroutine
 
 
@@ -641,7 +799,7 @@ end do
 end subroutine
 
 
-!-------- Convert an array containing integers to a compact string (str)
+!-------- Convert an array containing integers to a compact string (str), no "-" will be used
 !"str" must have large enough characters
 subroutine arr2str(array,str)
 character(len=*) str
@@ -662,16 +820,60 @@ do iele=1,nele
 end do
 end subroutine
 
+!!-------- The same as arr2str, but may contain "-" symbol
+!All value in the array must be >=0, negative is not supported, after all, the negative sign must conflict with - symbol
+!Algorithm: Assume the maximal index is 8, then arrtmp(0:8) is allocated; if an index is in the array, the corresponding slot will be 1, else 0
+!  we scan from 0 to 8, 
+subroutine arr2str_2(array,str)
+character(len=*) str
+character c80tmp*80,c2000tmp*2000
+integer :: array(:)
+integer,allocatable :: arrtmp(:)
+ntmp=maxval(array)
+allocate(arrtmp(0:ntmp))
+arrtmp=0
+do itmp=1,size(array)
+    arrtmp(array(itmp))=1
+end do
+c2000tmp=" "
+do itmp=0,ntmp
+    if (arrtmp(itmp)==1) then
+        write(c80tmp,*) itmp
+        if (c2000tmp/=" ") then !String has already recorded at least one index
+            if (arrtmp(itmp-1)==1) then !The current value is contiguous to the last one, may use - to connect to last one
+                if (itmp<ntmp) then !This is not the last index in the inputted array
+                    if (arrtmp(itmp+1)==1) cycle !If the next value also occurs in the inputted array, the current value will be outputted to the string
+                end if
+                ifmod=1
+                if (itmp-2>=0) then
+					if (arrtmp(itmp-2)==0) ifmod=0
+                end if
+                if (ifmod==1) then
+					ntmp2=len_trim(c2000tmp) !Modify last comma as -
+					c2000tmp(ntmp2:ntmp2)='-'
+                end if
+            end if
+        end if
+        c2000tmp=trim(c2000tmp)//trim(adjustl(c80tmp))
+        if (any(arrtmp(itmp+1:)==1)) write(c2000tmp(len_trim(c2000tmp)+1:),"(a)") ','
+    end if
+end do
+str=c2000tmp
+end subroutine
 
-!---------Input path name, e.g. C:\ltwd\MIO.wfn , output file name, e.g. MIO
+
+!---------Input path name, e.g. C:\ltwd\MIO.wfn, output file name, e.g. MIO
 subroutine path2filename(pathnamein,filenameout)
 character(len=*) pathnamein,filenameout
+!Find position of last dot
 do i=len_trim(pathnamein),1,-1
 	if (pathnamein(i:i)=='.') then
 		iend=i-1
 		exit
 	end if
 end do
+if (i==0) iend=len_trim(pathnamein) !The path doesn't have a dot!
+!Find position of last slash
 istart=1
 do i=iend,1,-1
 	if (pathnamein(i:i)=='/'.or.pathnamein(i:i)=='\') then
@@ -761,24 +963,104 @@ end do
 end function
 
 
-!!-------- Read float data after the last specific sign (can be multiple characters) from inputted string
-subroutine readaftersign(ifileid,sign,val)
-character str*200
-character(len=*) sign
+!!-------- Read float data after the last specific sign (can be multiple characters) from a string
+subroutine readaftersign_float(str,sign,val)
+character(len=*) str,sign
 real*8 val
-read(10,"(a)") str
 itmp=index(trim(str),sign,back=.true.)
 read(str(itmp+len(sign):),*) val
 end subroutine
-!!-------- Read integer data after the last specific sign from inputted string
-subroutine readaftersign_int(ifileid,sign,val)
-character str*200
-character(len=*) sign
+!!-------- Read integer data after the last specific sign from a string
+subroutine readaftersign_int(str,sign,val)
+character(len=*) str,sign
 integer val
-read(10,"(a)") str
 itmp=index(trim(str),sign,back=.true.)
 read(str(itmp+len(sign):),*) val
 end subroutine
+
+!!-------- Read float data from "ifileid" file
+!Locate to the line containing "label" first, then read data after "sign" to "val". If the label was not found, "val" keeps original value
+subroutine readoption_float(ifileid,label,sign,val)
+integer ifileid
+character(len=*) label,sign
+character str*200
+real*8 val
+call loclabel(ifileid,label,ifound)
+if (ifound==1) then
+    read(ifileid,"(a)") str
+    itmp=index(trim(str),sign,back=.true.)
+    read(str(itmp+len(sign):),*) val
+end if
+end subroutine
+!!----- Same as above, but for loading integer value
+subroutine readoption_int(ifileid,label,sign,val)
+integer ifileid
+character(len=*) label,sign
+character str*200
+integer val
+call loclabel(ifileid,label,ifound)
+if (ifound==1) then
+    read(ifileid,"(a)") str
+    itmp=index(trim(str),sign,back=.true.)
+    read(str(itmp+len(sign):),*) val
+end if
+end subroutine
+!!----- Same as above, but for loading a float vector
+subroutine readoption_vec_float(ifileid,label,sign,vec)
+integer ifileid
+character(len=*) label,sign
+character str*200
+real*8 vec(:)
+call loclabel(ifileid,label,ifound)
+if (ifound==1) then
+    read(ifileid,"(a)") str
+    itmp=index(trim(str),sign) !Load information after the first given "sign"
+    read(str(itmp+len(sign):),*) vec
+end if
+end subroutine
+!!----- Same as above, but for loading a integer vector
+subroutine readoption_vec_int(ifileid,label,sign,vec)
+integer ifileid
+character(len=*) label,sign
+character str*200
+integer vec(:)
+call loclabel(ifileid,label,ifound)
+if (ifound==1) then
+    read(ifileid,"(a)") str
+    itmp=index(trim(str),sign) !Load information after the first given "sign"
+    read(str(itmp+len(sign):),*) vec
+end if
+end subroutine
+
+
+!!------- Determine how many data (integer or float) in the given string. Maximally test 1000
+subroutine numdatastr(str,ndata)
+character(len=*) str
+real*8 arr(1000)
+integer ndata
+do i=1,1000
+	read(str,*,iostat=ierror) arr(1:i)
+	if (ierror/=0) then
+        ndata=i-1
+        return
+    end if
+end do
+end subroutine
+
+
+!!------ Remove all parentheses and the data within them from a string, namely setting them as space
+!For example, "lutian (saint) is weida?" will be "lutian         is weida?" 
+subroutine remove_parentheses(str)
+character(len=*) str
+do while(.true.)
+    if (index(str,'(')==0) exit
+    itmp=index(str,'(')
+    jtmp=index(str,')')
+    str(itmp:jtmp)=" "
+end do
+end subroutine
+
+
 
 
 
@@ -794,7 +1076,7 @@ end subroutine
 subroutine ratio_upper(mat)
 real*8 :: mat(:,:),m,st
 real*8,allocatable :: temp(:),s(:),divided(:)
-integer :: a,i,j,t
+integer a,i,j,t
 a=size(mat,1)
 allocate(temp(a))
 allocate(s(a))
@@ -828,9 +1110,10 @@ isizemat=size(mat,1)
 detmat=1D0
 NOTlowertri=0
 NOTuppertri=0
+
 outter1: do i=1,isizemat !Check if already is lower-trigonal matrix
 	do j=i+1,isizemat
-		if (mat(i,j)>1D-12) then
+		if (abs(mat(i,j))>1D-12) then
 			NOTlowertri=1 !There are at least one big value at upper trigonal part, hence not lower trigonal matrix
 			exit outter1
 		end if
@@ -838,7 +1121,7 @@ outter1: do i=1,isizemat !Check if already is lower-trigonal matrix
 end do outter1
 outter2: do i=1,isizemat !Check if already is upper-trigonal matrix
 	do j=1,i-1
-		if (mat(i,j)>1D-12) then
+		if (abs(mat(i,j))>1D-12) then
 			NOTuppertri=1 !There are at least one big value at lower trigonal part, hence not upper trigonal matrix
 			exit outter2
 		end if
@@ -1441,7 +1724,7 @@ do i=1,nf !How many frame
 			if (present(form)) then
 				write(ides,'('//form//')',advance='no') mat(k,j)			
 			else
-				write(ides,"(1PE14.6)",advance='no') mat(k,j)
+				write(ides,"(1PE14.5E3)",advance='no') mat(k,j)
 			end if
 		end do
 		write(ides,*) !Change to next line
@@ -1578,22 +1861,22 @@ if ((.not.present(irewind)).or.(present(irewind).and.irewind==1)) rewind(fileid)
 if (.not.present(maxline)) then
 	do while(.true.)
 		read(fileid,"(a)",iostat=ierror) c200
+		if (ierror/=0) exit
 		if (index(c200,label)/=0) then
 			backspace(fileid)
 			if (present(ifound)) ifound=1 !Found result
 			return
 		end if
-		if (ierror/=0) exit
 	end do
 else
 	do iline=1,maxline
 		read(fileid,"(a)",iostat=ierror) c200
+		if (ierror/=0) exit
 		if (index(c200,label)/=0) then
 			backspace(fileid)
 			if (present(ifound)) ifound=1 !Found result
 			return
 		end if
-		if (ierror/=0) exit
 	end do
 end if
 if (present(ifound)) ifound=0
@@ -1623,7 +1906,7 @@ end do
 end subroutine
 
 
-!!----------- Skip specific number of lines in specific fileid
+!!-------- Skip specific number of lines in specific fileid
 subroutine skiplines(id,nskip)
 integer id,nskip
 do i=1,nskip
@@ -1713,8 +1996,9 @@ end subroutine
 
 
 
-!--------- Determine the present file is output of file of which code
-!1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 0=Undetermined
+!--------- Determine the present file is output file of which code
+!The file must has been opended as "ifileid"
+!1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 5=CP2K, 0=Undetermined
 subroutine outputprog(ifileid,iprog)
 integer ifileid,iprog
 call loclabel(ifileid,"Gaussian, Inc",ifound,maxline=300)
@@ -1738,7 +2022,30 @@ if (ifound==1) then
     iprog=4
     return
 end if
+call loclabel(10,"CP2K|",ifound,maxline=300)
+if (ifound==1) then
+    iprog=5
+    return
+end if
 iprog=0
+end subroutine
+
+!--------- Determine the present file is input file of which code when the answer cannot be determined from file extension
+!The file must have been opened as "ifileid"
+!iprog=0: Cannot be identified  =1: CP2K  =2: ORCA
+subroutine inputprog(ifileid,iprog)
+integer ifileid,iprog
+iprog=0
+call loclabel(ifileid,"&FORCE_EVAL",ifound,maxline=500)
+if (ifound==1) then
+    iprog=1
+    return
+end if
+call loclabel(ifileid,"* xyz ",ifound,maxline=500)
+if (ifound==1) then
+    iprog=2
+    return
+end if
 end subroutine
 
 
@@ -1753,13 +2060,193 @@ if (ifuncsel==12) then
 else if (ifuncsel==100) then
     if (iuserfunc==8) ifdoESP=.true.
     if (iuserfunc==14) ifdoESP=.true.
+    if (iuserfunc==34) ifdoESP=.true.
     if (iuserfunc==39) ifdoESP=.true.
     if (iuserfunc>=60.and.iuserfunc<=68) ifdoESP=.true.
     if (iuserfunc==101) ifdoESP=.true.
     if (iuserfunc==102) ifdoESP=.true.
     if (iuserfunc==103) ifdoESP=.true.
+    if (iuserfunc==110) ifdoESP=.true.
+    if (iuserfunc==111) ifdoESP=.true.
 end if
 end function
+
+
+
+!showorbinfo1, showorbinfo2, showorbinfo3 print more information than showorbinfo, &
+!and are mainly invoked by GUI subroutines, but can also be invoked by other subroutines
+
+!----- Show all orbitals
+subroutine showorbinfo1(id)
+use defvar
+integer,intent (in) :: id
+character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
+character*6 :: symstr
+symstr=" "
+naorb=count(MOtype==1)
+write(*,*) "Orbital list:"
+do i=1,nmo
+	if (allocated(MOsym)) symstr='('//MOsym(i)//')'
+	if (wfntype==0.or.wfntype==2.or.wfntype==3) then
+		write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
+		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+	else
+		if (MOtype(i)==1) then
+			write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+			i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+		else
+			write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+			i,i-naorb,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+		end if
+	end if
+end do
+if (any(MOtype==2)) write(*,"(a)") " Note: For beta orbitals, &
+the index in the parenthese shown above is the index counted from the first beta orbital"
+end subroutine
+
+!----- Show orbitals up to LUMO+10, works for wfntype==0,1,2
+subroutine showorbinfo2(id)
+use defvar
+integer,intent (in) :: id
+character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
+character*6 :: symstr
+symstr=" "
+naorb=count(MOtype==1)
+if (wfntype==0.or.wfntype==2) then
+	write(*,*) "Orbital list:"
+	do nmoend=1,nmo
+		if (MOocc(nmoend)==0D0) exit
+	end do
+	nmoend=nmoend+10
+	if (nmoend>nmo) nmoend=nmo
+	do i=1,nmoend
+		if (allocated(MOsym)) symstr='('//MOsym(i)//')'
+		write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
+		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+	end do
+else if (wfntype==1) then
+	do iLUMOa=1,nmo
+		if (MOocc(iLUMOa)==0) exit
+	end do
+	do iLUMOb=nmo,1,-1
+		if (MOocc(iLUMOb)==1) exit
+	end do
+	iLUMOb=iLUMOb+1
+	do ibeta=1,nmo
+		if (MOtype(ibeta)==2) exit
+	end do
+	iaend=iLUMOa+10
+	if (iaend>=ibeta) iaend=ibeta-1
+	ibend=iLUMOb+10
+	if (ibend>nmo) ibend=nmo
+	write(*,*) "Alpha orbital list:"
+	do i=1,iaend
+		if (allocated(MOsym)) symstr='('//MOsym(i)//')'
+		write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+	end do
+	write(*,*) "Beta orbital list:"
+	do i=ibeta,ibend
+		if (allocated(MOsym)) symstr='('//MOsym(i)//')'
+		write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+		i,i-naorb,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+	end do
+	write(*,"(a)") " Note: For beta orbitals, &
+	the index in the parenthese shown above is the index counted from the first beta orbital"
+end if
+end subroutine
+
+!----- Show all occupied orbitals
+subroutine showorbinfo3(id)
+use defvar
+integer,intent (in) :: id
+character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
+character*6 :: symstr
+symstr=" "
+naorb=count(MOtype==1)
+write(*,*) "Orbital list:"
+do i=1,nmo
+	if (MOocc(i)==0) cycle
+	if (allocated(MOsym)) symstr='('//MOsym(i)//')'
+	if (wfntype==0.or.wfntype==2.or.wfntype==3) then
+		write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
+		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+	else
+		if (MOtype(i)==1) then
+			write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+			i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+		else
+			write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+			i,i-naorb,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
+		end if
+	end if
+end do
+if (any(MOtype==2)) write(*,"(a)") " Note: For beta orbitals, &
+the index in the parenthese shown above is the index counted from the first beta orbital"
+end subroutine
+
+
+
+!!--------- Calculate switching function based on error function at x
+!Decrease from x= 0 to inf
+!xhalf is the position where switching function is 0.5
+!xscale is the scale factor of x value. When it is 0.25, the switching function will decay from 1 to 0 approximately within [xhalf-0.5,xhalf+0.5]
+!Approximate sharpness relationship: xscale=0.3 is basically iter=3 of Becke, xscale=0.5 is basically iter=1 of Becke
+real*8 function switch_erf(x,xhalf,xscale)
+implicit real*8 (a-h,o-z)
+real*8 x,xhalf,xscale
+switch_erf=1-(0.5D0*erf((x-xhalf)/xscale)+0.5D0)
+end function
+
+!!--------- Calculate switching function based on Becke's function at x
+!Decrease from x= 0 to inf
+!xhalf is the position where switching function is 0.5
+!nBeckeiter is number of iterations (>=1), the larger the sharper the variation. If =1, variation will be linear
+real*8 function switch_Becke(x,xhalf,nBeckeiter)
+implicit real*8 (a-h,o-z)
+real*8 x,xhalf
+integer nBeckeiter
+tmps=x-xhalf
+if (tmps>1) then
+	switch_Becke=0
+else if (tmps<-1) then
+	switch_Becke=1
+else
+	do iter=1,nBeckeiter
+		tmps=1.5D0*(tmps)-0.5D0*(tmps)**3
+	end do
+	switch_Becke=0.5D0*(1-tmps)
+end if
+end function
+
+!!--------- Calculate switching function based on (unnormalized) Gaussian function at x
+!Decrease from 1.0 to 0 as x goes from 0 to inf
+!gauFWHM is FWHM of Gaussian function
+real*8 function switch_Gauss(x,gauFWHM)
+implicit real*8 (a-h,o-z)
+real*8 x,gauFWHM             
+parmc=gauFWHM/2.35482D0 !Parameter c of Gaussian
+switch_Gauss=exp(-x**2/(2*parmc**2))
+end function
+
+
+!Test code for examining various switching function from 0.0~8.0
+!open(10,file="switch_erf.txt",status="replace")
+!open(11,file="switch_Becke.txt",status="replace")
+!open(12,file="switch_Gauss.txt",status="replace")
+!xhalf=vdwr(6)/b2a !Radius of carbon
+!do i=1,800
+!	x=i*0.01D0
+!	write(10,"(f8.3,4f12.6)") x,switch_erf(x,xhalf,0.25D0),switch_erf(x,xhalf,0.5D0),switch_erf(x,xhalf,1D0),switch_erf(x,xhalf,2D0)
+!	write(11,"(f8.3,4f12.6)") x,switch_Becke(x,xhalf,3),switch_Becke(x,xhalf,2),switch_Becke(x,xhalf,1),switch_Becke(x,xhalf,0)
+!	write(12,"(f8.3,3f12.6)") x,switch_Gauss(x,2*xhalf),switch_Gauss(x,1.5*xhalf),switch_Gauss(x,1.0*xhalf)
+!end do
+!close(10)
+!close(11)
+!close(12)
+
+
+
 
 end module
 
@@ -1902,12 +2389,35 @@ end subroutine
 !!-------- Get an integer argument from command line. e.g. call getarg_int("-nt",nthreads,ifound)
 !argname: The label for which the value after it should be extracted
 !argval: Returned value
-!ifound=1/0: Not found the argument
+!ifound=1/0: Found / Not found the argument
 subroutine getarg_int(argname,argval,ifound)
 implicit real*8 (a-h,o-z)
 character c80tmp*80,c200tmp*200
 character(len=*) argname
 integer ifound,argval
+narg=command_argument_count()
+iarg=1
+ifound=0
+do while(iarg<=narg)
+    call get_command_argument(iarg,c200tmp)
+    if (c200tmp==argname) then
+        iarg=iarg+1
+        call get_command_argument(iarg,c80tmp)
+        read(c80tmp,*) argval
+        ifound=1
+        exit
+    end if
+    iarg=iarg+1
+end do
+end subroutine
+
+!!--------- Same as above, but return float
+subroutine getarg_float(argname,argval,ifound)
+implicit real*8 (a-h,o-z)
+character c80tmp*80,c200tmp*200
+character(len=*) argname
+integer ifound
+real*8 argval
 narg=command_argument_count()
 iarg=1
 ifound=0

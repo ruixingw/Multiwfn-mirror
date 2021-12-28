@@ -13,7 +13,7 @@ subroutine drawmol
 use topo
 use surfvertex
 use basinintmod
-IMPLICIT real*8(a-h,o-z)
+implicit real*8(a-h,o-z)
 integer i,j,idxtmp,iret,screenx,screeny,ipath,ipathp1,ipt,icp1,icp2,ipathtype,ipathmidpt,isurf,interval
 real*8 abslenx,absleny,abslenz,plotlenx,plotleny,plotlenz !absolute and real 3D coordinate
 real*8 plot2abs,xplotcoor,yplotcoor,absx,absy,absz,dist,textheighmod,extsiz,augplotlen
@@ -21,6 +21,7 @@ real*8 trianglex(3),triangley(3),trianglez(3)
 real*8 arrayx(nx),arrayy(ny),arrayz(nz)
 character*5 ctemp
 character c80tmp*80
+
 !Set viewpoint
 !Note that due to limitation of DISLIN, it is not possible to view molecule in all viewpoints. The YVU should be limited to between -90 and 90, else the viewpoint will suddently flip
 XVUold=XVU
@@ -28,54 +29,73 @@ YVUold=YVU
 if (YVU==90) YVU=89.999D0 !Temporarily modify YVU, otherwise when YVU equals to 90 or -90, the perspective will jump suddenly
 if (YVU==-90) YVU=-89.999D0
 
-!Determine axis range
-augplotlen=8D0 !Common augmentation of plotting axis length (the sum of both direction)
-if (GUI_mode==5) augplotlen=12D0 !Because surface extreme points laying on vdW surface, the scatter region is large, so use larger value
-if (GUI_mode==7) augplotlen=12D0 !Using GUI to set box, the case is complicated, so use larger value
-if ((idrawisosur==1.and.aug3D>4).or.GUI_mode==6) augplotlen=aug3D*2.2D0 !Shouldn't be 2.0 as expected, otherwise sometimes there will be a band occuring at boundary
+!Determine x/y/zlow, x/y/zhigh and plotlenx/y/z, which are lower, upper positions and length of the axis
+if (ifPBC>0) then !For PBC case, make the axis able to show all atoms
+    call cellminxyz(xmin,ymin,zmin)
+    xlow=min(xmin-3,minval(a%x)-3)
+    ylow=min(ymin-3,minval(a%y)-3)
+    zlow=min(zmin-3,minval(a%z)-3)
+    call cellmaxxyz(xmax,ymax,zmax)
+    xhigh=max(xmax+3,maxval(a%x)+3)
+    yhigh=max(ymax+3,maxval(a%y)+3)
+    zhigh=max(zmax+3,maxval(a%z)+3)
+    plotlenx=xhigh-xlow
+    plotleny=yhigh-ylow
+    plotlenz=zhigh-zlow
+else if (ifiletype==7.or.ifiletype==8) then !For cub/grd/cube/vti file, make the axis able to show entire grid data
+    call gridminxyz(xmin,ymin,zmin)
+    call gridmaxxyz(xmax,ymax,zmax)
+	xlow=xmin-1
+	ylow=ymin-1
+	zlow=zmin-1
+	xhigh=xmax+1
+	yhigh=ymax+1
+	zhigh=zmax+1
+    plotlenx=xhigh-xlow
+    plotleny=yhigh-ylow
+    plotlenz=zhigh-zlow
+else !Other cases, determine displayed spatial scope by boundary atoms of the system
+    !Determine axis range
+    augplotlen=8D0 !Common augmentation of plotting axis length (the sum of both direction)
+    if (GUI_mode==5) augplotlen=12D0 !Because surface extreme points laying on vdW surface, the scatter region is large, so use larger value
+    if (GUI_mode==7) augplotlen=12D0 !Using GUI to set box, the case is complicated, so use larger value
+    if ((idrawisosur==1.and.aug3D>4).or.GUI_mode==6) augplotlen=aug3D*2.2D0 !Shouldn't be 2.0 as expected, otherwise sometimes there will be a band occuring at boundary
 
-!Commonly, augment distance in each side is idential. However, for very long chain system, the molecule cannot be displayed unless ZVU is first set to
-!fairly large value, namely extremely zooming out. To circumvent this problem, we first calculate geometric average in X,Y,Z (Davg)
-!if ratio between molecular size in any direction and Davg is by far lower than a threshold, then we make all axis lengths identical to the longest one,
-!in this case the molecule must be able to be shown
-xmolsize=maxval(a%x)-minval(a%x)
-ymolsize=maxval(a%y)-minval(a%y)
-zmolsize=maxval(a%z)-minval(a%z)
-avgD=(xmolsize*ymolsize*zmolsize)**(1D0/3D0)
-ratiox=xmolsize/avgD
-ratioy=ymolsize/avgD
-ratioz=zmolsize/avgD
-thresratio=0.2D0
-if (xmolsize<thresratio .or. ymolsize<thresratio .or. zmolsize<thresratio) then
-    rlong=max(max(xmolsize,ymolsize),zmolsize)
-    augplotlenx=augplotlen+(rlong-xmolsize)/2
-    augplotleny=augplotlen+(rlong-ymolsize)/2
-    augplotlenz=augplotlen+(rlong-zmolsize)/2
-else
-    augplotlenx=augplotlen
-    augplotleny=augplotlen
-    augplotlenz=augplotlen
-end if
+    !Below comment and code are redundant, ignore them...
+    !Commonly, augment distances in all side are idential. However, for very long chain system, the molecule cannot be displayed unless ZVU is first set to
+    !fairly large value, namely extremely zooming out. To circumvent this problem, we first calculate geometric average in X,Y,Z (Davg)
+    !if ratio between molecular size in any direction and Davg is by far lower than a threshold, then we make all axis lengths identical to the longest one,
+    !in this case the molecule must be able to be shown
+    xmolsize=maxval(a%x)-minval(a%x)
+    ymolsize=maxval(a%y)-minval(a%y)
+    zmolsize=maxval(a%z)-minval(a%z)
+    !avgD=(xmolsize*ymolsize*zmolsize)**(1D0/3D0)
+    !ratiox=xmolsize/avgD
+    !ratioy=ymolsize/avgD
+    !ratioz=zmolsize/avgD
+    !thresratio=0.2D0
+    !write(*,*) xmolsize, ymolsize, zmolsize,augplotlen
+    !if (xmolsize<thresratio .or. ymolsize<thresratio .or. zmolsize<thresratio) then
+    !    rlong=max(max(xmolsize,ymolsize),zmolsize)
+    !    augplotlenx=augplotlen+(rlong-xmolsize)/2
+    !    augplotleny=augplotlen+(rlong-ymolsize)/2
+    !    augplotlenz=augplotlen+(rlong-zmolsize)/2
+    !else
+        augplotlenx=augplotlen
+        augplotleny=augplotlen
+        augplotlenz=augplotlen
+    !end if
 
-!For grd/cube/vti file (with no or 1 atom, which may be added by Multiwfn), determine displayed spatial scope purely by grid data scope
-if ( (ifiletype==7.and.(ncenter==0.or.ncenter==1)) .or.ifiletype==8) then
-	xlow=orgx
-	ylow=orgy
-	zlow=orgz
-	plotlenx=(nx-1)*dx
-	plotleny=(ny-1)*dy
-	plotlenz=(nz-1)*dz
-else !Other cases, determine displayed spatial scope by molecular geometry
 	xlow=minval(a%x)-augplotlenx/2
 	ylow=minval(a%y)-augplotleny/2
 	zlow=minval(a%z)-augplotlenz/2
-	plotlenx=xmolsize+augplotlenx !Final axis lengths
+	plotlenx=xmolsize+augplotlenx
 	plotleny=ymolsize+augplotleny
 	plotlenz=zmolsize+augplotlenz
+    xhigh=xlow+plotlenx
+    yhigh=ylow+plotleny
+    zhigh=zlow+plotlenz
 end if
-xhigh=xlow+plotlenx
-yhigh=ylow+plotleny
-zhigh=zlow+plotlenz
 
 !Initialize DISLIN
 abslenx=2D0 !Absolute length in DISLIN
@@ -149,41 +169,76 @@ if (ishowaxis==1) CALL GRID3D (2,2,'bottom')
 CALL ZBFINI(IRET) !Enable Z-buffer to determine visibility
 call litpos(1,XVU,YVU,ZVU,'ANGLE')
 call litmod(1,'on') !Dislin default light 1 is on, and off for others
+
 if (idrawmol==1) then
 	do ilight=2,8
 		call litmod(ilight,'off')
 	end do
+    if (ishowboundaryatom==1.and.ifpbc>0) then
+		call construct_atmp_withbound(ncenter_tmp) !Construct global array a_tmp, which contains real atoms and replicated boundary atoms
+    else
+		if (allocated(a_tmp)) deallocate(a_tmp)
+        ncenter_tmp=ncenter
+        allocate(a_tmp(ncenter))
+        a_tmp=a
+    end if
 	!Draw atoms
-	do i=1,ncenter
-        if (ishowhydrogen==0.and.a(i)%index==1) cycle
-		CALL MATOP3(atm3Dclr(a(i)%index,1), atm3Dclr(a(i)%index,2), atm3Dclr(a(i)%index,3), 'diffuse')
+	do i=1,ncenter_tmp
+        if (ishowhydrogen==0.and.a_tmp(i)%index==1) cycle
+		CALL MATOP3(atm3Dclr(a_tmp(i)%index,1), atm3Dclr(a_tmp(i)%index,2), atm3Dclr(a_tmp(i)%index,3), 'diffuse')
         if (allocated(highlightatomlist)) then
             if (any(highlightatomlist==i)) CALL MATOP3(0.3D0, 1D0, 1D0, 'diffuse')
         end if
-		if (a(i)%index/=0) then !Normal atoms
-			CALL SPHE3D(a(i)%x,a(i)%y,a(i)%z,vdwr(a(i)%index)/4*ratioatmsphere,50,50)
+		if (a_tmp(i)%index/=0) then !Normal atoms
+			if (isavepic==1) then
+                CALL SPHE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,vdwr(a_tmp(i)%index)/4*ratioatmsphere,40,40)
+            else !Resolution of 30,30 is nearly perfect. For large system lower the resolution for faster view
+                if (ncenter_tmp<100) then
+                    CALL SPHE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,vdwr(a_tmp(i)%index)/4*ratioatmsphere,30,30)
+                else if (ncenter_tmp<300) then
+                    CALL SPHE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,vdwr(a_tmp(i)%index)/4*ratioatmsphere,20,20)
+                else
+                    CALL SPHE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,vdwr(a_tmp(i)%index)/4*ratioatmsphere,10,10)
+                end if
+            end if
 		else !Bq atoms. The size keeps fixed
-			CALL SPHE3D(a(i)%x,a(i)%y,a(i)%z,vdwr(a(i)%index)/4,50,50)
+			CALL SPHE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,vdwr(a_tmp(i)%index)/4,20,20)
 		end if
 	end do
 	!Draw bonds. If connectivity is available, then do not automatically determine bonding
 	CALL MATOP3(bondclrR,bondclrG,bondclrB,'diffuse')
-    if (allocated(connmat)) then
+    if (allocated(connmat)) then !Note that when using defined connectivity, bonds for boundary atoms will not be considered
 	    do i=1,ncenter
 		    do j=i+1,ncenter
                 if (ishowhydrogen==0.and.(a(i)%index==1.or.a(j)%index==1)) cycle
 			    if (a(i)%index==0.or.a(j)%index==0) cycle !Never make Bq bonding
-			    if (connmat(i,j)/=0) CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,30,30)
+			    if (connmat(i,j)/=0) then
+                    if (ncenter<100.or.isavepic==1) then
+                        CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,20,20) !Resolution of 20,20 is visually perfect
+                    else if (ncenter<300) then
+                        CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,15,15)
+                    else
+                        CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,8,8)
+                    end if
+                end if
 		    end do
 	    end do
     else
-	    do i=1,ncenter
-		    do j=i+1,ncenter
-                if (ishowhydrogen==0.and.(a(i)%index==1.or.a(j)%index==1)) cycle
-			    if (a(i)%index==0.or.a(j)%index==0) cycle !Never make bonding
-			    dist=dsqrt( (a(i)%x-a(j)%x)**2+(a(i)%y-a(j)%y)**2+(a(i)%z-a(j)%z)**2 )
-			    !if the distance between to atoms exceed 15% of summing of their covalent radius, seems they didn't bond
-			    if (dist<( covr(a(i)%index)+covr(a(j)%index) )*bondcrit) CALL TUBE3D(a(i)%x,a(i)%y,a(i)%z,a(j)%x,a(j)%y,a(j)%z,bondradius,30,30)
+	    do i=1,ncenter_tmp
+		    do j=i+1,ncenter_tmp
+                if (ishowhydrogen==0.and.(a_tmp(i)%index==1.or.a_tmp(j)%index==1)) cycle
+			    if (a_tmp(i)%index==0.or.a_tmp(j)%index==0) cycle !Never make bonding
+			    dist=dsqrt( (a_tmp(i)%x-a_tmp(j)%x)**2+(a_tmp(i)%y-a_tmp(j)%y)**2+(a_tmp(i)%z-a_tmp(j)%z)**2 )
+			    !If the distance between two atoms exceeds 15% of sum of their covalent radii, they will be seemed as unbonded
+			    if (dist<( covr(a_tmp(i)%index)+covr(a_tmp(j)%index) )*bondcrit) then
+                    if (ncenter_tmp<100.or.isavepic==1) then
+                        CALL TUBE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,a_tmp(j)%x,a_tmp(j)%y,a_tmp(j)%z,bondradius,20,20) !Resolution of 20,20 is visually perfect
+                    else if (ncenter_tmp<300) then
+                        CALL TUBE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,a_tmp(j)%x,a_tmp(j)%y,a_tmp(j)%z,bondradius,15,15)
+                    else
+                        CALL TUBE3D(a_tmp(i)%x,a_tmp(i)%y,a_tmp(i)%z,a_tmp(j)%x,a_tmp(j)%y,a_tmp(j)%z,bondradius,8,8)
+                    end if
+                end if
 		    end do
 	    end do
     end if
@@ -191,27 +246,27 @@ end if
 
 !Draw critical points
 if (ishow3n3==1) then
-	CALL MATOP3(CP3n3RGB(1),CP3n3RGB(2),CP3n3RGB(3), 'diffuse') !Purple
+	CALL MATOP3(CP3n3RGB(1),CP3n3RGB(2),CP3n3RGB(3),'diffuse') !Purple
 	do i=1,numcp
-		if (CPtype(i)==1) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.19D0*ratioCPsphere,20,20)
+		if (CPtype(i)==1) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.15D0*ratioCPsphere,20,20)
 	end do
 end if
 if (ishow3n1==1) then
-	CALL MATOP3(CP3n1RGB(1),CP3n1RGB(2),CP3n1RGB(3), 'diffuse') !Orange
+	CALL MATOP3(CP3n1RGB(1),CP3n1RGB(2),CP3n1RGB(3),'diffuse') !Orange
 	do i=1,numcp
-		if (CPtype(i)==2) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.12D0*ratioCPsphere,20,20)
+		if (CPtype(i)==2) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.1D0*ratioCPsphere,20,20)
 	end do
 end if
 if (ishow3p1==1) then
-	CALL MATOP3(CP3p1RGB(1),CP3p1RGB(2),CP3p1RGB(3), 'diffuse') !Yellow
+	CALL MATOP3(CP3p1RGB(1),CP3p1RGB(2),CP3p1RGB(3),'diffuse') !Yellow
 	do i=1,numcp
-		if (CPtype(i)==3) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.12D0*ratioCPsphere,20,20)
+		if (CPtype(i)==3) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.1D0*ratioCPsphere,20,20)
 	end do
 end if
 if (ishow3p3==1) then
-	CALL MATOP3(CP3p3RGB(1),CP3p3RGB(2),CP3p3RGB(3), 'diffuse') !Green
+	CALL MATOP3(CP3p3RGB(1),CP3p3RGB(2),CP3p3RGB(3),'diffuse') !Green
 	do i=1,numcp
-		if (CPtype(i)==4) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.12D0*ratioCPsphere,20,20)
+		if (CPtype(i)==4) CALL SPHE3D(CPpos(1,i),CPpos(2,i),CPpos(3,i),0.1D0*ratioCPsphere,20,20)
 	end do
 end if
 
@@ -243,16 +298,19 @@ if (numatt>0.and.ishowatt==1) then
 		else if (realattval(idrawbasinidx)>=0) then
 			CALL MATOP3(0D0, 0.8D0, 0D0, 'diffuse') !Green
 		else !Negative basins
-			CALL MATOP3(0.3D0, 0.6D0, 1D0, 'diffuse') !light blue
+			CALL MATOP3(0.3D0, 0.6D0, 1D0, 'diffuse') !Light blue
 		end if
-        if (basinsphsize==0) basinsphsize=dsqrt(dx**2+dy**2+dz**2)/2D0 !Haven't been initialized
+        if (basinsphsize==0) then !Sphere size has not been initialized
+			call calc_dvol(dvol)
+            !Convert grid volume to effective radius: dvol=3/4*pi*r^3, so r=(dvol*4/3/pi)**(1D0/3D0)
+            basinsphsize=(dvol*4/3/pi)**(1D0/3D0)*1.2D0 !1.2 is used to slightly enhance to fully fill the grid
+			!basinsphsize=dsqrt(dx**2+dy**2+dz**2)/2D0 !Not suitable for non-orthogonal grid
+        end if
 		do iz=2,nz-1
 			do iy=2,ny-1
 				do ix=2,nx-1
 					if (gridbas(ix,iy,iz)==idrawbasinidx) then
-					    tmpx=orgx+(ix-1)*dx
-				        tmpy=orgy+(iy-1)*dy
-			            tmpz=orgz+(iz-1)*dz
+						call getgridxyz(ix,iy,iz,tmpx,tmpy,tmpz)
                         if (ishowbasinmethod==1) then !Entire basin
 						    if (interbasgrid(ix,iy,iz)==.true.) CALL SPHE3D(tmpx,tmpy,tmpz,basinsphsize,4,4) !Show sphere of interbasin grids
 						    if (idrawinternalbasin==1) then !Draw quad at box boundary to shield internal region of basin
@@ -285,6 +343,8 @@ end if
 
 !Draw topology paths
 if (idrawpath==1) then
+    ntuberes=5
+    if (numpath>200) ntuberes=3 !For showing faster, use lower resolution
 	do ipath=1,numpath
 		call path_cp(ipath,icp1,icp2,ipathtype)
 		!ipathtype=0: other   =1: (3,-1)->(3,-3) =2: (3,+1)->(3,+3) =3: (3,-1)<-->(3,+1)
@@ -293,8 +353,15 @@ if (idrawpath==1) then
 		if (ipathtype==2) call MATOP3(0.2D0, 0.7D0, 0.2D0, 'diffuse')
 		if (ipathtype==3) call MATOP3(0.8D0, 0.8D0, 0.3D0, 'diffuse')
 		do ipt=2,pathnumpt(ipath)
-			CALL TUBE3D(topopath(1,ipt-1,ipath),topopath(2,ipt-1,ipath),topopath(3,ipt-1,ipath)&
-			,topopath(1,ipt,ipath),topopath(2,ipt,ipath),topopath(3,ipt,ipath),0.03D0,5,5)
+            xlast=topopath(1,ipt-1,ipath)
+            ylast=topopath(2,ipt-1,ipath)
+            zlast=topopath(3,ipt-1,ipath)
+            xthis=topopath(1,ipt,ipath)
+            ythis=topopath(2,ipt,ipath)
+            zthis=topopath(3,ipt,ipath)
+            dist=dsqrt((xlast-xthis)**2+(ylast-ythis)**2+(zlast-zthis)**2)
+            !If distance between two path points is very large, then the two points must cross box, so do not draw
+            if (dist<pathstepsize*2) CALL TUBE3D(xlast,ylast,zlast,xthis,ythis,zthis,0.03D0,ntuberes,ntuberes)
 		end do
 	end do
 end if
@@ -404,13 +471,13 @@ if (idrawisosur==1) then
 
 	!Draw isosurface for cubmat
 	do ix=1,nx
-		arrayx(ix)=orgx+(ix-1)*dx
+		arrayx(ix)=orgx+(ix-1)*gridv1(1)
 	end do
 	do iy=1,ny
-		arrayy(iy)=orgy+(iy-1)*dy
+		arrayy(iy)=orgy+(iy-1)*gridv2(2)
 	end do
 	do iz=1,nz
-		arrayz(iz)=orgz+(iz-1)*dz
+		arrayz(iz)=orgz+(iz-1)*gridv3(3)
 	end do
 	if (isosur1style==5) CALL TPRVAL(opacitycub1)
 	nplottime=1
@@ -424,9 +491,17 @@ if (idrawisosur==1) then
 			call setrgb(clrRcub1oppomeshpt,clrGcub1oppomeshpt,clrBcub1oppomeshpt)
 			sur_valuenow=-sur_value
 		end if
-		if (isosur1style==2) call surmsh("LINES") !Plotted as mesh rather than solid face
+		if (isosur1style==2) then !Plotted as mesh rather than solid face
+            call surmsh("LINES")
+		else if (isosur1style==-2) then !Plotted as mesh rather than solid face
+            if (iplottime==2) call surmsh("LINES") !Use mesh tyle only for negative part
+        end if
 		if (isosur1style==3) call surmsh("POINTS") !Plotted as points rather than solid face
-		if (isosur1style==4) call surmsh("ON") !face+lines
+		if (isosur1style==4) then !Face+lines
+            call surmsh("ON")
+		else if (isosur1style==-4) then !Face+lines only for negative part
+            if (iplottime==2) call surmsh("ON")
+        end if
 		if (isosur1style==5) CALL TPRINI !Must be called individually for same and opposite survalue, else same part will completely overlay opposite part
 		call suriso(arrayx,nx,arrayy,ny,arrayz,nz,cubmat,sur_valuenow)
 		if (isosur1style==5) CALL TPRFIN
@@ -459,20 +534,62 @@ if (idrawisosur==1) then
 end if
 
 !Draw a 3D rectangle box to show spatial range of present grid data or grid data to be calculated
-if (ishowdatarange==1) then 
-	CALL MATOP3(0.0D0, 0.0D0, 0.8D0, 'diffuse')
-	call tube3D(orgx,orgy,orgz,endx,orgy,orgz,0.05D0,30,30)
-	call tube3D(endx,orgy,orgz,endx,endy,orgz,0.05D0,30,30)
-	call tube3D(endx,endy,orgz,orgx,endy,orgz,0.05D0,30,30)
-	call tube3D(orgx,endy,orgz,orgx,orgy,orgz,0.05D0,30,30)
-	call tube3D(orgx,orgy,endz,endx,orgy,endz,0.05D0,30,30)
-	call tube3D(endx,orgy,endz,endx,endy,endz,0.05D0,30,30)
-	call tube3D(endx,endy,endz,orgx,endy,endz,0.05D0,30,30)
-	call tube3D(orgx,endy,endz,orgx,orgy,endz,0.05D0,30,30)
-	call tube3D(orgx,orgy,orgz,orgx,orgy,endz,0.05D0,30,30)
-	call tube3D(endx,orgy,orgz,endx,orgy,endz,0.05D0,30,30)
-	call tube3D(endx,endy,orgz,endx,endy,endz,0.05D0,30,30)
-	call tube3D(orgx,endy,orgz,orgx,endy,endz,0.05D0,30,30)
+tubethk=0.07D0
+if (ishowdatarange==1) then
+	CALL MATOP3(0.0D0,0.0D0,0.8D0,'diffuse')
+    call gridvertex2(1,2,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(2,3,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(3,4,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(1,4,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(1,5,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(2,6,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(3,7,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(4,8,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(5,6,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(6,7,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(7,8,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call gridvertex2(5,8,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+end if
+
+!Show cell frame
+if (ishowcell==1) then
+	CALL MATOP3(0.58D0,0.21D0,0.72D0,'diffuse')
+    call cellvertex2(1,2,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(2,3,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(3,4,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(1,4,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(1,5,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(2,6,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(3,7,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(4,8,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(5,6,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(6,7,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(7,8,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
+    call cellvertex2(5,8,vert1x,vert1y,vert1z,vert2x,vert2y,vert2z)
+	call tube3D(vert1x,vert1y,vert1z,vert2x,vert2y,vert2z,tubethk,30,30)
 end if
 
 if (isosur1style/=5) CALL ZBFFIN !Ending of Z-buffer
@@ -486,10 +603,10 @@ if ((ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.
 		do i=1,ncenter
             if (ishowhydrogen==0.and.a(i)%index==1) cycle
 			write(ctemp,"(i5)") i
-			absx=(a(i)%x-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find atomic absolute coordinate
-			absy=(a(i)%y-(maxval(a%y)+minval(a%y))/2) * plot2abs
- 			absz=(a(i)%z-(maxval(a%z)+minval(a%z))/2) * plot2abs
-			call abs3pt(absx,absy,absz,xplotcoor,yplotcoor) !Convert atomic absolute coordinate to screen coordinate(pixel)
+			absx=(a(i)%x-(xhigh+xlow)/2) * plot2abs !Find atomic absolute coordinate in the axis
+			absy=(a(i)%y-(yhigh+ylow)/2) * plot2abs
+ 			absz=(a(i)%z-(zhigh+zlow)/2) * plot2abs
+			call abs3pt(absx,absy,absz,xplotcoor,yplotcoor) !Convert atomic absolute coordinate in the axis to screen coordinate (pixel)
 			screeny=nint(yplotcoor-textheighmod/1.8D0)
 			if (iatmlabtype3D==1) then !Show element
 				screenx=nint(xplotcoor-textheighmod/2D0)
@@ -521,17 +638,18 @@ if ((ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.
 			end if
 		end do
 	end if
-	if (ishowCPlab==1) then
+	if (ishowCPlab==1) then !Draw label for critical points
 		CALL SETRGB(CPlabclrR,CPlabclrG,CPlabclrB)
 		do i=1,numcp
 			if (CPtype(i)==1.and.ishow3n3==0) cycle
 			if (CPtype(i)==2.and.ishow3n1==0) cycle
 			if (CPtype(i)==3.and.ishow3p1==0) cycle
 			if (CPtype(i)==4.and.ishow3p3==0) cycle
+            if (lab_oneCP>0.and.lab_oneCP/=i) cycle
 			write(ctemp,"(i5)") i
-			absx=(CPpos(1,i)-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find atomic absolute coordinate
-			absy=(CPpos(2,i)-(maxval(a%y)+minval(a%y))/2) * plot2abs
- 			absz=(CPpos(3,i)-(maxval(a%z)+minval(a%z))/2) * plot2abs
+			absx=(CPpos(1,i)-(xhigh+xlow)/2) * plot2abs !Find atomic absolute coordinate
+			absy=(CPpos(2,i)-(yhigh+ylow)/2) * plot2abs
+ 			absz=(CPpos(3,i)-(zhigh+zlow)/2) * plot2abs
 			call abs3pt(absx,absy,absz,xplotcoor,yplotcoor) !Convert atomic absolute coordinate to screen coordinate(pixel)
 			screenx=nint(xplotcoor-textheighmod/2.6)
 			screeny=nint(yplotcoor-textheighmod/1.8)
@@ -543,9 +661,9 @@ if ((ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.
 		do ipath=1,numpath
 			write(ctemp,"(i5)") ipath
 			ipathmidpt=nint(pathnumpt(ipath)/2D0)
-			absx=(topopath(1,ipathmidpt,ipath)-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find atomic absolute coordinate
-			absy=(topopath(2,ipathmidpt,ipath)-(maxval(a%y)+minval(a%y))/2) * plot2abs
- 			absz=(topopath(3,ipathmidpt,ipath)-(maxval(a%z)+minval(a%z))/2) * plot2abs
+			absx=(topopath(1,ipathmidpt,ipath)-(xhigh+xlow)/2) * plot2abs !Find atomic absolute coordinate
+			absy=(topopath(2,ipathmidpt,ipath)-(yhigh+ylow)/2) * plot2abs
+ 			absz=(topopath(3,ipathmidpt,ipath)-(zhigh+zlow)/2) * plot2abs
 			call abs3pt(absx,absy,absz,xplotcoor,yplotcoor) !Convert atomic absolute coordinate to screen coordinate(pixel)
 			screenx=nint(xplotcoor-textheighmod/2.6D0)
 			screeny=nint(yplotcoor-textheighmod/1.8D0)
@@ -558,9 +676,9 @@ if ((ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.
 			idxtmp=surlocminidx(i)
 			if (idxtmp==0) cycle !The extreme has already been discarded
 			write(ctemp,"(i5)") i
-			absx=(survtx(idxtmp)%x-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find absolute coordinate
-			absy=(survtx(idxtmp)%y-(maxval(a%y)+minval(a%y))/2) * plot2abs
- 			absz=(survtx(idxtmp)%z-(maxval(a%z)+minval(a%z))/2) * plot2abs
+			absx=(survtx(idxtmp)%x-(xhigh+xlow)/2) * plot2abs !Find absolute coordinate
+			absy=(survtx(idxtmp)%y-(yhigh+ylow)/2) * plot2abs
+ 			absz=(survtx(idxtmp)%z-(zhigh+zlow)/2) * plot2abs
  			call abs3pt(absx,absy,absz,xplotcoor,yplotcoor) !Convert atomic absolute coordinate to screen coordinate(pixel)
 			screenx=nint(xplotcoor-textheighmod/2.6D0)
 			screeny=nint(yplotcoor-textheighmod/1.8D0)
@@ -573,9 +691,9 @@ if ((ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.
 			idxtmp=surlocmaxidx(i)
 			if (idxtmp==0) cycle !The extreme has already been discarded
 			write(ctemp,"(i5)") i
-			absx=(survtx(idxtmp)%x-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find absolute coordinate
-			absy=(survtx(idxtmp)%y-(maxval(a%y)+minval(a%y))/2) * plot2abs
- 			absz=(survtx(idxtmp)%z-(maxval(a%z)+minval(a%z))/2) * plot2abs
+			absx=(survtx(idxtmp)%x-(xhigh+xlow)/2) * plot2abs !Find absolute coordinate
+			absy=(survtx(idxtmp)%y-(yhigh+ylow)/2) * plot2abs
+ 			absz=(survtx(idxtmp)%z-(zhigh+zlow)/2) * plot2abs
  			call abs3pt(absx,absy,absz,xplotcoor,yplotcoor) !Convert atomic absolute coordinate to screen coordinate(pixel)
 			screenx=nint(xplotcoor-textheighmod/2.6D0)
 			screeny=nint(yplotcoor-textheighmod/1.8D0)
@@ -587,9 +705,9 @@ if ((ishowatmlab==1.or.ishowCPlab==1.or.ishowpathlab==1.or.ishowlocminlab==1.or.
 		do iatt=1,numatt
 			irealatt=attconv(iatt)
 			write(ctemp,"(i5)") irealatt
-			absx=(attxyz(iatt,1)-(maxval(a%x)+minval(a%x))/2) * plot2abs !Find atomic absolute coordinate
-			absy=(attxyz(iatt,2)-(maxval(a%y)+minval(a%y))/2) * plot2abs
- 			absz=(attxyz(iatt,3)-(maxval(a%z)+minval(a%z))/2) * plot2abs
+			absx=(attxyz(iatt,1)-(xhigh+xlow)/2) * plot2abs !Find atomic absolute coordinate
+			absy=(attxyz(iatt,2)-(yhigh+ylow)/2) * plot2abs
+ 			absz=(attxyz(iatt,3)-(zhigh+zlow)/2) * plot2abs
 			call abs3pt(absx,absy,absz,xplotcoor,yplotcoor) !Convert atomic absolute coordinate to screen coordinate(pixel)
 			screenx=nint(xplotcoor-textheighmod/2.6)
 			screeny=nint(yplotcoor-textheighmod/1.8)
@@ -778,17 +896,18 @@ end subroutine
 !mat is the 2D matrix to be plotted, the dimension is numx,numy
 !ninterpo determines the number of interpolation
 !x/ymin,x/ymax are the lower and upper limit of X and Y axes
-!zmin and zmax are the lower and upper limit of color bar
-!stepx and stepy are stepsizes between labels of X and Y axes
+!zmin and zmax are the lower and upper limit of color bar (Z axis)
+!stepx/y/z are stepsizes between labels of X/Y/Z axes
 !If nlabdig=-1, the labels of X and Y axes will be integer, this is suitable for natively representation of a matrix. If =n, there will be n digitals
 !textheight is size of label, optional, default is 45
 !nlabdigz is the number of digial of labels in Z axis, optional, default is 4
-subroutine drawmatcolor(mat,numx,numy,xmin,xmax,ymin,ymax,zmin,zmax,stepx,stepy,ninterpo,nlabdig,textheight,nlabdigz)
+subroutine drawmatcolor(mat,numx,numy,xmin,xmax,ymin,ymax,zmin,zmax,stepx,stepy,ninterpo,nlabdig,textheight,nlabdigz,stepzin)
 implicit real*8 (a-h,o-z)
 integer numx,numy,ninterpo,nlabdig
 real*8 mat(numx,numy),xmin,xmax,ymin,ymax,zmin,zmax,stepx,stepy
 integer :: lengthx=2300
 integer,optional :: textheight,nlabdigz
+real*8,optional :: stepzin
 !Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
 if (iclrtrans/=0) then
 	where (mat>zmax) mat=zmax-1D-10   !Augment by a minimal value to avoid numerical noise
@@ -820,6 +939,11 @@ if (present(textheight)) then
 else
 	call height(45)
 end if
+if (present(stepzin)) then
+	stepz=stepzin
+else
+	stepz=(zmax-zmin)/10D0
+end if
 call ticks(1,"XYZ")
 call WINTIT("Colored matrix")
 call center
@@ -828,9 +952,9 @@ call AX3LEN(lengthx,nint(lengthx*dfloat(numy)/numx),nint(lengthx*dfloat(numy)/nu
 call setcolortable(iclrtrans)
 if (ninterpo==1) then !Don't interpolate
 	call sursze(1D0,dfloat(numx),1D0,dfloat(numx)) !Manually set center position of starting and ending grids to ensure boundary grids have the same size as internal grids
-	call GRAF3(xmin-0.5D0,xmax+0.5D0,xmin,stepx,ymin-0.5D0,ymax+0.5D0,ymin,stepy,zmin,zmax,zmin,(zmax-zmin)/10D0)
+	call GRAF3(xmin-0.5D0,xmax+0.5D0,xmin,stepx,ymin-0.5D0,ymax+0.5D0,ymin,stepy,zmin,zmax,zmin,stepz)
 else
-	call GRAF3(xmin,xmax,xmin,stepx,ymin,ymax,ymin,stepy,zmin,zmax,zmin,(zmax-zmin)/10D0)
+	call GRAF3(xmin,xmax,xmin,stepx,ymin,ymax,ymin,stepy,zmin,zmax,zmin,stepz)
 end if
 call CRVMAT(mat,numx,numy,ninterpo,ninterpo)
 call DISFIN
@@ -851,8 +975,9 @@ real*8 dx,dy,pix2usr,n1,n2
 real*8 planetrunc(ngridnum1,ngridnum2),planetrunc2(ngridnum1,ngridnum2) !Store truncated planemat
 integer lengthx !length of x axis
 integer idrawtype,i,j
-integer :: inplane(ncenter+1) !If =1, then the label is close enough to the plotting plane 
+integer :: inplane(ncenter+1) !If =1, then the label is close enough to the plotting plane
 character*20 atmlabtext,tmpstr
+
 scll=1D0
 if (ilenunit2D==2) scll=b2a
 init1=init1inp*scll !We use init1inp as an intermediate variable rather than directly use init1, because orgx2D will be passed as init1, we don't want to alternate orgx2D
@@ -875,7 +1000,7 @@ if (isavepic==0) then
 	else
 		CALL setxid(0,'NONE')
 		call METAFL('xwin')
-		call window(200,100,900,770)
+		call window(200,100,913,770) !Same ratio as 3200:2700
 		CALL PAGE(3200,2700)
 	end if
 else if (isavepic==1) then
@@ -899,9 +1024,21 @@ CALL VIEW3D(XVU,YVU,ZVU,"ANGLE")
 CALL erase
 CALL HWFONT
 if (itickreverse==1) CALL TICPOS("REVERSE","XYZ")
-CALL LABDIG(numdigx,"X")
-CALL LABDIG(numdigy,"Y")
-CALL LABDIG(numdigz,"Z")
+if (numdigx>0) then
+    CALL LABDIG(numdigx,"X")
+else
+    CALL LABDIG(-1,"X") !Integer label, no decimal place
+end if
+if (numdigy>0) then
+    CALL LABDIG(numdigy,"Y")
+else
+    CALL LABDIG(-1,"Y") !Integer label, no decimal place
+end if
+if (numdigz>0) then
+    CALL LABDIG(numdigz,"Z")
+else
+    CALL LABDIG(-1,"Z") !Integer label, no decimal place
+end if
 if (isavepic==0.and.isys==1) then
 	call height(plane_axistextsize)
 	CALL HNAME(plane_axisnamesize)
@@ -934,25 +1071,34 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 		if (idrawtype==7) call WINTIT("Contour lines with gradient lines, click right mouse button to continue")
 		if (idrawtype==8) call WINTIT("Contour lines + vector field, click right mouse button to continue")
 	end if
-	call center
 	!Length of Y is determined according to X by proportion, if length of Y axis is too large, then scale length x (and thus length y, automatically)
 	if ( lengthx*(end2-init2)/(end1-init1)>2400 ) lengthx=2400/(end2-init2)*(end1-init1)
 	lengthy=int(lengthx*(end2-init2)/(end1-init1))
-
-	if (idrawtype==1) then
-        call setcolortable(iclrtrans) !This routine must be invoked prior to GRAF
+    
+    if ((idrawtype==2.or.idrawtype==6.or.idrawtype==7).and.ifillctrline==1.and.ishowclrfill_bar==1) then
+        !Filling color for contour lines and meantime showing color bar, we need to proper set position of axis &
+        !to leave enough region for the bar. "call center" should not used otherwise AXSPOS will not work
+	    CALL AXSPOS((3200-(lengthx+300))/2,lengthy+(2700-(lengthy+150))/2)
+    else
+	    call center
+    end if
+    
+    !Set color table and generate truncated plane data, they will be used in color-filled map or filling colors for contour lines
+    call setcolortable(iclrtrans) !This routine must be invoked prior to GRAF
+    if (iclrtrans/=0) then !Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
+		planetrunc=planemat
+		where (planetrunc>end3) planetrunc=end3-1D-10   !Augment by a minimal value to avoid numerical noise
+		where (planetrunc<init3) planetrunc=init3+1D-10
+    else
+        planetrunc=planemat
+    end if
+    
+	if (idrawtype==1) then !Draw color color-filled map
 		call AUTRES(ngridnum1,ngridnum2)
 		call AX3LEN(lengthx,lengthy,lengthy) !The length of color bar is identical to Y axis
 		call GRAF3(init1,end1,init1-shiftx,planestpx, init2,end2,init2-shifty,planestpy, init3,end3,init3-shiftz,planestpz)
-		if (iclrtrans/=0) then !Truncate the values larger than and lower than color scale, so that these regions will not be shown as white and black, respectively
-			planetrunc=planemat
-			where (planetrunc>end3) planetrunc=end3-1D-10   !Augment by a minimal value to avoid numerical noise
-			where (planetrunc<init3) planetrunc=init3+1D-10
-			call CRVMAT(planetrunc,ngridnum1,ngridnum2,fillcoloritpx,fillcoloritpy)
-		else
-			call CRVMAT(planemat,ngridnum1,ngridnum2,fillcoloritpx,fillcoloritpy)
-		end if
-	else
+        call CRVMAT(planetrunc,ngridnum1,ngridnum2,fillcoloritpx,fillcoloritpy)
+	else !Set axis for other kinds of maps
 		call axslen(lengthx,lengthy)
 		call GRAF(init1,end1,init1-shiftx,planestpx, init2,end2,init2-shifty,planestpy)
 	end if
@@ -962,13 +1108,19 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 ! 	call RLvec(1.424912D0,-0.867160D0,1.424912D0+0.17136000D0*3,-0.867160D0-0.14455800D0*3,1421)
 ! 	CALL LINWID(1)
 
-	if (idrawcontour==1) then !Draw contour, may be also for gradient lines and vector field map
-		if (ilabel_on_contour==1) then  !Enable showing isovalue on contour lines
+	if (idrawcontour==1) then !Draw contour lines, may be also used for gradient lines and vector field map
+        if (ifillctrline==1) then !Filling colors for contour lines
+            call GETPOS(iPSX,iPSY) !Get position of actual user coordinate
+            call ZSCALE(init3,end3) !Set lower and upper limit of color bar
+            if (ishowclrfill_bar==1) call ZAXIS(init3,end3,init3,planestpz,lengthy," ",0,0,iPSX+lengthx+50,iPSY) !Show color bar
+            CALL CONSHD(xcoord,ngridnum1,ycoord,ngridnum2,planetrunc,ctrval,ncontour) !Filling contour lines
+        end if
+		if (ilabel_on_contour==1) then !Enable showing isovalue on contour lines
 			call height(ictrlabsize)
 			call labels('float','contur')
 			call labdig(numdigctr,'contur')
 		end if
-		do i=1,ncontour  !Use different type of line to draw contour line
+		do i=1,ncontour !Use different type of line to draw contour line
 			if (ctrval(i)>=0) then
 				CALL LINWID(iwidthposctr)
 				call setcolor(iclrindctrpos)
@@ -987,7 +1139,7 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then
 				if (iorbsel2/=0) call contur(xcoord,ngridnum1,ycoord,ngridnum2,planemattmp,ctrval(i))
 			end if
 		end do
-		if (allocated(boldlinelist)) then
+		if (allocated(boldlinelist)) then !Bold some contour lines
 			CALL LINWID(10)
 			do i=1,size(boldlinelist)
 				if (ctrval(boldlinelist(i))>=0.0D0) call solid
@@ -1615,8 +1767,8 @@ write(*,*) "18 Viridis"
 read(*,*) iclrtrans
 end subroutine
 
-!!----------- Set color table of dislin, will affect color transition of color-filled map and heat map
-subroutine setcolortable(isel)
+!!----------- Set color table of Dislin, will affect color transition of color-filled map and heat map
+subroutine setcolortable(isel) !"isel" corresponds to global variable "iclrtrans"
 use dislin_d
 implicit real*8 (a-h,o-z)
 integer isel
@@ -1625,7 +1777,7 @@ real*8 Rarr(0:nlevel),Garr(0:nlevel),Barr(0:nlevel)
 Rarr=0
 Garr=0
 Barr=0
-if (isel==0.or.isel==1) then !Rainbow
+if (isel==0.or.isel==1) then !Rainbow. Note that for isel>0, in the plot.f90, the plane data will be automatically truncated before invoking plotting routines
     CALL SETVLT("RAIN")
 else if (isel==2) then !Reversed rainbow
     CALL SETVLT("RRAIN")

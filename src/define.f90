@@ -3,6 +3,10 @@ type atomtype
 character*2 name !name of atom
 integer index !The index in periodic table, if ECP was used, charge will smaller than this value
 real*8 x,y,z,charge !Coordinate(Bohr) and charge of atoms
+!resid and resname are filled when loading pdb/pqr/gro, and in this case "iresinfo" will be 1. &
+!In other cases, iresinfo=0, resid will be set to 1 and resname will be space, subroutine readinfile do these
+integer resid
+character*4 resname
 end type
 
 type primtype
@@ -41,8 +45,9 @@ character*200 filename,firstfilename !firstfilename is the filename loaded when 
 character*80 extctrsetting !cmdarg is the parameter of booting multiwfn
 character,allocatable :: custommapname(:)*200,customop(:) !Custom operation for custom map/cube file
 logical alive
-integer :: ifragcontri=0,nfragatmnum=0,nfragatmnumbackup=0 !ifragcontri=1 if fragment has been defined by users
-integer,allocatable :: fragatm(:),fragatmbackup(:) !Store the index of atoms in fragment, used in various routines like setpromol. has no relationship with frag1/frag2. fragatmbackup is used to backup fragatm during custom operation
+integer :: ifragcontri=0 !ifragcontri=1 if fragment has been defined by users
+integer :: nfragatm=0,nfragatm_org=0 !Number of elements of fragatm and fragatm_org
+integer,allocatable :: fragatm(:),fragatm_org(:) !Store the index of atoms in fragment, used in various routines like setpromol. has no relationship with frag1/frag2. fragatm_org is used to backup fragatm during custom operation
 integer,allocatable :: frag1(:),frag2(:) !These two fragments are only used for bond order analysis/composition analysis etc., store index of basis functions or atoms. Their size just fit their content
 integer nfrag1,nfrag2 !Currnt size of frag1 and frag2
 integer :: ncustommap=0,imodwfn=0 !if 1, means occupation number or orbital type or basis function information have been modified
@@ -81,7 +86,7 @@ real*8 :: vdwr(0:nelesupp)=(/ 0.3D0,1.2D0,1.4D0,& !Ghost,H,He
 (2.0D0,i=37,45),1.63D0,1.72D0,1.58D0,1.93D0,2.17D0,2.0D0,2.06D0,1.98D0,2.16D0,& !Pd~Xe(46~54)
 (2.0D0,i=55,77),1.72D0,1.66D0,1.55D0,1.96D0,2.02D0,(2.0D0,i=83,nelesupp) /) !Pt~Pb(78~82)
 !##No use currently!## Modified Bondi vdW radii, but for all main group (except for H,He), use IVA radius in corresponding row. Specifically used to molecular surface decomposition
-real*8 :: vdwr_tianlu(0:nelesupp)=(/ 0.4D0,1.7D0,1.7D0,& !Ghost,H,Ne   H and Ne are augmented to carbon radius
+real*8 :: vdwr_tianlu(0:nelesupp)=(/ 0.4D0,1.7D0,1.7D0,& !Ghost,H,He   H and Ne are augmented to carbon radius
 (1.7D0,i=3,10),& !Li~Ne
 (2.1D0,i=11,18),& !Na~Ar
 1.87D0,1.87D0,  (2.0D0,i=21,27),1.63D0,1.40D0,1.39D0,  (1.87D0,i=31,36),& !K ,Ca,  Ni~Zn(21~30),  Ga~Kr(31,37)
@@ -89,7 +94,7 @@ real*8 :: vdwr_tianlu(0:nelesupp)=(/ 0.4D0,1.7D0,1.7D0,& !Ghost,H,Ne   H and Ne 
 1.96D0,1.96D0,  (2.0D0,i=57,77),1.72D0,1.66D0,1.55D0,  (1.96D0,i=81,86),& !Cs,Ba,  La~Hg(57~80),  Tl~Rn(81~86)
 (2.0D0,i=87,nelesupp) /) !Rn~Mt(87~109,~all)
 !UFF vdW radii, from x of Table 1 of JACS, 114, 10024 (1992). The values are half of x
-real*8 :: vdwr_UFF(0:nelesupp)=(/ 0.4D0,1.443D0,1.181D0,& !Ghost,H,Ne
+real*8 :: vdwr_UFF(0:nelesupp)=(/ 0.4D0,1.443D0,1.181D0,& !Ghost,H,He
 1.2255D0,1.3725D0,2.0415D0,1.9255D0,1.83D0,1.75D0,1.682D0,1.6215D0,& !Li~Ne
 1.4915D0,1.5105D0,2.2495D0,2.1475D0,2.0735D0,2.0175D0,1.9735D0,1.934D0,& !Na~Ar
 1.906D0,1.6995D0,1.6475D0,1.5875D0,1.572D0,1.5115D0,1.4805D0,1.456D0,1.436D0,&
@@ -102,7 +107,7 @@ real*8 :: vdwr_UFF(0:nelesupp)=(/ 0.4D0,1.443D0,1.181D0,& !Ghost,H,Ne
 (2.0D0,i=104,nelesupp) /) !Rf~(104~all)
 
 !Covalent radius, from "Dalton Trans., 2008, 2832-2838", unit is Angstrom, will be convert to Bohr when Multiwfn boots up
-real*8 :: covr(0:nelesupp)=(/ 0.1D0,0.31D0,0.28D0,& !Ghost,H,Ne(1~2)
+real*8 :: covr(0:nelesupp)=(/ 0.1D0,0.31D0,0.28D0,& !Ghost,H,He(1~2)
 1.28D0,0.96D0,0.84D0,0.76D0,0.71D0,0.66D0,0.57D0,0.58D0,& !Li~Ne(3~10)     here C is sp3
 1.66D0,1.41D0,1.21D0,1.11D0,1.07D0,1.05D0,1.02D0,1.06D0,& !Na~Ar(11~18)
 2.03D0,1.76D0,1.70D0,1.60D0,1.53D0,1.39D0,1.39D0,1.32D0,1.26D0,& !K~Co(19~27)  here MnD0,FeD0,Co is low-spinD0, high spin is 1.61D0,1.52D0,1.50
@@ -115,7 +120,7 @@ real*8 :: covr(0:nelesupp)=(/ 0.1D0,0.31D0,0.28D0,& !Ghost,H,Ne(1~2)
 2.15D0,2.06D0,2.00D0,1.96D0,1.90D0,1.87D0,1.80D0,1.69D0,(1.5D0,i=97,nelesupp) /) !Ac~Cm(89~96),~all
 !(Covalent) radius proposed by Suresh, from J. Phys. Chem. A 2001, 105, 5940-5944. For missing values (including all noble gases and very heavy elements), the ones in covr array are used
 !Unit is Angstrom, will be convert to Bohr when Multiwfn boots up
-real*8 :: covr_Suresh(0:nelesupp)=(/ 0.1D0,0.327D0,0.28D0,& !Ghost,H,Ne(1~2)
+real*8 :: covr_Suresh(0:nelesupp)=(/ 0.1D0,0.327D0,0.28D0,& !Ghost,H,He(1~2)
 1.219D0,0.911D0,0.793D0,0.766D0,0.699D0,0.658D0,0.633D0,0.58D0,& !Li~Ne(3~10)
 1.545D0,1.333D0,1.199D0,1.123D0,1.11D0,1.071D0,1.039D0,1.06D0,& !Na~Ar(11~18)
 1.978D0,1.745D0,1.337D0,1.274D0,1.236D0,1.128D0,1.18D0,1.091D0,1.089D0,& !K~Co(19~27)
@@ -127,7 +132,7 @@ real*8 :: covr_Suresh(0:nelesupp)=(/ 0.1D0,0.327D0,0.28D0,& !Ghost,H,Ne(1~2)
 1.227D0,1.273D0,1.465D0,1.531D0,1.434D0,1.496D0,1.40D0,1.50D0,1.50D0,2.60D0,2.21D0,& !Pt~Ra(78~88)
 2.15D0,2.06D0,2.00D0,1.96D0,1.90D0,1.87D0,1.80D0,1.69D0,(1.5D0,i=97,nelesupp) /) !Ac~Cm(89~96),~all
 !Covalent radius, from Pyykko "Chem. Eur. J.,15,186 (2009)", unit is in Angstrom, will be convert to Bohr when Multiwfn boots up
-real*8 :: covr_pyy(0:nelesupp)=(/ 0.1D0,0.32D0,0.46D0,& !Ghost,H,Ne(1~2)
+real*8 :: covr_pyy(0:nelesupp)=(/ 0.1D0,0.32D0,0.46D0,& !Ghost,H,He(1~2)
 1.33D0,1.02D0,0.85D0,0.75D0,0.71D0,0.63D0,0.64D0,0.67D0,& !Li~Ne(3~10)
 1.55D0,1.39D0,1.26D0,1.16D0,1.11D0,1.03D0,0.99D0,0.96D0,& !Na~Ar(11~18)
 1.96D0,1.71D0,1.48D0,1.36D0,1.34D0,1.22D0,1.19D0,1.16D0,1.11D0,& !K~Co(19~27)
@@ -168,6 +173,13 @@ real*8 :: YWTatomexp(18,3)=reshape((/ & !Corresponding exponent of YWTatom, the 
 0.5288D0,0.3379D0,0.1912D0,0.139D0,0.1059D0,0.0884D0,0.0767D0,0.0669D0,0.0608D0,0.0549D0,0.0496D0,0.0449D0,0.0411D0,0.0382D0,0.0358D0,0.0335D0,0.0315D0,0.0296D0, &
 1.0D0,1.0D0,0.9992D0,0.6945D0,0.53D0,0.548D0,0.4532D0,0.3974D0,0.3994D0,0.3447D0,0.2511D0,0.215D0,0.1874D0,0.1654D0,0.1509D0,0.1369D0,0.1259D0,0.1168D0, &
 1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0236D0,0.7753D0,0.5962D0,0.6995D0,0.5851D0,0.5149D0,0.4974D0,0.4412D0 /),(/18,3/))
+!The largest distance of radial density of every element in atmraddens.f90, used to truncate calculation for saving time
+real*8 :: atmrhocut(1:nelesupp)=(/7.80D0,5.89D0,14.37D0,11.30D0,10.10D0,8.20D0,7.08D0,6.75D0,6.16D0,5.64D0,15.33D0,12.70D0,12.70D0,10.68D0,9.57D0,9.08D0,8.20D0,7.80D0,16.38D0,&
+14.37D0,14.37D0,14.37D0,13.50D0,13.50D0,13.50D0,12.70D0,12.70D0,11.97D0,11.97D0,11.30D0,13.50D0,11.97D0,10.68D0,10.68D0,10.10D0,9.08D0,16.38D0,&
+15.33D0,14.37D0,14.37D0,13.50D0,11.97D0,14.37D0,12.70D0,12.70D0,9.57D0,12.70D0,11.97D0,14.37D0,12.70D0,11.97D0,11.30D0,10.68D0,10.10D0,17.53D0,&
+16.38D0,15.33D0,15.33D0,15.33D0,15.33D0,15.33D0,15.33D0,15.33D0,14.37D0,14.37D0,14.37D0,14.37D0,14.37D0,14.37D0,14.37D0,14.37D0,11.97D0,11.97D0,&
+11.97D0,11.97D0,12.70D0,11.97D0,11.30D0,11.30D0,11.30D0,14.37D0,12.70D0,11.30D0,11.30D0,10.68D0,10.10D0,17.53D0,15.33D0,14.37D0,14.37D0,14.37D0,&
+15.33D0,15.33D0,14.37D0,14.37D0,13.50D0,14.37D0,14.37D0,14.37D0,14.37D0,14.37D0,14.37D0,12.70D0,(14D0,i=104,nelesupp) /)
 
 !Computed from abundance and isotope masses, the data was obtained from https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=&ascii=ascii2&isotype=all
 !For radioactive elements, the mass corresponds to longest-living isotope
@@ -235,12 +247,12 @@ integer :: shtype2nbas(-5:5)=(/ 11,9,7,5,4,1,3,6,10,15,21 /)
 integer :: ibasmode=0 !0/1 = GTO/STO is used in current wavefunction
 integer :: nmo=0,nprims=0,ncenter=0,ncenter_org=0,nmo_org=0,nprims_org=0 !Number of orbitals, primitive functions, nuclei
 integer :: idxHOMO=0,idxHOMOb=0 !Index of total/alpha and beta-HOMO. Can be determined by subroutine getHOMOidx
-integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cub=7, grd/dx/vti=8, molden=9, gms=10, MDL mol=11, gjf=12, mol2=13, mwfn=14, gro=15
+integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cube/VASP grid=7, grd/dx/vti=8, molden=9, gms=10, MDL mol=11, gjf or ORCA inp=12, mol2=13, mwfn=14, gro=15, cp2k input=16, cif=17, POSCAR=18
 integer :: wfntype=0 !0/1/2= R/U/RO single determinant wavefunction, 3/4=R/U multiconfiguration wavefunction
 real*8 :: totenergy=0,virialratio=2,nelec=0,naelec=0,nbelec=0
 integer :: loadmulti=-99,loadcharge=-99 !Spin multiplicity and net charge, loaded directly from input file (e.g. from .gjf or .xyz), only utilized in rare cases. -99 means unloaded
 !-------- Variables for nuclei & GTF & Orbitals
-type(atomtype),allocatable :: a(:),a_org(:),a_tmp(:)
+type(atomtype),allocatable :: a(:),a_org(:),a_tmp(:) !a_tmp is only used in local temporary operation, should be destoried immediatedly after using
 type(primtype),allocatable :: b(:),b_org(:),b_tmp(:)
 real*8,allocatable :: MOocc(:),MOocc_org(:),MOene(:),MOene_org(:) !Occupation number & energy of orbital
 integer,allocatable :: MOtype(:) !The type of orbitals, (alpha&beta)=0/alpha=1/beta=2, not read from .wfn directly
@@ -253,8 +265,13 @@ real*8,allocatable :: COtr(:,:) !Transposed CO matrix, which is used in some rou
 type(primtype),allocatable :: b_EDF(:)
 real*8,allocatable :: CO_EDF(:)
 integer :: nEDFprims=0,nEDFelec=0 !Electrons represented by EDF
+!-------- Promolecular wavefunction. Share same "a" and "b"
+real*8,allocatable :: CO_pmol(:,:),MOocc_pmol(:),MOene_pmol(:)
+integer,allocatable :: MOtype_pmol(:)
+integer :: nmo_pmol=0
 !-------- Variables when basis functions are basis rather than primitive function as basis
 integer :: nbasis=0,nbasisCar=0,nshell=0,nprimshell=0 !The number of basis (actual/Cartesian), basis shell and primitive shell. SP shell is counted as S and P shell separately
+integer :: nindbasis=0 !Number of independent basis functions. Can directly load from fch and mwfn. For other case like molden, nindbasis keeps 0, means undetermined
 integer,allocatable :: shtype(:),shtypeCar(:),shcon(:),shcen(:) !Type, contraction degree and attributed center of a basis shell
 real*8,allocatable :: primshexp(:),primshcoeff(:) !Exponent and contraction coefficient of a primitive shell
 integer,allocatable :: basshell(:) !The ith element is the shell index that the ith basis attributed to
@@ -262,10 +279,11 @@ integer,allocatable :: bascen(:),bastype(:) !Center/type of basis, definition is
 integer,allocatable :: basstart(:),basend(:) !The ith element means the basis from where to where is attributed to the ith atom
 integer,allocatable :: primstart(:),primend(:) !The ith element means the GTF from where to where is attributed to the ith Cartesian basis function (which may be yielded during reading spherical wavefunction)
 real*8,allocatable :: primconnorm(:) !element i means the contract. coeff. * normalization coeff. of GTF i, can be used for e.g. constructing basis integral from GTF integral
-real*8,allocatable :: Sbas(:,:),Sbas_org(:,:) !Overlap matrix and its backup
+real*8,allocatable :: Sbas(:,:),Sbas_org(:,:),Sbas_PBC(:,:) !Overlap matrix, its backup and special form for PBC calculation
 real*8,allocatable,target :: Dbas(:,:,:) !Dipole moment integral matrix, the first index 1,2,3=X,Y,Z, the last two indices are basis index
 real*8,allocatable,target :: Quadbas(:,:,:) !Quadrupole moment integral matrix, the first index 1~6=XX,YY,ZZ,XY,YZ,XZ
 real*8,allocatable,target :: Octobas(:,:,:) !Octopole moment integral matrix, the first index 1~10=XXX,YYY,ZZZ,YZZ,XZZ,XXZ,YYZ,XXY,XYY,XYZ
+real*8,allocatable,target :: Hexdebas(:,:,:) !Hexadecapole moment integral matrix, the first index 1~15=XXXX,YYYY,ZZZZ,XXXY,XXXZ,YYYX,YYYZ,ZZZX,ZZZY,XXYY,XXZZ,YYZZ,XXYZ,YYXZ,ZZXY (same as Gaussian)
 real*8,allocatable,target :: DorbA(:,:,:),DorbB(:,:,:) !Dipole moment integral matrix between orbitals, the first index 1,2,3=X,Y,Z. A/B corresponds to (closed or Alpha)/Beta orbitals
 real*8,allocatable,target :: Tbas(:,:) !Kinetic energy integral matrix
 real*8,allocatable,target :: Vbas(:,:) !Nuclear attraction potential integral matrix
@@ -281,18 +299,23 @@ real*8,allocatable :: Ptot_prim(:,:),Palpha_prim(:,:),Pbeta_prim(:,:) !Density m
 real*8,allocatable :: Dprim(:,:,:) !Dipole moment integral matrix based on GTF, the first index 1,2,3=X,Y,Z, the last two indices are basis index
 real*8,allocatable :: Quadprim(:,:,:) !Quadrupole moment integral matrix based on GTF, the first index 1~6=XX,YY,ZZ,XY,YZ,XZ
 real*8,allocatable :: Octoprim(:,:,:) !Octopole moment integral matrix based on GTF, the first index 1~10=XXX,YYY,ZZZ,YZZ,XZZ,XXZ,YYZ,XXY,XYY,XYZ
+real*8,allocatable :: Hexdeprim(:,:,:) !Hexadecapole moment integral matrix based on GTF, the first index 1~15=XXXX,YYYY,ZZZZ,XXXY,XXXZ,YYYX,YYYZ,ZZZX,ZZZY,XXYY,XXZZ,YYZZ,XXYZ,YYXZ,ZZXY (same as Gaussian)
 !Back up some information prior to calling delvirorb, so that can be restored via delvirorb_back
 integer :: nmo_back,ifdelvirorb=0 !If "delvirorb" has been called, then ifdelvirorb=1, otherwise 0
 real*8,allocatable :: MOene_back(:),MOocc_back(:)
 integer,allocatable :: MOtype_back(:)
 real*8,allocatable :: CO_back(:,:)
-
+!Translation vector of the cell in Bohr. If any vector has all zero values, that means cell information is not available. The ones with _bk suffix are used to backup PBC information, the ones with _org are original system information
+real*8 :: cellv1(3)=0,cellv2(3)=0,cellv3(3)=0,cellv1_org(3),cellv2_org(3),cellv3_org(3),cellv1_bk(3),cellv2_bk(3),cellv3_bk(3)
+integer :: ifPBC=0,ifPBC_org,ifPBC_bk !Dimension of periodicity. 0=Isolated system, 1/2/3/=one/two/three dimensions
+!Other property
+integer :: iresinfo=0 !=0/1: Residue information is unavailable/available in this file
 
 
 !-------- Connectivity matrix
 !Loaded from .mol/mol2 using readmol/readmol2 or readmolconn (from mol), value is formal bond order; can also be guessed via genconnmat, value is 1/0 (connected, not connected)
 !Special: ar (aromatic) in mol2 is load as 4, am (nitrogen in piptide bond) in mol2 is read as 1, "un = unknown", "nc = not connected" and "du = dummy" are read as 0
-integer,allocatable :: connmat(:,:) !Diagonal terms are always zero
+integer*2,allocatable :: connmat(:,:) !Diagonal terms are always zero
 
 !-------- Energy related arrays and matrices
 real*8,allocatable :: FmatA(:,:),FmatB(:,:) !Fock matrix of total/alpha and beta spin
@@ -301,7 +324,7 @@ integer :: nframetraj=0 !The number of frames in the trajectory
 real*8,allocatable :: traj(:,:,:) !traj(1/2/3,a,i) corresponds to x/y/z of the ath atom in frame i
 !-------- Points loaded from external file
 integer :: numextpt=0
-real*8,allocatable :: extpt(:,:),extpttmp(:) !extpt(i,1:4) corresponds to X/Y/Z/value of point i, length unit is bohr. extpttmp only records function value
+real*8,allocatable :: extpt(:,:),extpttmp(:) !extpt(i,1:4) corresponds to X/Y/Z/value of point i, length unit is Bohr. extpttmp only records function value
 !-------- Atomic radial densities, originally loaded from .rad file
 integer,allocatable :: atmradnpt(:) !How many radial points that each atom has
 real*8 atmradpos(200) !Position of radial points, shared by all atoms, since it is generated by the same rule
@@ -315,7 +338,7 @@ integer :: istrtype=0 !Strength type. Avoid selecting the type every time when l
 !!!!!!!!!!!!!!!!!!!!!! Parameter !!!!!!!!!!!!!!!!!!!!!!
 !For passing Dislin main parent GUI and draw widget identifier
 integer idissetlight1,idissetlight2,idissetlight3,idissetlight4,idissetlight5,idissetlightall0,idissetlightall1,idissetangle,idissetzoom,idissetplaneXVU,idissetplaneYVU
-integer idisgraph,idiszoomin,idiszoomout,idisisosurscl,idisscrval,idisshowbothsign,idisshowisosur,idisshowdatarange,idisshowmol,idisisosursec,iorbseltext,iorbtxt,iorblis
+integer idisgraph,idiszoomin,idiszoomout,idisisosurscl,idisscrval,idisshowbothsign,idisshowisosur,idisshowmol,idisisosursec,iorbseltext,iorbtxt,iorblis,idisshowdatarange
 integer idisorbinfo2,idisorbinfo3
 integer idisshowatmlab,idisshowaxis,idisbondradius,idislabelsize,idisbondcrit,idisatmsize,idisshowpathlab !In draw mol GUI
 integer idisshowattlab,idisdrawinternalbasin,idisattsize !Draw basin GUI
@@ -342,11 +365,11 @@ real*8 :: disshowlabel=0.5D0,disshowCP=0.5D0,disshowpath=0.5D0
 real*8 :: bondclrR=0.1D0,bondclrG=1.0D0,bondclrB=0.1D0,atmlabclrR=0D0,atmlabclrG=0D0,atmlabclrB=0D0
 real*8 :: CPlabclrR=0.3D0,CPlabclrG=0.65D0,CPlabclrB=1D0 !CP label color
 real*8 :: CP3n3RGB(3)=(/0.72D0,0D0,0.72D0/),CP3n1RGB(3)=(/1D0,0.5D0,0D0/),CP3p1RGB(3)=(/1D0,1D0,0D0/),CP3p3RGB(3)=(/0D0,1D0,0D0/)
-real*8 :: CP3n3RGB_2D(3)=(/0.7D0,0.4D0,0.1D0/),CP3n1RGB_2D(3)=(/0D0,0D0,1D0/),CP3p1RGB_2D(3)=(/1D0,0.5D0,0D0/),CP3p3RGB_2D(3)=(/0D0,1D0,0D0/)
+real*8 :: CP3n3RGB_2D(3)=(/0.72D0,0D0,0.72D0/),CP3n1RGB_2D(3)=(/0D0,0D0,1D0/),CP3p1RGB_2D(3)=(/1D0,0.5D0,0D0/),CP3p3RGB_2D(3)=(/0D0,1D0,0D0/)
 real*8 :: atm3Dclr(0:nelesupp,3) !Colors of the atom spheres shown in 3D plots, set in "loadsetting" routine
 
 !Plotting Internal parameter
-integer :: imodlayout=0,plotwinsize3D=90,ishowhydrogen=1
+integer :: imodlayout=0,plotwinsize3D=90,ishowhydrogen=1,ishoworbsel_prt=1
 integer :: idrawbasinidx=0 !Draw which basin
 integer :: idrawinternalbasin=0 !=1 Draw internal part of the basin, =0 Only draw boundary grids
 integer :: ifixorbsign=0 !if 1, during generating orbital isosurface by drawmolgui, most part will always be positive (namely if sum(cubmat)<0 or sum(cubmattmp)<0, the data sign will be inverted)
@@ -355,10 +378,11 @@ integer :: ictrlabsize=20,ivdwctrlabsize=0,iwidthvdwctr=10,iwidthposctr=1,iwidth
 integer :: iclrindctrpos=5,iclrindctrneg=5,ivdwclrindctr=3,iclrindgradline=6,vdwctrstyle(2)=(/ 1,0 /),ctrposstyle(2)=(/ 1,0 /),ctrnegstyle(2)=(/ 10,15 /)
 integer :: isavepic=0,icurve_vertlinex=0,iclrindatmlab=1,imarkrefpos=0,ilog10y=0,iclrcurve=1
 integer :: inucespplot=0,idrawmol=1,idrawisosur=0,isosursec=0,idrawtype=1,idrawcontour=1
-integer :: iinvgradvec=0,icolorvecfield=0,vecclrind=30,idrawplanevdwctr=0,iplaneoutall=0,icurvethick=5,iclrtrans=0
+integer :: iinvgradvec=0,icolorvecfield=0,vecclrind=30,idrawplanevdwctr=0,iplaneoutall=0,icurvethick=5,iclrtrans=0,ifillctrline=0,ishowclrfill_bar=0
 integer,allocatable :: highlightatomlist(:)
 character :: stream_intmethod*5="RK2",clrtransname(0:18)*50=(/ "Rainbow & white/black for out-of-limit data","Rainbow","Reversed rainbow","Rainbow starting from white","Spectrum","Reversed Spectrum","Grey","Reversed Grey","Blue-White-Red",&
 "Red-White-Blue","Blue-Green-Red","Red-Green-Blue","White-Dark red","Black-Orange-Yellow","White-Dark green","Black-Green","White-Dark blue","Black-Blue-Cyan","Viridis" /)
+real*8 :: drawisosurgui_SWGSTP=0.01D0,drawisosurgui_lowlim=-5,drawisosurgui_highlim=5 !Control isovalue bar setting in drawisosurgui
 real*8 :: surcolorzmin,surcolorzmax !fillctr is the contour value will be draw on fillcolor map
 real*8 :: curve_vertlinex=0D0,curvexyratio=0.618D0 !Gold partition
 real*8 :: gradplotstep=0.002D0,gradplotdis=0.01D0,gradplottest=0.2D0,cutgradvec=0.3D0
@@ -375,11 +399,11 @@ integer,allocatable :: boldlinelist(:)
 character*3 :: drawsurmesh="ON "
 !Parameter for drawing molecular structure or 3D map
 integer :: ienablelight1=1,ienablelight2=1,ienablelight3=1,ienablelight4=0,ienablelight5=0 !If enable lighting 1~5
-integer :: ishowatmlab=1,ishowCPlab=0,ishowpathlab=0,ishowaxis=1,isosurshowboth=1,ishowdatarange=0,idrawpath=1,idrawbassurf=1,ishowattlab=0,ishowatt=0
+integer :: ishowatmlab=1,ishowCPlab=0,ishowpathlab=0,ishowaxis=1,isosurshowboth=1,ishowdatarange=0,ishowcell=0,ishowboundaryatom=0,idrawpath=1,idrawbassurf=1,ishowattlab=0,ishowatt=0
 integer :: isosur1style=1,isosur2style=1 !isosurface style,1/2/3/4/5=solid,mesh,points,solid+mesh,transparent
 integer :: ishowlocminlab=0,ishowlocmaxlab=0,ishowlocminpos=0,ishowlocmaxpos=0 !For molecular surface analysis
 integer :: ishow3n3=0,ishow3n1=0,ishow3p1=0,ishow3p3=0
-real*8 :: bondcrit=1.15D0,textheigh=38.0D0,ratioatmsphere=1.0D0,ratioCPsphere=0.8D0,bondradius=0.2D0,attsphsize=0.1D0
+real*8 :: bondcrit=1.15D0,textheigh=38D0,ratioatmsphere=1D0,ratioCPsphere=1D0,bondradius=0.2D0,attsphsize=0.1D0
 real*8 :: XVU=150.0D0,YVU=30.0D0,ZVU=6.0D0 !3D view angle
 !Parameter for drawing domain defined by isosurfaces as grids
 integer :: idrawdomainidx=0,idrawdomain=0,ndomain=0
@@ -387,7 +411,7 @@ real*8,allocatable :: gridxyz(:,:) !XYZ coordinate of grid that statisfied crite
 integer,allocatable :: domainsize(:) !The number of grids contained in each domain
 integer,allocatable :: domaingrid(:,:) !The grid indices contained in each domain
 !For passing ploting parameter from GUI routine to their call-back routine
-!sur_value: The value of isosurface will be plot by drawmol routine when idrawisosur=1
+!sur_value: The value of isosurface will be plot by drawmol routine when idrawisosur=1 as well as drawisosurgui
 real*8 :: dp_init1,dp_end1,dp_init2,dp_end2,dp_init3,dp_end3,sur_value=0.05D0
 
 !!! Other external parameter !!!
@@ -399,28 +423,31 @@ integer :: isys=1 !Windows
 integer :: isys=2 !Linux/MacOS
 #endif
 integer :: igenP=1,iwfntmptype=1,iESPcode=2,outmedinfo=0,iaddprefix=0,intmolcust=0,isilent=0,idelvirorb=1
-integer :: ifchprog=1,iloadascart=0,iloadGaugeom=0,maxloadexc=0,iprintLMOorder=0,iMCBOtype=0
-integer :: iuserfunc=0,iDFTxcsel=84,iKEDsel=0,ispheratm=1,ishowchgtrans=0,SpherIVgroup=0,MCvolmethod=2,readEDF=1,isupplyEDF=2,ishowptESP=1,imolsurparmode=1
-integer :: NICSnptlim=8000
-real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0
+integer :: ifchprog=1,iloadascart=0,iloadGaugeom=1,iloadORCAgeom=1,maxloadexc=0,iprintLMOorder=0,iMCBOtype=0,ibasinlocmin=0
+integer :: iuserfunc=0,iDFTxcsel=84,iKEDsel=0,ispheratm=1,ishowchgtrans=0,uESEinp=0,SpherIVgroup=0,MCvolmethod=2,readEDF=1,isupplyEDF=2,ishowptESP=1,imolsurparmode=1
+integer :: NICSnptlim=8000,iCDAcomp=1,ESPrhonlay=1
+real*8 :: bndordthres=0.05D0,compthres=0.5D0,compthresCDA=1D0,expcutoff=-40D0,expcutoff_PBC=-20D0,ESPrhoiso=0D0
+integer :: PBCnx,PBCny,PBCnz,ifdoPBCx,ifdoPBCy,ifdoPBCz !PBC setting actually used in calculation, they will be specified by init_PBC
+integer :: PBCnx_in=1,PBCny_in=1,PBCnz_in=1,ifdoPBCx_in=1,ifdoPBCy_in=1,ifdoPBCz_in=1 !PBC setting read from settings.ini
 integer :: nthreads=4
 integer*8 :: ompstacksize=200000000
-character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="",orca_2mklpath*200="",cubegendenstype*80="SCF"
-!About function calculation, external or internal parameters
+character :: lastfile*200="",gaupath*200="",cubegenpath*200="",formchkpath*200="",orcapath*200="",orca_2mklpath*200="",cubegendenstype*80="SCF"
+!! About function calculation, external or internal parameters
 integer :: RDG_addminimal=1,ELF_addminimal=1,num1Dpoints=3000,atomdenscut=1,nprevorbgrid=120000,paircorrtype=3,pairfunctype=1,srcfuncmode=1
 integer :: ELFLOL_type=0,ipolarpara=0,iALIEdecomp=0,iskipnuc=0,ivdwprobe=6
 integer :: nKEDmax=24
 real*8 :: laplfac=1D0,uservar=0,uservar2=0,orbwei_delta=0.1D0
-real*8 :: RDG_maxrho=0.05D0,RDGprodens_maxrho=0.1D0,aug1D=1.5D0,aug2D=4.5D0,aug3D=6.0D0,radcut=10.0D0
+real*8 :: RDG_maxrho=0.05D0,RDGprodens_maxrho=0.1D0,IRI_rhocut=5D-5,aug1D=1.5D0,aug2D=4.5D0,aug3D=6.0D0,radcut=10.0D0
 real*8 :: refx=0D0,refy=0D0,refz=0D0
 real*8 :: pleA=0D0,pleB=0D0,pleC=0D0,pleD=0D0 !!ABCD of the plane defined by main function 1000, used for special aims
 real*8 :: globaltmp=0 !A variable can be used anywhere and can be set by option 5 of main function 1000, for debugging purpose avoiding re-compile code
-!About line/plane/grid calculation, inner parameter
+!! About line/plane/grid calculation, inner parameter
 !For 3D grid data. If the grid is not rectangle, only gridvec can fully define translation vectors
-real*8 :: orgx,orgy,orgz,endx,endy,endz,dx=0,dy,dz !Origin, end point and translation length in X/Y/Z. dx=0 means the box was not defined before
-integer :: nx=80,ny=80,nz=80 !The number of points in three directions
+real*8 :: orgx,orgy,orgz,endx,endy,endz !Origin, end point and translation length in X/Y/Z. dx=0 means the box was not defined before
+real*8 :: dx=0,dy,dz !Translation length in X/Y/Z. dx=0 means the box was not defined before. Using dx,dy,dz should be avoided in the future, always use gridv1/2/3 instead!
+integer :: nx=80,ny=80,nz=80 !The number of grids in three directions (never necessarily in X,Y,Z!)
 real*8 :: boxlenX,boxlenY,boxlenZ,boxcenX,boxcenY,boxcenZ !For temporary exchange data for setting box in GUI
-real*8 :: gridvec1(3),gridvec2(3),gridvec3(3) !1/2/3th translation vector. dx,dy,dz corresponds to 1(1), 2(2), 3(3) terms
+real*8 :: gridv1(3),gridv2(3),gridv3(3) !1/2/3th translation vector of grid. dx,dy,dz corresponds to 1(1), 2(2), 3(3) terms
 !For 2D plane map
 real*8 :: v1x,v1y,v2x,v2y,v1z,v2z,a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,d1,d2 !Translation vector 1 and 2, three point in self-defined plane for projecting label, d1,d2=Length of v1,v2
 real*8 :: orgx2D,orgy2D,orgz2D !X, Y, Z coordinate of origin of the plane map in molecular Cartesian space
@@ -428,7 +455,7 @@ integer :: ngridnum1=100,ngridnum2=100 !The number of points in two directions
 !Specific for Shubin's project
 real*8 :: steric_addminimal=1D-4,steric_potcutrho=0D0,steric_potcons=0D0
 !Other
-integer :: ifirstMultiwfn=1 !If 1, means we reload file via main function -11 and don't need to do some initializations
+integer :: ifirstMultiwfn=1 !If 0, means we reload file via option -11 in main menu and don't need to do some initializations again
 
 !Used for EDR(r;d) and D(r)
 integer,parameter :: max_edr_exponents=50 !Maximum EDR exponents used to calculate EDR(r;d) and D(r)
@@ -448,8 +475,9 @@ integer :: numcp=0 !Number of located CPs
 real*8 :: CPpos(3,maxnumcp) !XYZ of CPs
 integer :: CPtype(maxnumcp)=0 !Type of CPs. 0=unknown 1=(3,-3) 2=(3,-1) 3=(3,+1) 4=(3,+3)
 character :: CPtyp2lab(0:4)*6=(/ "  ??  ","(3,-3)","(3,-1)","(3,+1)","(3,+3)" /)
-real*8 :: CPstepscale=1D0,gradconv=1D-6,dispconv=1D-7,minicpdis=0.03D0,vdwsumcrit=1.2D0,singularcrit=5D-22,CPsearchlow=0D0,CPsearchhigh=0D0
-integer :: topomaxcyc=120,ishowsearchlevel=0
+real*8 :: CPstepscale=1D0,gradconv=1D-6,dispconv=1D-7,minicpdis=0.03D0,vdwsumcrit=1.2D0,singularcrit=5D-22,CPsearchlow=0D0,CPsearchhigh=0D0,topotrustrad=0D0
+integer :: topomaxcyc=120,ishowsearchlevel=0,itopomethod=1
+integer :: lab_oneCP=0 !If only allowing labelling one CP. =0: Labelling all, =x: Only allow show label for CP x
 !Path related:
 integer,parameter :: maxnumpath=10000 !Maximum number of paths
 integer,parameter :: maxpathpt=1500 !Maximum number of points in each path
@@ -514,16 +542,17 @@ integer :: mergeattdist=5
 real*8 :: basinsphsize=0 !Size of spheres for showing basins
 integer :: ishowbasinmethod=1 !=1 Show entire basin in GUI, =2: Only show rho>0.001 region
 integer*2,allocatable :: gridbas(:,:,:) !Each grid belongs to which basin(attractor). -2=Boundary grids -1=Traveled to boundary grid, 0=Unassigned, x=basin index
-integer numatt !The number of crude attractors after near-grid method
-integer numrealatt !The number of actual attractors (the ones left after clustering)
-integer*2,allocatable :: attgrid(:,:) !Crude attractor corresponds to which grid. attgrid(i,1/2/3)=The ix/iy/iz of the ith attractor
-real*8,allocatable :: attval(:),attxyz(:,:) !Value and xyz coordinate of crude attractors, attxyz(numatt,1:3)
+integer :: numatt=0 !The number of pristine attractors after near-grid method
+integer :: numrealatt=0 !The number of actual attractors (the ones left after clustering)
+integer*2,allocatable :: attgrid(:,:) !Pristine attractor corresponds to which grid. attgrid(i,1/2/3)=The ix/iy/iz of the ith attractor
+real*8,allocatable :: attval(:),attxyz(:,:) !Value and xyz coordinate of pristine attractors, attxyz(numatt,1:3)
 integer,allocatable :: attconv(:) !Attractor conversion list. If attconv(i)=j, means attractor i is belong to actual attractor j. -1 and 0 is also included
-integer,allocatable :: nrealatthas(:) !nrealatthas(i)=m means actual attractor i has m crude attractors
-integer,allocatable :: realatttable(:,:) !realatttable(i,j)=k means the jth member of the ith actual attractor is crude attractor k
-real*8,allocatable :: realattval(:),realattxyz(:,:) !Value and xyz coordinate of actual attractors. For the ones having multiple crude attractors, these arrays record average value
+integer,allocatable :: nrealatthas(:) !nrealatthas(i)=m means actual attractor i has m pristine attractors
+integer,allocatable :: realatttable(:,:) !realatttable(i,j)=k means the jth member of the ith actual attractor is pristine attractor k
+real*8,allocatable :: realattval(:),realattxyz(:,:) !Value and xyz coordinate of actual attractors. For the ones having multiple pristine attractors, these arrays record average value
 logical*1,allocatable :: interbasgrid(:,:,:) !.true. means this is a boundary grid, else it is a internal grid
-logical*1,allocatable :: grdposneg(:,:,:) !.true. means the value at this grid is positive, .false. means negative
+logical*1,allocatable :: grdposneg(:,:,:) !.true. means the value at this grid is positive, .false. means negative. Used in "basinana" and "generatebasin"
+real*8,allocatable :: BOM(:,:,:),BOMb(:,:,:) !Basin overlap matrix of total/alpha and BOM of beta. The first two sizes are number of occupied orbitals, the last is numrealatt
 end module
 
 

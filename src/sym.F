@@ -103,7 +103,7 @@ c Subroutine add_SG stores new reflection planes
 c
       implicit double precision(a-h,o-z)
       implicit integer(i-n)
-      parameter(nmax=150)
+      parameter(nmax=200)
       dimension sigman(nmax,3)
       dimension v(3),p(3)
 c syva_check found planes
@@ -134,7 +134,7 @@ c Subroutine add_Cn stores new rotation axes
 c
       implicit double precision(a-h,o-z)
       implicit integer(i-n)
-      parameter(nmax=150)
+      parameter(nmax=200)
       dimension rotn(nmax,3),rota(nmax)
       dimension v(3),p(3)
 c syva_check found axes
@@ -2707,7 +2707,7 @@ c
       implicit integer(i-n)
       character symb*2,symel*3
       logical symcen,linear,planar
-      parameter(nmax=150)
+      parameter(nmax=200)
       dimension coord(3,natoms),nat(natoms),symb(90),ntrans(natoms)
       dimension meq(natoms),ieq(10,natoms),sigman(nmax,3)
       dimension p0(3),p1(3),p2(3),p3(3)

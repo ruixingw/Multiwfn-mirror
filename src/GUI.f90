@@ -3,7 +3,8 @@ use plot
 implicit real*8(a-h,o-z)
 !Used for sharing dislin id between various GUI routines
 integer iatm1text,iatm2text,iatm3text,iatm4text,igeomresult
-integer idisisosurnumpt,idisisosurdef,idisisosurgood,idisisosurhigh,idisisosurveryhigh,idisisosurperfect
+integer idisisosurnumpt,idisisosurverypoor,idisisosurpoor,idisisosurdef,idisisosurgood,idisisosurhigh,idisisosurveryhigh,idisisosurperfect
+real*8 :: aug3D_main0=6D0
 
 contains
 
@@ -14,9 +15,15 @@ end subroutine
 
 !!--------- A GUI for drawing molecular structure and orbital isosurface
 subroutine drawmolgui
+use defvar
 character ictmp*4,molorblist*50000 !max 9999 orbitals (the 0th is "none"), each one take up 4 characters, adding "|",so 10000*(4+1)=50000
 isavepic=0
-! Set variables for viewing orbital
+if (ifPBC>0) then
+    aug3D_main0=-1 !For PBC system, make box size consistent with cell
+    ishowdatarange=1 !Show box
+    nprevorbgrid=25000 !Corresponding to very poor quality
+end if
+!Set variables for viewing orbital
 molorblist(1:4)="None"
 molorblist(5:)=" "
 do i=1,nmo
@@ -48,8 +55,10 @@ end if
 CALL WGPOP(idiswindow," Isosur#1 style",idisisosur1style)
 call wgapp(idisisosur1style,"Use solid face",idisisosur1solid)
 call wgapp(idisisosur1style,"Use mesh",idisisosur1mesh)
+call wgapp(idisisosur1style,"Use mesh only for negative part",idisisosur1meshneg)
 call wgapp(idisisosur1style,"Use points",idisisosur1point)
 call wgapp(idisisosur1style,"Use solid face+mesh",idisisosur1solidmesh)
+call wgapp(idisisosur1style,"Use solid face+mesh only for negative part",idisisosur1solidmeshneg)
 call wgapp(idisisosur1style,"Use transparent face",idisisosur1tpr)
 call wgapp(idisisosur1style,"Set color for face",idisisosur1solidclr)
 call wgapp(idisisosur1style,"Set color for mesh and points",idisisosur1meshptclr)
@@ -66,6 +75,8 @@ call wgapp(idisisosur2style,"Set color for mesh and points",idisisosur2meshptclr
 call wgapp(idisisosur2style,"Set opacity for transparent face",idisisosur2opa)
 CALL WGPOP(idiswindow," Isosur. quality",idisisosurquality)
 call wgapp(idisisosurquality,"Set number of grid points",idisisosurnumpt)
+call wgapp(idisisosurquality,"Very poor quality (super fast, 25k points)",idisisosurverypoor)
+call wgapp(idisisosurquality,"Poor quality (very fast, 50k points)",idisisosurpoor)
 call wgapp(idisisosurquality,"Default (fast, 120k points)",idisisosurdef)
 call wgapp(idisisosurquality,"good quality (300k points)",idisisosurgood)
 call wgapp(idisisosurquality,"High quality (500k points)",idisisosurhigh)
@@ -76,6 +87,8 @@ CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set extension distance",idisextdist)
+CALL wgapp(idisotherset,"Make box size consistent to cell",idisboxeqcell)
+if (ifPBC==0) call swgatt(idisboxeqcell,"INACTIVE","STATUS")
 CALL wgapp(idisotherset,"Set isovalue",idissetorbisovalue)
 CALL wgapp(idisotherset,"Set lightings",idissetlight)
 CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
@@ -84,6 +97,11 @@ CALL wgapp(idisotherset,"Use CPK style",idisuseCPK)
 CALL wgapp(idisotherset,"Use vdW style",idisusevdW)
 CALL wgapp(idisotherset,"Use line style",idisuseline)
 CALL wgapp(idisotherset,"Toggle showing hydrogens",idisshowhydrogen)
+CALL wgapp(idisotherset,"Toggle showing data range",idisshowdatarange)
+CALL wgapp(idisotherset,"Toggle showing cell frame",idisshowcell)
+if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
+CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
+if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
 CALL wgapp(idisotherset,"Set atom highlighting",idishighlightatom)
 CALL WGPOP(idiswindow,"Tools",idistools)
 CALL wgapp(idistools,"Write settings to GUIsettings.ini",idiswriteGUIsetting)
@@ -91,6 +109,11 @@ CALL wgapp(idistools,"Load settings from GUIsettings.ini",idisloadGUIsetting)
 CALL wgapp(idistools,"Measure geometry",idismeasure)
 CALL wgapp(idistools,"Batch plotting orbitals",idisbatchplot)
 CALL wgapp(idistools,"Select fragment",idisselfrag)
+CALL wgapp(idistools,"Get atom indices of given element",idisgetatmidx_by_ele)
+CALL wgapp(idistools,"Print XYZ coordinates in Angstrom",idisshowcoordA)
+CALL wgapp(idistools,"Print fractional coordinates",idisshowfractcoord)
+if (ifPBC==0) call swgatt(idisshowfractcoord,"INACTIVE","STATUS")
+CALL wgapp(idistools,"Export all internal coordinates",idisexpintcoord)
 if (imodlayout==2) call swgdrw(0.9D0) !Set height of drawing widget 0.9*width to make it fully shown
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
@@ -123,7 +146,6 @@ end if
 call SWGSTP(3.0D0)
 call wgscl(idisright,"Size of atomic labels",0.0D0,100.0D0,38.0D0,0,idislabelsize)
 CALL SWGSPC(0.0D0,0.0D0)
-sur_value=0.05D0
 if (isys==1.and.(imodlayout==0.or.imodlayout==2)) then
 	!Set region for orbital viewing
 	call WGLAB(idisright,"Orbitals:",iorbseltext)
@@ -158,15 +180,17 @@ else if ((isys==1.and.imodlayout==1).or.isys==2) then !Use different layout for 
 	call wgscl(idisright2,"Isovalue of orbital",0D0,0.4D0,sur_value,3,idisisosurscl)
 end if
 
-call SWGCBK(idisorbinfo,showorbinfo)
+call SWGCBK(idisorbinfo,showorbinfo1)
 if ((wfntype==0.or.wfntype==1.or.wfntype==2).and.allocated(CObasa)) then
 	call SWGCBK(idisorbinfo2,showorbinfo2)
 	call SWGCBK(idisorbinfo3,showorbinfo3)
 end if
 call SWGCBK(idisisosur1solid,setisosur1solid) !Set style for isosur 1
 call SWGCBK(idisisosur1mesh,setisosur1line)
+call SWGCBK(idisisosur1meshneg,setisosur1lineneg)
 call SWGCBK(idisisosur1point,setisosur1point)
 call SWGCBK(idisisosur1solidmesh,setisosur1solidmesh)
+call SWGCBK(idisisosur1solidmeshneg,setisosur1solidmeshneg)
 call SWGCBK(idisisosur1tpr,setisosur1tpr)
 call SWGCBK(idisisosur1solidclr,setisosur1solidclr)
 call SWGCBK(idisisosur1invclr,setisosur1invclr)
@@ -181,6 +205,8 @@ call SWGCBK(idisisosur2solidclr,setisosur2solidclr)
 call SWGCBK(idisisosur2meshptclr,setisosur2meshptclr)
 call SWGCBK(idisisosur2opa,setisosur2opa)
 call SWGCBK(idisisosurnumpt,setisosurnumpt)
+call SWGCBK(idisisosurverypoor,setisosurnumpt)
+call SWGCBK(idisisosurpoor,setisosurnumpt)
 call SWGCBK(idisisosurdef,setisosurnumpt)
 call SWGCBK(idisisosurgood,setisosurnumpt)
 call SWGCBK(idisisosurhigh,setisosurnumpt)
@@ -189,6 +215,7 @@ call SWGCBK(idisisosurperfect,setisosurnumpt)
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
 call SWGCBK(idisextdist,setextdist)
+call SWGCBK(idisboxeqcell,setboxeqcell)
 call SWGCBK(idissetorbisovalue,setorbisovalue)
 call SWGCBK(idissetlight,setlight)
 call SWGCBK(idisatmlabtyp,setatmlabtyp)
@@ -197,12 +224,19 @@ call SWGCBK(idisuseCPK,setCPKstyle)
 call SWGCBK(idisusevdW,setvdWstyle)
 call SWGCBK(idisuseline,setlinestyle)
 call SWGCBK(idisshowhydrogen,setshowhydrogen)
+call SWGCBK(idisshowdatarange,setshowdatarange_menu)
+call SWGCBK(idisshowcell,setshowcell)
+call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
 call SWGCBK(idishighlightatom,sethighlightatom)
 call SWGCBK(idismeasure,measuregeom)
 call SWGCBK(idiswriteGUIsetting,writeGUIsetting)
 call SWGCBK(idisloadGUIsetting,loadGUIsetting)
 call SWGCBK(idisbatchplot,batchplot)
 call SWGCBK(idisselfrag,GUIselfrag)
+call SWGCBK(idisgetatmidx_by_ele,getatmidx_by_ele)
+call SWGCBK(idisshowcoordA,showcoordA)
+call SWGCBK(idisshowfractcoord,showfractcoord)
+call SWGCBK(idisexpintcoord,export_intcoord)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -311,8 +345,15 @@ end subroutine
 !if iallowsetstyle==1, then isosurface style can be customly controlled for isosurface 1
 !if iallowsetstyle==2, then isosurface style can be customly controlled for both isosurface 1 and 2
 subroutine drawisosurgui(iallowsetstyle)
+use defvar
 integer iallowsetstyle
 character*20 temp
+if (ifgridortho()==0) then
+    write(*,"(/,a)") " Warning: The current grid is not orthogonal, in this case the isosurfaces cannot be normally shown in the GUI window of Multiwfn. &
+    However, you can export grid data and visualize its isosurface via other softwares such as VMD and VESTA"
+    write(*,*) "Press ENTER button to continue"
+    read(*,*)
+end if
 idrawisosur=1
 GUI_mode=3 !Use GUI_mode setting in dislin response routine
 isavepic=0
@@ -335,13 +376,15 @@ if (iallowsetstyle==1) then
 	call WGPOP(idiswindow," Isosurface style",idisisosur1style)
 	call wgapp(idisisosur1style,"Use solid face",idisisosur1solid)
 	call wgapp(idisisosur1style,"Use mesh",idisisosur1mesh)
+	call wgapp(idisisosur1style,"Use mesh only for opposite sign part",idisisosur1meshneg)
 	call wgapp(idisisosur1style,"Use points",idisisosur1point)
 	call wgapp(idisisosur1style,"Use solid face+mesh",idisisosur1solidmesh)
+	call wgapp(idisisosur1style,"Use solid face+mesh only for opposite sign part",idisisosur1solmeshneg)
 	call wgapp(idisisosur1style,"Use transparent face",idisisosur1tpr)
 	call wgapp(idisisosur1style,"Set color for face",idisisosur1solidclr)
 	call wgapp(idisisosur1style,"Set color for mesh and points",idisisosur1meshptclr)
-	call wgapp(idisisosur1style,"Exchange positive and negative colors",idisisosur1invclr)
 	call wgapp(idisisosur1style,"Set opacity for transparent face",idisisosur1opa)
+	call wgapp(idisisosur1style,"Exchange positive and negative colors",idisisosur1invclr)
 else if (iallowsetstyle==2) then
 	call WGPOP(idiswindow," Isosurface style",idisisosurallstyle)
 	call wgapp(idisisosurallstyle,"Use solid face",idisisosurallsolid)
@@ -354,13 +397,17 @@ CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
-CALL wgapp(idisotherset,"Set extension distance",idisextdist)
 CALL wgapp(idisotherset,"Set lighting",idissetlight)
 CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
 CALL wgapp(idisotherset,"Set atomic label color",idisatmlabclr)
 CALL wgapp(idisotherset,"Use CPK style",idisuseCPK)
 CALL wgapp(idisotherset,"Use vdW style",idisusevdW)
 CALL wgapp(idisotherset,"Use line style",idisuseline)
+CALL wgapp(idisotherset,"Toggle showing hydrogens",idisshowhydrogen)
+CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
+if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
+CALL wgapp(idisotherset,"Write settings to isosur.ini",idiswriteisosursetting)
+CALL wgapp(idisotherset,"Load settings from isosur.ini",idisloadisosursetting)
 
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
@@ -389,13 +436,15 @@ call wgbut(idisright,"Show atomic labels",ishowatmlab,idisshowatmlab)
 call wgbut(idisright,"Show axis",ishowaxis,idisshowaxis)
 call wgbut(idisright,"Show data range",ishowdatarange,idisshowdatarange)
 call wgbut(idisright,"Show isosurface",idrawisosur,idisshowisosur)
-call swgstp(0.01D0) !Use smaller step size of scale bar than default
-if (sur_value>5) then !Do not let sur_value exceed axis range
-	call wgscl(idisright,"Isosurface value",-5D0,5D0,5D0,4,idisisosurscl)
-else if (sur_value<-5) then
-	call wgscl(idisright,"Isosurface value",-5D0,5D0,-5D0,4,idisisosurscl)
+call wgbut(idisright,"Show cell",ishowcell,idisshowcell)
+if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
+call swgstp(drawisosurgui_SWGSTP) !Use smaller step size of scale bar than default
+if (sur_value>drawisosurgui_highlim) then !Do not let sur_value exceed axis range
+	call wgscl(idisright,"Isosurface value",drawisosurgui_lowlim,drawisosurgui_highlim,drawisosurgui_highlim,4,idisisosurscl)
+else if (sur_value<drawisosurgui_lowlim) then
+	call wgscl(idisright,"Isosurface value",drawisosurgui_lowlim,drawisosurgui_highlim,drawisosurgui_lowlim,4,idisisosurscl)
 else
-	call wgscl(idisright,"Isosurface value",-5D0,5D0,sur_value,4,idisisosurscl)
+	call wgscl(idisright,"Isosurface value",drawisosurgui_lowlim,drawisosurgui_highlim,sur_value,4,idisisosurscl)
 end if
 if (imodlayout<=1) then
 	call SWGSTP(0.05D0)
@@ -412,6 +461,8 @@ CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
 if (iallowsetstyle==1) then
 	call SWGCBK(idisisosur1solid,setisosur1solid)
 	call SWGCBK(idisisosur1mesh,setisosur1line)
+	call SWGCBK(idisisosur1meshneg,setisosur1lineneg)
+	call SWGCBK(idisisosur1solmeshneg,setisosur1solidmeshneg)
 	call SWGCBK(idisisosur1point,setisosur1point)
 	call SWGCBK(idisisosur1solidmesh,setisosur1solidmesh)
 	call SWGCBK(idisisosur1tpr,setisosur1tpr)
@@ -428,7 +479,6 @@ else if (iallowsetstyle==2) then
 end if
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
-call SWGCBK(idisextdist,setextdist)
 call SWGCBK(idissetlight,setlight)
 call SWGCBK(idisatmlabtyp,setatmlabtyp)
 call SWGCBK(idisatmlabclr,setatmlabclr)
@@ -446,10 +496,15 @@ call SWGCB3(idisgraph,zoominout)
 call SWGCBK(idisreset,resetview)
 call SWGCBK(idisisosurscl,setisosurscl)
 call SWGCBK(idisscrval,setscrval)
+call SWGCBK(idisshowhydrogen,setshowhydrogen)
+call SWGCBK(idiswriteisosursetting,write_isosur_setting)
+call SWGCBK(idisloadisosursetting,load_isosur_setting)
 if (isosursec==0) call SWGCBK(idisshowbothsign,setshowbothsign)
 call SWGCBK(idisshowmol,setshowmolstruct)
 call SWGCBK(idisshowatmlab,setshowatmlab)
 call SWGCBK(idisshowdatarange,setshowdatarange)
+call SWGCBK(idisshowcell,setshowcell)
+call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
 call SWGCBK(idisshowisosur,ifshowisosur)
 call SWGCBK(idisshowaxis,ifshowaxis)
 call SWGCBK(idissavepic,savepic)
@@ -489,9 +544,22 @@ call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
-CALL WGPOP(idiswindow,"Set label color",idissetlabclr)
+CALL WGPOP(idiswindow,"CP labelling settings",idissetlabclr)
 CALL wgapp(idissetlabclr,"Set atomic label color",idisatmlabclr)
 CALL wgapp(idissetlabclr,"Set CP label color",idisCPlabclr)
+CALL wgapp(idissetlabclr,"Labelling only one CP",idisCPlabone)
+CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
+CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
+CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL WGPOP(idiswindow,"Other settings",idisotherset)
+CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
+CALL wgapp(idisotherset,"Set atomic label color",idisatmlabclr)
+CALL wgapp(idisotherset,"Use CPK style",idisuseCPK)
+CALL wgapp(idisotherset,"Use vdW style",idisusevdW)
+CALL wgapp(idisotherset,"Use line style",idisuseline)
+CALL wgapp(idisotherset,"Toggle showing hydrogens",idisshowhydrogen)
+CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
+if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
 !Main region
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
@@ -514,6 +582,8 @@ call wgbut(idisright,"Paths",idrawpath,idisshowpath)
 call wgbut(idisright,"Basin surface",idrawpath,idisshowbassurf)
 call wgbut(idisright,"Show molecule",idrawmol,idisshowmol)
 call wgbut(idisright,"Show axis",ishowaxis,idisshowaxis)
+call wgbut(idisright,"Show cell",ishowcell,idisshowcell)
+if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
 call wgbut(idisright,"Show (3,-3)",ishow3n3,idisshow3n3)
 call wgbut(idisright,"Show (3,-1)",ishow3n1,idisshow3n1)
 call wgbut(idisright,"Show (3,+1)",ishow3p1,idisshow3p1)
@@ -527,10 +597,13 @@ if (imodlayout<=1) then
 end if
 call SWGSTP(2.0D0)
 call wgscl(idisright,"Size of labels",20.0D0,100.0D0,textheigh,0,idislabelsize)
+call SWGSTP(0.05D0)
+call wgscl(idisright,"Ratio of CP size",0.0D0,2D0,ratioCPsphere,2,idisCPsize)
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
 call SWGCBK(idisatmlabclr,setatmlabclr)
 call SWGCBK(idisCPlabclr,setCPlabclr)
+call SWGCBK(idisCPlabone,setCPlabone)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -541,10 +614,20 @@ call SWGCBK(idiszoomout,zoomout)
 call SWGCB3(idisgraph,zoominout)
 call SWGCBK(idisreset,resetview)
 call SWGCBK(idissavepic,savepic)
+call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
+call SWGCBK(idisatmlabtyp,setatmlabtyp)
+call SWGCBK(idisatmlabclr,setatmlabclr)
+call SWGCBK(idisuseCPK,setCPKstyle)
+call SWGCBK(idisusevdW,setvdWstyle)
+call SWGCBK(idisuseline,setlinestyle)
+call SWGCBK(idisshowhydrogen,setshowhydrogen)
 call SWGCBK(idisshowatmlab,ifshowatmlabel)
 call SWGCBK(idisshowCPlab,ifshowCPlabel)
 call SWGCBK(idisshowpathlab,ifshowpathlabel)
 call SWGCBK(idisshowaxis,ifshowaxis)
+call SWGCBK(idisshowcell,setshowcell)
 call SWGCBK(idisshowpath,setshowpath)
 call SWGCBK(idisshowbassurf,setshowbassurf)
 call SWGCBK(idisshowmol,setshowmolstruct)
@@ -553,6 +636,7 @@ call SWGCBK(idisshow3n1,ifshow3n1)
 call SWGCBK(idisshow3p1,ifshow3p1)
 call SWGCBK(idisshow3p3,ifshow3p3)
 call SWGCBK(idisatmsize,setatmsize)
+call SWGCBK(idisCPsize,setCPsize)
 if (imodlayout<=1) call SWGCBK(idisbondradius,setbondradius)
 call SWGCBK(idislabelsize,setlabelsize)
 CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
@@ -890,6 +974,18 @@ zmin=minval(a%z)
 xmax=maxval(a%x)
 ymax=maxval(a%y)
 zmax=maxval(a%z)
+if (abs(xmax-xmin)<1D0) then
+	xmin=xmin-1
+    xmax=xmax+1
+end if
+if (abs(ymax-ymin)<1D0) then
+	ymin=ymin-1
+    ymax=ymax+1
+end if
+if (abs(zmax-zmin)<1D0) then
+	zmin=zmin-1
+    zmax=zmax+1
+end if
 if (dx==0D0) then !The grid has not been set previously
 	orgx=xmin
 	orgy=ymin
@@ -900,9 +996,9 @@ if (dx==0D0) then !The grid has not been set previously
 	dx=0.25D0 !This module always assumes that dx=dy=dz
 	dy=0.25D0
 	dz=0.25D0
-    gridvec1=0;gridvec1(1)=dx
-    gridvec2=0;gridvec2(2)=dy
-    gridvec3=0;gridvec3(3)=dz
+    gridv1=0;gridv1(1)=dx
+    gridv2=0;gridv2(2)=dy
+    gridv3=0;gridv3(3)=dz
 end if
 boxlenX=endx-orgx
 boxlenY=endy-orgy
@@ -1034,115 +1130,6 @@ end subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-!Show all orbitals
-subroutine showorbinfo(id)
-integer,intent (in) :: id
-character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
-character*6 :: symstr
-symstr=" "
-naorb=count(MOtype==1)
-write(*,*) "Orbital list:"
-do i=1,nmo
-	if (allocated(MOsym)) symstr='('//MOsym(i)//')'
-	if (wfntype==0.or.wfntype==2.or.wfntype==3) then
-		write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
-		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-	else
-		if (MOtype(i)==1) then
-			write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
-			i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-		else
-			write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
-			i,i-naorb,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-		end if
-	end if
-end do
-if (any(MOtype==2)) write(*,"(a)") " Note: For beta orbitals, &
-the index in the parenthese shown above is the index counted from the first beta orbital"
-end subroutine
-
-
-
-!Show orbitals up to LUMO+10, works for wfntype==0,1,2
-subroutine showorbinfo2(id)
-integer,intent (in) :: id
-character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
-character*6 :: symstr
-symstr=" "
-naorb=count(MOtype==1)
-if (wfntype==0.or.wfntype==2) then
-	write(*,*) "Orbital list:"
-	do nmoend=1,nmo
-		if (MOocc(nmoend)==0D0) exit
-	end do
-	nmoend=nmoend+10
-	if (nmoend>nmo) nmoend=nmo
-	do i=1,nmoend
-		if (allocated(MOsym)) symstr='('//MOsym(i)//')'
-		write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
-		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-	end do
-else if (wfntype==1) then
-	do iLUMOa=1,nmo
-		if (MOocc(iLUMOa)==0) exit
-	end do
-	do iLUMOb=nmo,1,-1
-		if (MOocc(iLUMOb)==1) exit
-	end do
-	iLUMOb=iLUMOb+1
-	do ibeta=1,nmo
-		if (MOtype(ibeta)==2) exit
-	end do
-	iaend=iLUMOa+10
-	if (iaend>=ibeta) iaend=ibeta-1
-	ibend=iLUMOb+10
-	if (ibend>nmo) ibend=nmo
-	write(*,*) "Alpha orbital list:"
-	do i=1,iaend
-		if (allocated(MOsym)) symstr='('//MOsym(i)//')'
-		write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
-		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-	end do
-	write(*,*) "Beta orbital list:"
-	do i=ibeta,ibend
-		if (allocated(MOsym)) symstr='('//MOsym(i)//')'
-		write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
-		i,i-naorb,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-	end do
-	write(*,"(a)") " Note: For beta orbitals, &
-	the index in the parenthese shown above is the index counted from the first beta orbital"
-end if
-end subroutine
-
-!Show all occupied orbitals
-subroutine showorbinfo3(id)
-integer,intent (in) :: id
-character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
-character*6 :: symstr
-symstr=" "
-naorb=count(MOtype==1)
-write(*,*) "Orbital list:"
-do i=1,nmo
-	if (MOocc(i)==0) cycle
-	if (allocated(MOsym)) symstr='('//MOsym(i)//')'
-	if (wfntype==0.or.wfntype==2.or.wfntype==3) then
-		write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
-		i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-	else
-		if (MOtype(i)==1) then
-			write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
-			i,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-		else
-			write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
-			i,i-naorb,MOene(i),MOene(i)*au2eV,MOocc(i),orbtype(MOtype(i)),symstr
-		end if
-	end if
-end do
-if (any(MOtype==2)) write(*,"(a)") " Note: For beta orbitals, &
-the index in the parenthese shown above is the index counted from the first beta orbital"
-end subroutine
-
-
 subroutine rotleft(id)
 integer,intent (in) :: id
 character*20 tmpstr
@@ -1172,7 +1159,9 @@ end subroutine
 subroutine rotup(id)
 integer,intent (in) :: id
 character*20 tmpstr
-if (YVU<90D0) YVU=YVU+10
+if (YVU<90D0) YVU=YVU+10 !I found value range of YVU is -90 to 90, the viewpoint outside this range is equivalent to that within this range
+!YVU=YVU+10
+!write(*,*) YVU
 if (GUI_mode/=2) then
 	call drawmol
 else if (GUI_mode==2) then
@@ -1267,6 +1256,7 @@ else if (GUI_mode==4) then
 	idrawbassurf=1
 	bondradius=0.07D0
 	ratioatmsphere=0.6D0
+    ratioCPsphere=1D0
 	textheigh=38
 	call swgbut(idisshowatmlab,ishowatmlab)
 	call swgbut(idisshowCPlab,ishowCPlab)
@@ -1427,33 +1417,52 @@ subroutine showorbselbox(id)
 integer,intent (in) :: id
 character*10 tmpstr
 call GWGTXT(id,tmpstr)
-read(tmpstr,*) iorbvis
-if (wfntype==0.or.wfntype==2.or.wfntype==3) then !R or RO case
-	if (iorbvis>nmo.or.iorbvis<0) then
-		call DWGMSG("Error: The orbital you selected is out of valid range!")
+if (index(tmpstr,'h')==0.and.index(tmpstr,'l')==0) then 
+	read(tmpstr,*,iostat=ierror) iorbvis
+    if (ierror/=0) then
+		call DWGMSG("Error: Unable to recognize your input!")
 		return
-	end if
-	call SWGLIS(iorblis,iorbvis+1)
-else !U case
-	naorb=count(MOtype==1)
-	if (iorbvis>=0) then
-		if (iorbvis>nmo) then
+    end if
+	if (wfntype==0.or.wfntype==2.or.wfntype==3) then !R or RO case
+		if (iorbvis>nmo.or.iorbvis<0) then
 			call DWGMSG("Error: The orbital you selected is out of valid range!")
 			return
 		end if
 		call SWGLIS(iorblis,iorbvis+1)
-		if (iorbvis>naorb) then
-			write(tmpstr,"(i6)") -(iorbvis-naorb)
-			call SWGTXT(iorbtxt,tmpstr)
+	else !U case
+		naorb=count(MOtype==1)
+		if (iorbvis>=0) then
+			if (iorbvis>nmo) then
+				call DWGMSG("Error: The orbital you selected is out of valid range!")
+				return
+			end if
+			call SWGLIS(iorblis,iorbvis+1)
+			if (iorbvis>naorb) then
+				write(tmpstr,"(i6)") -(iorbvis-naorb)
+				call SWGTXT(iorbtxt,tmpstr)
+			end if
+		else
+			iorbvis=naorb+abs(iorbvis)
+			if (iorbvis>nmo) then
+				call DWGMSG("Error: The orbital you selected is out of valid range!")
+				return
+			end if
+			call SWGLIS(iorblis,iorbvis+1)
 		end if
-	else
-		iorbvis=naorb+abs(iorbvis)
-		if (iorbvis>nmo) then
+	end if
+else
+	if (wfntype==3.or.wfntype==4) then
+		call DWGMSG("Error: Inputting orbital label only supports single-determinant wavefunction!")
+		return
+    else
+		call orblabsel(tmpstr,iorbvis)
+		if (iorbvis==0) then
 			call DWGMSG("Error: The orbital you selected is out of valid range!")
 			return
+		else
+			call SWGLIS(iorblis,iorbvis+1)
 		end if
-		call SWGLIS(iorblis,iorbvis+1)
-	end if
+    end if
 end if
 call showorbsel(id,iorbvis)
 end subroutine
@@ -1466,20 +1475,31 @@ integer id,iorb
 real*8 molxlen,molylen,molzlen
 character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
 character*6 :: symstr
-
-! Set grid for calculating cube data
-molxlen=(maxval(a%x)-minval(a%x))+2*aug3D
-molylen=(maxval(a%y)-minval(a%y))+2*aug3D
-molzlen=(maxval(a%z)-minval(a%z))+2*aug3D
-orgx=minval(a%x)-aug3D
-orgy=minval(a%y)-aug3D
-orgz=minval(a%z)-aug3D
-dx=(molxlen*molylen*molzlen/dfloat(nprevorbgrid))**(1.0D0/3.0D0)
+!Set grid for calculating cube data
+if (aug3D_main0>=0) then !Normal case 
+    molxlen=(maxval(a%x)-minval(a%x))+2*aug3D_main0
+    molylen=(maxval(a%y)-minval(a%y))+2*aug3D_main0
+    molzlen=(maxval(a%z)-minval(a%z))+2*aug3D_main0
+    orgx=minval(a%x)-aug3D_main0
+    orgy=minval(a%y)-aug3D_main0
+    orgz=minval(a%z)-aug3D_main0
+else if (aug3D_main0==-1) then !PBC case
+    orgx=0
+    orgy=0
+    orgz=0
+    molxlen=cellv1(1)
+    molylen=cellv2(2)
+    molzlen=cellv3(3)
+end if
+endx=orgx+molxlen !Defining endx/y/z is used to show box frame for PBC case
+endy=orgy+molylen
+endz=orgz+molzlen
+dx=(molxlen*molylen*molzlen/dfloat(nprevorbgrid))**(1D0/3D0)
 dy=dx
 dz=dx
-gridvec1=0;gridvec1(1)=dx
-gridvec2=0;gridvec2(2)=dy
-gridvec3=0;gridvec3(3)=dz
+gridv1=0;gridv1(1)=dx
+gridv2=0;gridv2(2)=dy
+gridv3=0;gridv3(3)=dz
 nx=nint(molxlen/dx)+1
 ny=nint(molylen/dy)+1
 nz=nint(molzlen/dz)+1
@@ -1496,19 +1516,21 @@ else
 	call swgatt(idisisosursec,"ACTIVE","STATUS")
 	symstr=" "
 	if (allocated(MOsym)) symstr='('//MOsym(iorb)//')'
-	if (wfntype==0.or.wfntype==2.or.wfntype==3) then
-		write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
-		iorb,MOene(iorb),MOene(iorb)*au2eV,MOocc(iorb),orbtype(MOtype(iorb)),symstr
-	else
-		if (MOtype(iorb)==1) then
-			write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+    if (ishoworbsel_prt==1) then !Global variable
+		if (wfntype==0.or.wfntype==2.or.wfntype==3) then
+			write(*,"(' Orb:',i6,' Ene(au/eV):',f13.6,f13.4,' Occ:',f9.6,' Type:',a,1x,a)") &
 			iorb,MOene(iorb),MOene(iorb)*au2eV,MOocc(iorb),orbtype(MOtype(iorb)),symstr
 		else
-			naorb=count(MOtype==1)
-			write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
-			iorb,iorb-naorb,MOene(iorb),MOene(iorb)*au2eV,MOocc(iorb),orbtype(MOtype(iorb)),symstr
+			if (MOtype(iorb)==1) then
+				write(*,"(i10,5x,' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+				iorb,MOene(iorb),MOene(iorb)*au2eV,MOocc(iorb),orbtype(MOtype(iorb)),symstr
+			else
+				naorb=count(MOtype==1)
+				write(*,"(i6,' (',i6,')',' E(au/eV):',f12.5,f13.4,' Occ:',f9.6,' Typ:',a,1x,a)") &
+				iorb,iorb-naorb,MOene(iorb),MOene(iorb)*au2eV,MOocc(iorb),orbtype(MOtype(iorb)),symstr
+			end if
 		end if
-	end if
+    end if
 	call SWGTXT(iorbseltext,"Please wait...")
 	call SWGFGD(iorbseltext,1.0D0,0D0,0D0)
 	if (isosursec==0) then !Save cube data for isosurface 1 to cubmat
@@ -1589,6 +1611,12 @@ end subroutine
 subroutine setatmsize(id)
 integer,intent (in) :: id
 call GWGSCL(id,ratioatmsphere)
+call drawmol
+end subroutine
+
+subroutine setCPsize(id)
+integer,intent (in) :: id
+call GWGSCL(id,ratioCPsphere)
 call drawmol
 end subroutine
 
@@ -1718,6 +1746,35 @@ if (istat==0) ishowdatarange=0
 if (istat==1) ishowdatarange=1
 call drawmol
 end subroutine
+subroutine setshowdatarange_menu(id)
+integer,intent (in) :: id
+if (ishowdatarange==0) then
+    ishowdatarange=1
+else
+    ishowdatarange=0
+end if
+call drawmol
+end subroutine
+
+subroutine setshowcell(id)
+integer,intent (in) :: id
+if (ishowcell==0) then
+    ishowcell=1
+else
+    ishowcell=0
+end if
+call drawmol
+end subroutine
+
+subroutine setshowboundaryatom(id)
+integer,intent (in) :: id
+if (ishowboundaryatom==0) then
+    ishowboundaryatom=1
+else
+    ishowboundaryatom=0
+end if
+call drawmol
+end subroutine
 
 subroutine ifshow3n3(id)
 integer,intent (in) :: id
@@ -1785,6 +1842,8 @@ subroutine setisosurnumpt(id)
 integer,intent (in) :: id
 character inpstring*30
 nprevorbgridold=nprevorbgrid
+if (id==idisisosurverypoor) nprevorbgrid=25000
+if (id==idisisosurpoor) nprevorbgrid=50000
 if (id==idisisosurdef) nprevorbgrid=120000
 if (id==idisisosurgood) nprevorbgrid=300000
 if (id==idisisosurhigh) nprevorbgrid=500000
@@ -1840,12 +1899,28 @@ use defvar
 integer,intent (in) :: id
 character inpstring*30
 CALL SWGWTH(60)
-write(inpstring,"(f10.3)") aug3D
+if (ifPBC>0) then
+    inpstring=" "
+else
+    write(inpstring,"(f10.4)") aug3D_main0
+    !adjustl is important, otherwise if enter main function 0 once first, then visualize orbital in ETS-NOCV &
+    !and enter the window of set extension distance, the shown content in the text box may be messy code
+    inpstring=adjustl(inpstring)
+end if
 CALL swgtit("Set extension distance")
 call dwgtxt("Input extension distance for calculating grid data of orbitals",inpstring)
-read(inpstring,*) aug3D
-call drawmol
+read(inpstring,*,iostat=ierror) aug3D_main0
+if (ierror/=0) aug3D_main0=0
+call showorbsel(id,iorbvis)
 CALL SWGWTH(20) !Recover default
+end subroutine
+
+!Make box size consistent to cell
+subroutine setboxeqcell(id)
+use defvar
+integer,intent (in) :: id
+aug3D_main0=-1
+call showorbsel(id,iorbvis)
 end subroutine
 
 !Set orbital isovalue to specified value in main function 0 GUI
@@ -1938,6 +2013,25 @@ call drawmol
 end subroutine
 
 
+!Set which CP is the only CP that could be labelled
+subroutine setCPlabone(id)
+use defvar
+use topo
+integer,intent (in) :: id
+character inpstring*30
+inpstring=" "
+CALL swgtit("Labelling which CP?")
+CALL SWGWTH(40)
+call dwgtxt("Input index of the CP that could be labelled|If empty, all CPs could be labelled",inpstring)
+if (inpstring==" ") then
+	lab_oneCP=0
+else
+	read(inpstring,*) lab_oneCP
+end if
+call drawmol
+end subroutine
+
+
 !If show cubmattmp
 subroutine ifisosursec(id)
 integer,intent (in) :: id
@@ -1961,6 +2055,12 @@ isosur1style=2
 if (isosur2style==5) isosur2style=2
 call drawmol
 end subroutine
+subroutine setisosur1lineneg(id)
+integer,intent (in) :: id
+isosur1style=-2
+if (isosur2style==5) isosur2style=2
+call drawmol
+end subroutine
 subroutine setisosur1point(id)
 integer,intent (in) :: id
 isosur1style=3
@@ -1970,6 +2070,12 @@ end subroutine
 subroutine setisosur1solidmesh(id)
 integer,intent (in) :: id
 isosur1style=4
+if (isosur2style==5) isosur2style=4
+call drawmol
+end subroutine
+subroutine setisosur1solidmeshneg(id)
+integer,intent (in) :: id
+isosur1style=-4
 if (isosur2style==5) isosur2style=4
 call drawmol
 end subroutine
@@ -2275,9 +2381,9 @@ call GWGSCL(id,grdspc)
 dx=grdspc
 dy=grdspc
 dz=grdspc
-gridvec1=0;gridvec1(1)=dx
-gridvec2=0;gridvec2(2)=dy
-gridvec3=0;gridvec3(3)=dz
+gridv1=0;gridv1(1)=dx
+gridv2=0;gridv2(2)=dy
+gridv3=0;gridv3(3)=dz
 nx=boxlenX/dx+1
 ny=boxlenY/dy+1
 nz=boxlenZ/dz+1
@@ -2420,13 +2526,13 @@ end subroutine
 
 
 
-!!!-------- Select a fragment in GUI
+!!!-------- Select a whole fragment in GUI by inputting an atom index
 subroutine GUIselfrag(id)
 use defvar
 use util
 integer,intent (in) :: id
 character c80tmp*80,c2000tmp*2000
-integer iffrag(ncenter)
+integer iffrag(ncenter),array(ncenter)
 c80tmp=" "
 CALL SWGWTH(50)
 CALL swgtit("Select fragment")
@@ -2434,46 +2540,28 @@ call dwgtxt("Input index of any atom in the fragment, e.g. 3",c80tmp)
 if (c80tmp==" ") return
 read(c80tmp,*) iatm
 if (iatm<1.or.iatm>ncenter) return
-call getfragatoms(iatm,iffrag)
 
-!Convert indices of the selected atoms to string
-c2000tmp=" "
+call getfragatoms(iatm,iffrag)
+nsel=0
 do iatm=1,ncenter
     if (iffrag(iatm)==1) then
-        write(c80tmp,*) iatm
-        nsize=len_trim(adjustl(c80tmp))
-        if (c2000tmp/=" ") then
-            if (iffrag(iatm-1)==1) then !The index is contiguous, use - to connect to last one
-                if (iatm<ncenter) then
-                    if (iffrag(iatm+1)==1) cycle
-                end if
-                ntmp=len_trim(c2000tmp) !Modify last comma as -
-                c2000tmp(ntmp:ntmp)='-'
-            end if
-        end if
-        c2000tmp=trim(c2000tmp)//trim(adjustl(c80tmp))
-        if (any(iffrag(iatm+1:)==1)) write(c2000tmp(len_trim(c2000tmp)+1:),"(a)") ','
+        nsel=nsel+1
+        array(nsel)=iatm
     end if
 end do
+call arr2str_2(array(1:nsel),c2000tmp) !Convert indices of the selected atoms to string
 
 !Highlight atoms in the fragment
 if (allocated(highlightatomlist)) deallocate(highlightatomlist)
-allocate(highlightatomlist(count(iffrag==1)))
-nhigh=0
-do iatm=1,ncenter
-    if (iffrag(iatm)==1) then
-        nhigh=nhigh+1
-        highlightatomlist(nhigh)=iatm
-    end if
-end do
+allocate(highlightatomlist(nsel))
+highlightatomlist=array(1:nsel)
 call drawmol
 
+CALL SWGWTH(50)
 if (isys==1) then
-    CALL SWGWTH(50)
     call dwgtxt("Indices of the atoms in the fragment",c2000tmp)
 else
     write(*,"(/,' Indices of the atoms in the fragment:',/,a)") trim(c2000tmp)
-    CALL SWGWTH(50)
     call dwgmsg("The atoms in the fragment have been highlighted, their indices have been shown in console window")
 end if
 deallocate(highlightatomlist)
@@ -2481,6 +2569,86 @@ call drawmol
 end subroutine
 
 
+
+!!!-------- Get atom indices by inputting element
+subroutine getatmidx_by_ele(id)
+use defvar
+use util
+integer,intent (in) :: id
+character c80tmp*80,c2000tmp*2000
+integer array(ncenter)
+c80tmp=" "
+CALL SWGWTH(50)
+CALL swgtit("Get atom indices via element")
+call dwgtxt("Input element name, e.g. Fe",c80tmp)
+if (c80tmp==" ") return
+
+nsel=0
+do iatm=1,ncenter
+    if (a(iatm)%name==trim(c80tmp)) then
+        nsel=nsel+1
+        array(nsel)=iatm
+    end if
+end do
+call arr2str_2(array(1:nsel),c2000tmp) !Convert indices of the selected atoms to string
+
+!Highlight selected atoms
+if (allocated(highlightatomlist)) deallocate(highlightatomlist)
+allocate(highlightatomlist(nsel))
+highlightatomlist=array(1:nsel)
+call drawmol
+
+CALL SWGWTH(50)
+if (isys==1) then
+    call dwgtxt("Indices of selected atoms:",c2000tmp)
+else
+    write(*,"(/,' Indices of selected atoms:',/,a)") trim(c2000tmp)
+    call dwgmsg("Indices of selected atoms have been shown in console window")
+end if
+deallocate(highlightatomlist)
+call drawmol
+end subroutine
+
+
+
+!!!-------- Show atomic coordinates in Angstrom
+subroutine showcoordA(id)
+use defvar
+integer,intent (in) :: id
+integer iatm
+write(*,*)
+do iatm=1,ncenter
+	write(*,"(i5,'(',a2,')','  Charge:',f9.5,'  x,y,z(Angstrom):',3f11.6)") &
+    iatm,a(iatm)%name,a(iatm)%charge,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+end do
+end subroutine
+
+
+!!!-------- Show fractional coordinates
+subroutine showfractcoord(id)
+use defvar
+integer,intent (in) :: id
+integer iatm
+real*8 Cart(3),fract(3)
+write(*,*)
+do iatm=1,ncenter
+	Cart(1)=a(iatm)%x
+    Cart(2)=a(iatm)%y
+    Cart(3)=a(iatm)%z
+	call Cart2fract(Cart,fract)
+	write(*,"(i5,'(',a2,')','  Charge:',f9.5,'  Fract. coord. 1/2/3:',3f10.6)") &
+    iatm,a(iatm)%name,a(iatm)%charge,fract(:)
+end do
+end subroutine
+
+
+!!!-------- Export all internal coordinates
+subroutine export_intcoord(id)
+integer,intent (in) :: id
+call showgeomparam("int_coord.txt")
+call swgtit(" ")
+call dwgmsg("All internal coordinates have been written to int_coord.txt in current folder")
+end subroutine
 
 
 !!!-------- Plot a batch of orbitals
@@ -2531,7 +2699,7 @@ call drawmol
 end subroutine
 
 
-!!!-------- Write GUI setting to GUIsettings.ini current folder
+!!!-------- Write GUI setting to GUIsettings.ini, currently only invoked by main function 0
 subroutine writeGUIsetting(id)
 use defvar
 integer,intent (in) :: id
@@ -2546,7 +2714,7 @@ else
 end if
 open(10,file=c200tmp,status="replace")
 write(10,*) "nprevorbgrid      ",nprevorbgrid
-write(10,*) "aug3D             ",aug3D
+write(10,*) "aug3D             ",aug3D_main0
 write(10,*) "sur_value         ",sur_value
 write(10,*) "ishowhydrogen     ",ishowhydrogen
 write(10,*) "iatmlabtype3D     ",iatmlabtype3D
@@ -2599,7 +2767,7 @@ close(10)
 end subroutine
 
 
-!!!-------- load GUI setting from GUIsettings.ini current folder
+!!!-------- Load GUI setting from GUIsettings.ini, currently only invoked by main function 0
 subroutine loadGUIsetting(id)
 use defvar
 integer,intent (in) :: id
@@ -2615,7 +2783,7 @@ else
 end if
 if (alive1.or.alive2) then
     read(10,*) c30tmp,nprevorbgrid
-    read(10,*) c30tmp,aug3D
+    read(10,*) c30tmp,aug3D_main0
     read(10,*) c30tmp,sur_value
     read(10,*) c30tmp,ishowhydrogen
     read(10,*) c30tmp,iatmlabtype3D
@@ -2671,8 +2839,155 @@ if (alive1.or.alive2) then
     else if (alive2) then
         write(*,*) "Settings have been loaded from GUIsettings.ini in current folder"
     end if
+    	call swgbut(idisshowatmlab,ishowatmlab)
+	call swgbut(idisshowaxis,ishowaxis)
+    call swgscl(idislabelsize,textheigh)
+	call swgscl(idisatmsize,ratioatmsphere)
+    if (imodlayout/=2) then
+		call swgscl(idisbondradius,bondradius)
+		call swgscl(idisbondcrit,bondcrit)
+    end if
+    call swgscl(idisisosurscl,sur_value)
 else
     call dwgmsg("Error: Cannot find GUIsettings.ini in either current folder or the folder defined by ""Multiwfnpath""")
+end if
+end subroutine
+
+
+
+!!!-------- Write isosurface GUI setting to isosur.ini. Currently only invoked by GUI_mode=3
+subroutine write_isosur_setting(id)
+use defvar
+integer,intent (in) :: id
+character*200 c200tmp
+call getenv("Multiwfnpath",c200tmp)
+if (c200tmp/=" ") then
+    c200tmp=trim(c200tmp)//"/isosur.ini"
+    call dwgmsg("Settings have been written to isosur.ini in the folder defined by ""Multiwfnpath"" environment variable")
+else
+    c200tmp="isosur.ini"
+    call dwgmsg("Settings have been written to isosur.ini in current folder")
+end if
+open(10,file=c200tmp,status="replace")
+write(10,*) "sur_value         ",sur_value
+write(10,*) "ishowhydrogen     ",ishowhydrogen
+write(10,*) "iatmlabtype3D     ",iatmlabtype3D
+write(10,*) "atmlabclrR        ",atmlabclrR
+write(10,*) "atmlabclrG        ",atmlabclrG
+write(10,*) "atmlabclrB        ",atmlabclrB
+write(10,*) "ienablelight1     ",ienablelight1
+write(10,*) "ienablelight2     ",ienablelight2
+write(10,*) "ienablelight3     ",ienablelight3
+write(10,*) "ienablelight4     ",ienablelight4
+write(10,*) "ienablelight5     ",ienablelight5
+write(10,*) "ishowatmlab       ",ishowatmlab
+write(10,*) "idrawmol          ",idrawmol
+write(10,*) "ishowaxis         ",ishowaxis
+write(10,*) "ishowdatarange    ",ishowdatarange
+write(10,*) "idrawisosur       ",idrawisosur
+write(10,*) "isosur1style      ",isosur1style
+write(10,*) "isosurshowboth    ",isosurshowboth
+write(10,*) "bondcrit          ",bondcrit
+write(10,*) "textheigh         ",textheigh
+write(10,*) "ratioatmsphere    ",ratioatmsphere
+write(10,*) "bondradius        ",bondradius
+write(10,*) "XVU               ",XVU
+write(10,*) "YVU               ",YVU
+write(10,*) "ZVU               ",ZVU
+write(10,*) "opacitycub1       ",opacitycub1
+write(10,*) "clrRcub1same      ",clrRcub1same
+write(10,*) "clrGcub1same      ",clrGcub1same
+write(10,*) "clrBcub1same      ",clrBcub1same
+write(10,*) "clrRcub1oppo      ",clrRcub1oppo
+write(10,*) "clrGcub1oppo      ",clrGcub1oppo
+write(10,*) "clrBcub1oppo      ",clrBcub1oppo
+write(10,*) "clrRcub1samemeshpt",clrRcub1samemeshpt
+write(10,*) "clrGcub1samemeshpt",clrGcub1samemeshpt
+write(10,*) "clrBcub1samemeshpt",clrBcub1samemeshpt
+write(10,*) "clrRcub1oppomeshpt",clrRcub1oppomeshpt
+write(10,*) "clrGcub1oppomeshpt",clrGcub1oppomeshpt
+write(10,*) "clrBcub1oppomeshpt",clrBcub1oppomeshpt
+close(10)
+end subroutine
+
+
+!!!-------- Load isosurface GUI setting from isosur.ini. Currently only invoked by GUI_mode=3
+subroutine load_isosur_setting(id)
+use defvar
+integer,intent (in) :: id
+character c30tmp*30,c200tmp*200
+logical alive1,alive2
+call getenv("Multiwfnpath",c200tmp)
+inquire(file=trim(c200tmp)//"/isosur.ini",exist=alive1)
+if (alive1) then
+    open(10,file=trim(c200tmp)//"/isosur.ini",status="old")
+else
+    inquire(file="isosur.ini",exist=alive2)
+    if (alive2) open(10,file="isosur.ini",status="old")
+end if
+if (alive1.or.alive2) then
+    read(10,*) c30tmp,sur_value
+    read(10,*) c30tmp,ishowhydrogen
+    read(10,*) c30tmp,iatmlabtype3D
+    read(10,*) c30tmp,atmlabclrR
+    read(10,*) c30tmp,atmlabclrG
+    read(10,*) c30tmp,atmlabclrB
+    read(10,*) c30tmp,ienablelight1
+    read(10,*) c30tmp,ienablelight2
+    read(10,*) c30tmp,ienablelight3
+    read(10,*) c30tmp,ienablelight4
+    read(10,*) c30tmp,ienablelight5
+    read(10,*) c30tmp,ishowatmlab
+    read(10,*) c30tmp,idrawmol
+    read(10,*) c30tmp,ishowaxis
+    read(10,*) c30tmp,ishowdatarange
+    read(10,*) c30tmp,idrawisosur
+    read(10,*) c30tmp,isosur1style
+    read(10,*) c30tmp,isosurshowboth
+    read(10,*) c30tmp,bondcrit
+    read(10,*) c30tmp,textheigh
+    read(10,*) c30tmp,ratioatmsphere
+    read(10,*) c30tmp,bondradius
+    read(10,*) c30tmp,XVU
+    read(10,*) c30tmp,YVU
+    read(10,*) c30tmp,ZVU
+    read(10,*) c30tmp,opacitycub1
+    read(10,*) c30tmp,clrRcub1same
+    read(10,*) c30tmp,clrGcub1same
+    read(10,*) c30tmp,clrBcub1same
+    read(10,*) c30tmp,clrRcub1oppo
+    read(10,*) c30tmp,clrGcub1oppo
+    read(10,*) c30tmp,clrBcub1oppo
+    read(10,*) c30tmp,clrRcub1samemeshpt
+    read(10,*) c30tmp,clrGcub1samemeshpt
+    read(10,*) c30tmp,clrBcub1samemeshpt
+    read(10,*) c30tmp,clrRcub1oppomeshpt
+    read(10,*) c30tmp,clrGcub1oppomeshpt
+    read(10,*) c30tmp,clrBcub1oppomeshpt
+    close(10)
+    call drawmol
+    if (alive1) then
+        write(*,"(a)") " Settings have been loaded from the isosur.ini in the folder defined by ""Multiwfnpath"""
+    else if (alive2) then
+        write(*,*) "Settings have been loaded from isosur.ini in current folder"
+    end if
+    call swgscl(idislabelsize,textheigh)
+	call swgscl(idisatmsize,ratioatmsphere)
+    call swgscl(idisbondradius,bondradius)
+	call swgscl(idisbondcrit,bondcrit)
+    call swgscl(idisisosurscl,sur_value)
+    	call swgbut(idisshowatmlab,ishowatmlab)
+	call swgbut(idisshowaxis,ishowaxis)
+    call swgbut(idisshowbothsign,isosurshowboth)
+	call swgbut(idisshowdatarange,ishowdatarange)
+	call swgbut(idisshowmol,idrawmol)
+	call swgbut(idisshowisosur,idrawisosur)
+    if (GUI_mode==3) then
+    		write(c30tmp,"(f8.3)") sur_value
+		call SWGTXT(idisscrval,trim(c30tmp))
+    end if
+else
+    call dwgmsg("Error: Cannot find isosur.ini in either current folder or the folder defined by ""Multiwfnpath""")
 end if
 end subroutine
 

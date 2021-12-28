@@ -1,0 +1,18 @@
+mol new basinfunc.cub
+mol addfile basinsyn.cub
+mol delrep 0 top
+mol addrep top
+mol modstyle 0 top Licorice 0.1 12.0 17.0
+mol modcolor 0 top Element
+mol addrep top
+mol modstyle 1 top Isosurface 0.8 0 0 0 1 1
+mol modcolor 1 top Volume 1
+mol scaleminmax top 1 -1.0 1.0
+
+color scale method GWR
+color Display Background white
+axes location Off
+display depthcue off
+display rendermode GLSL
+light 3 on
+color Element N iceblue

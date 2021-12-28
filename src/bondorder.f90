@@ -30,12 +30,12 @@ do while(.true.)
     write(*,*) "11 AV1245 index (approximate multicenter bond order for large rings) and AVmin"
 	read(*,*) ibondana
 	if (.not.allocated(CObasa).and.(ibondana>=1.and.ibondana<=6)) then
-		write(*,"(a)") " ERROR: The input file you used does not contain basis function information! Please check Section 2.5 of the manual for explanation"
+		write(*,"(a)") " Error: The input file you used does not contain basis function information! Please check Section 2.5 of the manual for explanation"
 		write(*,*) "Press ENTER button to return"
 		read(*,*)
 		return
 	else if (.not.allocated(b).and.(ibondana==7.or.ibondana==8)) then
-		write(*,"(a)") " ERROR: The input file you used does not contain GTF information! Please check Section 2.5 of the manual for explanation"
+		write(*,"(a)") " Error: The input file you used does not contain GTF information! Please check Section 2.5 of the manual for explanation"
 		write(*,*) "Press ENTER button to return"
 		read(*,*)
 		return
@@ -97,21 +97,24 @@ do while(.true.)
 		if (allocated(frag2)) deallocate(frag2)
 		exit
 	else if (ibondana==1) then
+        call ask_Sbas_PBC
 		write(*,*) "Please wait..."
 		call mayerbndord
 	else if (ibondana==2) then
+        call ask_Sbas_PBC
 		call multicenter(2)
 	else if (ibondana==-2) then
 		call multicenterNAO
 	else if (ibondana==3.or.ibondana==-3) then
+        call ask_Sbas_PBC
 	    !In symmortho the density matrix, CObasa/b and Sbas will change, so backup them
-	    if (allocated(Cobasb)) then !Open-shell
-            allocate(Cobasa_org(nbasis,nmo/2),Cobasb_org(nbasis,nmo/2),Sbas_org(nbasis,nbasis))
-	        Cobasb_org=Cobasb
+	    if (allocated(CObasb)) then !Open-shell
+            allocate(CObasa_org(nbasis,nmo/2),CObasb_org(nbasis,nmo/2),Sbas_org(nbasis,nbasis))
+	        CObasb_org=CObasb
 	    else
-			allocate(Cobasa_org(nbasis,nmo),Sbas_org(nbasis,nbasis)) 
+			allocate(CObasa_org(nbasis,nmo),Sbas_org(nbasis,nbasis)) 
 	    end if
-	    Cobasa_org=Cobasa
+	    CObasa_org=CObasa
 	    Sbas_org=Sbas
 	    write(*,*) "Performing Lowdin orthogonalization..."
  		call symmortho
@@ -123,19 +126,22 @@ do while(.true.)
 		end if
         write(*,*) "Regenerating original density matrix..."
         write(*,*)
-        Cobasa=Cobasa_org
+        CObasa=CObasa_org
         Sbas=Sbas_org
-        deallocate(Cobasa_org,Sbas_org)
-        if (allocated(Cobasb_org)) then
-            Cobasb=Cobasb_org
-            deallocate(Cobasb_org)
+        deallocate(CObasa_org,Sbas_org)
+        if (allocated(CObasb_org)) then
+            CObasb=CObasb_org
+            deallocate(CObasb_org)
         end if
         call genP
 	else if (ibondana==4) then
+        call ask_Sbas_PBC
 		call mullikenbndord
 	else if (ibondana==5) then
-		call decompMBO
+        call ask_Sbas_PBC
+		call decompMullikenBO
 	else if (ibondana==6) then
+        call ask_Sbas_PBC
 		call OrbPertMayer
 	else if (ibondana==7) then
 		call intatomspace(1)
@@ -302,672 +308,6 @@ end subroutine
 
 
 
-!! ----------- Multi-center bond order analysis
-!ientry denotes how this module is entered. =2 Normal MCBO =-3 MCBO under Lowdin symmetrized basis
-subroutine multicenter(ientry)
-use defvar
-use util
-implicit real*8 (a-h,o-z)
-real*8,allocatable :: PSmat(:,:),PSmata(:,:),PSmatb(:,:),PSmattot(:,:)
-real*8 maxbndord
-integer ientry
-integer cenind(2000) !Can maximally deal with 2000 centers
-integer maxcenind(2000) !Used to store the combination that has the maximum bond order during automatic search
-character c2000tmp*2000
-
-allocate(PSmat(nbasis,nbasis),PSmattot(nbasis,nbasis))
-ntime=1 !Closed-shell
-if (ientry==2) then
-    write(*,*) "Calculating PS matrix, please wait..."
-    PSmattot=matmul_blas(Ptot,Sbas,nbasis,nbasis,0,0)
-else
-    PSmattot=Ptot
-end if
-if (wfntype==1.or.wfntype==2.or.wfntype==4) then !Open-shell
-    allocate(PSmata(nbasis,nbasis),PSmatb(nbasis,nbasis))
-	ntime=3
-    if (ientry==2) then
-        PSmata=matmul_blas(Palpha,Sbas,nbasis,nbasis,0,0)
-        PSmatb=matmul_blas(Pbeta,Sbas,nbasis,nbasis,0,0)
-    else
-        PSmata=Palpha
-        PSmatb=Pbeta
-    end if
-end if
-
-if (iMCBOtype==0) then
-    if (ientry==2) write(*,"(a)") " Note: Because the PS matrix may be not symmetric, the result may be dependent of &
-    inputting order of atomic indices. Settings the iMCBOtype in settings.ini to 1 is recommended, in this case the results corresponding &
-    to forward and reverse inputting orders will be automatically averaged"
-else if (iMCBOtype==1) then
-    write(*,"(a)") " Note: Since iMCBOtype in settings.ini has been set to 1, the multi-center bond order will be &
-    reported after averaging the results corresponding to forward and reverse inputting directions"
-else if (iMCBOtype==2) then
-    write(*,"(a)") " Note: Since iMCBOtype in settings.ini has been set to 2, the multi-center bond order will be &
-    reported by taking all possible permutations into account"
-end if
-
-do while(.true.)
-	write(*,*)
-	write(*,*) "Input atom indices, e.g. 3,4,7,8,10   (number of centers is arbitrary)"
-    write(*,"(a)") " Note: The input order must be in consistency with atomic connectivity. You can also input e.g. 4-10 if the indices are contiguous"
-	write(*,*) "Input -3/-4/-5/-6 will search all possible three/four/five/six-center bonds"
-	write(*,*) "Input 0 can return to upper level menu"
-	read(*,"(a)") c2000tmp
-
-	if (c2000tmp(1:1)=='0') then
-		Return
-	else if (c2000tmp(1:1)/='-') then
-		call str2arr(c2000tmp,nbndcen,cenind)
-		
-		do itime=1,ntime
-			if (wfntype==0.or.wfntype==3) then
-				PSmat=PSmattot
-			else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
-				if (itime==1) PSmat=PSmattot
-				if (itime==2) PSmat=PSmata
-				if (itime==3) PSmat=PSmatb
-			end if
-			call calcmultibndord(nbndcen,cenind,PSmat,nbasis,accum) !accum is pristine result without any factor
-			if (itime==1) bndordmix=accum
-			if (itime==2) bndordalpha=accum*2**(nbndcen-1)
-			if (itime==3) bndordbeta=accum*2**(nbndcen-1)
-		end do
-		if (wfntype==0.or.wfntype==3) then
-            if (accum>1D-8) then
-			    write(*,"(a,f16.10)") " The multicenter bond order:",accum
-            else
-			    write(*,"(a,1PE20.10)") " The multicenter bond order:",accum
-            end if
-			!Normalized multicenter bond order, see Electronic Aromaticity Index for Large Rings DOI: 10.1039/C6CP00636A
-			!When it is negative, first obtain **(1/n) using its absolute value, then multiply it by -1
-			write(*,"(a,f16.10)") " The normalized multicenter bond order:",accum/abs(accum) * (abs(accum)**(1D0/nbndcen))
-			
-		else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
-			totbndorder=bndordalpha+bndordbeta
-            if (totbndorder>1D-5) then
-			    write(*,"(a,f13.7)") " The multicenter bond order from alpha density matrix:",bndordalpha
-			    write(*,"(a,f13.7)") " The multicenter bond order from beta density matrix: ",bndordbeta
-			    write(*,"(a,f13.7)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
-            else
-			    write(*,"(a,1PE20.10)") " The multicenter bond order from alpha density matrix:",bndordalpha
-			    write(*,"(a,1PE20.10)") " The multicenter bond order from beta density matrix: ",bndordbeta
-			    write(*,"(a,1PE20.10)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
-            end if
-			write(*,"(a,f13.7)") " Above result in normalized form:",totbndorder/abs(totbndorder) * (abs(totbndorder)**(1D0/nbndcen))
-            if (bndordmix>1D-5) then
-			    write(*,"(a,f13.7)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
-            else
-			    write(*,"(a,1PE13.6)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
-            end if
-			write(*,"(a,f13.7)") " Above result in normalized form:",bndordmix/abs(bndordmix) * (abs(bndordmix)**(1D0/nbndcen))
-		end if
-		
-	else if (c2000tmp(1:1)=='-') then !Automatic search
-		read(c2000tmp,*) nbndcen
-		nbndcen=abs(nbndcen)
-		PSmat=PSmattot
-		!Search all combinations. Owing to simplicity and efficiency consideration, for open-shell system, compulsory to use mixed alpha&beta density matrix
-		if (wfntype==1.or.wfntype==2.or.wfntype==4) write(*,"(a)") "Note: The bond order considered here comes from mixed alpha&beta density matrix"
-		write(*,*)
-		write(*,*) "Input magnitude threshold for printing bond orders, e.g. 0.03"
-		read(*,*) thres
-		
-		nfound=0
-		maxbndord=0D0
-		if (nbndcen/=3) write(*,*) "Note: The search may be not exhaustive. Please wait..."
-		if (nbndcen==3) then
-			!All combinations
-			do iatm=1,ncenter
-				do jatm=iatm+1,ncenter
-					do katm=jatm+1,ncenter
-						cenind(1)=iatm
-						cenind(2)=jatm
-						cenind(3)=katm
-						!Clockwise and anticlockwise
-						do iseq=1,2
-							if (iseq==2) call invarr(cenind(1:nbndcen))
-							call calcmultibndord(nbndcen,cenind,PSmat,nbasis,accum)
-							if (abs(accum)>=thres) then
-								tmp=accum/abs(accum) * (abs(accum)**(1D0/nbndcen))
-								write(*,"(3i6,'  Result:',f10.6,'  Normalized:',f10.5)") cenind(1:nbndcen),accum,tmp
-								nfound=nfound+1
-							end if
-							if (abs(accum)>maxbndord) then
-								maxbndord=accum
-								maxcenind=cenind
-							end if
-						end do
-					end do
-				end do
-			end do
-		else if (nbndcen==4) then
-			!$OMP PARALLEL DO private(iatm,jatm,katm,latm,cenind,iseq,accum,tmp) shared(nfound) schedule(dynamic) NUM_THREADS(nthreads)
-			do iatm=1,ncenter
-				do jatm=iatm+1,ncenter
-					do katm=jatm+1,ncenter
-						do latm=katm+1,ncenter
-							cenind(1)=iatm
-							cenind(2)=jatm
-							cenind(3)=katm
-							cenind(4)=latm
-							do iseq=1,2
-								if (iseq==2) call invarr(cenind(1:nbndcen))
-								call calcmultibndord(nbndcen,cenind,PSmat,nbasis,accum)
-								if (abs(accum)>=thres) then
-									tmp=accum/abs(accum) * (abs(accum)**(1D0/nbndcen))
-									write(*,"(4i6,'  Result:',f10.6,'  Normalized:',f10.5)") cenind(1:nbndcen),accum,tmp
-									nfound=nfound+1
-								end if
-								if (abs(accum)>maxbndord) then
-									maxbndord=accum
-									maxcenind=cenind
-								end if
-							end do
-						end do
-					end do
-				end do
-			end do
-			!$OMP end parallel do
-		else if (nbndcen==5) then
-		 	do iatm=1,ncenter
-				!$OMP PARALLEL DO private(jatm,katm,latm,matm,cenind,iseq,accum,tmp) shared(nfound) schedule(dynamic) NUM_THREADS(nthreads)
-				do jatm=iatm+1,ncenter
-					do katm=jatm+1,ncenter
-						do latm=katm+1,ncenter
-							do matm=latm+1,ncenter
-								cenind(1)=iatm
-								cenind(2)=jatm
-								cenind(3)=katm
-								cenind(4)=latm
-								cenind(5)=matm
-								do iseq=1,2
-									if (iseq==2) call invarr(cenind(1:nbndcen))
-									call calcmultibndord(nbndcen,cenind,PSmat,nbasis,accum)
-									if (abs(accum)>=thres) then
-										tmp=accum/abs(accum) * (abs(accum)**(1D0/nbndcen))
-										write(*,"(5i6,'  Result:',f10.6,'  Normalized:',f10.5)") cenind(1:nbndcen),accum,tmp
-										nfound=nfound+1
-									end if
-									if (abs(accum)>maxbndord) then
-										maxbndord=accum
-										maxcenind=cenind
-									end if
-								end do
-							end do
-						end do
-					end do
-				end do
-				!$OMP end parallel do
-			end do
-		else if (nbndcen==6) then
-			do iatm=1,ncenter
-				!$OMP PARALLEL DO private(jatm,katm,latm,matm,cenind,iseq,accum,tmp) shared(nfound) schedule(dynamic) NUM_THREADS(nthreads)
-				do jatm=iatm+1,ncenter
-					do katm=jatm+1,ncenter
-						do latm=katm+1,ncenter
-							do matm=latm+1,ncenter
-								do natm=matm+1,ncenter
-									cenind(1)=iatm
-									cenind(2)=jatm
-									cenind(3)=katm
-									cenind(4)=latm
-									cenind(5)=matm
-									cenind(6)=natm
-									do iseq=1,2
-										if (iseq==2) call invarr(cenind(1:nbndcen))
-										call calcmultibndord(nbndcen,cenind,PSmat,nbasis,accum)
-										if (abs(accum)>=thres) then
-											tmp=accum/abs(accum) * (abs(accum)**(1D0/nbndcen))
-											write(*,"(6i6,'  Result:',f10.6,'  Normalized:',f10.5)") cenind(1:nbndcen),accum,tmp
-											nfound=nfound+1
-										end if
-										if (abs(accum)>maxbndord) then
-											maxbndord=accum
-											maxcenind=cenind
-										end if
-									end do
-								end do
-							end do
-						end do
-					end do
-				end do
-				!$OMP end parallel do
-			end do
-		end if
-		if (nfound==0) then
-			write(*,*) "No multi-center bonds above criteria were found"
-			cycle
-		end if
-		write(*,*)
-		write(*,*) "The maximum bond order is"
-		tmp=maxbndord/abs(maxbndord) * (abs(maxbndord)**(1D0/nbndcen))
-		if (nbndcen==3) write(*,"(3i6,'  Result:',f10.6,'  Normalized:',f10.5)") maxcenind(1:nbndcen),maxbndord,tmp
-		if (nbndcen==4) write(*,"(4i6,'  Result:',f10.6,'  Normalized:',f10.5)") maxcenind(1:nbndcen),maxbndord,tmp
-		if (nbndcen==5) write(*,"(5i6,'  Result:',f10.6,'  Normalized:',f10.5)") maxcenind(1:nbndcen),maxbndord,tmp
-		if (nbndcen==6) write(*,"(6i6,'  Result:',f10.6,'  Normalized:',f10.5)") maxcenind(1:nbndcen),maxbndord,tmp
-	end if
-end do
-end subroutine
-
-
-
-
-!!------ Calculate multi-center bond order in NAO basis
-subroutine multicenterNAO
-use defvar
-use util
-use NAOmod
-implicit real*8 (a-h,o-z)
-integer cenind(2000) !Can maximally deal with 2000 centers
-character :: c2000tmp*2000
-
-!Load NAO and DMNAO information
-open(10,file=filename,status="old")
-call checkNPA(ifound);if (ifound==0) return
-call loadNAOinfo
-call checkDMNAO(ifound);if (ifound==0) return
-call loadDMNAO
-close(10)
-
-!Move information from NAO variables to common variables, so that multi-center bond order routines could be used
-ncenter=ncenter_NAO
-if (allocated(basstart)) deallocate(basstart,basend)
-allocate(basstart(ncenter),basend(ncenter))
-basstart=NAOinit
-basend=NAOend
-
-if (iMCBOtype==2) then
-    write(*,"(a)") " Note: Since iMCBOtype in settings.ini has been set to 2, the multi-center bond order will be &
-    reported by taking all possible permutations into account"
-end if
-
-do while(.true.)
-	write(*,*)
-	write(*,*) "Input atom indices, e.g. 3,4,7,8,10   (number of centers is arbitrary)"
-    write(*,"(a)") " Note: The input order must be in consistency with atomic connectivity. You can also input e.g. 4-10 if the indices are contiguous"
-	write(*,*) "Input 0 can exit"
-	read(*,"(a)") c2000tmp
-	if (c2000tmp(1:1)=='0') then
-		deallocate(basstart,basend)
-		return
-	else
-		call str2arr(c2000tmp,nbndcen,cenind)
-
-		if (.not.allocated(DMNAOb)) then !Closed shell
-			call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndord)
-			if (nbndcen==2) then
-				write(*,"(a,f16.10)") " The Wiberg bond order:",bndord
-			else
-				write(*,"(a,f16.10)") " The multicenter bond order:",bndord
-				write(*,"(a,f16.10)") " The normalized multicenter bond order:",bndord/abs(bndord) * (abs(bndord)**(1D0/nbndcen))
-			end if
-		else !Open shell
-            write(*,*) "Calculating based on alpha density matrix..."
-			call calcmultibndord(nbndcen,cenind,DMNAOa,numNAO,bndordalpha)
-            write(*,*) "Calculating based on beta density matrix..."
-			call calcmultibndord(nbndcen,cenind,DMNAOb,numNAO,bndordbeta)
-            write(*,*) "Calculating based on mixed alpha&beta density matrix..."
-			call calcmultibndord(nbndcen,cenind,DMNAO,numNAO,bndordmix)
-			bndordalpha=bndordalpha*2**(nbndcen-1)
-			bndordbeta=bndordbeta*2**(nbndcen-1)
-			totbndorder=bndordalpha+bndordbeta
-			if (nbndcen==2) then
-				write(*,"(a,f16.10)") " The bond order from alpha density matrix:",bndordalpha
-				write(*,"(a,f16.10)") " The bond order from beta density matrix: ",bndordbeta
-				write(*,"(a,f16.10)") " The sum of above two terms:",bndordalpha+bndordbeta
-				write(*,"(a,f16.10)") " The bond order from mixed alpha&beta density matrix: ",bndordmix
-			else
-				write(*,"(a,f13.7)") " The multicenter bond order from alpha density matrix:",bndordalpha
-				write(*,"(a,f13.7)") " The multicenter bond order from beta density matrix: ",bndordbeta
-				write(*,"(a,f13.7)") " The sum of multicenter bond order from alpha and beta parts:    ",totbndorder
-				write(*,"(a,f13.7)") " Above result in normalized form:",totbndorder/abs(totbndorder) * (abs(totbndorder)**(1D0/nbndcen))
-				write(*,"(a,f13.7)") " The multicenter bond order from mixed alpha&beta density matrix:",bndordmix
-				write(*,"(a,f13.7)") " Above result in normalized form:",bndordmix/abs(bndordmix) * (abs(bndordmix)**(1D0/nbndcen))
-			end if
-		end if
-	end if
-end do
-end subroutine
-
-
-
-
-!---- A general routine directly calculates two- or multi-center bond order without complex things
-!This is a wrapper of subroutine "calcmultibndord_do" for returning different definitions of multi-center bond order
-!Shared by subroutine multicenter, multicenterNAO, AV1245 and others
-!MCBOtype=0, return the MCBO in usual manner
-!MCBOtype=1, return the averaged result of positive order and reverse order of inputted atoms
-!MCBOtype=2, return the MCBO calculated as Eq. 9 of the AV1245 paper, namely taking all permutation into account
-!Note that for open-shell cases, the returned result should then be multiplied by a proper factor
-!  Input variables:
-!nbndcen: Actual number of atoms to be calculated
-!PSmat: Commonly constructed as e.g. matmul(Ptot,Sbas)
-!cenind: Atomic indices, must be size of 2000
-!matdim: Commonly is nbasis
-subroutine calcmultibndord(nbndcen,cenind,PSmat,matdim,result)
-use defvar
-use util
-implicit real*8(a-h,o-z)
-integer nbndcen,cenind(2000),cenindtmp(2000),matdim
-real*8 PSmat(matdim,matdim),result
-integer,allocatable :: allperm(:,:)
-
-if (iMCBOtype==0) then
-    call calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
-else if (iMCBOtype==1) then
-    call calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result1)
-    do i=1,nbndcen !Reverse order
-        cenindtmp(nbndcen-i+1)=cenind(i)
-    end do
-    call calcmultibndord_do(nbndcen,cenindtmp,PSmat,matdim,result2)
-    result=(result1+result2)/2
-else if (iMCBOtype==2) then
-    nperm=ft(nbndcen)
-    allocate(allperm(nperm,nbndcen))
-    call fullarrange(allperm,nperm,nbndcen) !Generate all possible permutation sequence
-    result=0
-    !$OMP PARALLEL DO SHARED(result) PRIVATE(iperm,cenindtmp,resulttmp) schedule(dynamic) NUM_THREADS(nthreads)
-    do iperm=1,nperm
-        cenindtmp(1:nbndcen)=cenind(allperm(iperm,:))
-        call calcmultibndord_do(nbndcen,cenindtmp,PSmat,matdim,resulttmp)
-        !$OMP CRITICAL
-        result=result+resulttmp
-        !$OMP END CRITICAL
-    end do
-    !$OMP END PARALLEL DO
-    result=result/(2*nbndcen)
-end if
-end subroutine
-
-
-!Extremely SLOW, foolish, lengthy code! In addition, compiling this code is very slow under ifort with O1 or O2
-!!---- The actual working horse for multi-center bond order calculation
-!subroutine calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
-!use defvar
-!implicit real*8(a-h,o-z)
-!integer nbndcen,cenind(12),matdim
-!real*8 PSmat(matdim,matdim),result
-!
-!result=0D0
-!if (nbndcen==2) then
-!	do ib=basstart(cenind(2)),basend(cenind(2))
-!		do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ia)
-!		end do
-!	end do
-!else if (nbndcen==3) then
-!	do ic=basstart(cenind(3)),basend(cenind(3))
-!		do ib=basstart(cenind(2)),basend(cenind(2))
-!			do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,ia)
-!			end do
-!		end do
-!	end do
-!else if (nbndcen==4) then
-!	do id=basstart(cenind(4)),basend(cenind(4))
-!		do ic=basstart(cenind(3)),basend(cenind(3))
-!			do ib=basstart(cenind(2)),basend(cenind(2))
-!				do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ia)
-!				end do
-!			end do
-!		end do
-!	end do
-!else if (nbndcen==5) then
-!	do ie=basstart(cenind(5)),basend(cenind(5))
-!		do id=basstart(cenind(4)),basend(cenind(4))
-!			do ic=basstart(cenind(3)),basend(cenind(3))
-!				do ib=basstart(cenind(2)),basend(cenind(2))
-!					do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,ia)
-!					end do
-!				end do
-!			end do
-!		end do
-!	end do
-!else if (nbndcen==6) then
-!	do i_f=basstart(cenind(6)),basend(cenind(6))
-!		do ie=basstart(cenind(5)),basend(cenind(5))
-!			do id=basstart(cenind(4)),basend(cenind(4))
-!				do ic=basstart(cenind(3)),basend(cenind(3))
-!					do ib=basstart(cenind(2)),basend(cenind(2))
-!						do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,ia)
-!						end do
-!					end do
-!				end do
-!			end do
-!		end do
-!	end do
-!else if (nbndcen==7) then
-!	itmp=0
-!	ntot=basend(cenind(7))-basstart(cenind(7))+1
-!	do i_g=basstart(cenind(7)),basend(cenind(7))
-!		call showprog(itmp,ntot)
-!		do i_f=basstart(cenind(6)),basend(cenind(6))
-!			do ie=basstart(cenind(5)),basend(cenind(5))
-!				do id=basstart(cenind(4)),basend(cenind(4))
-!					do ic=basstart(cenind(3)),basend(cenind(3))
-!						do ib=basstart(cenind(2)),basend(cenind(2))
-!							do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,ia)
-!							end do
-!						end do
-!					end do
-!				end do
-!			end do
-!		end do
-!		itmp=itmp+1
-!	end do
-!else if (nbndcen==8) then
-!	itmp=0
-!	ntot=basend(cenind(8))-basstart(cenind(8))+1
-!	do i_h=basstart(cenind(8)),basend(cenind(8))
-!		call showprog(itmp,ntot)
-!		do i_g=basstart(cenind(7)),basend(cenind(7))
-!			do i_f=basstart(cenind(6)),basend(cenind(6))
-!				do ie=basstart(cenind(5)),basend(cenind(5))
-!					do id=basstart(cenind(4)),basend(cenind(4))
-!						do ic=basstart(cenind(3)),basend(cenind(3))
-!							do ib=basstart(cenind(2)),basend(cenind(2))
-!								do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,ia)
-!								end do
-!							end do
-!						end do
-!					end do
-!				end do
-!			end do
-!		end do
-!		itmp=itmp+1
-!	end do
-!else if (nbndcen==9) then
-!	itmp=0
-!	ntot=basend(cenind(9))-basstart(cenind(9))+1
-!	do i_i=basstart(cenind(9)),basend(cenind(9))
-!		call showprog(itmp,ntot)
-!		do i_h=basstart(cenind(8)),basend(cenind(8))
-!			do i_g=basstart(cenind(7)),basend(cenind(7))
-!				do i_f=basstart(cenind(6)),basend(cenind(6))
-!					do ie=basstart(cenind(5)),basend(cenind(5))
-!						do id=basstart(cenind(4)),basend(cenind(4))
-!							do ic=basstart(cenind(3)),basend(cenind(3))
-!								do ib=basstart(cenind(2)),basend(cenind(2))
-!									do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,ia)
-!									end do
-!								end do
-!							end do
-!						end do
-!					end do
-!				end do
-!			end do
-!		end do
-!		itmp=itmp+1
-!	end do
-!else if (nbndcen==10) then
-!	itmp=0
-!	ntot=basend(cenind(10))-basstart(cenind(10))+1
-!	do i_j=basstart(cenind(10)),basend(cenind(10))
-!		call showprog(itmp,ntot)
-!		do i_i=basstart(cenind(9)),basend(cenind(9))
-!			do i_h=basstart(cenind(8)),basend(cenind(8))
-!				do i_g=basstart(cenind(7)),basend(cenind(7))
-!					do i_f=basstart(cenind(6)),basend(cenind(6))
-!						do ie=basstart(cenind(5)),basend(cenind(5))
-!							do id=basstart(cenind(4)),basend(cenind(4))
-!								do ic=basstart(cenind(3)),basend(cenind(3))
-!									do ib=basstart(cenind(2)),basend(cenind(2))
-!										do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,ia)
-!										end do
-!									end do
-!								end do
-!							end do
-!						end do
-!					end do
-!				end do
-!			end do
-!		end do
-!		itmp=itmp+1
-!	end do
-!else if (nbndcen==11) then
-!	itmp=0
-!	ntot=( basend(cenind(11))-basstart(cenind(11))+1 ) * ( basend(cenind(10))-basstart(cenind(10))+1 )
-!	do i_k=basstart(cenind(11)),basend(cenind(11))
-!		do i_j=basstart(cenind(10)),basend(cenind(10))
-!			call showprog(itmp,ntot)
-!			do i_i=basstart(cenind(9)),basend(cenind(9))
-!				do i_h=basstart(cenind(8)),basend(cenind(8))
-!					do i_g=basstart(cenind(7)),basend(cenind(7))
-!						do i_f=basstart(cenind(6)),basend(cenind(6))
-!							do ie=basstart(cenind(5)),basend(cenind(5))
-!								do id=basstart(cenind(4)),basend(cenind(4))
-!									do ic=basstart(cenind(3)),basend(cenind(3))
-!										do ib=basstart(cenind(2)),basend(cenind(2))
-!											do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,i_k)*PSmat(i_k,ia)
-!											end do
-!										end do
-!									end do
-!								end do
-!							end do
-!						end do
-!					end do
-!				end do
-!			end do
-!			itmp=itmp+1
-!		end do
-!	end do
-!else if (nbndcen==12) then
-!	itmp=0
-!	ntot=( basend(cenind(12))-basstart(cenind(12))+1 ) * ( basend(cenind(11))-basstart(cenind(11))+1 ) * ( basend(cenind(10))-basstart(cenind(10))+1 )
-!	do i_l=basstart(cenind(12)),basend(cenind(12))
-!		do i_k=basstart(cenind(11)),basend(cenind(11))
-!			do i_j=basstart(cenind(10)),basend(cenind(10))
-!				call showprog(itmp,ntot)
-!				do i_i=basstart(cenind(9)),basend(cenind(9))
-!					do i_h=basstart(cenind(8)),basend(cenind(8))
-!						do i_g=basstart(cenind(7)),basend(cenind(7))
-!							do i_f=basstart(cenind(6)),basend(cenind(6))
-!								do ie=basstart(cenind(5)),basend(cenind(5))
-!									do id=basstart(cenind(4)),basend(cenind(4))
-!										do ic=basstart(cenind(3)),basend(cenind(3))
-!											do ib=basstart(cenind(2)),basend(cenind(2))
-!												do ia=basstart(cenind(1)),basend(cenind(1))
-!	result=result+PSmat(ia,ib)*PSmat(ib,ic)*PSmat(ic,id)*PSmat(id,ie)*PSmat(ie,i_f)*PSmat(i_f,i_g)*PSmat(i_g,i_h)*PSmat(i_h,i_i)*PSmat(i_i,i_j)*PSmat(i_j,i_k)*PSmat(i_k,i_l)*PSmat(i_l,ia)
-!												end do
-!											end do
-!										end do
-!									end do
-!								end do
-!							end do
-!						end do
-!					end do
-!				end do
-!				itmp=itmp+1
-!			end do
-!		end do
-!	end do
-!end if
-!if (nbndcen>=7) then
-!    call showprog(ntot,ntot)
-!    write(*,*)
-!end if
-!end subroutine
-
-
-!!---- The actual working horse for multi-center bond order calculation
-subroutine calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
-use defvar
-implicit real*8(a-h,o-z)
-integer nbndcen,cenind(2000),matdim !Can maximally deal with 2000 centers
-real*8 PSmat(matdim,matdim),result
-real*8,allocatable :: mat1(:,:),mat2(:,:)
-
-result=0
-if (nbndcen==2) then !Special case, only two atoms
-	do ib=basstart(cenind(2)),basend(cenind(2))
-		do ia=basstart(cenind(1)),basend(cenind(1))
-	        result=result+PSmat(ia,ib)*PSmat(ib,ia)
-		end do
-	end do
-    return
-end if
-
-allocate(mat1(matdim,matdim),mat2(matdim,matdim))
-
-!jatm is the atom index to be looped and summed up in each time of contraction
-!mat1 and mat2 are two matrices used alternately to perform tensor contraction
-iatm=nbndcen-1
-katm=1
-kbeg=basstart(cenind(katm))
-kend=basend(cenind(katm))
-do icontract=1,nbndcen-2
-    !write(*,"(' Doing contraction',i3)") icontract
-    ibeg=basstart(cenind(iatm))
-    iend=basend(cenind(iatm))
-    jatm=iatm+1
-    jbeg=basstart(cenind(jatm))
-    jend=basend(cenind(jatm))
-    if (icontract==1) then !Initialize
-        icalc=1
-        mat2=PSmat
-    end if
-    
-    if (icalc==1) then
-        do ibas=ibeg,iend
-            do kbas=kbeg,kend
-                mat1(ibas,kbas)=sum(PSmat(ibas,jbeg:jend)*mat2(jbeg:jend,kbas))
-            end do
-        end do
-        icalc=2
-    else if (icalc==2) then
-        do ibas=ibeg,iend
-            do kbas=kbeg,kend
-                mat2(ibas,kbas)=sum(PSmat(ibas,jbeg:jend)*mat1(jbeg:jend,kbas))
-            end do
-        end do
-        icalc=1
-    end if
-    iatm=iatm-1
-end do
-
-result=0
-do ibas=basstart(cenind(1)),basend(cenind(1))
-    jbeg=basstart(cenind(2))
-    jend=basend(cenind(2))
-    if (icalc==1) then
-        result=result+sum(PSmat(ibas,jbeg:jend)*mat2(jbeg:jend,ibas))
-    else if (icalc==2) then
-        result=result+sum(PSmat(ibas,jbeg:jend)*mat1(jbeg:jend,ibas))
-    end if
-end do
-end subroutine
-
-
-
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!--------- Calculate Mulliken bond order
@@ -1068,7 +408,7 @@ end subroutine
 
 
 !!--------- Decompose Mulliken bond order to MO contribution
-subroutine decompMBO
+subroutine decompMullikenBO
 use defvar
 use util
 implicit real*8 (a-h,o-z)
@@ -1248,10 +588,17 @@ end subroutine
 subroutine decompWibergNAO
 use defvar
 use NAOmod
+use util
 implicit real*8 (a-h,o-z)
 character*3 :: icenshname(100),jcenshname(100) !Record all shell type names in centers i and j
-character c80tmp*80
-real*8,allocatable :: shcontri(:,:)
+character c80tmp*80,c2000tmp*2000
+real*8,allocatable :: shcontri(:,:),shcontrib(:,:) !alpha/total part, beta part
+integer NAOfrag1(ncenter),NAOfrag2(ncenter)
+integer nNAOfrag1,nNAOfrag2
+!Arrays for unique shells. Each unique shell corresponds to a unique kind of NAO shell in present system
+character*3 uniqsh_name(100) !Name of unique shells
+integer numuniqsh !Number of unique shells
+real*8 uniqsh_val(100,100),uniqsh_valb(100,100) !uniqsh_val(i,j) is contribution to bond order due to interaction of unique shell i in fragment 1 and unique shell j in fragment 2 
 
 !Load NAO and DMNAO information
 open(10,file=filename,status="old")
@@ -1261,256 +608,185 @@ call checkDMNAO(ifound);if (ifound==0) return
 call loadDMNAO
 close(10)
 
+!Construct shell list with unique shell name used to record interfragment shell interactions
+numuniqsh=0
+do ish=1,numNAOsh
+    if ( all(uniqsh_name(1:numuniqsh)/=shname_NAO(ish)) ) then
+        numuniqsh=numuniqsh+1
+        uniqsh_name(numuniqsh)=shname_NAO(ish)
+    end if
+end do
+nNAOfrag1=0
+nNAOfrag2=0
+
 write(*,"(a)") " Note: The threshold for printing contribution is controlled by ""bndordthres"" in settings.ini"
 do while(.true.)
 	write(*,*)
-	write(*,*) "Input two atom indices, e.g. 3,4"
+	write(*,*) "Input two atom indices to decompose their bond order, e.g. 3,4"
+    write(*,*) "To decompose bond order between two fragments, input -1"
 	write(*,*) "Input 0 can exit"
+    
 	read(*,"(a)") c80tmp
-	if (c80tmp(1:1)=='0') return
-	read(c80tmp,*) iatm,jatm
-    
-	!Construct name list of all shells for iatm and jatm
-	numicensh=1
-	icenshname(1)=NAOshname(NAOinit(iatm))
-	do ibas=NAOinit(iatm)+1,NAOend(iatm)
-		if (all(icenshname(1:numicensh)/=NAOshname(ibas))) then
-			numicensh=numicensh+1
-			icenshname(numicensh)=NAOshname(ibas)
-		end if
-	end do
-	numjcensh=1
-	jcenshname(1)=NAOshname(NAOinit(jatm))
-	do jbas=NAOinit(jatm)+1,NAOend(jatm)
-		if (all(jcenshname(1:numjcensh)/=NAOshname(jbas))) then
-			numjcensh=numjcensh+1
-			jcenshname(numjcensh)=NAOshname(jbas)
-		end if
-	end do
-	allocate(shcontri(numicensh,numjcensh))
-	shcontri=0
-    
-	!Calculate Wiberg bond order and output worthnoting components
-	bndord=0
-	write(*,*) "Contribution from NAO pairs that larger than printing threshold:"
-	if (iopshNAO==0) write(*,*) " Contri.  NAO   Center   NAO type             NAO   Center   NAO type"
-	if (iopshNAO==1) write(*,*) "Spin   Contri.  NAO   Center   NAO type          NAO   Center   NAO type"
-	do iNAO=NAOinit(iatm),NAOend(iatm)
-		do ish=1,numicensh !Find the belonging shell index within this atom for iNAO
-			if (NAOshname(iNAO)==icenshname(ish)) exit
-		end do
-		do jNAO=NAOinit(jatm),NAOend(jatm)
-			do jsh=1,numjcensh
-				if (NAOshname(jNAO)==jcenshname(jsh)) exit
-			end do
-            if (iopshNAO==0) then !Closed shell
-			    contri=DMNAO(iNAO,jNAO)**2
-			    if (contri>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--- ',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri,&
-			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,0),NAOshname(iNAO),NAOtype(iNAO),&
-			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,0),NAOshname(jNAO),NAOtype(jNAO)
-            else !Open shell
-                contri1=2*DMNAOa(iNAO,jNAO)**2
-			    if (contri1>bndordthres) write(*,"(' Alpha',f8.4,1x,i5,i5,'(',a,') ',a,'(',a,') ',a,'--',i5,i5,'(',a,') ',a,'(',a,') ',a)") contri1,&
-			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,1),NAOshname(iNAO),NAOtype(iNAO),&
-			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,1),NAOshname(jNAO),NAOtype(jNAO)
-                contri2=2*DMNAOb(iNAO,jNAO)**2
-			    if (contri2>bndordthres) write(*,"(' Beta ',f8.4,1x,i5,i5,'(',a,') ',a,'(',a,') ',a,'--',i5,i5,'(',a,') ',a,'(',a,') ',a)") contri2,&
-			    iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,2),NAOshname(iNAO),NAOtype(iNAO),&
-			    jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,2),NAOshname(jNAO),NAOtype(jNAO)
-                contri=contri1+contri2
-            end if
-			bndord=bndord+contri
-			shcontri(ish,jsh)=shcontri(ish,jsh)+contri
-		end do
-	end do
-	write(*,*)
-	write(*,*) "Contribution from NAO shell pairs that larger than printing threshold:"
-	write(*,*) " Contri. Shell  Center   Type        Shell  Center   Type"
-	do ish=1,numicensh
-		do jsh=1,numjcensh
-			if (shcontri(ish,jsh)>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')    ',a,'   --- ',i5,i5,'(',a,')    ',a)") shcontri(ish,jsh),&
-			ish,NAOcen(NAOinit(iatm)),NAOcenname(NAOinit(iatm)),icenshname(ish),&
-			jsh,NAOcen(NAOinit(jatm)),NAOcenname(NAOinit(jatm)),jcenshname(jsh)
-		end do
-	end do
-	write(*,"(/,a,f8.4)") " Total Wiberg bond order:",bndord
-	deallocate(shcontri)
-end do
-end subroutine
-
-
-
-
-!!-----------------------------------
-!!------------ AV1245 ---------------
-!!-----------------------------------
-subroutine AV1245
-use defvar
-use util
-use NAOmod
-implicit real*8 (a-h,o-z)
-character c2000tmp*2000
-integer,allocatable :: atmarr(:),atmarrorg(:)
-integer cenind(2000),minidx(4)
-real*8,allocatable :: PSmat(:,:),PSmatA(:,:),PSmatB(:,:)
-
-iopsh=0
-if (allocated(CObasa)) then !Calculate AV1245 in original basis
-    write(*,*) "Calculating PS matrix, please wait..."
-    if (allocated(Palpha)) then !Open shell
-        iopsh=1
-        allocate(PSmatA(nbasis,nbasis),PSmatB(nbasis,nbasis))
-        PSmatA=matmul_blas(Palpha,Sbas,nbasis,nbasis,0,0)
-        PSmatB=matmul_blas(Pbeta,Sbas,nbasis,nbasis,0,0)
-    else
-        allocate(PSmat(nbasis,nbasis))
-        PSmat=matmul_blas(Ptot,Sbas,nbasis,nbasis,0,0)
-    end if
-    ifNAO=0
-else !Load NAO and DMNAO information
-    write(*,"(a)") " Basis information is not presented, therefore trying to load natural atomic orbital (NAO) information from input file"
-    open(10,file=filename,status="old")
-    call checkNPA(ifound);if (ifound==0) return
-    call loadNAOinfo
-    write(*,*) "Loading NAO information finished!"
-    call checkDMNAO(ifound);if (ifound==0) return
-    call loadDMNAO
-    close(10)
-    write(*,*) "Loading density matrix in NAO basis finished!"
-    write(*,*) "The AV1245 will be calculated based on NAOs"
-    if (iopshNAO==0) then
-        allocate(PSmat(numNAO,numNAO))
-        PSmat=DMNAO
-    else if (iopshNAO==1) then !Open shell
-        iopsh=1
-        allocate(PSmatA(numNAO,numNAO),PSmatB(numNAO,numNAO))
-        PSmatA=DMNAOa
-        PSmatB=DMNAOb
-    end if
-    nbasis=numNAO
-    ifNAO=1
-    !Move information from NAO variables to common variables, so that multi-center bond order routines could be used
-    if (allocated(basstart)) deallocate(basstart,basend)
-    allocate(basstart(ncenter),basend(ncenter))
-    basstart=NAOinit
-    basend=NAOend
-end if
-iMCBOtype_old=iMCBOtype
-iMCBOtype=2
-
-do while(.true.)
-    write(*,*)
-    write(*,*) "                        ------- AV1245 and AVmin -------"
-    write(*,*) "Input index of the atoms in the order of connectivity, e.g. 2,3,7,18,19,20"
-    write(*,*) "To exit, input ""q"""
-    !When NAO information is loaded form NBO output file, geometry information is not available and cannot generate connectivity
-    if (ifNAO==0) write(*,"(a)") " Hint: If input ""d"" and press ENTER button, then you can input the indices in arbitrary order because the actual order &
-    will be automatically guessed, however in this case any atom should not connect to more than two atoms in the ring"
-    read(*,"(a)") c2000tmp
-    
-    if (index(c2000tmp,'q')/=0) then
-        exit
-    else if (index(c2000tmp,'d')/=0) then
-        if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
-        write(*,*)
-        write(*,*) "Input index of the atoms, the order is arbitrary"
-        write(*,*) "For example: 1,3-4,6-8,10-14"
+	if (c80tmp(1:1)=='0') then
+        return
+    else if (c80tmp=="-1") then
+        write(*,*) "Input indices of the atoms in fragment 1, e.g. 4,8,9-12,18"
         read(*,"(a)") c2000tmp
-        call str2arr(c2000tmp,natm)
-        allocate(atmarr(natm),atmarrorg(natm))
-        call str2arr(c2000tmp,natm,atmarrorg)
-        !Reorganize the atmarrorg to correct sequence as atmarr according to connectivity
-        atmarr=0
-        atmarr(1)=atmarrorg(1)
-        inow=atmarr(1) !Current atom
-        atmarrorg(1)=0 !This atom has been picked out, so set to zero
-        do idx=2,natm
-            do jdx=1,natm
-                if (atmarrorg(jdx)==0) cycle
-                jatm=atmarrorg(jdx)
-                if (connmat(inow,jatm)/=0) then
-                    inow=jatm
-                    atmarr(idx)=inow
-                    atmarrorg(jdx)=0
-                    exit
-                end if
-            end do
-            if (jdx==natm+1) then
-                write(*,"(' Failed to determine connectivity of atom',i6)") inow
-                exit
-            end if
-        end do
-        deallocate(atmarrorg)
-        if (any(atmarr<=0)) then
-            write(*,"(a)") " Unfortunately, the order was not successfully recognized, you should manually input &
-            the atom indices according to connectivity"
-            write(*,*) "Press ENTER button to continue"
-            read(*,*)
-            deallocate(atmarr)
-            cycle
-        else
-            write(*,*) "The order of the atoms in the ring has been successfully identified"
-            write(*,*)
-        end if
+        call str2arr(c2000tmp,nNAOfrag1,NAOfrag1)
+        write(*,*) "Input indices of the atoms in fragment 2, e.g. 1,3,13-16"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,nNAOfrag2,NAOfrag2)
     else
-        call str2arr(c2000tmp,natm)
-        allocate(atmarr(natm))
-        call str2arr(c2000tmp,natm,atmarr)
+	    read(c80tmp,*) iatm,jatm
     end if
     
-    write(*,"(' Number of selected atoms:',i6)") natm
-    write(*,*) "Atomic sequence:"
-    write(*,"(12i6)") atmarr
-    write(*,*)
-    totval=0
-    ipos=1
-    AVmin=1D10
-    do while(.true.)
-        cenind(1)=atmarr(ipos)
-        if (ipos+1>natm) then
-            cenind(2)=atmarr(ipos+1-natm)
-        else
-            cenind(2)=atmarr(ipos+1)
-        end if
-        if (ipos+3>natm) then
-            cenind(3)=atmarr(ipos+3-natm)
-        else
-            cenind(3)=atmarr(ipos+3)
-        end if
-        if (ipos+4>natm) then
-            cenind(4)=atmarr(ipos+4-natm)
-        else
-            cenind(4)=atmarr(ipos+4)
-        end if
-        if (iopsh==0) then
-            call calcmultibndord(4,cenind,PSmat,nbasis,tmpval)
-        else
-            call calcmultibndord(4,cenind,PSmatA,nbasis,tmpvalA)
-            call calcmultibndord(4,cenind,PSmatB,nbasis,tmpvalB)
-            tmpval=8*(tmpvalA+tmpvalB) !8=2^(n-1)
-        end if
-        tmpval=tmpval/3 !Convert 4c-MCI to 4c-ESI according to Eq.10 of AV1245 paper
-        write(*,"(' 4-center electron sharing index of',4i6,':',f14.8)") cenind(1:4),tmpval
-        if (abs(tmpval)<AVmin) then
-            AVmin=abs(tmpval)
-            minidx(:)=cenind(1:4)
-        end if
-        totval=totval+tmpval
-        if (ipos==natm) exit
-        ipos=ipos+1
-    end do
+    if (c80tmp/="-1") then !Interatom analysis
+	    !Construct name list of all shells for iatm and jatm
+	    numicensh=1
+	    icenshname(1)=NAOshname(NAOinit(iatm))
+	    do ibas=NAOinit(iatm)+1,NAOend(iatm)
+		    if (all(icenshname(1:numicensh)/=NAOshname(ibas))) then
+			    numicensh=numicensh+1
+			    icenshname(numicensh)=NAOshname(ibas)
+		    end if
+	    end do
+	    numjcensh=1
+	    jcenshname(1)=NAOshname(NAOinit(jatm))
+	    do jbas=NAOinit(jatm)+1,NAOend(jatm)
+		    if (all(jcenshname(1:numjcensh)/=NAOshname(jbas))) then
+			    numjcensh=numjcensh+1
+			    jcenshname(numjcensh)=NAOshname(jbas)
+		    end if
+	    end do
+	    allocate(shcontri(numicensh,numjcensh),shcontrib(numicensh,numjcensh))
+	    shcontri=0
+        shcontrib=0
+	    bndord=0
+	    bndordb=0
     
-    totval=totval/natm
-    write(*,"(/,a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000
-    write(*,"(a,f12.6,' (',4i5,')')") " AVmin times 1000 for the selected atoms is ",AVmin*1000,minidx(:)
-    !write(*,"(a,f14.8)") " AV1245 times 1000 for the selected atoms is",totval*1000*0.635 !mimic data of AV1245 paper
-    deallocate(atmarr)
+	    !Calculate Wiberg bond order and output worthnoting components
+	    write(*,*) "Contribution from NAO pairs that larger than printing threshold:"
+	    if (iopshNAO==0) write(*,*) " Contri.  NAO   Center   NAO type             NAO   Center   NAO type"
+	    if (iopshNAO==1) write(*,*) "Spin   Contri.  NAO   Center   NAO type          NAO   Center   NAO type"
+	    do iNAO=NAOinit(iatm),NAOend(iatm)
+		    do ish=1,numicensh !Find the belonging shell index within this atom for iNAO
+			    if (NAOshname(iNAO)==icenshname(ish)) exit
+		    end do
+		    do jNAO=NAOinit(jatm),NAOend(jatm)
+			    do jsh=1,numjcensh
+				    if (NAOshname(jNAO)==jcenshname(jsh)) exit
+			    end do
+                if (iopshNAO==0) then !Closed shell
+			        contri=DMNAO(iNAO,jNAO)**2
+			        if (contri>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')  ',a,'(',a,') ',a,'--- ',i5,i5,'(',a,')  ',a,'(',a,') ',a)") contri,&
+			        iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,0),NAOshname(iNAO),NAOtype(iNAO),&
+			        jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,0),NAOshname(jNAO),NAOtype(jNAO)
+			        shcontri(ish,jsh)=shcontri(ish,jsh)+contri
+			        bndord=bndord+contri
+                else !Open shell
+                    contri1=2*DMNAOa(iNAO,jNAO)**2
+			        if (contri1>bndordthres) write(*,"(' Alpha',f8.4,1x,i5,i5,'(',a,') ',a,'(',a,') ',a,'--',i5,i5,'(',a,') ',a,'(',a,') ',a)") contri1,&
+			        iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,1),NAOshname(iNAO),NAOtype(iNAO),&
+			        jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,1),NAOshname(jNAO),NAOtype(jNAO)
+                    contri2=2*DMNAOb(iNAO,jNAO)**2
+			        if (contri2>bndordthres) write(*,"(' Beta ',f8.4,1x,i5,i5,'(',a,') ',a,'(',a,') ',a,'--',i5,i5,'(',a,') ',a,'(',a,') ',a)") contri2,&
+			        iNAO,NAOcen(iNAO),NAOcenname(iNAO),NAOset(iNAO,2),NAOshname(iNAO),NAOtype(iNAO),&
+			        jNAO,NAOcen(jNAO),NAOcenname(jNAO),NAOset(jNAO,2),NAOshname(jNAO),NAOtype(jNAO)
+			        shcontri(ish,jsh)=shcontri(ish,jsh)+contri1
+			        shcontrib(ish,jsh)=shcontrib(ish,jsh)+contri2
+			        bndord=bndord+contri1
+			        bndordb=bndordb+contri2
+                end if
+		    end do
+	    end do
+	    write(*,*)
+        write(*,*) "Contribution from NAO shell pairs that larger than printing threshold:"
+	    if (iopshNAO==0) write(*,*) " Contri. Shell  Center   Type        Shell  Center   Type"
+	    if (iopshNAO==1) write(*,*) "Spin    Contri. Shell  Center   Type        Shell  Center   Type"
+	    do ish=1,numicensh
+		    do jsh=1,numjcensh
+	            if (iopshNAO==0) then
+			        if (shcontri(ish,jsh)>bndordthres) write(*,"(f8.4,1x,i5,i5,'(',a,')    ',a,'   --- ',i5,i5,'(',a,')    ',a)") shcontri(ish,jsh),&
+			        ish,NAOcen(NAOinit(iatm)),NAOcenname(NAOinit(iatm)),icenshname(ish),&
+			        jsh,NAOcen(NAOinit(jatm)),NAOcenname(NAOinit(jatm)),jcenshname(jsh)
+                else
+			        if (shcontri(ish,jsh)>bndordthres) write(*,"(' Alpha',f9.4,1x,i5,i5,'(',a,')    ',a,'   --- ',i5,i5,'(',a,')    ',a)") shcontri(ish,jsh),&
+			        ish,NAOcen(NAOinit(iatm)),NAOcenname(NAOinit(iatm)),icenshname(ish),&
+			        jsh,NAOcen(NAOinit(jatm)),NAOcenname(NAOinit(jatm)),jcenshname(jsh)
+			        if (shcontrib(ish,jsh)>bndordthres) write(*,"(' Beta ',f9.4,1x,i5,i5,'(',a,')    ',a,'   --- ',i5,i5,'(',a,')    ',a)") shcontrib(ish,jsh),&
+			        ish,NAOcen(NAOinit(iatm)),NAOcenname(NAOinit(iatm)),icenshname(ish),&
+			        jsh,NAOcen(NAOinit(jatm)),NAOcenname(NAOinit(jatm)),jcenshname(jsh)
+                end if
+		    end do
+	    end do
+    
+        !Total result    
+        if (iopshNAO==0) then
+	        write(*,"(/,a,f8.4)") " Total Wiberg bond order:",bndord
+        else
+	        write(*,"(/,a,f8.4)") " Total alpha Wiberg bond order:",bndord
+	        write(*,"(a,f8.4)") " Total beta Wiberg bond order: ",bndordb
+	        write(*,"(a,f8.4)") " Sum of alpha and beta Wiberg bond orders:",bndord+bndordb
+        end if
+	    deallocate(shcontri,shcontrib)
+    
+    else !Interfragment analysis
+        if (nNAOfrag1>0.and.nNAOfrag2>0) then
+            write(*,*)
+            write(*,*) "Interfragment bond order analysis:"
+            uniqsh_val=0
+            uniqsh_valb=0
+            do idx=1,nNAOfrag1 !Cycle fragment 1
+                iatm=NAOfrag1(idx)
+                do jdx=1,nNAOfrag2 !Cycle fragment 1
+                    jatm=NAOfrag2(jdx)
+                    do iNAO=NAOinit(iatm),NAOend(iatm)
+			            do ish=1,numuniqsh
+				            if (NAOshname(iNAO)==uniqsh_name(ish)) exit
+			            end do
+		                do jNAO=NAOinit(jatm),NAOend(jatm)
+			                do jsh=1,numuniqsh
+				                if (NAOshname(jNAO)==uniqsh_name(jsh)) exit
+			                end do
+                            if (iopshNAO==0) then !Closed shell
+			                    contri=DMNAO(iNAO,jNAO)**2
+			                    uniqsh_val(ish,jsh)=uniqsh_val(ish,jsh)+contri
+                            else !Open shell
+                                contri1=2*DMNAOa(iNAO,jNAO)**2
+                                contri2=2*DMNAOb(iNAO,jNAO)**2
+			                    uniqsh_val(ish,jsh)=uniqsh_val(ish,jsh)+contri1
+			                    uniqsh_valb(ish,jsh)=uniqsh_valb(ish,jsh)+contri2
+                            end if
+		                end do
+                    end do
+                end do
+            end do
+	        if (iopshNAO==0) write(*,*) " Contribution   Fragment 1   Fragment 2"
+	        if (iopshNAO==1) write(*,*) "  Spin   Contribution   Fragment 1   Fragment 2"
+            do ish=1,numuniqsh
+                do jsh=1,numuniqsh
+                    if (iopshNAO==0) then !Closed shell
+			            if (uniqsh_val(ish,jsh)>bndordthres) write(*,"(f12.5,8x,a,10x,a)") &
+                        uniqsh_val(ish,jsh),uniqsh_name(ish),uniqsh_name(jsh)
+                    else !Open shell
+			            if (uniqsh_val(ish,jsh)>bndordthres) write(*,"('   Alpha',f12.5,8x,a,10x,a)") &
+                        uniqsh_val(ish,jsh),uniqsh_name(ish),uniqsh_name(jsh)
+			            if (uniqsh_valb(ish,jsh)>bndordthres) write(*,"('   Beta ',f12.5,8x,a,10x,a)") &
+                        uniqsh_valb(ish,jsh),uniqsh_name(ish),uniqsh_name(jsh)
+                    end if
+                end do
+            end do
+            if (iopshNAO==0) then
+	            write(*,"(/,a,f8.4)") " Interfragment Wiberg bond order:",sum(uniqsh_val)
+            else
+	            write(*,"(/,a,f8.4)") " Interfragment alpha Wiberg bond order: ",sum(uniqsh_val)
+	            write(*,"(a,f8.4)") " Interfragment beta Wiberg bond order:  ",sum(uniqsh_valb)
+	            write(*,"(a,f8.4)") " Interfragment total Wiberg bond orders:",sum(uniqsh_val)+sum(uniqsh_valb)
+            end if
+        end if
+    end if
 end do
-
-iMCBOtype=iMCBOtype_old
 end subroutine
-
-
 
 
 
@@ -1556,7 +832,7 @@ do while(.true.)
     else
         write(*,"(a,i5,' atoms')") " 3 Input the range of the atoms to be taken into account, current:",natmlist
     end if
-    write(*,"(a,f10.6)") " 4 Set reference value, current:",refval
+    write(*,"(a,f10.6)") " 4 Set H2 reference value, current:",refval
     write(*,"(a,f6.3,' Angstrom')") " 5 Set distance threshold for printing result, current: <",distprintthres
     read(*,*) isel
     if (isel==0) then
@@ -1587,15 +863,15 @@ do while(.true.)
         write(*,*) "Input reference value, e.g. 0.324"
         read(*,*) refval
     else if (isel==5) then
-        write(*,*) "Input distance threshold for printing, e.g. 3.0"
-        write(*,*) "Note: If distance between two atoms is larger than this value, then the corresponding data will not be printed"
+        write(*,*) "Input distance threshold for printing in Angstrom, e.g. 3.0"
+        write(*,"(a)") " Note: If distance between two atoms is larger than this value, then the corresponding data will not be printed"
         read(*,*) distprintthres
         
     else if (isel==1) then
         call calcatmpairdg(iIGMtype,natmlist,atmlist,natmlist,atmlist,atmpairdg(1:natmlist,1:natmlist))
         write(*,*)
         write(*,"(a)") " Note: ""Dist"" is distance between the two atoms in Angstrom, Int(dg_pair) is the integral &
-        in the numerator of the IBSI formule (atom pair delta-g index)"
+        in the numerator of the IBSI formule (atomic pair delta-g index)"
         write(*,*)
         do idx=1,natmlist
             iatm=atmlist(idx)

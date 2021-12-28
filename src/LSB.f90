@@ -494,9 +494,7 @@ call gen1cintgrid(gridatmorg,iradcut)
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 
 call walltime(iwalltime1)
-CALL CPU_TIME(time_begin)
 atmintval=0
-
 do iatm=1,ncenter !Cycle each atom
 	write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
 	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
@@ -537,9 +535,8 @@ do iatm=1,ncenter !Cycle each atom
 	
 end do
 
-CALL CPU_TIME(time_end)
 call walltime(iwalltime2)
-write(*,"(' Calculation took up CPU time',f12.2,'s, wall clock time',i10,'s',/)") time_end-time_begin,iwalltime2-iwalltime1
+write(*,"(' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
 
 do iatm=1,ncenter
 	write(*,"(' Atom',i6,'(',a2,'):',f20.8)") iatm,a(iatm)%name,atmintval(iatm)
@@ -601,7 +598,6 @@ write(*,*) "If replacing real space functions with their reciprocals?  0=No  1=Y
 read(*,*) invfunc 
 
 call walltime(walltime1)
-CALL CPU_TIME(time_begin)
 
 numcp=0
 att2atm=0
@@ -811,7 +807,7 @@ do iatt=1,numrealatt !Cycle each attractors
 end do !End cycle attractors
 
 !Set coordinate of uniform grids
-dvol=dx*dy*dz
+call calc_dvol(dvol)
 do ix=1,nx
 	xarr(ix)=orgx+(ix-1)*dx
 end do
@@ -1099,9 +1095,8 @@ do ifunc=0,nfunc
 	end do
 end do
 
-CALL CPU_TIME(time_end)
 call walltime(walltime2)
-write(*,"(' Integrating basins took up CPU time',f12.2,'s, wall clock time',i10,'s')") time_end-time_begin,walltime2-walltime1
+write(*,"(' Integrating basins took up wall clock time',i10,' s')") walltime2-walltime1
 
 end subroutine
 
@@ -1380,11 +1375,9 @@ real*8 tmparr(3),tmpmat(3,3)
 write(*,*) "Calculating electron density and derivatives for actual molecule..."
 !$OMP PARALLEL DO SHARED(rho,derrho,rholapl) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmpmat) schedule(dynamic) NUM_THREADS(nthreads)
 do k=1,nz
-	tmpz=orgz+(k-1)*dz
 	do j=1,ny
-		tmpy=orgy+(j-1)*dy
 		do i=1,nx
-			tmpx=orgx+(i-1)*dx
+            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
             call calchessmat_dens(2,tmpx,tmpy,tmpz,rho(i,j,k),derrho(:,i,j,k),tmpmat)
             rholapl(i,j,k)=tmpmat(1,1)+tmpmat(2,2)+tmpmat(3,3)
         end do
@@ -1405,11 +1398,9 @@ do ipro=1,ncustommap
 	call readinfile(filename,1)
     !$OMP parallel do shared(rho0,derrho0,rholapl0) private(i,j,k,tmpx,tmpy,tmpz,tmprho,tmparr,tmpmat) num_threads(nthreads)
     do k=1,nz
-	    tmpz=orgz+(k-1)*dz
 	    do j=1,ny
-		    tmpy=orgy+(j-1)*dy
 		    do i=1,nx
-			    tmpx=orgx+(i-1)*dx
+                call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
                 call calchessmat_dens(2,tmpx,tmpy,tmpz,tmprho,tmparr,tmpmat)
                 rho0(i,j,k)=rho0(i,j,k)+tmprho
                 derrho0(:,i,j,k)=derrho0(:,i,j,k)+tmparr(:)
@@ -1426,11 +1417,9 @@ call readinfile(firstfilename,1)
 
 write(*,*) "Calculating final function values..."
 do k=1,nz
-	tmpz=orgz+(k-1)*dz
 	do j=1,ny
-		tmpy=orgy+(j-1)*dy
 		do i=1,nx
-			tmpx=orgx+(i-1)*dx
+            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
             if (iuserfunc==57) then
                 cubmat(i,j,k)=rholapl(i,j,k)*log(rho(i,j,k)/rho0(i,j,k))
             else if (iuserfunc==58) then

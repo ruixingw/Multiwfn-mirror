@@ -16,12 +16,18 @@ real*8,allocatable :: linexall(:,:),lineyall(:,:) !Array used to draw discrete l
 real*8,allocatable :: curveyall(:,:) !The first index corresponds to system index. curvey in global array is used to record weighted curve
 integer,allocatable :: tmparr(:),tmparr2(:)
 real*8,allocatable :: indcurve(:,:) !Y value of curve of each individual band
+real*8,allocatable :: indcontri(:) !Contribution of various transitions to a given X position
 integer,allocatable :: indband2idx(:),idx2indband(:) !Used to map individual band index
 character c80tmp*80,c200tmp*200,c200tmp2*200,strfmt*10,selectyn,graphformat_old*4,c2000tmp*2000
 character clegend*2000 !Buffer for showing legends
 integer :: icurveclr=1,ilineclr=5 !Default: Red for curve, black for discrete lines
 integer :: thk_curve=3,thk_weighted=8,thk_legend=2,thk_discrete=1,thk_axis=1,thk_grid=1 !thickness
 integer :: ishowlabelleft=1,ishowlabelright=1 !If showing labels on left and right Y-axes
+integer :: ndecimalX=-1,ndecimalYleft=-1,ndecimalYright=-1 !Number of decimal places in axes, use auto by default
+integer :: height_axis=36,ticksize=36,legtextsize=36,labtype_Yleft=1,ilegendpos=7
+integer,parameter :: ncurrclr=15 !At most 15 individual colors. For more curves/lines, always use color of last one (8)
+integer :: currclr(ncurrclr)=(/ 12,3,10,1,14,5,9,13,11,6,7,15,16,2,8 /) !Color index of current curve/line colors
+integer :: iYeq0=1 !If drawing line corresponding to Y=0
 !Used for drawing spikes for indicating position of levels
 integer,parameter :: maxspike=10
 real*8,allocatable :: spikey(:) !Temporarily used for plotting spikes
@@ -56,7 +62,7 @@ end if
 !When unit is changed, we reset lower and upper limit to auto rather than convert them to current unit to avoid problems.
 !
 !IR may use esu^2*cm^2 or km/mol as Y-axis unit, the data is always recorded in km/mol
-!Unit conversion: 1eV=8.0655447*1000 cm^-1    (1239.842/nm)eV    (1239.842/eV)nm     1esu^2*cm^2=2.5066km/mol
+!Unit conversion: 1 eV=8.0655447*1000 cm^-1    (1239.842/nm)eV    (1239.842/eV)nm     1esu^2*cm^2=2.5066km/mol
 
 !! Initialize variables
 gauweigh=0.5D0 !Gaussian weight used in Pseudo-Voigt broadening
@@ -265,7 +271,7 @@ do while(.true.)
 	else if (ispectrum==3.or.ispectrum==4) then
 		write(*,*) "14 Set scale factor for transition energies"
 	end if
-	if (nsystem==1) write(*,*) "15 Output contribution of individual transitions to the spectrum"
+	if (nsystem==1) write(*,*) "15 Output contributions of individual transitions to the spectrum"
 	if (.not.(nsystem>1.and.all(weight==1))) write(*,*) "16 Set status of showing labels of spectrum minima and maxima"
 	write(*,*) "17 Other plotting settings"
 	if (nsystem>1.and.any(weight/=1)) then
@@ -353,6 +359,15 @@ do while(.true.)
         write(10,"(a)") graphformat
         write(10,*) ishowlabelleft
         write(10,*) ishowlabelright
+        write(10,"('height_axis',i5)") height_axis !Since 2020-Dec-23, settings are recorded with explicit labels
+        write(10,"('ndecimalX',i5)") ndecimalX
+        write(10,"('ndecimalYleft',i5)") ndecimalYleft
+        write(10,"('ndecimalYright',i5)") ndecimalYright
+        write(10,"('labtype_Yleft',i5)") labtype_Yleft
+        write(10,"('ticksize',i5)") ticksize
+        write(10,"('legtextsize',i5)") legtextsize
+        write(10,"('ilegendpos',i5)") ilegendpos
+        write(10,"('iYeq0',i5)") iYeq0
         close(10)
         write(*,*) "Done!"
         cycle
@@ -418,6 +433,15 @@ do while(.true.)
         read(10,"(a)") graphformat
         read(10,*) ishowlabelleft
         read(10,*) ishowlabelright
+        call readoption_int(10,"height_axis",' ',height_axis)
+        call readoption_int(10,"ndecimalX",' ',ndecimalX)
+        call readoption_int(10,"ndecimalYleft",' ',ndecimalYleft)
+        call readoption_int(10,"ndecimalYright",' ',ndecimalYright)
+        call readoption_int(10,"ticksize",' ',ticksize)
+        call readoption_int(10,"labtype_Yleft",' ',labtype_Yleft)
+        call readoption_int(10,"legtextsize",' ',legtextsize)
+        call readoption_int(10,"ilegendpos",' ',ilegendpos)
+        call readoption_int(10,"iYeq0",' ',iYeq0)
         close(10)
         write(*,*) "Loading finished!"
         cycle
@@ -495,7 +519,8 @@ do while(.true.)
 			imol=1
 			if (nsystem>1) then
 				write(*,*)
-				write(*,*) "Input index of system, e.g. 2,4-6,10"
+				write(*,*) "Input index of the system for which the strength(s) will be modified"
+                write(*,*) "e.g. 2,4-6,10"
 			    read(*,"(a)") c200tmp
 			    call str2arr(c200tmp,ntmparr2)
 			    allocate(tmparr2(ntmparr2))
@@ -505,9 +530,12 @@ do while(.true.)
 			    allocate(tmparr2(ntmparr2))
                 tmparr2=1
 			end if
-			write(*,*) "Input index range of transitions"
+            write(*,*)
+			write(*,*) "Input index range of the transitions"
 			write(*,*) "e.g. 1,3-6,22 means selecting modes 1,3,4,5,6,22"
+            write(*,*) "Input ""q"" can return"
 			read(*,"(a)") c200tmp
+            if (c200tmp=="q") cycle
 			call str2arr(c200tmp,ntmparr)
 			allocate(tmparr(ntmparr))
 			call str2arr(c200tmp,ntmparr,tmparr)
@@ -699,13 +727,20 @@ do while(.true.)
 		if (nsystem>1) then
 			write(*,*) "Note: This operation will be applied to all systems loaded"
 		end if
-        dataxall=dataxall_org !Recovered to initially loaded data
-        write(*,*) "Original data have been restored"
+        if (any(dataxall/=dataxall_org)) then
+			write(*,"(a)") " One or more data have been scaled previously, do you want to restore them to the original values? (y/n)"
+            read(*,*) selectyn
+            if (selectyn=='y'.or.selectyn=='Y') then
+				dataxall=dataxall_org !Recovered to initially loaded data
+				write(*,*) "Original data have been restored"
+            end if
+        end if
         write(*,*)
 		if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then !Vibrational spectra, mode selection is viable
 			write(*,*) "Input the index range of the transitions you want to scaled"
 			write(*,*) "e.g. 1,3-6,22 means selecting transitions 1,3,4,5,6,22"
 			write(*,"(a)") " Note: Press ENTER button directly can select all modes. Input 0 can return"
+            write(*,"(a,i6,a)") " Note: There are",numdata, " data in total"
 			read(*,"(a)") c200tmp
 			if (c200tmp(1:1)=='0') then
 				cycle
@@ -815,6 +850,33 @@ do while(.true.)
             if (ishowlabelleft==1) write(*,*) "2 Toggle showing labels on left Y-axis, current: Yes"
 	        if (ishowlabelright==0) write(*,*) "3 Toggle showing labels on right Y-axis, current: No"
             if (ishowlabelright==1) write(*,*) "3 Toggle showing labels on right Y-axis, current: Yes"
+            if (ndecimalX==-1) then
+                write(*,"(a)") " 4 Set number of decimal places in X-axis, current: Auto"
+            else
+                write(*,"(a,i2)") " 4 Set number of decimal places in X-axis, current:",ndecimalX
+            end if
+            if (ndecimalYleft==-1) then
+                write(*,"(a)") " 5 Set number of decimal places in left Y-axis, current: Auto"
+            else
+                write(*,"(a,i2)") " 5 Set number of decimal places in left Y-axis, current:",ndecimalYleft
+            end if
+            if (ndecimalYright==-1) then
+                write(*,"(a)") " 6 Set number of decimal places in right Y-axis, current: Auto"
+            else
+                write(*,"(a,i2)") " 6 Set number of decimal places in right Y-axis, current:",ndecimalYright
+            end if
+            write(*,"(a,i3)") " 7 Set text size of name of axes, current:",height_axis
+            write(*,"(a,i3)") " 8 Set text size of ticks, current:",ticksize
+            if (labtype_Yleft==1) write(*,"(a)") " 9 Set type of labels in left Y-axis, current: Float"
+            if (labtype_Yleft==2) write(*,"(a)") " 9 Set type of labels in left Y-axis, current: Exponent"
+            if (labtype_Yleft==3) write(*,"(a)") " 9 Set type of labels in left Y-axis, current: Scientific"
+            if (nsystem>1) then
+                write(*,"(a,i3)") " 10 Set text size of legend, current:",legtextsize
+                write(*,*) "11 Set position of legends"
+            end if
+            if (iYeq0==0) write(*,*) "12 Toggle drawing a line corresponding to Y-axis, current: No"
+            if (iYeq0==1) write(*,*) "12 Toggle drawing a line corresponding to Y-axis, current: Yes"
+            if (nsystem>1.and.ishowweicurve/=1) write(*,*) "13 Set color of line and curve of different systems"
             read(*,*) isel2
             if (isel2==0) then
                 exit
@@ -836,6 +898,59 @@ do while(.true.)
 		        else
 			        ishowlabelright=1
 		        end if
+            else if (isel2==4) then
+                write(*,*) "Input number of decimals to be kept, e.g. 2"
+                read(*,*) ndecimalX
+            else if (isel2==5) then
+                write(*,*) "Input number of decimals to be kept, e.g. 2"
+                read(*,*) ndecimalYleft
+            else if (isel2==6) then
+                write(*,*) "Input number of decimals to be kept, e.g. 2"
+                read(*,*) ndecimalYright
+            else if (isel2==7) then
+                write(*,*) "Input size, e.g. 45"
+                read(*,*) height_axis
+            else if (isel2==8) then
+                write(*,*) "Input size, e.g. 40"
+                read(*,*) ticksize
+            else if (isel2==9) then
+                write(*,*) "1 Float"
+                write(*,*) "2 Exponent"
+                write(*,*) "3 Scientific"
+                read(*,*) labtype_Yleft
+            else if (isel2==10) then
+                write(*,*) "Input size, e.g. 40"
+                read(*,*) legtextsize
+            else if (isel2==11) then
+                write(*,*) "Choose position of legends"
+                write(*,*) "5 Lower left corner"
+                write(*,*) "6 Lower right corner"
+                write(*,*) "7 Upper right corner"
+                write(*,*) "8 Upper left corner"
+                read(*,*) ilegendpos
+            else if (isel2==12) then
+                if (iYeq0==1) then
+                    iYeq0=0
+                else
+                    iYeq0=1
+                end if
+            else if (isel2==13) then
+				do while(.true.)
+					write(*,"(a)") " The index and current color of various systems are listed below, &
+                    now input index of a system to change its color, or input ""q"" to return"
+					do isystem=1,nsystem
+						if (isystem<=ncurrclr) then
+							write(*,"(i4,2x,a)") isystem,colorname(currclr(isystem))
+                        else
+							write(*,"(i4,2x,a)") isystem,colorname(currclr(ncurrclr))
+                        end if
+                    end do
+                    read(*,"(a)") c80tmp
+                    if (index(c80tmp,'q')/=0) exit
+                    read(c80tmp,*) isystem
+                    write(*,*) "Set to which color?"
+                    call selcolor(currclr(isystem))
+                end do
             end if
         end do
         
@@ -847,11 +962,9 @@ do while(.true.)
 		end if
         
 	else if (isel==19) then !Convert between Raman activity and Raman intensity
-		if (nsystem>1) then
-			write(*,*) "Note: This operation will be applied to all systems loaded"
-			write(*,*)
-		end if
-		write(*,"(a)") " Input wavenumber of incident light, e.g. 532nm. If no unit is given, the unit will be default to cm^-1"
+		if (nsystem>1) write(*,*) "Note: This operation will be applied to all systems loaded"
+		write(*,"(a)") " Reference of this Raman activity to intensity conversion: Chem. Asian J., 16, 56 (2021) DOI: 10.1002/asia.202001228"
+		write(*,"(/,a)") " Input wavenumber of incident light, e.g. 532nm. If no unit is given, the unit will be default to cm^-1"
 		read(*,"(a)") c200tmp
 		ipos=index(c200tmp,'nm')
 		if (ipos==0) then
@@ -1038,22 +1151,32 @@ do while(.true.)
 		!====== Construct correspondence array if outputting individual bands. Only available when one file is loaded
 		!This function is not available when multiple systems are considered
 		if (isel==15) then
-			write(*,"(a)") " Input criterion of strength, e.g. 0.2, the contribution of the transitions whose absolute value of strength larger than this value will be outputted"
+			write(*,"(a)") " Input criterion of strength, e.g. 0.2, the contribution of the transitions &
+            whose absolute value of strength larger than this value will be outputted"
+            write(*,"(a)") " If you input 0, then ten maximal percentage contributions to the inputted X-position will be shown"
 			read(*,*) critindband
-			numindband=0 !The number of individual bands satisfying criterion
-			do idata=1,numdata
-				if (abs(strall(1,idata))>=critindband) numindband=numindband+1
-			end do
-			allocate(indband2idx(numindband),idx2indband(numdata),indcurve(num1Dpoints,numindband))
-			indcurve=0D0
-			itmp=0
-			idx2indband=0
-			do idata=1,numdata
-				if (abs(strall(1,idata))<critindband) cycle
-				itmp=itmp+1
-				indband2idx(itmp)=idata !Map index of outputted bands (indband) to actual index of all transitions (idx)
-				idx2indband(idata)=itmp !If not =0, the contribution from i band will be stored to idx2indband(i) slot of indcurve array
-			end do
+            if (critindband==0) then
+                write(*,*) "Input the X position in current unit, e.g. 435.9"
+                read(*,*) decompXpos
+                if (iunitx==2) decompXpos=1239.842D0/decompXpos !Convert the inputted value in nm to internal unit eV
+                allocate(indcontri(numdata))
+                indcontri=0
+            else
+			    numindband=0 !The number of individual bands satisfying criterion
+			    do idata=1,numdata
+				    if (abs(strall(1,idata))>=critindband) numindband=numindband+1
+			    end do
+			    allocate(indband2idx(numindband),idx2indband(numdata),indcurve(num1Dpoints,numindband))
+			    indcurve=0
+			    itmp=0
+			    idx2indband=0
+			    do idata=1,numdata
+				    if (abs(strall(1,idata))<critindband) cycle
+				    itmp=itmp+1
+				    indband2idx(itmp)=idata !Map index of outputted bands (indband) to actual index of all transitions (idx)
+				    idx2indband(idata)=itmp !If not =0, the contribution from i band will be stored to idx2indband(i) slot of indcurve array
+			    end do
+            end if
 		end if
 		!====== Determine upper and lower limit of X axis =======
 		if (iusersetx==0) then !Automatical scale, if user has not manually set the range
@@ -1115,7 +1238,7 @@ do while(.true.)
 		!===============================================
 		!Under current X and Y axes units, below code guarantees that the integral of the peak broadened by one unit of strength is 1
 		curveyall=0D0
-		if (ibroadfunc==1.or.ibroadfunc==3) then !Lorentzian function, see http://mathworld.wolfram.com/LorentzianFunction.html
+		if (ibroadfunc==1.or.ibroadfunc==3) then !Lorentzian function or Pseudo-Voigt function, see http://mathworld.wolfram.com/LorentzianFunction.html
 			do imol=1,nsystem
 				do idata=1,numdataall(imol) !Cycle each transition
 					preterm=strall(imol,idata)*0.5D0/pi*FWHMall(imol,idata) !Integral of the peak equals to str(idata)
@@ -1124,7 +1247,11 @@ do while(.true.)
 					end do
 					curveyall(imol,:)=curveyall(imol,:)+curveytmp !*dataxall(imol,idata)
 					if (isel==15) then !Individual contribution
-						if (idx2indband(idata)/=0) indcurve(:,idx2indband(idata))=curveytmp
+                        if (critindband==0) then
+                            indcontri(idata)=preterm/( (decompXpos-dataxall(imol,idata))**2+0.25D0*FWHMall(imol,idata)**2 )
+                        else
+						    if (idx2indband(idata)/=0) indcurve(:,idx2indband(idata))=curveytmp
+                        end if
 					end if
 				end do
 			end do
@@ -1133,6 +1260,7 @@ do while(.true.)
 			if (ibroadfunc==3) then
 				curveyall=(1-gauweigh)*curveyall !Scale Lorentzian function part of Pseudo-Voigt
 				indcurve=(1-gauweigh)*indcurve
+                indcontri=(1-gauweigh)*indcontri
 			end if
 			do imol=1,nsystem
 				do idata=1,numdataall(imol)
@@ -1144,7 +1272,12 @@ do while(.true.)
 					if (ibroadfunc==3) curveytmp=gauweigh*curveytmp !Scale Gaussian function part of Pseudo-Voigt
 					curveyall(imol,:)=curveyall(imol,:)+curveytmp
 					if (isel==15) then !Individual contribution
-						if (idx2indband(idata)/=0) indcurve(:,idx2indband(idata))=indcurve(:,idx2indband(idata))+curveytmp
+                        if (critindband==0) then
+                            !write(*,*) gauss_a*dexp( -(decompXpos-dataxall(imol,idata))**2/(2*gauss_c**2) )
+						    indcontri(idata)=indcontri(idata)+gauss_a*dexp( -(decompXpos-dataxall(imol,idata))**2/(2*gauss_c**2) )
+                        else
+						    if (idx2indband(idata)/=0) indcurve(:,idx2indband(idata))=indcurve(:,idx2indband(idata))+curveytmp
+                        end if
 					end if
 				end do
 			end do
@@ -1159,7 +1292,13 @@ do while(.true.)
 			xhigh=1239.842D0/xhigh
 		end if
 		curveyall=scalecurve*curveyall
-		if (isel==15) indcurve=scalecurve*indcurve
+		if (isel==15) then !Scale individual contributions
+            if (critindband==0) then
+                indcontri=scalecurve*indcontri
+            else
+                indcurve=scalecurve*indcurve
+            end if
+        end if
 		curvex=curvex+shiftx
 		linexall=linexall+shiftx
 		if (iusersetx==0) stepx=(xhigh-xlow)/10
@@ -1180,12 +1319,33 @@ do while(.true.)
 	!================================================
 	!======= Output data to external text file ======
 	!================================================
+    if (isel==15.and.critindband==0) then !Show contribution at the given position and then return
+        !Sort from large to small
+		allocate(tmparr(numdata))
+		forall(itmp=1:numdata) tmparr(itmp)=itmp
+        call sortr8(indcontri,"abs",tmparr)
+        call invarrr8(indcontri,tmparr)
+        totval=sum(abs(indcontri))
+        write(*,"(a,f20.5)") " Sum of absolute values of all transitions:",totval
+        write(*,*) "The individual terms are ranked by magnitude of contribution:"
+        write(*,*) "  #Transition     Contribution      %"
+        do itmp=1,10
+            write(*,"(i10,f20.5,f11.3)") tmparr(itmp),indcontri(itmp),indcontri(itmp)/totval*100
+        end do
+        if (ispectrum==4.or.ispectrum==5.or.ispectrum==6) then
+            write(*,"(a)") " Note: The % shown above is calculated via dividing &
+            absolute value of a transition by sum of absolute values of all transitions"
+        end if
+        write(*,*)
+        deallocate(indcontri,tmparr)
+        cycle
+    end if
 	if (isel==2.or.isel==15) then !Output curve for total and individual contributions, respectively
 		if (isel==2) then !Output regular spectrum
 			if (nsystem==1) then
 				open(10,file="spectrum_curve.txt",status="replace")
 				do ipt=1,num1Dpoints
-					write(10,"(f13.5,1PE16.8)") curvex(ipt),curvey(ipt)
+					write(10,"(f13.5,1PE18.8E3)") curvex(ipt),curvey(ipt)
 				end do
 				close(10)
 				write(*,*) "Curve data has been written to spectrum_curve.txt in current folder"
@@ -1193,7 +1353,7 @@ do while(.true.)
 				if (any(weight/=1)) then !Output weighted spectrum 
 					open(10,file="spectrum_curve.txt",status="replace")
 					do ipt=1,num1Dpoints
-						write(10,"(f13.5,1PE16.8)") curvex(ipt),curvey(ipt)
+						write(10,"(f13.5,1PE18.8E3)") curvex(ipt),curvey(ipt)
 					end do
 					close(10)
 					write(*,"(a)") " The curve data corresponding to weighted spectrum has been written to spectrum_curve.txt in current folder"
@@ -1202,7 +1362,7 @@ do while(.true.)
 				do ipt=1,num1Dpoints
 					write(10,"(f13.5)",advance="no") curvex(ipt)
 					do imol=1,nsystem
-						write(10,"(1PE16.8)",advance="no") curveyall(imol,ipt)
+						write(10,"(1PE18.8E3)",advance="no") curveyall(imol,ipt)
 					end do
 					write(10,*)
 				end do
@@ -1213,9 +1373,9 @@ do while(.true.)
 			open(10,file="spectrum_curve.txt",status="replace")
 			do ipt=1,num1Dpoints
 				write(10,"(f13.5)",advance="no") curvex(ipt)
-				write(10,"(1PE16.8)",advance="no") curvey(ipt)
+				write(10,"(1PE18.8E3)",advance="no") curvey(ipt)
 				do iindband=1,numindband
-					write(10,"(1PE16.8)",advance="no") indcurve(ipt,iindband)
+					write(10,"(1PE18.8E3)",advance="no") indcurve(ipt,iindband)
 				end do
 				write(10,*)
 			end do
@@ -1256,14 +1416,15 @@ do while(.true.)
 		open(10,file="spectrum_line.txt",status="replace")
 		do imol=1,nsystem
 			do ipt=1,3*numdataall(imol)
-				write(10,"(f16.5,1PE16.8)") linexall(imol,ipt),lineyall(imol,ipt)
+				write(10,"(f16.5,1PE18.8E3)") linexall(imol,ipt),lineyall(imol,ipt)
 			end do
 			write(10,*)
 		end do
 		close(10)
 		write(*,*)
 		if (nsystem>1) then
-			write(*,"(a)") " Discrete line data of various systems have been written together to spectrum_line.txt in current folder"
+			write(*,"(a)") " Discrete line data of all systems have been written together to spectrum_line.txt &
+            in current folder, data of each system is separated by a blank line"
 			if (any(weight/=1)) write(*,*) "Note: The height of discrete lines in this file have been weighted"
 		else
 			write(*,*) "Discrete line data have been written to spectrum_line.txt in current folder"
@@ -1355,6 +1516,7 @@ do while(.true.)
 		call SCRMOD('REVERSE')
 		CALL IMGFMT("RGB")
 		CALL PAGE(3000,1800)
+        if (isavepic==1) CALL PAGE(3050,1900) !Make page larger to avoid truncation when text size is set to relatively large
 		call disini
 		if (isavepic==1.and.graphformat=="png") then
 			call TRIPLX 
@@ -1377,10 +1539,20 @@ do while(.true.)
 		if (ishowlevel==0) CALL TICKS(1,'XY')
 		if (ishowlevel==1) CALL TICKS(0,'X')
 		call ERRMOD("ALL","OFF")
-		CALL LABDIG(1,"X")
-		if (iunitx==1) CALL LABDIG(2,"X") !eV, use more digits
-		!Name of X-axis
-        if (ishowlevel==0) then
+        call HNAME(height_axis) !Height of axis name
+        call height(ticksize) !Size of ticks
+        if (ndecimalX==-1) then
+		    CALL LABDIG(1,"X")
+		    if (iunitx==1) CALL LABDIG(2,"X") !eV, use more digits
+        else
+            if (ndecimalX==0) then
+                CALL LABDIG(-1,"X") !Only show integer
+            else
+    		    CALL LABDIG(ndecimalX,"X")
+            end if
+        end if
+		!Set name of X-axis
+        if (ishowlevel==0) then !Do not use spikes at bottom to show specific levels, so show axis name here
 		    if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then
 			    call TEXMOD("ON")
 			    CALL NAME('Wavenumber (cm$^{-1}$)','X')
@@ -1389,7 +1561,7 @@ do while(.true.)
 		    if (iunitx==2) CALL NAME('Wavelength (nm)','X')
 		    if (iunitx==3) CALL NAME('Wavenumber (1000 cm$^{-1}$)','X')
         end if
-		!Name of Y-axis
+		!Set name of Y-axis
 		call TEXMOD("ON")
 		if (ispectrum==1.or.ispectrum==3) then
 			CALL NAME('Molar absorption coefficient  $\epsilon$ (L mol$^{-1}$cm$^{-1}$)','Y')
@@ -1404,17 +1576,25 @@ do while(.true.)
 				CALL NAME('$I_R-I_L$','Y')
 			end if
 		end if
-		
+		!Set plotting parameters of axes and legends
 		tmprange1=abs(endy1-orgy1)
-		if (tmprange1>5) then
-			CALL LABDIG(1,"Y")
-		else if (tmprange1>0.5D0) then
-			CALL LABDIG(2,"Y")
-		else if (tmprange1>0.05D0) then
-			CALL LABDIG(3,"Y")
-		else
-			CALL LABDIG(4,"Y")
-		end if
+        if (ndecimalYleft==-1) then
+		    if (tmprange1>5) then
+			    CALL LABDIG(1,"Y")
+		    else if (tmprange1>0.5D0) then
+			    CALL LABDIG(2,"Y")
+		    else if (tmprange1>0.05D0) then
+			    CALL LABDIG(3,"Y")
+		    else
+			    CALL LABDIG(4,"Y")
+		    end if
+        else
+            if (ndecimalYleft==0) then
+                CALL LABDIG(-1,"Y") !Only show integer
+            else
+    		    CALL LABDIG(ndecimalYleft,"Y")
+            end if
+        end if
 		if (ishowline==1) then
 			if (ishowlevel==0) call setgrf('NAME',"NAME",'TICKS','NONE') !If show discrete lines, leave right axis empty
             if (ishowlevel==1) call setgrf('TICKS',"NAME",'TICKS','NONE')
@@ -1425,20 +1605,18 @@ do while(.true.)
         if (ishowlabelleft==0) then
             call labels("NONE","Y")
             call namdis(60,'Y') !Use larger distance between name and axis
+        else
+            if (labtype_Yleft==1) call labels("FLOAT","Y")
+            if (labtype_Yleft==2) call labels("XEXP","Y")
+            if (labtype_Yleft==3) call labels("FEXP","Y")
         end if
 		ileg=0
 		numleg=1+nsystem
 		call legini(clegend,numleg,50)
 		call legtit(' ')
 		call frame(0) !No box around legend
-		legposx=2200
-		if (allocated(mollegend)) then
-			maxlen=maxval(len_trim(mollegend))
-			legposx=legposx-maxlen*22
-		end if
-		if (isavepic==1) legposx=legposx-100
-		call legpos(legposx,155)
 		
+        !Set axis and draw curves
 		call LINWID(thk_axis)
 		CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, orgy1,endy1,orgy1,stepy1)
 		if (ishowgrid==1) then !Draw shallow gray dashed lines
@@ -1448,8 +1626,7 @@ do while(.true.)
 			call grid(1,1)
 		end if
 		call solid
-		!Draw weighted curve
-		if (ishowweicurve==1.or.ishowweicurve==2) then
+		if (ishowweicurve==1.or.ishowweicurve==2) then !Draw weighted curve
 			ileg=ileg+1
 			call setcolor(icurveclr)
 			CALL LINWID(thk_weighted) !Use very thick line for weighted curve when there are multiple systems
@@ -1459,16 +1636,20 @@ do while(.true.)
 			CALL LINWID(thk_legend)
 			CALL LEGLIN(clegend," Weighted",ileg)
 		end if
-		!Draw curve for each system
-		if (nsystem>1.and.ishowweicurve/=2) then
+		if (nsystem>1.and.ishowweicurve/=2) then !Draw curve for each system, and meantime set corresponding legend
 			do imol=1,nsystem
-				iclrtmp=imol+1 !The 1st color is red, which has been used by weighted curve
-				if (iclrtmp==4) iclrtmp=10 !4 corresponds to black, however, due to reverse, it corresponds to white, which is unable to use
-				if (iclrtmp==2) then !2 corresponds to green, which is too bright
-					iclrtmp=12 !Change to dark green
-				else if (iclrtmp==12) then
-					iclrtmp=2 
-				end if
+                if (ishowweicurve==1) then !Conformation weighted and individual spectra
+				    iclrtmp=imol+1 !The 1st color is red, which has been used by weighted curve
+				    if (iclrtmp==4) iclrtmp=10 !4 corresponds to black, however, due to reverse, it corresponds to white, which is unable to use
+				    if (iclrtmp==2) then !2 corresponds to green, which is too bright
+					    iclrtmp=12 !Change to dark green
+				    else if (iclrtmp==12) then
+					    iclrtmp=2
+				    end if
+                else !Simply draw multiple system spectra together
+                    iclrtmp=currclr(imol)
+                    if (iclrtmp>ncurrclr) iclrtmp=ncurrclr
+                end if
 				call setcolor(iclrtmp)
 				CALL LINWID(thk_curve)
 				CALL CURVE(curvex,curveyall(imol,:),num1Dpoints)
@@ -1479,14 +1660,17 @@ do while(.true.)
 			end do
 		end if
 		call color("WHITE")
-		call xaxgit !Draw a line corresponding to Y=0
+		if (iYeq0==1) call xaxgit !Draw a line corresponding to Y=0
 		call box2d !The dashed line of "call grid" overlaied frame of axis, so redraw frame
 		call legopt(2.5D0,0.5D0,1D0) !Decrease the length of legend color line
-		if (nsystem>1.and.ishowweicurve/=2) call legend(clegend,3)
+        call height(legtextsize) !Define legend text size
+		if (nsystem>1.and.ishowweicurve/=2) call legend(clegend,ilegendpos)
+        call height(ticksize) !Size of ticks
 		call endgrf
         call labels("FLOAT","Y") !Restore to default
 		
-		if (ishowline==1) then !Draw discrete lines
+        !Set axis and draw discrete lines
+		if (ishowline==1) then
 			if (ispectrum==1) then
 				if (iunitliney==1) CALL NAME('IR intensities (km mol$^{-1}$)','Y')
 				if (iunitliney==2) CALL NAME('IR intensities (esu$^2$ cm$^2$)','Y')
@@ -1510,15 +1694,23 @@ do while(.true.)
 				end if
 			end if
 			tmprange2=abs(endy2-orgy2)
-			if (tmprange2>5) then
-				CALL LABDIG(1,"Y")
-			else if (tmprange2>0.5D0) then
-				CALL LABDIG(2,"Y")
-			else if (tmprange2>0.05D0) then
-				CALL LABDIG(3,"Y")
-			else
-				CALL LABDIG(4,"Y")
-			end if
+            if (ndecimalYright==-1) then
+			    if (tmprange2>5) then
+				    CALL LABDIG(1,"Y")
+			    else if (tmprange2>0.5D0) then
+				    CALL LABDIG(2,"Y")
+			    else if (tmprange2>0.05D0) then
+				    CALL LABDIG(3,"Y")
+			    else
+				    CALL LABDIG(4,"Y")
+			    end if
+            else
+                if (ndecimalYright==0) then
+                    CALL LABDIG(-1,"Y") !Only show integer
+                else
+    		        CALL LABDIG(ndecimalYright,"Y")
+                end if
+            end if
             call setgrf('NONE','NONE','NONE','NAME')
             if (ishowlabelright==0) then
                 call labels("NONE","Y")
@@ -1526,23 +1718,36 @@ do while(.true.)
             end if
 			call LINWID(thk_axis)
 			CALL GRAF(xlow+shiftx,xhigh+shiftx,xlow+shiftx,stepx, orgy2,endy2,orgy2,stepy2)
-			call setcolor(ilineclr)
 			CALL LINWID(thk_discrete)
-			do imol=1,nsystem
-				if (iweisyscurve==1) then
-					iclrtmp=imol+1 !The 1st color is red, which has been used by weighted curve
-					if (iclrtmp==4) iclrtmp=10 !4 corresponds to black, however, due to reverse, it corresponds to white, which is unable to use
-					if (iclrtmp==2) then !2 corresponds to green, which is too bright
-						iclrtmp=12 !Change to dark green
-					else if (iclrtmp==12) then
-						iclrtmp=2
-					end if
-					call setcolor(iclrtmp)
-				end if
-				CALL CURVE(linexall(imol,1:3*numdataall(imol)),lineyall(imol,1:3*numdataall(imol)),3*numdataall(imol))
-			end do
+            if (nsystem==1) then
+			    call setcolor(ilineclr)
+                imol=1
+                CALL CURVE(linexall(imol,1:3*numdataall(imol)),lineyall(imol,1:3*numdataall(imol)),3*numdataall(imol))
+            else
+			    do imol=1,nsystem
+                    if (any(weight/=1)) then !Conformation weighted spectrum
+				        if (iweisyscurve==1) then !Individual spectral curves are weighted
+					        iclrtmp=imol+1 !The 1st color is red, which has been used by weighted curve
+					        if (iclrtmp==4) iclrtmp=10 !4 corresponds to black, however, due to reverse, it corresponds to white, which is unable to use
+					        if (iclrtmp==2) then !2 corresponds to green, which is too bright
+					        	iclrtmp=12 !Change to dark green
+					        else if (iclrtmp==12) then
+					        	iclrtmp=2
+					        end if
+					        call setcolor(iclrtmp)
+                        else !Individual spectral curves are not weighted, all spikes share same color
+			                call setcolor(ilineclr)
+				        end if
+                    else !Simply draw multiple conformation spectra together
+                        iclrtmp=currclr(imol)
+                        if (iclrtmp>ncurrclr) iclrtmp=ncurrclr
+					    call setcolor(iclrtmp)
+                    end if
+				    CALL CURVE(linexall(imol,1:3*numdataall(imol)),lineyall(imol,1:3*numdataall(imol)),3*numdataall(imol))
+			    end do
+            end if
 			call color("WHITE")
-			call xaxgit !Draw a line corresponding to Y=0
+			call xaxgit !Draw a line corresponding to Y=0. This is important, otherwise the bottom line at the left side of the first spike will be invisible
             call endgrf
 		end if
         
@@ -1587,7 +1792,7 @@ do while(.true.)
         call angle(0) !Recover to default
 		call endgrf
         
-        !Draw spikes at the bottom of the map to show transition levels, may or may not consider degeneracy
+        !Draw spikes at bottom to show all or specific transition levels, may or may not consider degeneracy
         if (ishowlevel==1) then
             call AXSLEN(nxpixel,90)
             if (ishowline==0) call axspos(510,1630)
@@ -2062,9 +2267,13 @@ if (iORCAout==1) then
 		if (ispectrum==1.or.ispectrum==2) then !IR, Raman
 			if (ispectrum==1) call loclabel(10,"IR SPECTRUM")
 			if (ispectrum==2) call loclabel(10,"RAMAN SPECTRUM")
-			call loclabel(10,"Mode    freq (cm**-1)",ifound,0)
-			read(10,*)
-			read(10,*)
+			call loclabel(10," Mode    freq (cm**-1)",ifound,0)
+			if (ifound==1) then !ORCA 4
+				read(10,*);read(10,*)
+			else !ORCA 5
+				call loclabel(10," Mode   freq  ",ifound,1)
+				read(10,*);read(10,*);read(10,*)
+			end if
 			numdata=0
 			do while(.true.)
 				read(10,"(a)") c80tmp
@@ -2079,52 +2288,83 @@ if (iORCAout==1) then
 			if (ispectrum==1) call loclabel(10,"IR SPECTRUM",ifound,1)
 			if (ispectrum==2) call loclabel(10,"RAMAN SPECTRUM",ifound,1)
 			call loclabel(10,"Mode    freq (cm**-1)",ifound,0)
+			if (ifound==1) then !ORCA 4
+				read(10,*);read(10,*)
+			else !ORCA 5
+				call loclabel(10," Mode   freq  ",ifound,1)
+				read(10,*);read(10,*);read(10,*)
+			end if
 			!The IR data under T**2 is in KM/mole
-			read(10,*)
-			read(10,*)
 			do i=1,numdata
 				read(10,*) c80tmp,datax(i),str(i)
 			end do
 			FWHM=8D0
 		else if (ispectrum==3.or.ispectrum==4) then !UV-Vis, ECD
-			call loclabel(10,"Number of roots to be determined")
-			read(10,"(50x,i7)") numdata
-            if (imode==1) then !Have obtained number of data, return
-                close(10)
-                return
-            end if
-			allocate(datax(numdata),str(numdata),FWHM(numdata))
-			if (ispectrum==3) call loclabel(10,"ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS",ifound,0)
-			if (ispectrum==4) call loclabel(10,"CD SPECTRUM",ifound,0)
-			read(10,*)
-			read(10,*)
-			read(10,*)
-			read(10,*)
-			read(10,*)
-			do i=1,numdata
-				read(10,*) rnouse,datax(i),rnouse,str(i)
-			end do
-			call loclabel(10,"SOC CORRECTED ABSORPTION",ifound,0)
-			if (ifound==1) then
-				write(*,"(a)") " Spin-orbit coupling corrected spectra information was found, &
-				would you like to plot this kind of spectrum instead of the one without correction? (y/n)"
-				read(*,*) ctest
-				if (ctest=='y'.or.ctest=='Y') then
-					numdata=4*numdata !if root=n, then there will be n singlet states and 3n triplet sublevels
-					deallocate(datax,str,FWHM)
-					allocate(datax(numdata),str(numdata),FWHM(numdata))
-					if (ispectrum==3) continue
-					if (ispectrum==4) call loclabel(10,"CD SPECTRUM",ifound,0)
-					read(10,*)
-					read(10,*)
-					read(10,*)
-					read(10,*)
-					read(10,*)
-					do i=1,numdata
-						read(10,*) rnouse,datax(i),rnouse,str(i)
-					end do
+			call loclabel(10,"Number of roots to be determined",ifound)
+            if (ifound==1) then !TDDFT/TDA-DFT
+				read(10,"(50x,i7)") numdata
+				if (imode==1) then !Have obtained number of data, return
+					close(10)
+					return
 				end if
-			end if
+				allocate(datax(numdata),str(numdata),FWHM(numdata))
+				if (ispectrum==3) call loclabel(10,"ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS",ifound,0)
+				if (ispectrum==4) call loclabel(10,"CD SPECTRUM",ifound,0)
+				call skiplines(10,5)
+				do i=1,numdata
+					read(10,*) rnouse,datax(i),rnouse,str(i)
+				end do
+				call loclabel(10,"SOC CORRECTED ABSORPTION",ifound,0)
+				if (ifound==1) then
+					write(*,"(a)") " Spin-orbit coupling corrected spectra information was found, &
+					would you like to plot this kind of spectrum instead of the one without correction? (y/n)"
+					read(*,*) ctest
+					if (ctest=='y'.or.ctest=='Y') then
+						numdata=4*numdata !if root=n, then there will be n singlet states and 3n triplet sublevels
+						deallocate(datax,str,FWHM)
+						allocate(datax(numdata),str(numdata),FWHM(numdata))
+						if (ispectrum==3) continue
+						if (ispectrum==4) call loclabel(10,"CD SPECTRUM",ifound,0)
+						read(10,*)
+						read(10,*)
+						read(10,*)
+						read(10,*)
+						read(10,*)
+						do i=1,numdata
+							read(10,*) tmp1,tmp2,tmp3,tmp4,tmp5 !Since 5.0, the first column is always 0, strange!
+							if (tmp1==0) then !ORCA >=5.0
+								datax(i)=tmp3
+								str(i)=tmp5
+							else !ORCA 4.x
+								datax(i)=tmp2
+								str(i)=tmp4
+							end if
+						end do
+					end if
+				end if
+            else !Should be (DLPNO-)(ST)EOM-CCSD or others
+				!Count how many data are there
+				call loclabel(10,"ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS")
+                call skiplines(10,5)
+                numdata=0
+                do while(.true.)
+					read(10,"(a)") c80tmp
+                    if (c80tmp==" ") exit
+					numdata=numdata+1
+                end do
+				allocate(datax(numdata),str(numdata),FWHM(numdata))
+				if (ispectrum==3) call loclabel(10,"ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS")
+				if (ispectrum==4) call loclabel(10,"CD SPECTRUM")
+				call skiplines(10,5)
+				do i=1,numdata
+					read(10,*) rnouse,datax(i),tmpval,str(i)
+                    if (tmpval>datax(i)) then !I noticed ORCA 5.0.1 has a bug, the values in cm-1 and nm are inversed
+						ttt=tmpval
+                        datax(i)=tmpval
+                        tmpval=ttt
+                    end if
+				end do
+            end if
 			FWHM=2D0/3D0
 			datax=datax/8065.5447D0 !Convert from cm-1 to eV
 		end if
@@ -2187,14 +2427,25 @@ if (ixtb==1) then
     end if
 	allocate(datax(numdata),str(numdata))
 	call loclabel(10,"projected vibrational frequencies",ifound,0)
+    if (ifound==0) then
+		write(*,*) "Error: Unable to find projected vibrational frequencies from this file!"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+    end if
 	read(10,*)
 	read(10,"(12x,6f9.2)") datax
-	call loclabel(10,"IR intensities (amu)",ifound,0)
+	call loclabel(10,"IR intensities ",ifound,0)
+    if (ifound==0) then
+		write(*,*) "Error: Unable to find IR intensities from this file!"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+    end if
 	read(10,*)
 	read(10,"(8(5x,f6.2))") str
-	write(*,"(a)") " Note: The IR intensities printed by xtb are in ""amu"", but Multiwfn does not convert the unit automatically"
-	!From Gaussian manual one can find 1 Debye^2*angstrom^-2*amu^-1 = 42.2561 km*mol^-1, &
-	!however I don't know if Debye^2*angstrom-2*amu-1 is just the "amu" used in xtb output, therefore I decide not to convert the unit
+	!  write(*,"(a)") " Note: The IR intensities printed by xtb are in ""amu"", but Multiwfn does not convert the unit automatically"
+	!  From Gaussian manual one can find 1 Debye^2*angstrom^-2*amu^-1 = 42.2561 km*mol^-1, &
+	!  however I don't know if Debye^2*angstrom-2*amu-1 is just the "amu" used in xtb output, therefore I decide not to convert the unit
+    !Since xtb 6.4, the unit has been given in km/mol
 	write(*,*)
 	write(*,"(a)") " xtb program outputs all frequencies including overall rotation and translation modes. Now remove how many lowest modes to discard these modes? e.g. 6"
 	write(*,*) "If press ENTER directly, 6 lowest modes will be discarded"
@@ -2220,6 +2471,67 @@ if (ixtb==1) then
 	FWHM=8D0
 	close(10)
 	return
+end if
+
+!Check if is CP2K output file
+call loclabel(10,"CP2K|",iCP2K,maxline=300)
+if (iCP2K==1) then
+    if (imode==0) then
+	    write(*,*) "Recognized as a CP2K output file"
+	    write(*,*)
+    end if
+    !Find how many frequencies in the file
+    rewind(10)
+    i1=0
+    i2=0
+    i3=0
+    do while(.true.)
+	    call loclabel(10,"VIB|Frequency (cm^-1)",ifound,0)
+	    if (ifound==1) then
+		    i1=0;i2=0;i3=0
+		    backspace(10)
+            read(10,"(a)") c200tmp
+		    read(c200tmp(10:),*,iostat=ierror) i1,i2,i3
+		    if (ierror/=0) then
+			    read(c200tmp(10:),*,iostat=ierror) i1,i2
+			    if (ierror/=0) then
+				    read(c200tmp(10:),*,iostat=ierror) i1
+			    end if
+		    end if
+		    read(10,*);read(10,*)
+		    if (i1==0.or.i2==0.or.i3==0) exit
+	    else
+		    exit
+	    end if
+    end do
+    rewind(10)
+    numdata=max(i1,i2,i3)
+
+	allocate(datax(numdata),str(numdata),FWHM(numdata))
+	FWHM=8D0
+    ilackdata=numdata
+    inow=1
+    do while(.true.)
+	    if (ilackdata>3) then
+		    iread=3
+	    else
+		    iread=ilackdata
+	    end if
+	    call loclabel(10,"VIB|Frequency (cm^-1)",ifound,0)
+	    read(10,"(22x)",advance="no")
+	    if (iread==1) read(10,*) datax(inow)
+	    if (iread==2) read(10,*) datax(inow),datax(inow+1)
+	    if (iread==3) read(10,*) datax(inow),datax(inow+1),datax(inow+2)
+	    read(10,"(22x)",advance="no")
+	    if (iread==1) read(10,*) str(inow)
+	    if (iread==2) read(10,*) str(inow),str(inow+1)
+	    if (iread==3) read(10,*) str(inow),str(inow+1),str(inow+2)
+	    if (ilackdata<=3) exit
+	    ilackdata=ilackdata-3
+	    inow=inow+3
+    end do
+	close(10)
+    return
 end if
 
 !Plain text file
@@ -2385,6 +2697,13 @@ if (nsystem>1) then
     !If user defined weights, then calculated mixed shielding value
     if (any(weight/=1)) then
         allocate(atmshdwei(ncenter),atmshdwei_org(ncenter))
+        sumwei=sum(weight)
+        if (abs(sumwei-1)>0.001D0) then
+            write(*,"(/,a,f7.2,a)") " Warning: The sum of all conformation weights is",sumwei*100,&
+            " %, which deviates from 100% evidently, this may make the resulting map meaningless. Do you want to normalize the weights? (y/n)"
+            read(*,*) selectyn
+            if (selectyn=='y'.or.selectyn=='Y') weight(:)=weight(:)/sumwei
+        end if
         do iatm=1,ncenter
             atmshdwei(iatm)=sum(weight(:)*atmshdall(iatm,:))
         end do
@@ -2747,13 +3066,15 @@ do while(.true.)
         if (igetshift==1) then
             write(*,*) "Input reference value in ppm, e.g. 120.5"
             write(*,"(a)") " You can also input corresponding letter to use built-in values of TMS. &
-            They were all calculated under CH3Cl represented by SMD model, geometries were optimized at B3LYP/def2-SVP in vaccum"
+            a~f were all calculated under chloroform represented by SMD model, geometries were optimized at B3LYP/def2-SVP in vaccum"
             write(*,*) "a: B97-2/def2-TZVP G09 (186.8707 for C and 31.5143 for H)"
             write(*,*) "b: B97-2/pcSseg-1 G09 (184.4144 for C and 31.2876 for H)"
             write(*,*) "c: MP2/pcSseg-1 G09 (195.6338 for C and 31.2732 for H)"
             write(*,*) "d: B97-2/def2-TZVP G16 (186.7595 for C and 31.5058 for H)"
             write(*,*) "e: B97-2/pcSseg-1 G16 (184.2007 for C and 31.2802 for H)"
             write(*,*) "f: MP2/pcSseg-1 G16 (195.5706 for C and 31.2652 for H)"
+            write(*,"(a)") " The following one was calculated under chloroform represented by IEFPCM model, geometry was optimized at B3LYP/6-31G* in vaccum"
+            write(*,*) "g: revTPSS/pcSseg-1 G16 (183.6902 for C and 31.7306 for H)"
             read(*,*) c80tmp
             if (iachar(c80tmp(1:1))>=48.and.iachar(c80tmp(1:1))<=57) then
                 read(c80tmp,*) NMRref
@@ -2777,6 +3098,9 @@ do while(.true.)
                     else if (c80tmp=="f") then
                         if (elemplot=="C") NMRref=195.5706D0
                         if (elemplot=="H") NMRref=31.2652D0
+                    else if (c80tmp=="g") then
+                        if (elemplot=="C") NMRref=183.6902D0
+                        if (elemplot=="H") NMRref=31.7306D0
                     end if
                 else
                     write(*,"(a)") " Error: The current element is neither C nor H! You should use option 6 to &
@@ -2785,7 +3109,7 @@ do while(.true.)
             end if
         else if (igetshift==2) then
             write(*,*) "Input slope and intercept, e.g. -0.9,120.5"
-            write(*,"(a)") " If inputting ""a"", the parameters for C and H fitted at B3LYP/6-31G* level with CH3Cl represented by SMD will be used"
+            write(*,"(a)") " If inputting ""a"", the parameters for C and H fitted at B3LYP/6-31G* level with chloroform represented by SMD will be used"
             read(*,"(a)") c80tmp
             if (index(c80tmp,'a')==0) then
                 read(c80tmp,*) NMRslope,NMRinter
@@ -3438,7 +3762,7 @@ do while(.true.)
 				        CALL CURVE(linexall(imol,1:ndata),lineyall(imol,1:ndata),ndata)
 			        end do
                 end if
-			    !call xaxgit !Draw a line corresponding to Y=0
+			    call xaxgit !Draw a line corresponding to Y=0
                 call endgrf !End of plotting discrete lines
 			    call color("WHITE")
 		    end if
@@ -3615,7 +3939,7 @@ if (iprog==1) then !Gaussian
     read(10,*) c80tmp,ncenter
     if (.not.allocated(a)) allocate(a(ncenter))
     allocate(atmshd(ncenter))
-    call loclabel(10,"Magnetic shielding tensor (ppm)",ifound)
+    call loclabelfinal(10,"Magnetic shielding tensor (ppm)",ifound)
     if (ifound==0) then
         write(*,"(a)") " Error: Unable to find magnetic shielding tensors! Please check your Gaussian keywords"
         write(*,*) "Press ENTER button to exit program"
@@ -3629,9 +3953,8 @@ if (iprog==1) then !Gaussian
         read(c80tmp(26:),*) atmshd(iatm)
         read(10,*);read(10,*);read(10,*);read(10,*)
     end do
-
 else if (iprog==2) then !ORCA
-    call loclabel(10,"CARTESIAN COORDINATES (ANGSTROEM)")
+    call loclabelfinal(10,"  Nucleus  Element",ifound)
     read(10,*);read(10,*)
     ncenter=0
     do while(.true.)
@@ -3639,9 +3962,9 @@ else if (iprog==2) then !ORCA
         if (c80tmp==" ") exit
         ncenter=ncenter+1
     end do
-    if (.not.allocated(a)) allocate(a(ncenter))
-    allocate(atmshd(ncenter))
-    call loclabel(10,"  Nucleus  Element",ifound)
+    deallocate(a)
+    allocate(a(ncenter),atmshd(ncenter))
+    call loclabelfinal(10,"  Nucleus  Element",ifound)
     read(10,*);read(10,*)
     do iatm=1,ncenter
         read(10,*) inouse,a(iatm)%name,atmshd(iatm)

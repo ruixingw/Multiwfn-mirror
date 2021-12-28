@@ -22,7 +22,7 @@ do while(.true.)
     Multiwfn original paper, in which all methods employed in this module are described"
     write(*,"(a)") " Tian Lu, Feiwu Chen, Acta Chimica Sinica, 69, 2393 (2011) http://sioc-journal.cn/Jwk_hxxb/CN/abstract/abstract340458.shtml"
     write(*,*)
-	write(*,*) "      ================ Orbital composition analysis ==============="
+	write(*,*) "       ================ Orbital composition analysis ==============="
 	write(*,*) "-10 Return"
 	if (allocated(CObasa)) then
 		write(*,*) "-2 Define fragment 2 (for option 4,5)"
@@ -51,17 +51,19 @@ do while(.true.)
 	else if (icompana==-2) then
 		call deffrag(2)
 	else if (icompana==1.or.icompana==2.or.icompana==3) then
+        call ask_Sbas_PBC
 		if (icompana==1) call orballcomp_MMPA(1)
 		if (icompana==2) call orballcomp_MMPA(2)
 		if (icompana==3) call orballcomp_MMPA(3)
 	else if (icompana==4.or.icompana==5.or.icompana==6) then
 		if (.not.allocated(frag1)) then
-			write(*,*) "Please use option -1 to define fragment 1"
+			write(*,*) "Error: Please use option -1 to define fragment 1"
             write(*,*) "Press ENTER button to continue"
             read(*,*)
 			cycle
 		end if
 		if (.not.allocated(frag2).and.(icompana==4.or.icompana==5)) write(*,*) "Note: Fragment 2 was not be defined"
+        call ask_Sbas_PBC
 		write(*,*)
 		if (icompana==4) call orbfragcomp_MMPA(1)
 		if (icompana==5) call orbfragcomp_MMPA(2)
@@ -100,7 +102,7 @@ integer fragtmp(nbasis)
 integer termtmp(nbasis) !Store each time read serial number
 integer vectmp(nbasis) !used by "inv" command
 integer atmsellist(ncenter),bassellist(nbasis)
-character c200*200,lchar
+character c2000tmp*2000,lchar
 fragtmp=0
 if (isel==1.and.allocated(frag1)) then
 	fragtmp(1:size(frag1))=frag1(:)
@@ -126,13 +128,13 @@ write(*,*) "da 5,7,11-13: Delete all basis functions in atoms 5,7,11,12,13 from 
 write(*,*) "db 5,7,11-13: Delete basis functions 5,7,11,12,13 from fragment"
 
 do while(.true.)
-	read(*,"(a)") c200
-	if (c200(1:4)=="help") then
+	read(*,"(a)") c2000tmp
+	if (c2000tmp(1:4)=="help") then
 		goto 10
-	else if (c200(1:6)=="addall") then
+	else if (c2000tmp(1:6)=="addall") then
 		forall(i=1:nbasis) fragtmp(i)=i
 		write(*,*) "Done!"
-	else if (c200(1:1)=="q") then
+	else if (c2000tmp(1:1)=="q") then
 		numbas=count(fragtmp/=0)
 		if (isel==1.and.numbas>=1) allocate(frag1(numbas))
 		if (isel==2.and.numbas>=1) allocate(frag2(numbas))
@@ -152,10 +154,10 @@ do while(.true.)
 			if (isel==2) frag2=pack(fragtmp,fragtmp/=0)
 		end if
 		exit
-	else if (c200(1:5)=="clean") then
+	else if (c2000tmp(1:5)=="clean") then
 		fragtmp=0
 		write(*,*) "Done!"
-	else if (c200(1:3)=="all") then
+	else if (c2000tmp(1:3)=="all") then
 		write(*,*) "The basis functions with asterisk are those presented in current fragment"
 		do i=1,nbasis
 			if (any(fragtmp==i)) then
@@ -166,7 +168,7 @@ do while(.true.)
 				 i,basshell(i),bascen(i),a(bascen(i))%name,GTFtype2name(bastype(i))
 			end if
 		end do
-	else if (c200(1:4)=="list") then
+	else if (c2000tmp(1:4)=="list") then
 		write(*,*) "Basis functions in current fragment:"
 		if (all(fragtmp==0)) then
 			write(*,*) "None"
@@ -181,7 +183,7 @@ do while(.true.)
             write(*,"(/,' Totally',i8,' basis functions')") ntmp
 			write(*,*)
 		end if
-	else if (c200(1:3)=="inv") then
+	else if (c2000tmp(1:3)=="inv") then
 		vectmp=fragtmp
 		fragtmp=0
 		itmp=0
@@ -192,33 +194,33 @@ do while(.true.)
 			end if 
 		end do
 		write(*,*) "Done!"
-	else if (c200(1:4)=="cond") then
+	else if (c2000tmp(1:4)=="cond") then
 		write(*,"(a)") " Note: You will be prompted to input three conditions in turn, &
 		the basis functions satisfying all conditions will be added to current fragment"
 		write(*,*)
 		write(*,*) "Condition 1: Input range of atoms, e.g. 2,5-8,12"
 		write(*,*) "To select all atoms, simply input ""a"""
-		read(*,"(a)") c200
-		if (index(c200,'a')/=0) then
+		read(*,"(a)") c2000tmp
+		if (index(c2000tmp,'a')/=0) then
 			nselatm=ncenter
 			forall(i=1:nselatm) atmsellist(i)=i
 		else
-			call str2arr(c200,nselatm,atmsellist)
+			call str2arr(c2000tmp,nselatm,atmsellist)
 			if (any(atmsellist(1:nselatm)>ncenter)) then
-				write(*,*) "ERROR: One or more atom indices exceeded valid range!"
+				write(*,*) "Error: One or more atom indices exceeded valid range!"
 				cycle
 			end if
 		end if
 		write(*,*) "Condition 2: Input range of basis functions, e.g. 2,5-8,12"
 		write(*,*) "To select all basis functions, simply input ""a"""
-		read(*,"(a)") c200
-		if (index(c200,'a')/=0) then
+		read(*,"(a)") c2000tmp
+		if (index(c2000tmp,'a')/=0) then
 			nselbas=nbasis
 			forall(i=1:nselbas) bassellist(i)=i
 		else
-			call str2arr(c200,nselbas,bassellist)
+			call str2arr(c2000tmp,nselbas,bassellist)
 			if (any(bassellist(1:nselbas)>nbasis)) then
-				write(*,*) "ERROR: One or more basis function indices exceeded valid range!"
+				write(*,*) "Error: One or more basis function indices exceeded valid range!"
 				cycle
 			end if
 		end if
@@ -226,21 +228,21 @@ do while(.true.)
         write(*,*) "Could be one of such as S, Y, Z, XY, YY, ZZZ, D+1, D 0 ..."
 		write(*,*) "You can also choose shell type, one of S, P, D, F, G, H"
 		write(*,*) """a"" means all types"
-		read(*,"(a)") c200
+		read(*,"(a)") c2000tmp
 		naddbas=0
 		do ibasidx=1,nselbas !Examine all basis functions
 			ibas=bassellist(ibasidx)
 			iadd=0
 			if ( any(fragtmp==ibas) ) cycle !Skip if already presented in current fragment
 			if ( all(atmsellist(1:nselatm)/=bascen(ibas)) ) cycle !Atom index condition
-			if ( index(c200,'a')==0) then !Basis function type condition
+			if ( index(c2000tmp,'a')==0) then !Basis function type condition
 				itype=bastype(ibas)
-				if ( trim(c200)=='P' .and. ( itype>=2.and.itype<=4 ) ) iadd=1
-				if ( trim(c200)=='D' .and. ( (itype>=-5 .and.itype<=-1 ).or.(itype>=5 .and.itype<=10) ) ) iadd=1
-				if ( trim(c200)=='F' .and. ( (itype>=-12.and.itype<=-6 ).or.(itype>=11.and.itype<=20) ) ) iadd=1
-				if ( trim(c200)=='G' .and. ( (itype>=-21.and.itype<=-13).or.(itype>=21.and.itype<=35) ) ) iadd=1
-				if ( trim(c200)=='H' .and. ( (itype>=-32.and.itype<=-22).or.(itype>=36.and.itype<=56) ) ) iadd=1
-				if ( trim(c200)==GTFtype2name(bastype(ibas)) ) iadd=1 !Inputted is detailed type
+				if ( trim(c2000tmp)=='P' .and. ( itype>=2.and.itype<=4 ) ) iadd=1
+				if ( trim(c2000tmp)=='D' .and. ( (itype>=-5 .and.itype<=-1 ).or.(itype>=5 .and.itype<=10) ) ) iadd=1
+				if ( trim(c2000tmp)=='F' .and. ( (itype>=-12.and.itype<=-6 ).or.(itype>=11.and.itype<=20) ) ) iadd=1
+				if ( trim(c2000tmp)=='G' .and. ( (itype>=-21.and.itype<=-13).or.(itype>=21.and.itype<=35) ) ) iadd=1
+				if ( trim(c2000tmp)=='H' .and. ( (itype>=-32.and.itype<=-22).or.(itype>=36.and.itype<=56) ) ) iadd=1
+				if ( trim(c2000tmp)==GTFtype2name(bastype(ibas)) ) iadd=1 !Inputted is detailed type
 			else
 				iadd=1
 			end if
@@ -256,9 +258,9 @@ do while(.true.)
 		end do
 		write(*,"(' Done!',i6,' new basis functions have been added to current fragment')") naddbas
 		
-	else if (c200(1:2)=="a ".or.c200(1:2)=="s ".or.c200(1:2)=="b ".or.c200(1:2)=="db".or.c200(1:2)=="da") then
-		call str2arr(c200(3:),nterm,termtmp)
-		if (c200(1:2)=="a ") then
+	else if (c2000tmp(1:2)=="a ".or.c2000tmp(1:2)=="s ".or.c2000tmp(1:2)=="b ".or.c2000tmp(1:2)=="db".or.c2000tmp(1:2)=="da") then
+		call str2arr(c2000tmp(3:),nterm,termtmp)
+		if (c2000tmp(1:2)=="a ") then
 			if (any(termtmp(1:nterm)<=0).or.any(termtmp(1:nterm)>ncenter)) then
 				write(*,*) "Atom index exceeded valid range! Ignoring..."
 				cycle
@@ -275,7 +277,7 @@ do while(.true.)
 					end if
 				end do
 			end do
-		else if (c200(1:2)=="s ") then
+		else if (c2000tmp(1:2)=="s ") then
 			do ibas=1,nbasis
 				if (any(termtmp(1:nterm)==basshell(ibas)).and.all(fragtmp/=ibas)) then
 					do j=1,nbasis !Find an empty slot to record this basis function
@@ -286,7 +288,7 @@ do while(.true.)
 					end do
 				end if
 			end do
-		else if (c200(1:2)=="b ") then
+		else if (c2000tmp(1:2)=="b ") then
 			do i=1,nterm
 				if (all(fragtmp/=termtmp(i)).and.termtmp(i)<=nbasis.and.termtmp(i)>0) then
 					do j=1,nbasis !Find empty slot to save this basis function
@@ -297,11 +299,11 @@ do while(.true.)
 					end do
 				end if
 			end do
-		else if (c200(1:2)=="db") then
+		else if (c2000tmp(1:2)=="db") then
 			do i=1,nterm
 				where(fragtmp==termtmp(i)) fragtmp=0
 			end do
-		else if (c200(1:2)=="da") then
+		else if (c2000tmp(1:2)=="da") then
 			do iatm=1,nterm
 				do ibas=basstart(termtmp(iatm)),basend(termtmp(iatm))
 					where(fragtmp==ibas) fragtmp=0
@@ -310,17 +312,17 @@ do while(.true.)
 		end if
 		write(*,*) "Done!"
 		
-	else if (c200(1:2)=="l ") then
+	else if (c2000tmp(1:2)=="l ") then
 		naddbas=0
 		do ibas=1,nbasis
 			ido=0
 			itype=bastype(ibas)
-			if ( (index(c200,'s')/=0.or.index(c200,'S')/=0).and.itype==1 ) ido=1
-			if ( (index(c200,'p')/=0.or.index(c200,'P')/=0).and.( itype>=2.and.itype<=4) ) ido=1
-			if ( (index(c200,'d')/=0.or.index(c200,'D')/=0).and.( (itype>=-5 .and.itype<=-1 ).or.(itype>=5 .and.itype<=10) ) ) ido=1
-			if ( (index(c200,'f')/=0.or.index(c200,'F')/=0).and.( (itype>=-12.and.itype<=-6 ).or.(itype>=11.and.itype<=20) ) ) ido=1
-			if ( (index(c200,'g')/=0.or.index(c200,'G')/=0).and.( (itype>=-21.and.itype<=-13).or.(itype>=21.and.itype<=35) ) ) ido=1
-			if ( (index(c200,'h')/=0.or.index(c200,'H')/=0).and.( (itype>=-32.and.itype<=-22).or.(itype>=36.and.itype<=56) ) ) ido=1
+			if ( (index(c2000tmp,'s')/=0.or.index(c2000tmp,'S')/=0).and.itype==1 ) ido=1
+			if ( (index(c2000tmp,'p')/=0.or.index(c2000tmp,'P')/=0).and.( itype>=2.and.itype<=4) ) ido=1
+			if ( (index(c2000tmp,'d')/=0.or.index(c2000tmp,'D')/=0).and.( (itype>=-5 .and.itype<=-1 ).or.(itype>=5 .and.itype<=10) ) ) ido=1
+			if ( (index(c2000tmp,'f')/=0.or.index(c2000tmp,'F')/=0).and.( (itype>=-12.and.itype<=-6 ).or.(itype>=11.and.itype<=20) ) ) ido=1
+			if ( (index(c2000tmp,'g')/=0.or.index(c2000tmp,'G')/=0).and.( (itype>=-21.and.itype<=-13).or.(itype>=21.and.itype<=35) ) ) ido=1
+			if ( (index(c2000tmp,'h')/=0.or.index(c2000tmp,'H')/=0).and.( (itype>=-32.and.itype<=-22).or.(itype>=36.and.itype<=56) ) ) ido=1
 			if (ido==1.and.all(fragtmp/=ibas)) then
 				do j=1,nbasis !Find an empty slot to record this basis function
 					if (fragtmp(j)==0) then
@@ -453,33 +455,43 @@ real*8 basloc(nbasis),bascross(nbasis),bastot(nbasis)
 real*8,pointer :: tmpmat(:,:)
 real*8 atmcomp(ncenter)
 integer imethod
-character orbtype*10
+character orbtype*10,c80tmp*80
+
 do while(.true.)
-	write(*,*) "Input the orbital index to print composition, e.g. 4"
-	write(*,*) "Note: Input -1 can print basic information of all orbitals, input 0 to return"
-	read(*,*) ishowmo
-	if (ishowmo<-1.or.ishowmo>nmo) then
-		write(*,"(' Orbital index should be in the range of 1 to',i6)") nmo
-		cycle
-	else if (ishowmo==0) then
+    write(*,*)
+    write(*,*) "Input the orbital index to print composition, e.g. 4"
+    if (allocated(CObasb)) write(*,"(a)") " Note: Positive index and negative index correspond to alpha orbital and beta orbital, respectively"
+    write(*,*) "Input ""a"" can print basic information of all orbitals, input 0 to return"
+    if (wfntype==0.or.wfntype==1.or.wfntype==3) call orblabsel_prompt
+    read(*,"(a)") c80tmp
+    
+	if (c80tmp=="0") then
 		exit
-	else if (ishowmo==-1) then !show all orbital information
-		do i=1,nmo
-			if (MOtype(i)==0) orbtype="Alpha&Beta"
-			if (MOtype(i)==1) orbtype="Alpha     "
-			if (MOtype(i)==2) orbtype="Beta      "
-			write(*,"(' Orbital:',i5,' Energy(a.u.):',f14.8,' Occ:',f14.8,' Type: ',a)") i,MOene(i),MOocc(i),orbtype
-		end do
-		write(*,*)
+	else if (c80tmp=="a") then !Show all orbital information
+        call showorbinfo(1,nmo)
 	else
-		write(*,*)
-		write(*,"(' Threshold of absolute value:  >',f10.5,' %')") compthres
+		if (index(c80tmp,'h')==0.and.index(c80tmp,'l')==0) then 
+			read(c80tmp,*) ishowmo
+			if (ishowmo<0.and.allocated(CObasb)) ishowmo=abs(ishowmo)+nbasis
+			if (ishowmo<=0.or.ishowmo>nmo) then
+				write(*,"(' Error: Orbital index should be in the range of 1 to',i6)") nmo
+				cycle
+			end if
+        else
+			call orblabsel(c80tmp,ishowmo)
+            if (ishowmo==0) then
+				write(*,*) "Error: The orbital label you inputted is wrong! Please double check"
+				cycle
+            end if
+        end if
 		if (MOtype(ishowmo)==0) orbtype="Alpha&Beta"
 		if (MOtype(ishowmo)==1) orbtype="Alpha     "
 		if (MOtype(ishowmo)==2) orbtype="Beta      "
 		if (ishowmo<=nbasis) tmpmat=>CObasa
 		if (ishowmo>nbasis) tmpmat=>CObasb
 		write(*,"(' Orbital:',i6,'  Energy(a.u.):',f14.6,'  Occ:',f10.6,'  Type: ',a)") ishowmo,MOene(ishowmo),MOocc(ishowmo),orbtype
+		write(*,"(' Printing threshold of absolute value:  >',f10.5,' %')") compthres
+        write(*,*)
 		if (imethod==1.or.imethod==2) write(*,"('  Basis Type    Atom    Shell      Local       Cross term        Total')")
 		if (imethod==3) write(*,"('  Basis Type    Atom    Shell   Composition')")
 		if (ishowmo>nbasis) ishowmo=ishowmo-nbasis !For wfntype==1.or.wfntype==4, change to #beta for CObasb
@@ -494,7 +506,6 @@ do while(.true.)
 					if (jbas==ibas) cycle
 					if (imethod==1) then
 						bascross(ibas)=bascross(ibas)+tmpmat(ibas,ishowmo)*tmpmat(jbas,ishowmo)*Sbas(ibas,jbas)
-! 						write(*,*) ibas,jbas,tmpmat(ibas,ishowmo)*tmpmat(jbas,ishowmo)*Sbas(ibas,jbas)
 					else if (imethod==2) then
 						tmp=tmpmat(ibas,ishowmo)**2+tmpmat(jbas,ishowmo)**2
 						if (tmp>1D-30) bascross(ibas)=bascross(ibas)+tmpmat(ibas,ishowmo)**2/tmp*2*tmpmat(ibas,ishowmo)*tmpmat(jbas,ishowmo)*Sbas(ibas,jbas)
@@ -516,7 +527,7 @@ do while(.true.)
 		if (imethod==3) write(*,"(' Sum up those listed above: ',f13.5,' %')") sum(bastot(:),abs(bastot)*100>compthres)*100
 		if (imethod==3) write(*,"(' Sum up all basis functions:',f13.5,' %')") sum(bastot(:))*100
 		write(*,*)
-		write(*,"(' Composition of each shell, threshold of absolute value:  >',f12.6,' %')") compthres
+		write(*,"(' Composition of each shell')")
         s_comp=0;p_comp=0;d_comp=0;f_comp=0;g_comp=0;h_comp=0
 		do i=1,nshell
 			shellcom=0D0
@@ -548,7 +559,6 @@ do while(.true.)
 			write(*,*)
 			write(*,"(' Composition of the fragment:',f12.5,' %')") sum(bastot(frag1(:)))*100
 		end if
-		write(*,*)
 	end if
 end do
 end subroutine
@@ -606,7 +616,7 @@ real*8 allpotx(ncenter,radpot*sphpot),allpoty(ncenter,radpot*sphpot),allpotz(nce
 real*8 tmpdens(radpot*sphpot),selfdens(radpot*sphpot),promol(radpot*sphpot),orbval(nmo),orbcomp(ncenter,nmo)
 real*8 atmcomp(ncenter)
 integer,allocatable :: idxarr(:)
-character c2000tmp*2000
+character c80tmp*80,c2000tmp*2000
 real*8,external :: fdens_rad
 
 if (iautointgrid==1) then
@@ -728,6 +738,8 @@ if (allocated(frag1)) deallocate(frag1)
 do while(.true.)
     write(*,*)
 	write(*,*) "Now input the orbital index to print orbital composition, e.g. 5"
+    if (wfntype==1.or.wfntype==4) write(*,"(a)") " Note: If you want to input index of beta orbital, add ""b"" suffix, e.g. 39b"
+    if (wfntype==0.or.wfntype==1.or.wfntype==3) call orblabsel_prompt
 	write(*,"(a)") " You can also input:"
 	if (.not.allocated(frag1)) then
 	    write(*,"(a,i6)") " -9: Define fragment, current: undefined"
@@ -740,9 +752,25 @@ do while(.true.)
 	write(*,"(a)") " -3: Print fragment contribution to a batch of orbitals"
 	write(*,"(a)") " -4: Export composition of every atom in every orbital to orbcomp.txt"
 	write(*,"(a)") " -5: Print orbital delocalization index (ODI) for a batch of orbitals"
-	read(*,*) ishowmo
+	read(*,"(a)") c80tmp
+    	if (index(c80tmp,'h')/=0.or.index(c80tmp,'l')/=0) then 
+		call orblabsel(c80tmp,ishowmo)
+        if (ishowmo==0) then
+			write(*,*) "Error: The orbital label you inputted is wrong! Please double check"
+			cycle
+        end if
+    else if (index(c80tmp,'b')/=0) then !Convert beta orbital index to global orbital index
+        itmp=index(c80tmp,'b')
+        read(c80tmp(1:itmp-1),*) ishowmo
+        do istart=1,nmo !Find starting orbital of beta
+	        if (MOtype(istart)==2) exit
+        end do
+        ishowmo=istart-1+ishowmo
+    else
+        read(c80tmp,*) ishowmo
+    end if
 	if (ishowmo>nmo) then
-		write(*,"(' Error: Orbital index should within the range of 1 to',i6,/)") nmo
+		write(*,"(' Error: Orbital index should between 1 and',i6,/)") nmo
 		cycle
 	else if (ishowmo==0) then
         if (iautointgrid==1) then
@@ -1296,7 +1324,7 @@ end do
 if (isel==0) then !Analyze one orbital
     allocate(atmcomp(ncenter_NAO),shcomp(numNAOsh))
 	do while(.true.)
-		write(*,*) "Input the index of the orbital to be analyzed. e.g. 5"
+		write(*,*) "Input the index of the orbital to be analyzed, e.g. 5"
         write(*,*) "Input 0 can return"
 		read(*,*) iorboutcomp
 		if (iorboutcomp==0) then
@@ -1522,7 +1550,6 @@ end subroutine
 
 
 !!------- Generate all basis function composition in all orbitals by SCPA method
-!Currently not employed by any function
 subroutine gen_allorbbascomp_SCPA(bascomp)
 use defvar
 implicit real*8 (a-h,o-z)

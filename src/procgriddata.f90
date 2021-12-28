@@ -60,10 +60,10 @@ end module
 subroutine procgriddata
 use deftype
 use defvar
-use GUI
 use util
+use GUI
 implicit real*8(a-h,o-z)
-real*8,allocatable :: avgdata(:,:),intcurve(:),locintcurve(:),intcurvepos(:)
+real*8,allocatable :: avgdata(:,:)
 integer,allocatable :: atmlist(:),atmlist2(:)
 character gridfile2*200,gridfilenew*200,atmidxfile*200,atmidxfile2*200,c200tmp*200,tmpchar,c2000tmp*2000
 type(content) useratom(3),maxv,minv
@@ -98,29 +98,36 @@ end if
 
 do while(.true.)
 	write(*,*)
-	write(*,*) "                  ============= Process grid data =============="
+	write(*,*) "                 ============= Process grid data =============="
 	write(*,*) "-2 Visualize isosurface of present grid data"
 	write(*,*) "-1 Return to main menu"
-	write(*,*) "0 Output present grid data to Gaussian cube file"
-	write(*,*) "1 Output all data points with value and coordinate"
-	write(*,*) "2 Output data points in a XY plane by specifying Z"
-	write(*,*) "3 Output data points in a YZ plane by specifying X"
-	write(*,*) "4 Output data points in a XZ plane by specifying Y"
-	write(*,*) "5 Output average data of XY planes in a range of Z"
-	write(*,*) "6 Output average data of YZ planes in a range of X"
-	write(*,*) "7 Output average data of XZ planes in a range of Y"
-	write(*,*) "8 Output data points in a plane defined by three atom indices"
-	write(*,*) "9 Output data points in a plane defined by three points"
-	write(*,*) "10 Output data points in specified value range"
+	write(*,*) "0 Export present grid data to Gaussian-type cube file (.cub)"
+	write(*,*) "1 Output all data points with value and coordinate to output.txt"
+	write(*,*) "2 Output data points in a XY plane by specifying Z to output.txt"
+	write(*,*) "3 Output data points in a YZ plane by specifying X to output.txt"
+	write(*,*) "4 Output data points in a XZ plane by specifying Y to output.txt"
+	write(*,*) "5 Output average data of XY planes in a range of Z to output.txt"
+	write(*,*) "6 Output average data of YZ planes in a range of X to output.txt"
+	write(*,*) "7 Output average data of XZ planes in a range of Y to output.txt"
+	write(*,*) "8 Output data points in a plane defined by three atom indices to output.txt"
+	write(*,*) "9 Output data points in a plane defined by three points to output.txt"
+	write(*,*) "10 Output data points in specified value range to output.txt"
 	write(*,*) "11 Grid data calculation"
 	write(*,"(a)") " 12 Map values of a cube file to specified isosurface of present grid data"
 	write(*,*) "13 Set value of the grid points that far away from / close to some atoms"
 	write(*,*) "14 Set value of the grid points outside overlap region of two fragments"
 	write(*,*) "15 If data value is within certain range, set it to a specified value"
-	write(*,*) "16 Scale data range"
+	write(*,*) "16 Scale data range of present grid data"
 	write(*,*) "17 Show statistic data of the points in specific spatial and value range"
 	write(*,*) "18 Calculate and plot integral curve in X/Y/Z direction"
 	read(*,*) isel
+    
+    if (isel>=2.and.isel<=7.and.ifgridortho()/=1) then
+        write(*,*) "Error: This function is only available for orthogonal grid!"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+        cycle
+    end if
 	
 	if (isel==-2) then
 		call drawisosurgui(1)
@@ -304,7 +311,7 @@ do while(.true.)
 		
 	else if (isel==8) then
 		do while(.true.)
-			write(*,*) "Please input indices of three atoms to define a plane   e.g. 4,8,3"
+			write(*,*) "Please input indices of three atoms to define a plane, e.g. 4,8,3"
 			read(*,*) iatm1,iatm2,iatm3
 			if (iatm1<=ncenter.and.iatm1>=1.and.iatm2<=ncenter.and.iatm2>=1.and.iatm3<=ncenter.and.iatm3>=1) exit
 			write(*,*) "The atom indices are invalid, input again"
@@ -318,10 +325,10 @@ do while(.true.)
 		useratom(3)%x=a(iatm3)%x
 		useratom(3)%y=a(iatm3)%y
 		useratom(3)%z=a(iatm3)%z
-		write(*,"('The coordinate (Angstrom) of the three atoms you inputted:')")
-		write(*,"('Atom 1  x, y, z:',3f12.6)") useratom(1)%x*b2a,useratom(1)%y*b2a,useratom(1)%z*b2a
-		write(*,"('Atom 2  x, y, z:',3f12.6)") useratom(2)%x*b2a,useratom(2)%y*b2a,useratom(2)%z*b2a
-		write(*,"('Atom 3  x, y, z:',3f12.6)") useratom(3)%x*b2a,useratom(3)%y*b2a,useratom(3)%z*b2a
+		write(*,"(' The coordinate (Angstrom) of the three atoms you inputted:')")
+		write(*,"(' Atom 1  x, y, z:',3f12.6)") useratom(1)%x*b2a,useratom(1)%y*b2a,useratom(1)%z*b2a
+		write(*,"(' Atom 2  x, y, z:',3f12.6)") useratom(2)%x*b2a,useratom(2)%y*b2a,useratom(2)%z*b2a
+		write(*,"(' Atom 3  x, y, z:',3f12.6)") useratom(3)%x*b2a,useratom(3)%y*b2a,useratom(3)%z*b2a
 		call doproject(useratom)
 	else if (isel==9) then
 	
@@ -342,15 +349,17 @@ do while(.true.)
 			rangelow=rangelow-0.03D0*abs(rangelow)
 			rangehigh=rangehigh+0.03D0*abs(rangehigh)
 		end if
-		write(*,"('Points with value within ',1PE13.5, ' and ',1PE13.5,' will be outputted')") rangelow,rangehigh
+		write(*,"(' Points with value within ',1PE13.5, ' and ',1PE13.5,' will be outputted')") rangelow,rangehigh
 		write(*,*) "Outputting, please wait..."
 
 		open(10,file="output.txt",status="replace")
-		do i=1,nx
+		do k=1,nz
 			do j=1,ny
-				do k=1,nz
-					if (cubmat(i,j,k)>=rangelow.and.cubmat(i,j,k)<=rangehigh) &
-					write(10,"(3f11.6,f22.15)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
+				do i=1,nx
+					if (cubmat(i,j,k)>=rangelow.and.cubmat(i,j,k)<=rangehigh) then
+                        call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					    write(10,"(3f11.6,f22.15)") tmpx*b2a,tmpy*b2a,tmpz*b2a,cubmat(i,j,k)
+                    end if
 				end do
 			end do
 		end do
@@ -388,7 +397,7 @@ do while(.true.)
 		if (isel2==0) then
 			continue
 		else if (isel2==1.or.isel2==3.or.isel2==5.or.isel2==7.or.isel2==9) then
-			write(*,*) "Input a value for the calculation, e.g. 2.3"
+			write(*,*) "Input the value for the calculation, e.g. 2.3"
 			read(*,*) calconstant
 			if (isel2==1) cubmat=cubmat+calconstant
 			if (isel2==3) cubmat=cubmat-calconstant
@@ -397,7 +406,8 @@ do while(.true.)
 			if (isel2==9) cubmat=cubmat**calconstant
 		else if (isel2==2.or.isel2==4.or.isel2==6.or.isel2==8.or.isel2==10.or.isel2==11.or.isel2==12.or.isel2==18.or.isel2==19.or.isel2==21.or.isel2==22) then
 			do while(.true.)
-				write(*,*) "Input another .cub or .grd file name, e.g. C:\umi.cub"
+				write(*,*) "Input another file containing grid data (.cub, .grd or CHGCAR/CHG)"
+                write(*,*) "e.g. C:\mius\Umi.cub"
 				read(*,"(a)") gridfile2
 				inquire(file=gridfile2,exist=alive)
 				if (alive) exit
@@ -409,6 +419,8 @@ do while(.true.)
 				call readcubetmp(gridfile2,1,inconsis)
 			else if (gridfile2(inamelen-2:inamelen)=="grd") then
 				call readgrdtmp(gridfile2,inconsis)
+			else if (index(gridfile2,"CHG")/=0) then
+				call readVASPgrdtmp(gridfile2,inconsis)
 			end if
 			if (inconsis==1) cycle
 			if (isel2==2) cubmat=cubmat+cubmattmp
@@ -439,23 +451,24 @@ do while(.true.)
 		else if (isel2==17) then
 			cubmat=log(cubmat)
 		else if (isel2==20) then
-			write(*,*) "Multiplied by which variable? Input one of X, Y, Z"
+			write(*,*) "Multiplied by which variable? Input ""X"" or ""Y"" or ""Z"""
 			read(*,*) tmpchar
-			if (tmpchar=='x'.or.tmpchar=='X') then
-				do i=1,nx
-					cubmat(i,:,:)=cubmat(i,:,:)*(orgx+(i-1)*dx)
-				end do
-			else if (tmpchar=='y'.or.tmpchar=='Y') then
-				do j=1,ny
-					cubmat(:,j,:)=cubmat(:,j,:)*(orgy+(j-1)*dy)
-				end do
-			else if (tmpchar=='z'.or.tmpchar=='Z') then
-				do k=1,nz
-					cubmat(:,:,k)=cubmat(:,:,k)*(orgz+(k-1)*dz)
-				end do
-			end if
+		    do k=1,nz
+			    do j=1,ny
+				    do i=1,nx
+                        call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					    if (tmpchar=='x'.or.tmpchar=='X') then
+                            cubmat(i,j,k)=cubmat(i,j,k)*tmpx
+                        else if (tmpchar=='y'.or.tmpchar=='Y') then
+                            cubmat(i,j,k)=cubmat(i,j,k)*tmpy
+                        else if (tmpchar=='z'.or.tmpchar=='Z') then
+                            cubmat(i,j,k)=cubmat(i,j,k)*tmpz
+                        end if
+				    end do
+			    end do
+		    end do
 		end if
-		if (isel2/=0) write(*,*) "Done, grid data has been updated"
+		if (isel2/=0) write(*,*) "Done, the grid data has been updated"
 	
 	else if (isel==12) then
 		write(*,*) "Input a value to define a isosurface of present grid data, e.g. 0.001"
@@ -464,7 +477,7 @@ do while(.true.)
 		read(*,*) deviation
 		rangehigh=value_ref+abs(value_ref)*0.01D0*deviation
 		rangelow=value_ref-abs(value_ref)*0.01D0*deviation
-		write(*,"('Value between ',1PE13.5, ' and ',1PE13.5,' are regarded as isosurface points')") rangelow,rangehigh
+		write(*,"(' Value between ',1PE13.5, ' and ',1PE13.5,' are regarded as isosurface points')") rangelow,rangehigh
 
 		do while(.true.)
 			write(*,*) "Map which grid file to the isosurface?  e.g. C:\t.cub"
@@ -476,11 +489,13 @@ do while(.true.)
 		end do
 		call readcubetmp(gridfile2,1,inconsis)
 		open(10,file="output.txt",status="replace")
-		do i=1,nx
+        do k=1,nz
 			do j=1,ny
-				do k=1,nz
-					if (cubmat(i,j,k)>=rangelow.and.cubmat(i,j,k)<=rangehigh) &
-					write(10,"(3f11.6,f22.15)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmattmp(i,j,k)
+		        do i=1,nx
+					if (cubmat(i,j,k)>=rangelow.and.cubmat(i,j,k)<=rangehigh) then
+                        call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					    write(10,"(3f11.6,f22.15)") tmpx*b2a,tmpy*b2a,tmpz*b2a,cubmattmp(i,j,k)
+                    end if
 				end do
 			end do
 		end do
@@ -520,12 +535,10 @@ do while(.true.)
 			call str2arr(c2000tmp,numatmidx,atmlist)
 		end if
 
-		do i=1,nx
-			xnow=orgx+(i-1)*dx
+		do k=1,nz
 			do j=1,ny
-				ynow=orgy+(j-1)*dy
-				do k=1,nz
-					znow=orgz+(k-1)*dz
+				do i=1,nx
+                    call getgridxyz(i,j,k,xnow,ynow,znow)
 					if (vdwscale>0) then
 						do ind=1,numatmidx
 							iatm=atmlist(ind)
@@ -600,13 +613,14 @@ do while(.true.)
 			call str2arr(c2000tmp,numatmidx2,atmlist2)
 		end if
 
-		do i=1,nx
+		do k=1,nz
 			do j=1,ny
-				do k=1,nz
+				do i=1,nx
+                    call getgridxyz(i,j,k,xnow,ynow,znow)
 					iwithoutfrag1=0
 					do ind=1,numatmidx
 						iatm=atmlist(ind)
-						dist2=((orgx+(i-1)*dx)-a(iatm)%x)**2+((orgy+(j-1)*dy)-a(iatm)%y)**2+((orgz+(k-1)*dz)-a(iatm)%z)**2
+						dist2=(xnow-a(iatm)%x)**2+(ynow-a(iatm)%y)**2+(znow-a(iatm)%z)**2
 						if (dist2< (vdwscale*vdwr(a(iatm)%index))**2 ) exit
 						if (ind==numatmidx) iwithoutfrag1=1
 					end do
@@ -615,7 +629,7 @@ do while(.true.)
 					else !This point is within fragment 1, check if it is also within fragment 2, if yes then lzeave it unchanged, else set its value
 						do ind=1,numatmidx2
 							iatm=atmlist2(ind)
-							dist2=((orgx+(i-1)*dx)-a(iatm)%x)**2+((orgy+(j-1)*dy)-a(iatm)%y)**2+((orgz+(k-1)*dz)-a(iatm)%z)**2
+							dist2=(xnow-a(iatm)%x)**2+(ynow-a(iatm)%y)**2+(znow-a(iatm)%z)**2
 							if (dist2< (vdwscale*vdwr(a(iatm)%index))**2 ) exit
 							if (ind==numatmidx2) cubmat(i,j,k)=setval !Final cycle, suggest this point is simutaneously without fragment 1 and 2
 						end do				
@@ -623,7 +637,7 @@ do while(.true.)
 				end do
 			end do
 		end do
-		write(*,"(a,E16.8)") "Done! The value of all points outside overlap region of fragment 1 and 2 have been set to",setval
+		write(*,"(a,1PE16.8)") " Done! The value of all points outside overlap region of fragment 1 and 2 have been set to",setval
 		deallocate(atmlist,atmlist2)
 		
 	else if (isel==15) then
@@ -652,57 +666,42 @@ do while(.true.)
 		write(*,*) "Done!"
 		
 	else if (isel==17) then
+		call gridmaxxyz(rhighx,rhighy,rhighz)
+		call gridminxyz(rlowx,rlowy,rlowz)
+		rlowv=minval(cubmat)
+		rhighv=maxval(cubmat)
 		write(*,*) "1 Obtain statistic data for all grid points"
-		write(*,*) "2 Obtain statistic data for grid points in specific spatial and data range"
+		write(*,*) "2 Obtain statistic data for grid points in specific spatial and value range"
 		read(*,*) iselrange
-		if (iselrange==1) then
-			rlowx=orgx
-			rhighx=endx
-			rlowy=orgy
-			rhighy=endy
-			rlowz=orgz
-			rhighz=endz
-			rlowv=minval(cubmat)
-			rhighv=maxval(cubmat)
-		else if (iselrange==2) then
-			write(*,"(a)") " Input the lower and upper limits of X coordinate (in Angstrom), e.g. -40,33.5. If you don't want to set constraint, input ""a"""
+		if (iselrange==2) then
+			write(*,"(a)") " Input the lower and upper limits of X coordinate (in Angstrom), e.g. -40,33.5"
+            write(*,*) "If you don't want to set constraint, input ""a"""
 			read(*,"(a)") c200tmp
 			if (index(c200tmp,'a')/=0) then
-				rlowx=orgx
-				rhighx=endx
-			else
 				read(c200tmp,*) rlowx,rhighx
 				rlowx=rlowx/b2a
 				rhighx=rhighx/b2a
 			end if
-			write(*,"(a)") " Input the lower and upper limits of Y coordinate (in Angstrom), e.g. -40,33.5. If you don't want to set constraint, input ""a"""
+			write(*,"(a)") " Input the lower and upper limits of Y coordinate (in Angstrom)"
+            write(*,*) "If you do not want to set this constraint, input ""a"""
 			read(*,"(a)") c200tmp
 			if (index(c200tmp,'a')/=0) then
-				rlowy=orgy
-				rhighy=endy
-			else
 				read(c200tmp,*) rlowy,rhighy
 				rlowy=rlowy/b2a
 				rhighy=rhighy/b2a
 			end if
-			write(*,"(a)") " Input the lower and upper limits of Z coordinate (in Angstrom), e.g. -40,33.5. If you don't want to set constraint, input ""a"""
+			write(*,"(a)") " Input the lower and upper limits of Z coordinate (in Angstrom), e.g. -40,33.5"
+            write(*,*) "If you do not want to set this constraint, input ""a"""
 			read(*,"(a)") c200tmp
 			if (index(c200tmp,'a')/=0) then
-				rlowz=orgz
-				rhighz=endz
-			else
 				read(c200tmp,*) rlowz,rhighz
 				rlowz=rlowz/b2a
 				rhighz=rhighz/b2a
 			end if
-			write(*,"(a)") " Input the lower and upper limits of value, e.g. -2,3.25.  If you don't want to set constraint, input ""a"""
+			write(*,"(a)") " Input the lower and upper limits of value, e.g. -2,3.25"
+            write(*,*) "If you do not want to set this constraint, input ""a"""
 			read(*,"(a)") c200tmp
-			if (index(c200tmp,'a')/=0) then
-				rlowv=minval(cubmat)
-				rhighv=maxval(cubmat)
-			else
-				read(c200tmp,*) rlowv,rhighv
-			end if
+			if (index(c200tmp,'a')/=0) read(c200tmp,*) rlowv,rhighv
 		end if
 		
 		write(*,*) "The geometry and value range for statistics"
@@ -719,8 +718,8 @@ do while(.true.)
 		minv%x=orgx
 		minv%y=orgy
 		minv%z=orgz
-		sumuppos=0.0D0
-		sumupneg=0.0D0
+		sumuppos=0D0
+		sumupneg=0D0
 		cenxpos=0D0
 		cenypos=0D0
 		cenzpos=0D0
@@ -730,38 +729,35 @@ do while(.true.)
 		igoodpointpos=0
 		igoodpointneg=0
 		sumupsqrtot=0
-		do i=1,nx
-			if ((orgx+(i-1)*dx)<rlowx.or.(orgx+(i-1)*dx)>rhighx) cycle
+		do k=1,nz
 			do j=1,ny
-				if ((orgy+(j-1)*dy)<rlowy.or.(orgy+(j-1)*dy)>rhighy) cycle
-				do k=1,nz
-					if ((orgz+(k-1)*dz)<rlowz.or.(orgz+(k-1)*dz)>rhighz) cycle
+				do i=1,nx
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+			        if (tmpx<rlowx.or.tmpx>rhighx) cycle
+				    if (tmpy<rlowy.or.tmpy>rhighy) cycle
+					if (tmpz<rlowz.or.tmpz>rhighz) cycle
 					valtmp=cubmat(i,j,k)
 					if (valtmp<rlowv.or.valtmp>rhighv) cycle
 					if (valtmp>0) then
 						sumuppos=sumuppos+valtmp
-						cenxpos=cenxpos+(orgx+(i-1)*dx)*valtmp
-						cenypos=cenypos+(orgy+(j-1)*dy)*valtmp
-						cenzpos=cenzpos+(orgz+(k-1)*dz)*valtmp
+						cenxpos=cenxpos+tmpx*valtmp
+						cenypos=cenypos+tmpy*valtmp
+						cenzpos=cenzpos+tmpz*valtmp
 						igoodpointpos=igoodpointpos+1
 					else if (valtmp<0) then
 						sumupneg=sumupneg+valtmp
-						cenxneg=cenxneg+(orgx+(i-1)*dx)*valtmp
-						cenyneg=cenyneg+(orgy+(j-1)*dy)*valtmp
-						cenzneg=cenzneg+(orgz+(k-1)*dz)*valtmp
+						cenxneg=cenxneg+tmpx*valtmp
+						cenyneg=cenyneg+tmpy*valtmp
+						cenzneg=cenzneg+tmpz*valtmp
 						igoodpointneg=igoodpointneg+1
 					end if
 					if (valtmp>maxv%value) then
 						maxv%value=cubmat(i,j,k)
-						maxv%x=orgx+(i-1)*dx
-						maxv%y=orgy+(j-1)*dy
-						maxv%z=orgz+(k-1)*dz
+						call getgridxyz(i,j,k,maxv%x,maxv%y,maxv%z)
 					end if
 					if (valtmp<minv%value) then
 						minv%value=cubmat(i,j,k)
-						minv%x=orgx+(i-1)*dx
-						minv%y=orgy+(j-1)*dy
-						minv%z=orgz+(k-1)*dz
+						call getgridxyz(i,j,k,minv%x,minv%y,minv%z)
 					end if
 					sumupsqrtot=sumupsqrtot+valtmp**2
 				end do
@@ -778,16 +774,17 @@ do while(.true.)
 		cenyneg=cenyneg/sumupneg
 		cenzneg=cenzneg/sumupneg
 		numpt=nx*ny*nz
-		fminivol=dx*dy*dz
+        call calc_dvol(dvol)
 		avgtot=sumuptot/numpt
 		stddev=0
 		!Calculate standard deviation
-		do i=1,nx
-			if ((orgx+(i-1)*dx)<rlowx.or.(orgx+(i-1)*dx)>rhighx) cycle
+		do k=1,nz
 			do j=1,ny
-				if ((orgy+(j-1)*dy)<rlowy.or.(orgy+(j-1)*dy)>rhighy) cycle
-				do k=1,nz
-					if ((orgz+(k-1)*dz)<rlowz.or.(orgz+(k-1)*dz)>rhighz) cycle
+				do i=1,nx
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+			        if (tmpx<rlowx.or.tmpx>rhighx) cycle
+				    if (tmpy<rlowy.or.tmpy>rhighy) cycle
+					if (tmpz<rlowz.or.tmpz>rhighz) cycle
 					if (valtmp<rlowv.or.valtmp>rhighv) cycle
 					stddev=stddev+(cubmat(i,j,k)-avgtot)**2
 				end do
@@ -796,22 +793,22 @@ do while(.true.)
 		stddev=dsqrt(stddev/numpt)
 		write(*,"(' The minimum value:',E16.8,' at',3f12.6,' Bohr')") minv%value,minv%x,minv%y,minv%z
 		write(*,"(' The maximum value:',E16.8,' at',3f12.6,' Bohr')") maxv%value,maxv%x,maxv%y,maxv%z
-		write(*,"(' Differential element:',f15.10,' Bohr^3')") fminivol
+		write(*,"(' Differential element:',f15.10,' Bohr^3')") dvol
 		write(*,"(' Average value:',E16.8)") avgtot
 		write(*,"(' Root mean square (RMS):',E16.8)") dsqrt(sumupsqrtot/numpt)
 		write(*,"(' Standard deviation:',E16.8)") stddev
 		write(*,*)
-		write(*,"(' Volume of positive value space:',f30.10,' Bohr^3')") igoodpointpos*fminivol
-		write(*,"(' Volume of negative value space:',f30.10,' Bohr^3')") igoodpointneg*fminivol
-		write(*,"(' Volume of all space:           ',f30.10,' Bohr^3')") (igoodpointpos+igoodpointneg)*fminivol
+		write(*,"(' Volume of positive value space:',f30.10,' Bohr^3')") igoodpointpos*dvol
+		write(*,"(' Volume of negative value space:',f30.10,' Bohr^3')") igoodpointneg*dvol
+		write(*,"(' Volume of all space:           ',f30.10,' Bohr^3')") (igoodpointpos+igoodpointneg)*dvol
 		write(*,*)
 		write(*,"(' Summing up positive values:',f30.10)") sumuppos
 		write(*,"(' Summing up negative values:',f30.10)") sumupneg
 		write(*,"(' Summing up all values:     ',f30.10)") sumuptot
 		write(*,*)
-		write(*,"(' Integral of positive data:',f30.10)") sumuppos*fminivol
-		write(*,"(' Integral of negative data:',f30.10)") sumupneg*fminivol
-		write(*,"(' Integral of all data:     ',f30.10)") sumuptot*fminivol
+		write(*,"(' Integral of positive data:',f30.10)") sumuppos*dvol
+		write(*,"(' Integral of negative data:',f30.10)") sumupneg*dvol
+		write(*,"(' Integral of all data:     ',f30.10)") sumuptot*dvol
 		write(*,*)
 		write(*,"(' X,Y,Z of barycenter (in Bohr)')")
 		write(*,"(' Positive part:',3f20.8)") cenxpos,cenypos,cenzpos
@@ -820,128 +817,12 @@ do while(.true.)
 		if (abs(sumuptot)>0.001D0) write(*,"(' Total:        ',3f20.8)") cenxtot,cenytot,cenztot
 		
 	else if (isel==18) then !Integral curve
-		write(*,*) "Integrating in which direction? Input ""X"" or ""Y"" or ""Z"""
-		read(*,*) c200tmp
-		if (index(c200tmp,'X')/=0.or.index(c200tmp,'x')/=0) idir=1
-		if (index(c200tmp,'Y')/=0.or.index(c200tmp,'y')/=0) idir=2
-		if (index(c200tmp,'Z')/=0.or.index(c200tmp,'z')/=0) idir=3
-		write(*,*) "Input lower and upper limit (in Angstrom), e.g. -30,51.5"
-		write(*,*) "Input ""a"" can choose the entire range"
-		read(*,"(a)") c200tmp
-		if (index(c200tmp,"a")==0) then
-			read(c200tmp,*) rlow,rhigh
-			rlow=rlow/b2a
-			rhigh=rhigh/b2a
-		end if
-		write(*,*) "Calculating data..."
-		tmpintval=0
-		if (idir==1) then
-			allocate(intcurve(nx),locintcurve(nx),intcurvepos(nx))
-			intcurve=0
-			locintcurve=0
-			ncurpt=nx
-			if (index(c200tmp,"a")/=0) then
-				rlow=orgx
-				rhigh=endx
-			end if
-			do ix=1,nx
-				intcurvepos(ix)=(orgx+(ix-1)*dx)
-				if (intcurvepos(ix)<rlow.or.intcurvepos(ix)>rhigh) cycle
-				locintcurve(ix)=sum(cubmat(ix,:,:))*dy*dz
-				tmpintval=tmpintval+locintcurve(ix)*dx
-				intcurve(ix)=tmpintval
-			end do
-		else if (idir==2) then
-			allocate(intcurve(ny),locintcurve(ny),intcurvepos(ny))
-			intcurve=0
-			locintcurve=0
-			ncurpt=ny
-			if (index(c200tmp,"a")/=0) then
-				rlow=orgy
-				rhigh=endy
-			end if
-			do iy=1,ny
-				intcurvepos(iy)=(orgy+(iy-1)*dy)
-				if (intcurvepos(iy)<rlow.or.intcurvepos(iy)>rhigh) cycle
-				locintcurve(iy)=sum(cubmat(:,iy,:))*dx*dz
-				tmpintval=tmpintval+locintcurve(iy)*dy
-				intcurve(iy)=tmpintval
-			end do
-		else if (idir==3) then
-			allocate(intcurve(nz),locintcurve(nz),intcurvepos(nz))
-			intcurve=0
-			locintcurve=0
-			ncurpt=nz
-			if (index(c200tmp,"a")/=0) then
-				rlow=orgz
-				rhigh=endz
-			end if
-			do iz=1,nz
-				intcurvepos(iz)=(orgz+(iz-1)*dz)
-				if (intcurvepos(iz)<rlow.or.intcurvepos(iz)>rhigh) cycle
-				locintcurve(iz)=sum(cubmat(:,:,iz))*dx*dy
-				tmpintval=tmpintval+locintcurve(iz)*dz
-				intcurve(iz)=tmpintval
-			end do
-		end if
-		do while(.true.)
-			write(*,*)
-			if (ilenunit1D==1) write(*,*) "-1 Change length unit of the graph to Angstrom"
-			if (ilenunit1D==2) write(*,*) "-1 Change length unit of the graph to Bohr"
-			write(*,*) "0 Return"
-			write(*,*) "1 Plot graph of integral curve"
-			write(*,*) "2 Plot graph of local integral curve"
-			write(*,*) "3 Save graph of integral curve to current folder"
-			write(*,*) "4 Save graph of local integral curve to current folder"
-			write(*,*) "5 Export data of integral curve to intcurve.txt in current folder"
-			write(*,*) "6 Export data of local integral curve to locintcurve.txt in current folder"
-			read(*,*) isel2
-			if (isel2==-1) then
-				if (ilenunit1D==1) then
-					ilenunit1D=2
-				else if (ilenunit1D==2) then
-					ilenunit1D=1
-				end if
-			else if (isel2==0) then
-				exit
-			else if (isel2==1.or.isel2==3) then
-				disminmax=maxval(intcurve)-minval(intcurve)
-				ylow=minval(intcurve)-0.1D0*disminmax
-				yhigh=maxval(intcurve)+0.1D0*disminmax
-				stplabx=(rhigh-rlow)/10
-				stplaby=(yhigh-ylow)/10
-				if (isel2==1) call drawcurve(intcurvepos,intcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"show")
-				if (isel2==3) call drawcurve(intcurvepos,intcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"save")
-			else if (isel2==2.or.isel2==4) then
-				disminmax=maxval(locintcurve)-minval(locintcurve)
-				ylow=minval(locintcurve)-0.1D0*disminmax
-				yhigh=maxval(locintcurve)+0.1D0*disminmax
-				stplabx=(rhigh-rlow)/10
-				stplaby=(yhigh-ylow)/10
-				if (isel2==2) call drawcurve(intcurvepos,locintcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"show")
-				if (isel2==4) call drawcurve(intcurvepos,locintcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"save")
-			else if (isel2==5) then
-				open(10,file="intcurve.txt",status="replace")
-				do ipt=1,ncurpt
-					if (intcurvepos(ipt)<rlow.or.intcurvepos(ipt)>rhigh) cycle
-					write(10,"(2f14.8,f20.10)") intcurvepos(ipt),intcurvepos(ipt)*b2a,intcurve(ipt)
-				end do
-				close(10)
-				write(*,"(a)") " Done! The 1,2,3 columns correspond to the coordinate (in Bohr and in Angstrom) in the direction you selected and the integral, respectively"
-			else if (isel2==6) then
-				open(10,file="locintcurve.txt",status="replace")
-				do ipt=1,ncurpt
-					if (intcurvepos(ipt)<rlow.or.intcurvepos(ipt)>rhigh) cycle
-					write(10,"(2f14.8,f20.10)") intcurvepos(ipt),intcurvepos(ipt)*b2a,locintcurve(ipt)
-				end do
-				close(10)
-				write(*,"(a)") " Done! The 1,2,3 columns correspond to the coordinate (in Bohr and in Angstrom) in the direction you selected and the local integral, respectively"				
-			end if
-		end do
-		deallocate(intcurve,locintcurve,intcurvepos)
+        call drawintcurve
 	end if
 end do
 end subroutine
+
+
 
 !!----------- Project grid data to a specified plane, selectly project to XY plane, then output to plain text file
 subroutine doproject(useratom)
@@ -964,19 +845,19 @@ ang=2*180*acos(cosang)/(2D0*pi)
 write(*,"(' The angle between your defined plane and XY plane is ',f6.2,' degrees')") ang
 
 if (userplane%a==0.and.userplane%b==0) then
-	write(*,"('Warning: You defined plane is parallel to XY plane, use function 2 instead! Now exit...')")
+	write(*,"(' Warning: You defined plane is parallel to XY plane, use function 2 instead! Now exit...')")
 	return
 else if (userplane%b==0.and.userplane%c==0) then
-	write(*,"('Warning: You defined plane is parallel to YZ plane, use function 3 instead! Now exit...')")
+	write(*,"(' Warning: You defined plane is parallel to YZ plane, use function 3 instead! Now exit...')")
 	return
 else if (userplane%a==0.and.userplane%c==0) then
-	write(*,"('Warning: You defined plane is parallel to XZ plane, use function 4 instead! Now exit...')")
+	write(*,"(' Warning: You defined plane is parallel to XZ plane, use function 4 instead! Now exit...')")
 	return
 end if
 
-distoler=dsqrt(dx**2+dy**2+dz**2)/4D0  !default tolerance distance between grid to userplane
+distoler=dsqrt(dx**2+dy**2+dz**2)/4D0  !Default tolerance distance between grid to userplane
 write(*,*)
-write(*,"('Input tolerance distance for projecting grids to your defined plane, unit is Angstrom. (Note: You can input 0 to use recommended value: ',f9.4,' Angstrom)')") distoler*b2a
+write(*,"(' Input tolerance distance for projecting grids to your defined plane, unit is Angstrom. (Note: You can input 0 to use recommended value: ',f9.4,' Angstrom)')") distoler*b2a
 read(*,*) temp
 temp=temp/b2a
 if (temp/=0) distoler=temp
@@ -987,10 +868,8 @@ do i=1,nx
 	do j=1,ny
 		do k=1,nz
 			cubmatpt%value=cubmat(i,j,k)
-			cubmatpt%x=orgx+(i-1)*dx
-			cubmatpt%y=orgy+(j-1)*dy
-			cubmatpt%z=orgz+(k-1)*dz
-			pttemp=protoplane_pos(cubmatpt,userplane,vec3)  !project original data a(i,j,k) to userplane
+            call getgridxyz(i,j,k,cubmatpt%x,cubmatpt%y,cubmatpt%z)
+			pttemp=protoplane_pos(cubmatpt,userplane,vec3)  !Project original data a(i,j,k) to userplane
 			if (dist2p(pttemp,cubmatpt)<distoler) then
 				npt=npt+1
 				planedata(npt)=pttemp
@@ -1069,6 +948,190 @@ do i=1,npt
 end do
 close(10)
 write(*,*) "Completed!"
-write(*,"(' In output.txt, column 1/2/3/4 stand for x/y/z/value respectively, unit is Angstrom')")
+write(*,"(' In the output.txt, column 1/2/3/4 correspond to x/y/z/value respectively, unit is Angstrom')")
 deallocate(planedata)
+end subroutine
+
+
+!!------- Integrate grid data along a direction to obtain integral curve
+subroutine drawintcurve
+use defvar
+use util
+use GUI
+implicit real*8 (a-h,o-z)
+character c200tmp*200
+real*8,allocatable :: intcurve(:),locintcurve(:),intcurvepos(:)
+
+if (gridv1(2)==0.and.gridv1(3)==0) then !Can integrate along X axis
+    continue
+else if (gridv2(1)==0.and.gridv2(3)==0) then !Can integrate along Y axis
+    continue
+else if (gridv3(1)==0.and.gridv3(2)==0) then !Can integrate along Z axis
+    continue
+else
+    write(*,"(a)") "Error: This function cannot be used for present grid. The grid must satisfy at least one below conditions"
+    write(*,*) "1 Grid vector 1 is parallel along X axis and the other two are in YZ plane"
+    write(*,*) "2 Grid vector 2 is parallel along Y axis and the other two are in XZ plane"
+    write(*,*) "3 Grid vector 3 is parallel along Z axis and the other two are in XY plane"
+    write(*,*) "Press ENTER button to continue"
+    read(*,*)
+    return
+end if
+
+write(*,*) "Integrating in which direction? Input ""X"" or ""Y"" or ""Z"""
+read(*,*) c200tmp
+if (index(c200tmp,'X')/=0.or.index(c200tmp,'x')/=0) idir=1
+if (index(c200tmp,'Y')/=0.or.index(c200tmp,'y')/=0) idir=2
+if (index(c200tmp,'Z')/=0.or.index(c200tmp,'z')/=0) idir=3
+if (idir==1) then
+    if (gridv1(2)==0.and.gridv1(3)==0.and.sum(gridv1*gridv2)==0.and.sum(gridv1*gridv3)==0) then
+        continue
+    else
+        write(*,"(a)") " Error: To integrate along X axis, grid vector 1 is must be parallel &
+        along X axis and the other two are in YZ plane. The present grid does not meet this conditions"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
+        return
+    end if
+else if (idir==2) then
+    if (gridv2(1)==0.and.gridv2(3)==0.and.sum(gridv2*gridv1)==0.and.sum(gridv2*gridv3)==0) then
+        continue
+    else
+        write(*,"(a)") " Error: To integrate along Y axis, grid vector 2 is must be parallel &
+        along Y axis and the other two are in XZ plane. The present grid does not meet this conditions"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
+        return
+    end if
+else if (idir==3) then
+    if (gridv3(1)==0.and.gridv3(2)==0.and.sum(gridv3*gridv1)==0.and.sum(gridv3*gridv2)==0) then
+        continue
+    else
+        write(*,"(a)") " Error: To integrate along Z axis, grid vector 3 is must be parallel &
+        along Z axis and the other two are in XY plane. The present grid does not meet this conditions"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
+        return
+    end if
+end if
+
+write(*,*) "Input lower and upper limits of the position (in Angstrom), e.g. -30,51.5"
+write(*,*) "Input ""a"" can choose the entire range"
+read(*,"(a)") c200tmp
+if (index(c200tmp,"a")==0) then
+	read(c200tmp,*) rlow,rhigh
+	rlow=rlow/b2a
+	rhigh=rhigh/b2a
+end if
+write(*,*) "Calculating data..."
+tmpintval=0
+if (idir==1) then !Direction 1
+	allocate(intcurve(nx),locintcurve(nx),intcurvepos(nx))
+	intcurve=0
+	locintcurve=0
+	ncurpt=nx
+    v1len=dsqrt(sum(gridv1**2))
+	if (index(c200tmp,"a")/=0) then
+		rlow=orgx
+		rhigh=orgx+(nx-1)*v1len
+	end if
+	do ix=1,nx
+		intcurvepos(ix)=orgx+(ix-1)*v1len
+		if (intcurvepos(ix)<rlow.or.intcurvepos(ix)>rhigh) cycle
+        call vec2area(gridv2(:),gridv3(:),area)
+		locintcurve(ix)=sum(cubmat(ix,:,:))*area
+		tmpintval=tmpintval+locintcurve(ix)*v1len
+		intcurve(ix)=tmpintval
+	end do
+else if (idir==2) then !Direction 2
+	allocate(intcurve(ny),locintcurve(ny),intcurvepos(ny))
+	intcurve=0
+	locintcurve=0
+	ncurpt=ny
+    v2len=dsqrt(sum(gridv2**2))
+	if (index(c200tmp,"a")/=0) then
+		rlow=orgy
+		rhigh=orgy+(ny-1)*v2len
+	end if
+	do iy=1,ny
+		intcurvepos(iy)=orgy+(iy-1)*v2len
+		if (intcurvepos(iy)<rlow.or.intcurvepos(iy)>rhigh) cycle
+        call vec2area(gridv1(:),gridv3(:),area)
+		locintcurve(iy)=sum(cubmat(:,iy,:))*area
+		tmpintval=tmpintval+locintcurve(iy)*v2len
+		intcurve(iy)=tmpintval
+	end do
+else if (idir==3) then !Direction 3
+	allocate(intcurve(nz),locintcurve(nz),intcurvepos(nz))
+	intcurve=0
+	locintcurve=0
+	ncurpt=nz
+    v3len=dsqrt(sum(gridv3**2))
+	if (index(c200tmp,"a")/=0) then
+		rlow=orgz
+		rhigh=orgz+(nz-1)*v3len
+	end if
+	do iz=1,nz
+		intcurvepos(iz)=orgz+(iz-1)*v3len
+		if (intcurvepos(iz)<rlow.or.intcurvepos(iz)>rhigh) cycle
+        call vec2area(gridv1(:),gridv2(:),area)
+		locintcurve(iz)=sum(cubmat(:,:,iz))*area
+		tmpintval=tmpintval+locintcurve(iz)*v3len
+		intcurve(iz)=tmpintval
+	end do
+end if
+do while(.true.)
+	write(*,*)
+	if (ilenunit1D==1) write(*,*) "-1 Change length unit of the graph to Angstrom"
+	if (ilenunit1D==2) write(*,*) "-1 Change length unit of the graph to Bohr"
+	write(*,*) "0 Return"
+	write(*,*) "1 Plot graph of integral curve"
+	write(*,*) "2 Plot graph of local integral curve"
+	write(*,*) "3 Save graph of integral curve to current folder"
+	write(*,*) "4 Save graph of local integral curve to current folder"
+	write(*,*) "5 Export data of integral curve to intcurve.txt in current folder"
+	write(*,*) "6 Export data of local integral curve to locintcurve.txt in current folder"
+	read(*,*) isel2
+	if (isel2==-1) then
+		if (ilenunit1D==1) then
+			ilenunit1D=2
+		else if (ilenunit1D==2) then
+			ilenunit1D=1
+		end if
+	else if (isel2==0) then
+		exit
+	else if (isel2==1.or.isel2==3) then
+		disminmax=maxval(intcurve)-minval(intcurve)
+		ylow=minval(intcurve)-0.1D0*disminmax
+		yhigh=maxval(intcurve)+0.1D0*disminmax
+		stplabx=(rhigh-rlow)/10
+		stplaby=(yhigh-ylow)/10
+		if (isel2==1) call drawcurve(intcurvepos,intcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"show")
+		if (isel2==3) call drawcurve(intcurvepos,intcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"save")
+	else if (isel2==2.or.isel2==4) then
+		disminmax=maxval(locintcurve)-minval(locintcurve)
+		ylow=minval(locintcurve)-0.1D0*disminmax
+		yhigh=maxval(locintcurve)+0.1D0*disminmax
+		stplabx=(rhigh-rlow)/10
+		stplaby=(yhigh-ylow)/10
+		if (isel2==2) call drawcurve(intcurvepos,locintcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"show")
+		if (isel2==4) call drawcurve(intcurvepos,locintcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"save")
+	else if (isel2==5) then
+		open(10,file="intcurve.txt",status="replace")
+		do ipt=1,ncurpt
+			if (intcurvepos(ipt)<rlow.or.intcurvepos(ipt)>rhigh) cycle
+			write(10,"(2f14.8,f20.10)") intcurvepos(ipt),intcurvepos(ipt)*b2a,intcurve(ipt)
+		end do
+		close(10)
+		write(*,"(a)") " Done! 1,2,3 columns correspond to the coordinate (in Bohr and in Angstrom) in the direction you selected and the integral, respectively"
+	else if (isel2==6) then
+		open(10,file="locintcurve.txt",status="replace")
+		do ipt=1,ncurpt
+			if (intcurvepos(ipt)<rlow.or.intcurvepos(ipt)>rhigh) cycle
+			write(10,"(2f14.8,f20.10)") intcurvepos(ipt),intcurvepos(ipt)*b2a,locintcurve(ipt)
+		end do
+		close(10)
+		write(*,"(a)") " Done! 1,2,3 columns correspond to the coordinate (in Bohr and in Angstrom) in the direction you selected and the local integral, respectively"				
+	end if
+end do
 end subroutine

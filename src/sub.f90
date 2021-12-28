@@ -5,43 +5,47 @@ use util
 implicit real*8 (a-h,o-z)
 character seltmpc*10,selectyn,c1000tmp*1000,c2000tmp*2000
 real*8 eigval(nbasis),eigvec(nbasis,nbasis),tmpmat(nbasis,nbasis)
+real*8,allocatable :: tmparr(:)
 integer orbarr(nmo)
-integer,allocatable :: exclfragatm(:),tmparrint(:)
+integer,allocatable :: exclfragatm(:),tmparrint(:),idxsel(:)
 character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
 character*6 :: symstr
-
+write(*,*) "Note: ""GTF"" in this function refers to Gaussian type primitive function"
+call updatenelec !Sometimes the naelec/nbelec/nelec recorded in the input file is not in line with sum of occupation numbers, so update
 do while(.true.)
 	write(*,*)
-	write(*,*) "          ============ Modify & Check wavefunction ============ "
-	write(*,"(' Number of GTFs:',i6,', Orb:',i6,', Atoms:',i5,', A/B elec:',2f8.3)") nprims,nmo,ncenter,naelec,nbelec
+	write(*,*) "            ============ Modify & Check wavefunction ============ "
+	write(*,"(' GTF:',i6,', Orb:',i6,', Atom:',i5,', A/B/tot ele:',3f10.3)") nprims,nmo,ncenter,naelec,nbelec,nelec
 	if (ifragcontri/=1) write(*,*) "-4 Exclude contribution of some atoms to real space functions"
 	if (ifragcontri/=1) write(*,*) "-3 Only retain contribution of some atoms to real space functions"
 	write(*,*) "-1 Return"
 	write(*,*) "0 Save the modified wavefunction to a new .wfn file"
 	if (allocated(CObasa)) then
-		write(*,*) "1 List all primitive function      2 List all basis function"
+		write(*,*) "1 List all GTFs      2 List all basis function"
 	else
-		write(*,*) "1 List all primitive function"
+		write(*,*) "1 List all GTFs"
 	end if
 	write(*,*) "3 List all orbitals                4 Print detail information of an orbital"
 	if (allocated(CObasa)) write(*,*) "5 Print coefficient matrix in basis function"
 	if (allocated(CObasa)) write(*,*) "6 Print density matrix in basis function"
 	if (allocated(CObasa)) write(*,*) "7 Print various kinds of integral matrix between basis functions"
-	write(*,*) "11 Swap some information of two primitive functions"
-	write(*,*) "21 Set center of a primitive       22 Set type of a primitive"
-	write(*,*) "23 Set exponent of a primitive     24 Set coefficient of a primitive"
+	write(*,*) "11 Exchange some information of two GTFs"
+	write(*,*) "21 Set center of a GTF             22 Set type of a GTF"
+	write(*,*) "23 Set exponent of a GTF           24 Set coefficient of a GTF in an orbital"
 	if (allocated(CObasa)) then
 		write(*,*) "25 Set coefficients of GTFs/basis functions that satisfied certain conditions"
 	else
 		write(*,*) "25 Set coefficients of GTFs that satisfied certain conditions"
 	end if
-	write(*,*) "26 Set occupation number of some orbitals"
-	write(*,*) "27 Set type of some orbitals       28 Set energy of some orbitals"
-	write(*,*) "31 Translate the system            32 Translate and duplicate the system"
+	write(*,*) "26 Set occupation of some orbitals  27 Set type of some orbitals"
+	write(*,*) "28 Set energy of some orbitals      29 Exchange information of two orbitals"
+    write(*,*) "30 Exchange energies and occupation numbers for all orbitals"
+	write(*,*) "31 Translate the system             32 Translate and duplicate the system"
 	write(*,*) "33 Rotate wavefunction, namely X->Y, Y->Z, Z->X"
 	if (imodwfn==0) write(*,*) "34 Set occupation number of inner orbitals to zero" !If occupation has been modified, don't do this to complicate things
 	if (allocated(MOsym)) write(*,*) "35 Keep or discard orbital contributions according to irreducible rep."
 	write(*,*) "36 Invert phase of some orbitals"
+	write(*,*) "37 Split spatial orbitals as alpha and beta spin orbitals"
 	read(*,*) iselect
 	
 	if (iselect==-1) then
@@ -54,23 +58,23 @@ do while(.true.)
 		exit
 		
 	else if (iselect==-3.or.iselect==-4) then
-		deallocate(fragatm) !fragatm has been defined previously by default, fragatm contains all atoms
+		if (allocated(fragatm)) deallocate(fragatm) !fragatm has been defined previously by default, fragatm contains all atoms
 		if (iselect==-3) then
 			! "fragatm" is convertion relationship from fragment to the whole,
 			! e.g. fragatm(4) is the actual atom index corresponding the 4th atom in fragment list
 			write(*,"(a)") " Input atomic indices to define the fragment, e.g. 1,3-6,8,10-11 means atoms 1,3,4,5,6,8,10,11 will constitute the fragment"
 			read(*,"(a)") c2000tmp
-			call str2arr(c2000tmp,nfragatmnum)
-			allocate(fragatm(nfragatmnum))
-			call str2arr(c2000tmp,nfragatmnum,fragatm)
+			call str2arr(c2000tmp,nfragatm)
+			allocate(fragatm(nfragatm))
+			call str2arr(c2000tmp,nfragatm,fragatm)
 			call sort(fragatm,"val")
 		else if (iselect==-4) then
 			write(*,*) "Input indices of the atoms to be excluded"
 			write(*,*) "e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will be excluded"
 			read(*,"(a)") c2000tmp
 			call str2arr(c2000tmp,nexclatm)
-			nfragatmnum=ncenter-nexclatm
-			allocate(fragatm(nfragatmnum),exclfragatm(nexclatm))
+			nfragatm=ncenter-nexclatm
+			allocate(fragatm(nfragatm),exclfragatm(nexclatm))
 			call str2arr(c2000tmp,nexclatm,exclfragatm)
 			j=0
 			do i=1,ncenter
@@ -103,9 +107,10 @@ do while(.true.)
 			b=b_tmp
 			deallocate(b_tmp)
 		end if
+        
 	else if (iselect==0) then
 		call outwfn("new.wfn",1,1,10)
-		write(*,*) "New .wfn file has been outputted to new.wfn in current folder"
+		write(*,*) "Wavefunction has been outputted to new.wfn in current folder"
 	
 	else if (iselect==1) then
 		do i=1,nprims
@@ -157,8 +162,8 @@ do while(.true.)
 			if (MOtype(i)==2) write(*,*) "This is a beta orbital"
 			write(*,*)
 			do j=1,nprims
-				write(*,"(' GTF:',i6,' Cen:',i5,'(',a2,')',' Type: ',a,' Coeff:',1PE15.8,'  Exp: ',1PE13.7)") &
-				j,b(j)%center,a(b(j)%center)%name,GTFtype2name(b(j)%type),co(i,j),b(j)%exp
+				write(*,"(' GTF:',i6,' Cen:',i5,'(',a2,')',' Type: ',a,' Coeff:',1PE16.8,' Exp: ',1PE13.7)") &
+				j,b(j)%center,a(b(j)%center)%name,GTFtype2name(b(j)%type),CO(i,j),b(j)%exp
 			end do
 			write(*,"(a,/)") " Note: The ""coeff."" are expansion coefficients of orbitals with respect to GTFs, including normalization constant"
 			if (allocated(b)) then
@@ -247,6 +252,7 @@ do while(.true.)
 		write(*,*) "5 Kinetic energy integral"
 		write(*,*) "6 Electric quadrupole moment integral"
 		write(*,*) "7 Electric octopole moment integral"
+		write(*,*) "8 Electric hexadecapole moment integral"
 		read(*,*) imattype
         iout=2
         if (imattype<=5) then !Amount of quadrupole and octopole is too large, and only be printed to file
@@ -263,10 +269,12 @@ do while(.true.)
 		end if
 		if (imattype==1) then
 			call showmatgau(Sbas,"Overlap matrix",1,fileid=ides)
+            tmpmat=Sbas
 			call diagsymat(Sbas,eigvec,eigval,ierror)
 			write(ides,*)
 			write(ides,*) "Eigenvalues:"
 			write(ides,"(6f12.8)") eigval
+            Sbas=tmpmat
 		else if (imattype==2) then
 			if (.not.allocated(Dbas)) then
                 write(*,*) "Calculating the matrix..."
@@ -312,7 +320,7 @@ do while(.true.)
                 write(*,*) "Calculating the matrix..."
                 call genMultipolebas_curr
             end if
-			call showmatgau(Quadbas(1,:,:),"Quadrupole moment matrix (XX component)",1,fileid=ides)
+			              call showmatgau(Quadbas(1,:,:),"Quadrupole moment matrix (XX component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Quadbas(2,:,:),"Quadrupole moment matrix (YY component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Quadbas(3,:,:),"Quadrupole moment matrix (ZZ component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Quadbas(4,:,:),"Quadrupole moment matrix (XY component)",1,fileid=ides)
@@ -323,7 +331,7 @@ do while(.true.)
                 write(*,*) "Calculating the matrix..."
                 call genMultipolebas_curr
             end if
-			call showmatgau(Octobas(1,:,:),"Octopole moment matrix (XXX component)",1,fileid=ides)
+			              call showmatgau(Octobas(1,:,:),"Octopole moment matrix (XXX component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Octobas(2,:,:),"Octopole moment matrix (YYY component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Octobas(3,:,:),"Octopole moment matrix (ZZZ component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Octobas(4,:,:),"Octopole moment matrix (YZZ component)",1,fileid=ides)
@@ -333,6 +341,26 @@ do while(.true.)
 			write(ides,*);call showmatgau(Octobas(8,:,:),"Octopole moment matrix (XXY component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Octobas(9,:,:),"Octopole moment matrix (XYY component)",1,fileid=ides)
 			write(ides,*);call showmatgau(Octobas(10,:,:),"Octopole moment matrix (XYZ component)",1,fileid=ides)
+        else if (imattype==8) then
+			if (.not.allocated(hexdebas)) then
+                write(*,*) "Calculating the matrix..."
+                call genMultipolebas_curr
+            end if
+			              call showmatgau(hexdebas(1,:,:),"Hexadecapole moment matrix (XXXX component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(2,:,:),"Hexadecapole moment matrix (YYYY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(3,:,:),"Hexadecapole moment matrix (ZZZZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(4,:,:),"Hexadecapole moment matrix (XXXY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(5,:,:),"Hexadecapole moment matrix (XXXZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(6,:,:),"Hexadecapole moment matrix (YYYX component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(7,:,:),"Hexadecapole moment matrix (YYYZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(8,:,:),"Hexadecapole moment matrix (ZZZX component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(9,:,:),"Hexadecapole moment matrix (ZZZY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(10,:,:),"Hexadecapole moment matrix (XXYY component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(11,:,:),"Hexadecapole moment matrix (XXZZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(12,:,:),"Hexadecapole moment matrix (YYZZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(13,:,:),"Hexadecapole moment matrix (XXYZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(14,:,:),"Hexadecapole moment matrix (YYXZ component)",1,fileid=ides)
+			write(ides,*);call showmatgau(hexdebas(15,:,:),"Hexadecapole moment matrix (ZZXY component)",1,fileid=ides)
 		end if
 		if (iout==2) then
 			write(*,*) "Done! The matrix has been outputted to intmat.txt in current folder"
@@ -340,150 +368,228 @@ do while(.true.)
 		end if
 		
 	else if (iselect==11) then
-		write(*,*) "Swap information of which two GTFs? Input their indices  e.g. 18,21"
+		write(*,*) "Exchange information of which two GTFs? Input their indices, e.g. 18,21"
 		read(*,*) i,j
-		write(*,*) "Swap which information for the two GTFs?"
-		write(*,*) "1 Swap all propertie"
-		write(*,*) "2 Swap center"
-		write(*,*) "3 Swap function type"
-		write(*,*) "4 Swap exponent"
-		write(*,*) "5 Swap orbital expansion coefficient"
+		write(*,*) "Exchange which information for the two GTFs?"
+		write(*,*) "1 Exchange all properties"
+		write(*,*) "2 Exchange center"
+		write(*,*) "3 Exchange function type"
+		write(*,*) "4 Exchange exponent"
+		write(*,*) "5 Exchange orbital expansion coefficient"
 		read(*,*) iswapcontent
 		if (iswapcontent==1) call swapGTF(i,j,"all")
 		if (iswapcontent==2) call swapGTF(i,j,"cen")
 		if (iswapcontent==3) call swapGTF(i,j,"typ")
 		if (iswapcontent==4) call swapGTF(i,j,"exp")
 		if (iswapcontent==5) call swapGTF(i,j,"MO ")
-		write(*,*) "Swapping finished!"
+		write(*,*) "Exchanging finished!"
 	
 	else if (iselect==21) then
-		write(*,*) "Input the index of primitive function"
+		write(*,*) "Input index of the GTF, e.g. 13"
 		read(*,*) i
-		write(*,*) "Input the center"
+		write(*,*) "Input the index of the center that you want the function centered at, e.g. 5"
 		read(*,*) j
 		if (j<=ncenter.and.j>0) then
 			b(i)%center=j
+            write(*,*) "Done!"
 		else
-			write(*,"('Error: The value should >0 and <=',i7)") ncenter
+			write(*,"(' Error: The center index should >0 and <=',i7)") ncenter
 		end if
 	
 	else if (iselect==22) then
-		write(*,*) "Input the index of primitive function"
+		write(*,*) "Input index of the GTF, e.g. 13"
 		read(*,*) i
-		write(*,*) "Input the type"
-		write(*,*) "Valid input: S/X/Y/Z/XX/YY/ZZ/XY/XZ/YZ/XXX/YYY/ZZZ/XXY/XXZ/YYZ/XYY/XZZ/YZZ/XYZ"
-		write(*,*) "ZZZZ/YZZZ/YYZZ/YYYZ/YYYY/XZZZ/XYZZ/XYYZ/XYYY/XXZZ/XXYZ/XXYY/XXXZ/XXXY/XXXX"
-		write(*,"(a)") " ZZZZZ/YZZZZ/YYZZZ/YYYZZ/YYYYZ/YYYYY/XZZZZ/XYZZZ/XYYZZ/XYYYZ/XYYYY/XXZZZ/XXYZZ/XXYYZ/XXYYY/XXXZZ/XXXYZ/XXXYY/XXXXZ/XXXXY/XXXXX"
+		write(*,*) "Input the type you want to set, should be one of the following ones"
+		write(*,*) "S,X,Y,Z,XX,YY,ZZ,XY,XZ,YZ,XXX,YYY,ZZZ,XXY,XXZ,YYZ,XYY,XZZ,YZZ,XYZ"
+		write(*,*) "ZZZZ,YZZZ,YYZZ,YYYZ,YYYY,XZZZ,XYZZ,XYYZ,XYYY,XXZZ,XXYZ,XXYY,XXXZ,XXXY,XXXX"
+		write(*,"(a)") " ZZZZZ,YZZZZ,YYZZZ,YYYZZ,YYYYZ,YYYYY,XZZZZ,XYZZZ,XYYZZ,XYYYZ,XYYYY,XXZZZ,XXYZZ,XXYYZ,XXYYY,XXXZZ,XXXYZ,XXXYY,XXXXZ,XXXXY,XXXXX"
 		read(*,*) seltmpc
 		do j=1,size(GTFtype2name)
 			if (seltmpc==GTFtype2name(j)) then
 				b(i)%type=j
+				write(*,*) "Done!"
 				exit
 			end if
-			if (j==20) write(*,*) "Error: Could not recognize this type"
+			if (j==20) write(*,*) "Error: Cannot recognize this type"
 		end do
 	
 	else if (iselect==23) then
-		write(*,*) "Input the index of primitive function"
+		write(*,*) "Input index of the GTF, e.g. 13"
 		read(*,*) i
-		write(*,*) "Input the exponent"
+		write(*,*) "Input exponent, e.g. 0.035"
 		read(*,*) rexp
 		b(i)%exp=rexp
+        write(*,*) "Done!"
 	
 	else if (iselect==24) then
-		write(*,*) "Input the index of primitive function"
+		write(*,*) "Input index of the GTF, e.g. 13"
 		read(*,*) iprm
-		write(*,*) "Input the orbital index, e.g. 12"
+		write(*,*) "Input orbital index, e.g. 12"
 		read(*,*) imonum
 		if (iprm<=nprims.and.iprm>0.and.imonum<=nmo.and.imonum>0) then
-			write(*,*) "Input the coefficient"
+			write(*,*) "Input the coefficient, e.g. 2.83E-3"
 			read(*,*) rcoeff
 			CO(imonum,iprm)=rcoeff
+            write(*,*) "Done!"
 		else
-			write(*,"(' Error: The index of function or orbital exceed valid range')")
+			write(*,"(' Error: The index of the GTF or orbital exceeded valid range!')")
 		end if
 	
 	else if (iselect==25) then
 		isetmode=1
 		if (allocated(CObasa)) then
-			write(*,*) "1 Set coefficients of GTFs"
-			write(*,*) "2 Set coefficients of basis functions"
+			write(*,*) "1 Set coefficients of some GTFs in some orbitals"
+			write(*,*) "2 Set coefficients of some basis functions in some orbitals"
 			read(*,*) isetmode
 		end if
 		if (isetmode==1) then
-			write(*,*) "The following your inputs are conditions for filtering GTFs"
-			write(*,*) "Rule of range input: 3,17 means from 3 to 17, 6,6 means only 6, 0,0 means all"
+			allocate(idxsel(nprims)) 
+            idxsel=1 !If idxsel(i)=1, then GTF i is selected
+			write(*,"(a)") " You will be asked to input several conditions, the GTFs simultaneously satisfying them will be selected"
 			write(*,*)
-			write(*,*) "Input the range of index of GTFs"
-			read(*,*) ind1,ind2
-			write(*,*) "Input the range of atoms"
-			read(*,*) iatm1,iatm2
-			write(*,*) "Input the type of GTFs (one of S,X,Y,Z,XX,XY... ALL means all types)"
-			write(*,*) "You can also input S,P,D,F,G,H to select GTF according to angular moment"
-			read(*,*) seltmpc
-			write(*,*) "Input the range of orbitals"
-			read(*,*) imo1,imo2
+			write(*,*) "Input indices that the GTFs must be, e.g. 2,3,7-10"
+            write(*,*) "Press ENTER button directly means ignoring this condition"
+			read(*,"(a)") c2000tmp
+            if (c2000tmp/=" ") then
+				call str2arr(c2000tmp,ntmp)
+				allocate(tmparrint(ntmp))
+				call str2arr(c2000tmp,ntmp,tmparrint)
+				do iGTF=1,nprims
+					if (all(tmparrint/=iGTF)) idxsel(iGTF)=0
+				end do
+				deallocate(tmparrint)
+            end if
+			write(*,*) "Input indices of the atoms that the GTFs must be centered at, e.g. 3,9-13,18"
+            write(*,*) "Press ENTER button directly means ignoring this condition"
+			read(*,"(a)") c2000tmp
+            if (c2000tmp/=" ") then
+				call str2arr(c2000tmp,ntmp)
+				allocate(tmparrint(ntmp))
+				call str2arr(c2000tmp,ntmp,tmparrint)
+				do iGTF=1,nprims
+					if (all(tmparrint/=b(iGTF)%center)) idxsel(iGTF)=0
+				end do
+				deallocate(tmparrint)
+            end if
+			write(*,*) "Input the type of the GTFs must be, should be one of S,X,Y,Z,XX,XY"
+			write(*,*) "You can also input one of S,P,D,F,G,H to select according to angular moment"
+            write(*,"(a)") " Adding a negative sign means selecting all other types, for example, ""-P"" means selecting all GTFs other than P type"
+            write(*,*) "Press ENTER button directly means ignoring this condition"
+			read(*,"(a)") seltmpc
+            if (seltmpc/=" ") then
+				if (seltmpc(1:1)=='-') then
+					seltmpc=seltmpc(2:)
+					do iGTF=1,nprims
+						if ( GTFtype2name(b(iGTF)%type)==trim(seltmpc).or.type2ang(b(iGTF)%type)==trim(seltmpc) ) idxsel(iGTF)=0
+					end do
+                else
+					do iGTF=1,nprims
+						if ( GTFtype2name(b(iGTF)%type)/=trim(seltmpc).and.type2ang(b(iGTF)%type)/=trim(seltmpc) ) idxsel(iGTF)=0
+					end do
+                end if
+            end if
+			write(*,"(' Coefficient of',i8,' GTFs have been selected')") count(idxsel==1)
+			write(*,"(/,a)") " Input indices of the orbitals for which the coefficients of selected GTFs will be set, e.g. 2,9-13,18-25"
+            write(*,*) "Press ENTER button directly selecting all orbitals"
+			read(*,"(a)") c2000tmp
+            if (c2000tmp/=" ") then
+				call str2arr(c2000tmp,ntmp)
+				allocate(tmparrint(ntmp))
+				call str2arr(c2000tmp,ntmp,tmparrint)
+            else
+				ntmp=nmo
+				allocate(tmparrint(ntmp))
+                forall (iorb=1:nmo) tmparrint(iorb)=iorb
+            end if
 			write(*,*) "Input the expansion coefficient you want to set, e.g. 0.5"
 			read(*,*) coval
-			if (ind1==0) ind1=1
-			if (ind2==0) ind2=nprims
-			if (iatm1==0) iatm1=1
-			if (iatm2==0) iatm2=ncenter
-			if (imo1==0) imo1=1
-			if (imo2==0) imo2=nmo
-			nsel=0
-			do iGTF=ind1,ind2
-				if (b(iGTF)%center>=iatm1.and.b(iGTF)%center<=iatm2) then
-					if (seltmpc=="ALL".or.seltmpc=="all".or.GTFtype2name(b(iGTF)%type)==trim(seltmpc).or.type2ang(b(iGTF)%type)==trim(seltmpc)) then
-						CO(imo1:imo2,iGTF)=coval
-						nsel=nsel+1
-					end if
-				end if
-			end do
-			write(*,"(' Coefficient of',i8,' GTFs are set')") nsel
+            do iGTF=1,nprims
+				if (idxsel(iGTF)==0) cycle
+                CO(tmparrint(1:ntmp),iGTF)=coval
+            end do
+            deallocate(tmparrint,idxsel)
+            write(*,*) "Done!"
 		else if (isetmode==2) then
-			write(*,*) "The following your inputs are conditions for filtering basis functions"
-			write(*,*) "Rule of range input: 3,17 means from 3 to 17, 6,6 means only 6, 0,0 means all"
-			write(*,*) "You can also input S,P,D,F,G,H to select according to angular moment"
+			allocate(idxsel(nbasis)) 
+            idxsel=1 !If idxsel(i)=1, then basis function i is selected
+			write(*,"(a)") " You will be asked to input several conditions, the basis function simultaneously satisfying them will be selected"
 			write(*,*)
-			write(*,*) "Input the range of index of basis functions"
-			read(*,*) ind1,ind2
-			write(*,*) "Input the range of atoms"
-			read(*,*) iatm1,iatm2
-			write(*,"(a)") " Input the type of basis functions (one of S,X,Y,Z,XX... ALL means all types)"
-			read(*,*) seltmpc
-			write(*,*) "Input the range of orbitals"
-			read(*,*) imo1,imo2
-			ispinsel=1
-			if (wfntype==1.or.wfntype==4) then
-				write(*,*) "For which type of orbitals? 0=Both 1=Alpha 2=Beta"
-				read(*,*) ispinsel
-			end if
+			write(*,*) "Input indices that the basis functions must be, e.g. 2,3,7-10"
+            write(*,*) "Press ENTER button directly means ignoring this condition"
+			read(*,"(a)") c2000tmp
+            if (c2000tmp/=" ") then
+				call str2arr(c2000tmp,ntmp)
+				allocate(tmparrint(ntmp))
+				call str2arr(c2000tmp,ntmp,tmparrint)
+				do ibas=1,nbasis
+					if (all(tmparrint/=ibas)) idxsel(ibas)=0
+				end do
+				deallocate(tmparrint)
+            end if
+			write(*,*) "Input indices of the atoms that the basis functions must be centered at"
+            write(*,*) "For example, 3,9-13,18"
+            write(*,*) "Press ENTER button directly means ignoring this condition"
+			read(*,"(a)") c2000tmp
+            if (c2000tmp/=" ") then
+				call str2arr(c2000tmp,ntmp)
+				allocate(tmparrint(ntmp))
+				call str2arr(c2000tmp,ntmp,tmparrint)
+				do ibas=1,nbasis
+					if (all(tmparrint/=bascen(ibas))) idxsel(ibas)=0
+				end do
+				deallocate(tmparrint)
+            end if
+			write(*,*) "Input the type of the basis functions must be, should be one of S,X,Y,Z,XX,XY"
+			write(*,*) "You can also input one of S,P,D,F,G,H to select according to angular moment"
+            write(*,"(a)") " Adding a negative sign means selecting all other types, for example, ""-P"" means selecting all basis functions other than P type"
+            write(*,*) "Press ENTER button directly means ignoring this condition"
+			read(*,"(a)") seltmpc
+            if (seltmpc/=" ") then
+				if (seltmpc(1:1)=='-') then
+					seltmpc=seltmpc(2:)
+					do ibas=1,nbasis
+						if ( GTFtype2name(bastype(ibas))==trim(seltmpc).or.type2ang(bastype(ibas))==trim(seltmpc) ) idxsel(ibas)=0
+					end do
+                else
+					do ibas=1,nbasis
+						if ( GTFtype2name(bastype(ibas))/=trim(seltmpc).and.type2ang(bastype(ibas))/=trim(seltmpc) ) idxsel(ibas)=0
+					end do
+                end if
+            end if
+			write(*,"(' Coefficient of',i8,' basis functions have been selected')") count(idxsel==1)
+			write(*,"(/,a)") " Input indices of the orbitals for which the coefficients of selected basis functions will be set, e.g. 2,9-13,18-25"
+            write(*,*) "Press ENTER button directly selecting all orbitals"
+			read(*,"(a)") c2000tmp
+            if (c2000tmp/=" ") then
+				call str2arr(c2000tmp,ntmp)
+				allocate(tmparrint(ntmp))
+				call str2arr(c2000tmp,ntmp,tmparrint)
+            else
+				ntmp=nmo
+				allocate(tmparrint(ntmp))
+                forall (iorb=1:nmo) tmparrint(iorb)=iorb
+            end if
 			write(*,*) "Input the expansion coefficient you want to set, e.g. 0.5"
 			read(*,*) coval
-			if (ind1==0) ind1=1
-			if (ind2==0) ind2=nbasis
-			if (iatm1==0) iatm1=1
-			if (iatm2==0) iatm2=ncenter
-			if (imo1==0) imo1=1
-			if (imo2==0) imo2=nbasis
-			nsel=0
-			do ibas=ind1,ind2
-				if (bascen(ibas)>=iatm1.and.bascen(ibas)<=iatm2) then
-					if (seltmpc=="ALL".or.seltmpc=="all".or.GTFtype2name(bastype(ibas))==trim(seltmpc).or.type2ang(bastype(ibas))==trim(seltmpc)) then
-						if (ispinsel==0.or.ispinsel==1) CObasa(ibas,imo1:imo2)=coval
-						if (ispinsel==0.or.ispinsel==2) CObasb(ibas,imo1:imo2)=coval
-						nsel=nsel+1
-					end if
-				end if
-			end do
-			write(*,"(' Coefficient of',i8,' basis functions are set')") nsel
+            do ibas=1,nbasis
+				if (idxsel(ibas)==0) cycle
+                do idxorb=1,ntmp
+					iorb=tmparrint(idxorb)
+                    if (iorb<=nbasis) then
+						CObasa(ibas,iorb)=coval
+                    else
+						CObasb(ibas,iorb-nbasis)=coval
+                    end if
+                end do
+            end do
+            deallocate(tmparrint,idxsel)
+            write(*,*) "Done!"
 			imodwfn=1
 		end if
-		write(*,*) "Done!"
 
 	else if (iselect==26) then
 		do while(.true.)
+			write(*,*)
 			write(*,*) "Select the orbitals for which the occupation numbers are needed to be changed"
 			write(*,*) "e.g. 2,4,13-16,20 means selecting orbitals 2,4,13,14,15,16,20"
 			write(*,*) "Input 0 can select all orbitals, input q or 00 can return"
@@ -509,10 +615,13 @@ do while(.true.)
 			write(*,"(a)") " To generate occupation state for calculating odd electron density, input ""odd"""
 			read(*,"(a)") c1000tmp
 			if (index(c1000tmp,"odd")/=0) then
+                oddnum=0
 				do iorb=1,numorbsel
 					MOocc(orbarr(iorb))=min(2-MOocc(orbarr(iorb)),MOocc(orbarr(iorb)))
+                    oddnum=oddnum+MOocc(orbarr(iorb))
 				end do
 				write(*,*) "Done!"
+                write(*,"(a,f12.6)") " Sum of occupation numbers of selected orbitals:",oddnum
 			else if (index(c1000tmp,"i")/=0) then
 				MOocc(orbarr(1:numorbsel))=MOocc_org(orbarr(1:numorbsel))
 				write(*,*) "The occupation numbers have been recovered"
@@ -539,7 +648,6 @@ do while(.true.)
 					write(*,"(a)") " Note: Now the wavefunction is recognized as an unrestricted multiconfiguration wavefunction"
 				end if
 			end if
-			write(*,*)
 		end do
 	
 	else if (iselect==27) then
@@ -592,7 +700,6 @@ do while(.true.)
 					read(*,*)
 				end if
 			end if
-			write(*,*)
 			imodwfn=1
 		end do
 		
@@ -646,13 +753,75 @@ do while(.true.)
 				MOene(orbarr(1:numorbsel))=MOene(orbarr(1:numorbsel))/tmpval
 			end if
 			write(*,*) "Done!"
-			write(*,*)
 		end do
 	
+	else if (iselect==29) then
+		write(*,"(a)") " Input indices of two orbitals, e.g. 3,8, then all of their information (energy, occupation, coefficients) will be exchanged"
+        read(*,*) iorb,jorb
+        if (MOtype(iorb)==MOtype(jorb)) then
+			enetmp=MOene(iorb)
+			MOene(iorb)=MOene(jorb)
+			MOene(jorb)=enetmp
+			occtmp=MOocc(iorb)
+			MOocc(iorb)=MOocc(jorb)
+			MOocc(jorb)=enetmp
+			allocate(tmparr(nprims))
+			tmparr(:)=CO(iorb,:)
+			CO(iorb,:)=CO(jorb,:)
+			CO(jorb,:)=tmparr(:)
+			deallocate(tmparr)
+			if (allocated(CObasa)) then
+				allocate(tmparr(nbasis))
+				if (iorb<=nbasis) then
+					tmparr(:)=CObasa(:,iorb)
+					CObasa(:,iorb)=CObasa(:,jorb)
+					CObasa(:,jorb)=tmparr(:)
+                else
+					tmparr(:)=CObasb(:,iorb-nbasis)
+					CObasb(:,iorb-nbasis)=CObasb(:,jorb-nbasis)
+					CObasb(:,jorb-nbasis)=tmparr(:)
+                end if
+				deallocate(tmparr)
+			end if
+			imodwfn=1
+			write(*,*) "Done!"
+        else
+			write(*,*) "Error: In order to alter information, the two orbitals must have the same type!"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+        end if
+	
+	else if (iselect==30) then
+		write(*,*) "1 Exchange orbital energies (in eV) with occupation numbers"
+		write(*,*) "2 Exchange orbital energies (in Hartree) with occupation numbers"
+        write(*,*) "Note: For EDDB user, you should choose 1"
+        read(*,*) isel2
+		allocate(tmparr(nmo))
+        tmparr=MOocc
+        if (isel2==1) then
+			MOocc=MOene*au2eV
+        else if (isel2==2) then
+			MOocc=MOene
+        end if
+        MOene=tmparr
+        deallocate(tmparr)
+        write(*,*) "Orbital energies and occupation numbers have been exchanged with each other"
+		if (any(MOocc/=int(MOocc))) then
+			if (wfntype==0) then
+				wfntype=3 !RHF-> Restricted multiconfiguration wavefunction
+				write(*,"(a)") " Note: Now the wavefunction is recognized as a restricted multiconfiguration wavefunction"
+			else if (wfntype==1.or.wfntype==2) then !UHF/ROHF-> Unrestricted multiconfiguration wavefunction
+				wfntype=4
+				write(*,"(a)") " Note: Now the wavefunction is recognized as an unrestricted multiconfiguration wavefunction"
+			end if
+		end if
+        imodwfn=1
+        call updatenelec
+    
 	else if (iselect==31) then
 		write(*,*) "Input X,Y,Z of translation vector (e.g. 3.2,1.0,0)"
 		read(*,*) pbctransx,pbctransy,pbctransz
-		write(*,*) "You inputted coordinates are in which unit?  1:Bohr  2:Angstrom"
+		write(*,*) "You inputted coordinates are in which unit?  1: Bohr  2: Angstrom"
 		read(*,*) iunit
 		if (iunit==2) then
 			pbctransx=pbctransx/b2a
@@ -669,7 +838,7 @@ do while(.true.)
 	else if (iselect==32) then
 		write(*,*) "Input X,Y,Z of translation vector (e.g. 3.2,1.0,0)"
 		read(*,*) pbctransx,pbctransy,pbctransz
-		write(*,*) "You inputted coordinates are in which unit?  1:Bohr  2:Angstrom"
+		write(*,*) "You inputted coordinates are in which unit?  1: Bohr  2: Angstrom"
 		read(*,*) iunit
 		if (iunit==2) then
 			pbctransx=pbctransx/b2a
@@ -679,6 +848,7 @@ do while(.true.)
 		write(*,*) "Duplicate system how many times? e.g. 3"
 		read(*,*) numdup
 		!_tmp is for backing up current information
+        if (allocated(a_tmp)) deallocate(a_tmp)
 		allocate(a_tmp(ncenter))
 		allocate(b_tmp(nprims))
 		allocate(CO_tmp(nmo,nprims))
@@ -771,6 +941,63 @@ do while(.true.)
 		end do
 		write(*,*) "Done!"
 		imodwfn=1
+	
+	else if (iselect==37) then
+		if (wfntype==1.or.wfntype==4) then
+			write(*,*) "Error: The current wavefunction is already unrestricted!"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        !Back up current wavefunction
+		if (allocated(CO_back)) deallocate(CO_back,MOene_back,MOocc_back)
+		allocate(CO_back(nmo,nprims),MOene_back(nmo),MOocc_back(nmo))
+		nmo_back=nmo
+		CO_back=CO
+		MOene_back=MOene
+		MOocc_back=MOocc
+        !Reallocate arrays with new size
+        deallocate(CO,MOene,MOocc,MOtype)
+        nmo=nmo_back*2
+        allocate(CO(nmo,nprims),MOene(nmo),MOocc(nmo),MOtype(nmo))
+        if (wfntype==0.or.wfntype==3) then !RHF, R-post-HF
+			do imo=1,nmo_back
+				MOene(imo)=MOene_back(imo)
+				MOene(imo+nmo_back)=MOene_back(imo)
+				MOocc(imo)=MOocc_back(imo)/2
+				MOocc(imo+nmo_back)=MOocc_back(imo)/2
+                MOtype(imo)=1
+                MOtype(imo+nmo_back)=2
+                CO(imo,:)=CO_back(imo,:)
+                CO(imo+nmo_back,:)=CO_back(imo,:)
+            end do
+            if (wfntype==0) wfntype=1
+            if (wfntype==3) wfntype=4
+        else if (wfntype==2) then !ROHF
+			MOocc=0
+			do imo=1,nmo_back
+				MOene(imo)=MOene_back(imo)
+				MOene(imo+nmo_back)=MOene_back(imo)
+                if (MOocc_back(imo)==2) then
+					MOocc(imo)=1
+					MOocc(imo+nmo_back)=1
+                else if (MOocc_back(imo)==1) then
+					MOocc(imo)=1
+                end if
+                MOtype(imo)=1
+                MOtype(imo+nmo_back)=2
+                CO(imo,:)=CO_back(imo,:)
+                CO(imo+nmo_back,:)=CO_back(imo,:)
+            end do
+            wfntype=1
+        end if
+        deallocate(CO_back,MOene_back,MOocc_back)
+        if (allocated(CObasa)) then
+			allocate(CObasb(nbasis,nbasis))
+            CObasb=CObasa
+        end if
+        imodwfn=1
+        write(*,*) "Finished!"
 	end if
 end do
 end subroutine
@@ -884,41 +1111,80 @@ do imo=1,nmo
 end do
 nelec=naelec+nbelec
 end subroutine
+
+
+
+!!-------- Generate nelec, naelec, nbelec by guessing when wavefunction information is not available
+!Commonly invoked when reading file only contains geometry information
+!The system is always regarded as neutral. If number of electrons is even, then naelec=nbelec=nelec/2. Else odd, naelec=nbelec+1
+subroutine guessnelec
+use defvar
+nelec=sum(a%charge)
+if (mod(nint(nelec),2)==0) then
+    naelec=nint(nelec)/2
+    nbelec=naelec
+else
+    nbelec=(nint(nelec)-1)/2
+    naelec=nbelec+1
+end if
+
+end subroutine
 			
 			
 
-!!!-------- Check if present wavefunction is sanity, i.e. all orbital satisfies normalization condition
+!!-------- Check if present wavefunction is sanity, i.e. all orbital satisfies normalization condition
 subroutine wfnsanity
 use defvar
 implicit real*8 (a-h,o-z)
 real*8 GTFSmat(nprims*(nprims+1)/2)
-call genGTFSmat(GTFSmat,nprims*(nprims+1)/2)
+
 rmaxdev=0
 rmaxdevint=0
-do imo=1,nmo
-	tmp=0
-	!$OMP parallel shared(tmp) private(iGTF,jGTF,tmpprivate) num_threads(nthreads)
-	tmpprivate=0
-	!$OMP do schedule(dynamic)
-	do iGTF=1,nprims
-		do jGTF=iGTF+1,nprims
-			tmpprivate=tmpprivate+2*co(imo,iGTF)*co(imo,jGTF)*GTFSmat(jGTF*(jGTF-1)/2+iGTF)
-		end do
-		tmpprivate=tmpprivate+co(imo,iGTF)**2*GTFSmat(iGTF*(iGTF-1)/2+iGTF)
-	end do
-	!$OMP END DO
-	!$OMP CRITICAL
-	tmp=tmp+tmpprivate
-	!$OMP END CRITICAL
-	!$OMP END PARALLEL
-	write(*,"(' Orbital',i7,', Occ:',f8.4,'   Value:',f16.10)") imo,MOocc(imo),tmp
-	tmpt=abs(tmp-1)
-	if (tmpt>rmaxdev) rmaxdev=tmpt
-	tmpt=abs(tmp-nint(tmp))
-	if (tmpt>rmaxdevint) rmaxdevint=tmpt
-end do
+if (ifPBC==0) then
+    call genGTFSmat(GTFSmat,nprims*(nprims+1)/2)
+    do imo=1,nmo
+	    tmp=0
+	    !$OMP parallel shared(tmp) private(iGTF,jGTF,tmpprivate) num_threads(nthreads)
+	    tmpprivate=0
+	    !$OMP do schedule(dynamic)
+	    do iGTF=1,nprims
+		    do jGTF=iGTF+1,nprims
+			    tmpprivate=tmpprivate+2*CO(imo,iGTF)*CO(imo,jGTF)*GTFSmat(jGTF*(jGTF-1)/2+iGTF)
+		    end do
+		    tmpprivate=tmpprivate+CO(imo,iGTF)**2*GTFSmat(iGTF*(iGTF-1)/2+iGTF)
+	    end do
+	    !$OMP END DO
+	    !$OMP CRITICAL
+	    tmp=tmp+tmpprivate
+	    !$OMP END CRITICAL
+	    !$OMP END PARALLEL
+	    write(*,"(' Orbital',i7,', Occ:',f8.4,'   Value:',f16.10)") imo,MOocc(imo),tmp
+	    tmpt=abs(tmp-1)
+	    if (tmpt>rmaxdev) rmaxdev=tmpt
+	    tmpt=abs(tmp-nint(tmp))
+	    if (tmpt>rmaxdevint) rmaxdevint=tmpt
+    end do
+
+else !Examine using basis function information
+    call ask_Sbas_PBC
+    do imo=1,nbasis
+	    tmp=0
+        if (all(CObasa(:,imo)==0)) cycle
+        do ibas=1,nbasis
+            do jbas=1,nbasis
+                tmp=tmp+CObasa(ibas,imo)*CObasa(jbas,imo)*Sbas(ibas,jbas)
+            end do
+        end do
+	    write(*,"(' Orbital',i7,', Occ:',f8.4,'   Value:',f16.10)") imo,MOocc(imo),tmp
+	    tmpt=abs(tmp-1)
+	    if (tmpt>rmaxdev) rmaxdev=tmpt
+	    tmpt=abs(tmp-nint(tmp))
+	    if (tmpt>rmaxdevint) rmaxdevint=tmpt
+    end do
+end if
 write(*,"(' Maximum deviation to 1:',f16.10)") rmaxdev
 write(*,"(' Maximum deviation to integer:',f16.10)") rmaxdevint
+
 write(*,*) "Press ENTER button to continue"
 read(*,*)
 end subroutine
@@ -1054,22 +1320,35 @@ Xmatinv=matmul(matmul(Umat,Smat),transpose(Umat))
 end subroutine
 
 
-!!!------------------ Generate distance matrix between atoms(in Bohr)
+!!!------------------ Generate distance matrix between atoms (in Bohr)
+!To avoid complicate thing, PBC is not taken into account
 subroutine gendistmat
 use defvar
 implicit real*8 (a-h,o-z)
 if (allocated(distmat)) deallocate(distmat)
 allocate(distmat(ncenter,ncenter))
 distmat=0.0D0
-!$OMP PARALLEL DO SHARED(distmat) PRIVATE(i,j,tmp) schedule(dynamic) NUM_THREADS(nthreads)
-do i=1,ncenter
-	do j=i+1,ncenter
-        tmp=dsqrt((a(i)%x-a(j)%x)**2+(a(i)%y-a(j)%y)**2+(a(i)%z-a(j)%z)**2)
-		distmat(i,j)=tmp
-        distmat(j,i)=tmp
+!if (ifPBC==0) then
+	!$OMP PARALLEL DO SHARED(distmat) PRIVATE(i,j,tmp) schedule(dynamic) NUM_THREADS(nthreads)
+	do i=1,ncenter
+		do j=i+1,ncenter
+			tmp=dsqrt((a(i)%x-a(j)%x)**2+(a(i)%y-a(j)%y)**2+(a(i)%z-a(j)%z)**2)
+			distmat(i,j)=tmp
+			distmat(j,i)=tmp
+		end do
 	end do
-end do
-!$OMP END PARALLEL DO
+	!$OMP END PARALLEL DO
+!else
+!	!$OMP PARALLEL DO SHARED(distmat) PRIVATE(i,j) schedule(dynamic) NUM_THREADS(nthreads)
+!	do i=1,ncenter
+!		do j=i+1,ncenter
+!			call nearest_atmdistxyz(i,j,distmat(i,j),atmx,atmy,atmz)
+!			distmat(j,i)=distmat(i,j)
+!		end do
+!	end do
+!	!$OMP END PARALLEL DO
+!end if
+
 end subroutine
 
 
@@ -1118,9 +1397,9 @@ else if (swaptype=="exp") then
 end if
 if (swaptype=="all".or.swaptype=="MO ") then
 	do n=1,nmo
-		temp=co(n,i)
-		co(n,i)=co(n,j)
-		co(n,j)=temp
+		temp=CO(n,i)
+		CO(n,i)=CO(n,j)
+		CO(n,j)=temp
 	end do
 end if
 end subroutine
@@ -1172,177 +1451,6 @@ if (allocated(CObasa)) then
 		end do
 	end do
 end if
-end subroutine
-
-
-
-
-
-!!!------ Define property/origin/spacing/grid number and then save to a 3D matrix, infomode=1 means silent
-!! iorb is used to choose the orbital for whose wavefunction will be calculated. This can be an arbitrary value if functype/=4
-subroutine savecubmat(functype,infomode,iorb)
-use defvar
-use util
-use function
-implicit real*8 (a-h,o-z)
-integer :: infomode,functype,iorb !Calculate which orbital wavefunction for fmo routine
-real*8 xarr(nx),yarr(ny),zarr(nz)
-character c80tmp*80,c200tmp*200,c400tmp*400,filename_tmp*200
-
-!---- Special case, use cubegen to directly evaluate ESP grid data
-alive=.false.
-if (cubegenpath/=" ".and.ifiletype==1.and.functype==12) then
-	inquire(file=cubegenpath,exist=alive)
-	if (alive==.false.) then
-		write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
-		the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
-	end if
-end if
-if (alive.and.ifiletype==1.and.functype==12) then !Use cubegen to calculate total ESP
-	call walltime(iwalltime1)
-	write(*,"(a)") " Since the input file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been properly defined, &
-	now Multiwfn directly invokes cubegen to calculate electrostatic potential"
-	
-	!Generate cubegen input file
-	open(10,file="ESPgridtmp.cub",status="replace")
-	write(10,"(' Generated by Multiwfn')")
-	write(10,"(' Totally ',i12,' grid points')") nx*ny*nz
-	write(10,"(i5,3f12.6)") ncenter,orgx,orgy,orgz
-	write(10,"(i5,3f12.6)") nx,dx,0.0,0.0
-	write(10,"(i5,3f12.6)") ny,0.0,dy,0.0
-	write(10,"(i5,3f12.6)") nz,0.0,0.0,dz
-	close(10)
-	ncubegenthreads=1 !Parallel implementation prior to G16 is buggy, so test here
-	if (index(cubegenpath,"G16")/=0.or.index(cubegenpath,"g16")/=0) ncubegenthreads=nthreads
-	filename_tmp=filename
-	if (index(filename,".chk")/=0) call chk2fch(filename_tmp)
-	write(c400tmp,"(a,i5,a)") """"//trim(cubegenpath)//"""",ncubegenthreads," potential="//trim(cubegendenstype)//" "//&
-	""""//trim(filename_tmp)//""""//" ESPresult.cub -1 h ESPgridtmp.cub > nouseout"
-	call runcommand(c400tmp)
-	if (index(filename,".chk")/=0) call delfile(filename_tmp)
-    
-	!Load ESP data from cubegen resulting file
-	call readcube("ESPresult.cub",1,1)
-	!Delete intermediate files
-	if (isys==1) then
-		call system("del cubegenpt.txt ESPresult.cub ESPgridtmp.cub nouseout /Q")
-	else
-		call system("rm cubegenpt.txt ESPresult.cub ESPgridtmp.cub nouseout -f")
-	end if
-	call walltime(iwalltime2)
-	if (infomode==0) write(*,"(' Calculation of grid data took up wall clock time',i10,' s')") iwalltime2-iwalltime1
-    
-	return
-end if
-
-!--- Another special case, use slow but specifically optimized code for evaluating ESP grid data (deprecated)
-if (functype==12.and.iESPcode==1) then
-    call cubesp
-    return
-end if
-
-!--- Below are normal cases, only use Multiwfn regular internal code
-iorbsel=iorb
-if (infomode==0.and.functype/=12) then
-	if (expcutoff<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored ')") expcutoff
-end if
-
-ii=10
-ifinish=0
-!write and then read is used to cut the minimal noise at the end of the coordinate, otherwise the originally symmetry points may become unsymmetry
-do k=1,nz
-	write(c80tmp,"(D20.13)") orgz+(k-1)*dz
-	read(c80tmp,*) zarr(k)
-end do
-do j=1,ny
-	write(c80tmp,"(D20.13)") orgy+(j-1)*dy
-	read(c80tmp,*) yarr(j)
-end do
-do i=1,nx
-	write(c80tmp,"(D20.13)") orgx+(i-1)*dx
-	read(c80tmp,*) xarr(i)
-end do
-
-call walltime(iwalltime1)
-nthreads_old=nthreads
-!If the function to be calculated is related to ESP, initialize LIBRETA so that faster code will be used
-if (ifdoESP(functype).and.iESPcode==2) then
-    call doinitlibreta
-    if (isys==1.and.nthreads>10) nthreads=10
-end if
-if (infomode==0) call showprog(0,nz)
-
-!$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
-do k=1,nz
-	tmpz=zarr(k)
-	do j=1,ny
-		tmpy=yarr(j)
-		do i=1,nx
-			tmpx=xarr(i)
-			if (functype==1513) then !Only involved by funcvsfunc routine, when RDG and sign(lambda2)rho is combined
-				call signlambda2rho_RDG(tmpx,tmpy,tmpz,cubmat(i,j,k),cubmattmp(i,j,k))
-			else if (functype==1614) then !Only involved by funcvsfunc routine, when promolecular RDG and sign(lambda2)rho is combined
-				call signlambda2rho_RDG_prodens(tmpx,tmpy,tmpz,cubmat(i,j,k),cubmattmp(i,j,k))
-            else if (functype==1599) then !Only involved by funcvsfunc routine, when IRI and sign(lambda2)rho is combined
-                call IRI_s2lr(tmpx,tmpy,tmpz,cubmat(i,j,k),cubmattmp(i,j,k))
-			else
-				cubmat(i,j,k)=calcfuncall(functype,tmpx,tmpy,tmpz)
-			end if
-		end do
-	end do
-	if (infomode==0) then
-        ifinish=ifinish+1
-        call showprog(ifinish,nz)
-	end if
-end do
-!$OMP END PARALLEL DO
-nthreads=nthreads_old
-
-if (infomode==0) then
-    call walltime(iwalltime2)
-    if (ifinish<nz) call showprog(nz,nz)
-    write(*,"(' Calculation of grid data took up wall clock time',i10,' s')") iwalltime2-iwalltime1
-end if
-end subroutine
-
-
-
-!!!------ A concise routine specifically for filling up electron density to "rhocub" array
-subroutine saverhocub
-use defvar
-use function
-implicit real*8(a-h,o-z)
-real*8 xarr(nx),yarr(ny),zarr(nz)
-if (allocated(rhocub)) then
-    if (size(rhocub,1)==nx.and.size(rhocub,2)==ny.and.size(rhocub,3)==nz) return !Do need to calculate again
-else
-    allocate(rhocub(nx,ny,nz))
-end if
-write(*,*) "Calculating grid data of electron density..."
-ifinish=0
-do k=1,nz
-	zarr(k)=orgz+(k-1)*dz
-end do
-do j=1,ny
-	yarr(j)=orgy+(j-1)*dy
-end do
-do i=1,nx
-	xarr(i)=orgx+(i-1)*dx
-end do
-!$OMP PARALLEL DO SHARED(rhocub,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprho) schedule(dynamic) NUM_THREADS(nthreads)
-do k=1,nz
-	tmpz=zarr(k)
-	do j=1,ny
-		tmpy=yarr(j)
-		do i=1,nx
-			tmpx=xarr(i)
-			rhocub(i,j,k)=fdens(tmpx,tmpy,tmpz)
-		end do
-	end do
-	ifinish=ifinish+1
-    call showprog(ifinish,nz)
-end do
-!$OMP END PARALLEL DO
 end subroutine
 
 
@@ -1409,7 +1517,7 @@ character*2 typename(100),nametmp
 character*80 basisset,tmpdir,c80tmp
 character*80 outwfnname
 logical alivegauout,alivewfntmp,aliveatomwfn
-if (isys==1) call cleangauscr !Clean Gaussian scratch files in current folder
+if (isys==1) call delfile("gxx.* fort.6 Gau*.inp") !Clean Gaussian scratch files in current folder
 
 !The only difference between c80tmp and tmpdir is that the latter has \ or / separator at the end
 if (iwfntmptype==1) then
@@ -1417,7 +1525,7 @@ if (iwfntmptype==1) then
 	if (isys==2) tmpdir="wfntmp/"
 	c80tmp="wfntmp"
 	inquire(directory="wfntmp",exist=alivewfntmp)
-	if (isys==1.and.alivewfntmp==.true.) then !delete old wfntmp folder
+	if (isys==1.and.alivewfntmp==.true.) then !Delete old wfntmp folder
 		write(*,*) "Running: rmdir /S /Q wfntmp"
 		call system("rmdir /S /Q wfntmp")
 	else if (isys==2.and.alivewfntmp==.true.) then
@@ -1445,7 +1553,7 @@ else if (isys==2.and.aliveatomwfn==.true.) then
 end if
 
 noatmwfn=0 !Check if the atomic wfn file have pre-stored in atomwfn folder, if not, invoke gaussian to calc it
-do i=1,nfragatmnum
+do i=1,nfragatm
 	if (isys==1) inquire(file="atomwfn\"//a(fragatm(i))%name//".wfn",exist=alive)
 	if (isys==2) inquire(file="atomwfn/"//a(fragatm(i))%name//".wfn",exist=alive)
 	if (.not.alive) then
@@ -1479,13 +1587,13 @@ end if
 
 !Generate .gjf file for all elements, regardless if their wfn file have already presented, meanwhile count the total number of elements
 itype=0
-do i=1,nfragatmnum
+do i=1,nfragatm
 	inquire(file=trim(tmpdir)//a(fragatm(i))%name//".gjf",exist=alive)
 	if (.not.alive) then
 		itype=itype+1 !How many different types
 		typename(itype)=a(fragatm(i))%name
 				
-		if (a_org(fragatm(i))%index>36) then
+		if (a_org(fragatm_org(i))%index>36) then
 			inquire(file=trim(tmpdir)//a(fragatm(i))%name//".wfn",exist=alive)
 			if (.not.alive) then !The wfn file of the heavy element hasn't been provided in "atomwfn" and hence cannot be found in "wfntmp" here
 				write(*,"(a,a,a)") " Error: Multiwfn cannot invoke Gaussian to generate wavefunction file and sphericalize density for ",a(fragatm(i))%name,", since its &
@@ -1548,11 +1656,10 @@ do i=1,nfragatmnum
 end do
 
 if (noatmwfn==0) then
-	if (isys==1) call system("del "//trim(tmpdir)//"*.gjf /Q") !The .gjf generated have valueless now, delete them for avoiding user's misunderstanding
-	if (isys==2) call system("rm "//trim(tmpdir)//"*.gjf -f")
+	call delfile(trim(tmpdir)//"*.gjf") !The .gjf generated have valueless now, delete them for avoiding user's misunderstanding
 else if (noatmwfn==1) then !Some wfn needs to be genereated by Gaussian and sphericalized here
-	do i=1,nfragatmnum
-		nametmp=a_org(fragatm(i))%name
+	do i=1,nfragatm
+		nametmp=a_org(fragatm_org(i))%name
 		inquire(file=trim(tmpdir)//nametmp//".wfn",exist=alive)
 		if (alive) cycle !If the .wfn file had copied from atomwfn folder, needn't recalculate
 
@@ -1665,7 +1772,7 @@ end if
 write(*,*)
 
 !Setup custom operation array with current size
-ncustommap=nfragatmnum
+ncustommap=nfragatm_org
 if (allocated(custommapname)) deallocate(custommapname)
 if (allocated(customop)) deallocate(customop)
 allocate(custommapname(ncustommap))
@@ -1675,12 +1782,12 @@ allocate(customop(ncustommap))
 do i=1,itype !Scan each atomtype in current system
 	call dealloall
 	call readwfn(trim(tmpdir)//typename(i)//".wfn",1)
-	do j=1,nfragatmnum
-		if (a_org(fragatm(j))%name==typename(i)) then !Find atoms attributed to current element
-			a(1)%x=a_org(fragatm(j))%x !Modify the atomic .wfn, then output to new .wfn
-			a(1)%y=a_org(fragatm(j))%y
-			a(1)%z=a_org(fragatm(j))%z
-			write(outwfnname,"(a2,i4,a4)") typename(i),fragatm(j),".wfn"
+	do j=1,nfragatm_org
+		if (a_org(fragatm_org(j))%name==typename(i)) then !Find atoms attributed to current element
+			a(1)%x=a_org(fragatm_org(j))%x !Modify the atomic .wfn, then output to new .wfn
+			a(1)%y=a_org(fragatm_org(j))%y
+			a(1)%z=a_org(fragatm_org(j))%z
+			write(outwfnname,"(a2,i4,a4)") typename(i),fragatm_org(j),".wfn"
 			call outwfn(trim(tmpdir)//outwfnname,0,0,10)
 			custommapname(j)=trim(tmpdir)//outwfnname !Sequence is identical to atom in fragment
 		end if
@@ -1689,6 +1796,65 @@ end do
 
 call dealloall
 call readinfile(firstfilename,1)
+end subroutine
+
+
+
+!!------- Generate a promolecular wavefunction by calculating and then combining atomic .wfn files, store to global arrays with _pmol
+!  The basis set for evaluating atoms must be identical to present system  
+!  Mainly used to calculate information gain at a batch of points, which needs evaluation of promolecular density frequently
+!  The density calculated by this promolecular .wfn file is exactly identical to superposition of densities corresponding to all atomic .wfn files
+!Since spin density is not interest in this context, spin flip is not taken into account
+subroutine generate_promolwfn
+use defvar
+implicit real*8 (a-h,o-z)
+
+!Generate atomic .wfn files
+call setPromol
+
+nmo_pmol=0
+if (allocated(MOocc_pmol)) deallocate(MOocc_pmol,MOtype_pmol,MOene_pmol,CO_pmol)
+allocate(MOocc_pmol(2*nmo),MOtype_pmol(2*nmo),MOene_pmol(2*nmo),CO_pmol(2*nmo,nprims)) !2*nmo is large enough for storing combined MOs
+MOocc_pmol=0
+MOene_pmol=0
+MOtype_pmol=0
+CO_pmol=0
+
+!Cycling each atomic .wfn file and merge into combined wavefunction
+iGTF=1
+imo_pmol=1
+do iatm=1,ncustommap
+    call dealloall
+    write(*,"(a)") " Dealing with "//trim(custommapname(iatm))
+    call readinfile(custommapname(iatm),1)
+    if (iGTF+nprims-1>nprims_org) then
+        write(*,"(a)") " Error: The basis set used for calculating atoms must be different to that originally used for calculating molecule!"
+        write(*,*) "This situation is not supported. Press ENTER button to exit"
+        read(*,*)
+        stop
+    end if
+    MOocc_pmol(imo_pmol:imo_pmol+nmo-1)=MOocc(:)
+    MOene_pmol(imo_pmol:imo_pmol+nmo-1)=MOene(:)
+    MOtype_pmol(imo_pmol:imo_pmol+nmo-1)=MOtype(:)
+    CO_pmol(imo_pmol:imo_pmol+nmo-1,iGTF:iGTF+nprims-1)=CO(:,:)
+    iGTF=iGTF+nprims
+    imo_pmol=imo_pmol+nmo
+end do
+nmo_pmol=imo_pmol-1
+
+write(*,*) "Done! Promolecular wavefunction has been successfully generated!"
+write(*,"(a)") " Reloading "//trim(firstfilename)
+call dealloall
+call readinfile(firstfilename,1)
+
+!Test if rho can be correctly calculated
+!deallocate(MOocc,MOtype,MOene,CO)
+!allocate(MOocc(nmo_pmol),MOene(nmo_pmol),MOtype(nmo_pmol),CO(nmo_pmol,nprims))
+!nmo=nmo_pmol
+!MOocc=MOocc_pmol
+!MOene=MOene_pmol
+!MOtype=MOtype_pmol
+!CO=CO_pmol
 end subroutine
 
 
@@ -1861,7 +2027,7 @@ use defvar
 use function
 implicit real*8(a-h,o-z)
 real*8 inx,iny,inz
-real*8 elehess(3,3),eigvecmat(3,3),eigval(3),elegrad(3),funchess(3,3),funcgrad(3),tmparr(3,1)
+real*8 eigvecmat(3,3),eigval(3),elegrad(3),elehess(3,3),funcgrad(3),funchess(3,3),tmparr(3,1),tmpmat(3,3),tmpgrad1(3),tmpgrad2(3)
 integer ifuncsel,ifileid
 if (allocated(b)) then !If loaded file contains wavefuntion information
 	call gencalchessmat(2,1,inx,iny,inz,elerho,elegrad,elehess) !Generate electron density, gradient and hessian
@@ -1907,25 +2073,29 @@ if (allocated(b)) then !If loaded file contains wavefuntion information
 	else if (iALIEdecomp==1) then
 		call avglociondecomp(ifileid,inx,iny,inz)
 	end if
-	write(ifileid,"(' Delta_g (under promolecular approximation):',E18.10)") delta_g_promol(inx,iny,inz)
-	write(ifileid,"(' Delta_g (under Hirshfeld partition):',E18.10)") delta_g_Hirsh(inx,iny,inz)
+	write(ifileid,"(' Delta-g (under promolecular approximation):',E18.10)") delta_g_promol(inx,iny,inz)
+	write(ifileid,"(' Delta-g (under Hirshfeld partition):',E18.10)") delta_g_Hirsh(inx,iny,inz)
 	write(ifileid,"(' User-defined real space function:',E18.10)") userfunc(inx,iny,inz)
-	fesptmp=nucesp(inx,iny,inz)
-	if (ifiletype==4) then
-		write(ifileid,"(' ESP from atomic charges:',E18.10)") fesptmp
-	else
-		write(ifileid,"(' ESP from nuclear charges:',E18.10)") fesptmp
-	end if
-	if (ishowptESP==1) then
-		fesptmpelec=eleesp(inx,iny,inz)
-		write(ifileid,"(' ESP from electrons:',E18.10)") fesptmpelec
-		write(ifileid,"(' Total ESP:',E18.10,' a.u. (',E14.7,' eV,',E14.7,' kcal/mol)')") &
-		fesptmpelec+fesptmp,(fesptmpelec+fesptmp)*au2eV,(fesptmpelec+fesptmp)*au2kcal
-        if (iskipnuc/=0) then
-		    tmpval=totespskip(inx,iny,inz,iskipnuc)
-            write(ifileid,"(' Total ESP without contribution from nuclear charge of &
-		    atom',i6,':',/,E18.10,' a.u. (',E15.7,' eV,',E15.7,' kcal/mol)')") iskipnuc,tmpval,tmpval*au2eV,tmpval*au2kcal
+    if (ifPBC==0) then
+	    fesptmp=nucesp(inx,iny,inz)
+	    if (ifiletype==4) then
+		    write(ifileid,"(' ESP from atomic charges:',E18.10)") fesptmp
+	    else
+		    write(ifileid,"(' ESP from nuclear charges:',E18.10)") fesptmp
+	    end if
+	    if (ishowptESP==1) then
+		    fesptmpelec=eleesp(inx,iny,inz)
+		    write(ifileid,"(' ESP from electrons:',E18.10)") fesptmpelec
+		    write(ifileid,"(' Total ESP:',E18.10,' a.u. (',E14.7,' eV,',E14.7,' kcal/mol)')") &
+		    fesptmpelec+fesptmp,(fesptmpelec+fesptmp)*au2eV,(fesptmpelec+fesptmp)*au2kcal
+            if (iskipnuc/=0) then
+		        tmpval=totespskip(inx,iny,inz,iskipnuc)
+                write(ifileid,"(' Total ESP without contribution from nuclear charge of &
+		        atom',i6,':',/,E18.10,' a.u. (',E15.7,' eV,',E15.7,' kcal/mol)')") iskipnuc,tmpval,tmpval*au2eV,tmpval*au2kcal
+            end if
         end if
+    else if (ifPBC>0) then
+        write(ifileid,"(a)") " Electrostatic potential (ESP) information is not shown because it cannot be calculated for periodic systems currently"
 	end if
 	write(ifileid,*)
 	if (ifuncsel==1) then
@@ -1961,7 +2131,9 @@ if (allocated(b)) then !If loaded file contains wavefuntion information
 	write(ifileid,*)
 	write(ifileid,*) "Hessian matrix:"
 	write(ifileid,"(3E18.10)") funchess
-	call diagmat(funchess,eigvecmat,eigval,300,1D-12)
+	!call diagmat(funchess,eigvecmat,eigval,300,1D-12)
+ 	call diagsymat(funchess,eigvecmat,eigval,idiagok) !More robust
+ 	if (idiagok/=0) write(*,*) "Note: Diagonization of Hessian matrix failed!"
 	write(ifileid,"(' Eigenvalues of Hessian:',3E18.10)") eigval(1:3)
 	write(ifileid,*) "Eigenvectors(columns) of Hessian:"
 	write(ifileid,"(3E18.10)") ((eigvecmat(i,j),j=1,3),i=1,3)
@@ -2078,342 +2250,6 @@ end subroutine
 
 
 
-
-!!------------------ Set up grid
-!If ienableloadextpt==1, then show the option used to load external points, =0 don't
-!igridsel is returned variable, corresponding to the selected index; if igridsel==100, that means user didn't set up grid here &
-!but choose to load a set of point coordinates from external plain text file
-!Usual calling instance: call setgrid(1,inouse)
-subroutine setgrid(ienableloadextpt,igridsel)
-use defvar
-use GUI
-implicit real*8 (a-h,o-z)
-real*8 molxlen,molylen,molzlen,tmpx,tmpy,tmpz
-character*200 cubefilename,pointfilename
-character c80*80
-integer ienableloadextpt
-logical filealive
-ntotlow=125000
-ntotmed=512000
-ntothigh=1728000
-do while(.true.)
-	write(*,*) "Please select a method to set up grid"
-	write(*,"(a,f7.3,a)") " -10 Set extension distance of grid range for mode 1~4, current:",aug3D," Bohr"
-	write(*,*) "1 Low quality grid   , covering whole system, about 125000 points in total"
-	write(*,*) "2 Medium quality grid, covering whole system, about 512000 points in total"
-	write(*,*) "3 High quality grid  , covering whole system, about 1728000 points in total"
-	write(*,*) "4 Input the number of points or grid spacing in X,Y,Z, covering whole system"
-	write(*,*) "5 Input original point, translation vector and the number of points"
-	write(*,*) "6 Input center coordinate, number of points and extension distance"
-	write(*,*) "7 The same as 6, but input two atoms, the midpoint will be defined as center"
-	write(*,*) "8 Use grid setting of another cube file"
-	write(*,*) "10 Set box of grid data visually using a GUI window"
-	if (ienableloadextpt==1) write(*,*) "100 Load a set of points from external file"
-	read(*,*) igridsel
-	if (igridsel/=-10) exit
-	write(*,*) "Input extension distance (Bohr) e.g. 6.5"
-	read(*,*) aug3D
-end do
-
-if (igridsel==100) then !Load points rather than set up grid
-	write(*,*) "Input the path of the file containing points, e.g. C:\ltwd.txt"
-	write(*,*) "Note: See program manual for the format of the file"
-	do while(.true.)
-		read(*,"(a)") pointfilename
-		inquire(file=pointfilename,exist=filealive)
-		if (filealive) then
-			open(10,file=pointfilename,status="old")
-			read(10,*) numextpt
-			write(*,"(a,i10,a)") ' There are',numextpt,' points'
-			if (allocated(extpt)) deallocate(extpt)
-			allocate(extpt(numextpt,4))
-			do itmp=1,numextpt
-				read(10,*) extpt(itmp,1:3)
-			end do
-			close(10)
-			exit
-		else
-			write(*,*) "Error: File cannot be found, input again"
-		end if
-	end do
-	write(*,*) "Please wait..."
-else
-	molxlen=(maxval(a%x)-minval(a%x))+2*aug3D
-	molylen=(maxval(a%y)-minval(a%y))+2*aug3D
-	molzlen=(maxval(a%z)-minval(a%z))+2*aug3D
-	if (molxlen==0.0D0.or.molylen==0.0D0.or.molzlen==0.0D0) then !Avoid catastrophe when aug3D=0 and system is plane
-		write(*,"(a,/)") " WARNING: The box size in one of Caresian axis is zero, &
-		the calculation cannot be proceeded. Therefore, the size of corresponding direction is automatically set to 3 Bohr"
-		if (molxlen==0D0) then
-			molxlen=3D0
-		else if (molylen==0D0) then
-			molylen=3D0
-		else if (molzlen==0D0) then
-			molzlen=3D0
-		end if
-	end if
-	if (igridsel==1.or.igridsel==2.or.igridsel==3) then
-		if (igridsel==1) dx=(molxlen*molylen*molzlen/dfloat(ntotlow))**(1.0D0/3.0D0)
-		if (igridsel==2) dx=(molxlen*molylen*molzlen/dfloat(ntotmed))**(1.0D0/3.0D0)
-		if (igridsel==3) dx=(molxlen*molylen*molzlen/dfloat(ntothigh))**(1.0D0/3.0D0)
-		dy=dx
-		dz=dx
-		nx=nint(molxlen/dx)+1
-		ny=nint(molylen/dy)+1
-		nz=nint(molzlen/dz)+1
-		orgx=minval(a%x)-aug3D
-		orgy=minval(a%y)-aug3D
-		orgz=minval(a%z)-aug3D
-	else if (igridsel==4) then
-		write(*,*) "Input the number of grid points in X,Y,Z direction, e.g. 139,59,80"
-		write(*,"(a)") " or input the grid spacing (bohr) in X,Y,Z direction, e.g. 0.05,0.08,0.08  (if only input one value, it will be used for all directions)"
-		read(*,"(a)") c80
-		if (index(c80,'.')/=0) then
-			if (index(c80,',')/=0) then
-				read(c80,*) dx,dy,dz
-			else
-				read(c80,*) tmp
-				dx=tmp
-				dy=tmp
-				dz=tmp
-			end if
-			nx=molxlen/dx+1
-			ny=molylen/dy+1
-			nz=molzlen/dz+1
-		else
-			read(c80,*) nx,ny,nz
-			dx=molxlen/(nx-1)
-			dy=molylen/(ny-1)
-			dz=molzlen/(nz-1)
-		end if
-		orgx=minval(a%x)-aug3D
-		orgy=minval(a%y)-aug3D
-		orgz=minval(a%z)-aug3D
-	else if (igridsel==5) then
-		write(*,*) "Input X,Y,Z coordinate of original point (Bohr) e.g. 0.1,4,-1"
-		read(*,*) orgx,orgy,orgz
-		write(*,*) "Input X,Y,Z component of translation vector (Bohr) e.g. 0.1,0.1,0.15"
-		read(*,*) dx,dy,dz
-		write(*,*) "Input the number of points in X,Y,Z direction e.g. 139,59,80"
-		read(*,*) nx,ny,nz
-	else if (igridsel==6.or.igridsel==7) then
-		if (igridsel==6) then
-			write(*,*) "Input X,Y,Z coordinate of center (Angstrom)"
-			read(*,*) cenx,ceny,cenz
-			cenx=cenx/b2a
-			ceny=ceny/b2a
-			cenz=cenz/b2a
-		else if (igridsel==7) then
-			write(*,*) "Input index of the two atoms e.g. 2,5"
-			write(*,*) "If the two indices are identical, box center will be placed at the nucleus"
-			read(*,*) indatm1,indatm2
-			cenx=(a(indatm1)%x+a(indatm2)%x)/2.0D0
-			ceny=(a(indatm1)%y+a(indatm2)%y)/2.0D0
-			cenz=(a(indatm1)%z+a(indatm2)%z)/2.0D0
-		end if
-		write(*,*) "Input the number of points in X,Y,Z direction e.g. 40,40,25"
-		read(*,*) nx,ny,nz
-		write(*,*) "Input the extended distance in X,Y,Z direction (Bohr) e.g. 4.0,4.0,6.5"
-		read(*,*) aug3Dx,aug3Dy,aug3Dz
-		orgx=cenx-aug3Dx
-		orgy=ceny-aug3Dy
-		orgz=cenz-aug3Dz
-		dx=aug3Dx*2.0D0/(nx-1)
-		dy=aug3Dy*2.0D0/(ny-1)
-		dz=aug3Dz*2.0D0/(nz-1)
-	else if (igridsel==8) then
-		write(*,*) "Input path of a cube file, e.g. C:\wake_up_girls.cub"
-		do while(.true.)
-			read(*,"(a)") cubefilename
-			inquire(file=cubefilename,exist=filealive)
-			if (filealive) then
-				open(10,file=cubefilename,status="old")
-				read(10,*)
-				read(10,*)
-				read(10,*) nouse,orgx,orgy,orgz
-				read(10,*) nx,gridvec1
-				read(10,*) ny,gridvec2
-				read(10,*) nz,gridvec3
-				close(10)
-                dx=gridvec1(1);dy=gridvec2(2);dz=gridvec3(3)
-				exit
-			else
-				write(*,*) "Error: File cannot be found, input again"
-			end if
-		end do
-	else if (igridsel==10) then
-		call setboxGUI
-	end if
-	endx=orgx+dx*(nx-1) !In fact, when using setboxGUI, the endx/y/z have already been set
-	endy=orgy+dy*(ny-1)
-	endz=orgz+dz*(nz-1)
-	write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6,' Bohr')") orgx,orgy,orgz
-	write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6,' Bohr')") endx,endy,endz
-	write(*,"(' Grid spacing in X,Y,Z is',3f12.6,' Bohr')") dx,dy,dz
-	write(*,"(' The number of points in X,Y,Z is',3i5,'   Total:',i12)") nx,ny,nz,nx*ny*nz
-    gridvec1=0;gridvec1(1)=dx
-    gridvec2=0;gridvec2(2)=dy
-    gridvec3=0;gridvec3(3)=dz
-end if
-end subroutine
-
-
-
-!!---- Set up grid setting with fixed grid spacing, similar to setgridforbasin, but not so complicated, thus may be used for other subroutine
-subroutine setgridfixspc
-use defvar
-use GUI
-implicit real*8 (a-h,o-z)
-real*8 :: molxlen,molylen,molzlen
-real*8 :: spclowqual=0.2D0,spcmedqual=0.1D0,spchighqual=0.06D0,spclunaqual=0.04D0
-character c80tmp*80,cubefilename*200
-do while(.true.)
-	orgx=minval(a%x)-aug3D
-	orgy=minval(a%y)-aug3D
-	orgz=minval(a%z)-aug3D
-	endx=maxval(a%x)+aug3D
-	endy=maxval(a%y)+aug3D
-	endz=maxval(a%z)+aug3D
-	molxlen=endx-orgx
-	molylen=endy-orgy
-	molzlen=endz-orgz
-	ntotlow=(nint(molxlen/spclowqual)+1)*(nint(molylen/spclowqual)+1)*(nint(molzlen/spclowqual)+1)
-	ntotmed=(nint(molxlen/spcmedqual)+1)*(nint(molylen/spcmedqual)+1)*(nint(molzlen/spcmedqual)+1)
-	ntothigh=(nint(molxlen/spchighqual)+1)*(nint(molylen/spchighqual)+1)*(nint(molzlen/spchighqual)+1)
-	ntotluna=(nint(molxlen/spclunaqual)+1)*(nint(molylen/spclunaqual)+1)*(nint(molzlen/spclunaqual)+1)
-	
-	write(*,*) "Please select a method for setting up grid"
-	write(*,"(a,f10.5,a)") " -10 Set grid extension distance for mode 1~6, current:",aug3D," Bohr"
-	write(*,"(a,f4.2,a,i14)") " 1 Low quality grid, spacing=",spclowqual," Bohr, number of grids:    ",ntotlow
-	write(*,"(a,f4.2,a,i14)") " 2 Medium quality grid, spacing=",spcmedqual," Bohr, number of grids: ",ntotmed
-	write(*,"(a,f4.2,a,i14)") " 3 High quality grid, spacing=",spchighqual," Bohr, number of grids:   ",ntothigh
-	write(*,"(a,f4.2,a,i14)") " 4 Lunatic quality grid, spacing=",spclunaqual," Bohr, number of grids:",ntotluna
-	write(*,*) "5 Only input grid spacing, automatically set other parameters"
-	write(*,*) "6 Only input the number of points in X,Y,Z, automatically set other parameters"
-	write(*,*) "7 Input original point, translation vector and the number of points"
-	write(*,*) "8 Set center position, grid spacing and box length"
-	write(*,*) "9 Use grid setting of another cube file"
-	write(*,*) "10 Set box of grid data visually using a GUI window"
-	read(*,*) igridsel
-	if (igridsel/=-10) then
-		exit
-	else
-		write(*,*) "Input extension distance (Bohr) e.g. 6.5"
-		read(*,*) aug3D
-	end if
-end do
-
-!Note: orgx,orgy,orgz,endx,endy,endz as well as molx/y/zlen for igridsel==1~6 have already been set above
-if (igridsel==1.or.igridsel==2.or.igridsel==3.or.igridsel==4.or.igridsel==5) then
-	if (igridsel==1) dx=spclowqual
-	if (igridsel==2) dx=spcmedqual
-	if (igridsel==3) dx=spchighqual
-	if (igridsel==4) dx=spclunaqual
-	if (igridsel==5) then
-		write(*,*) "Input the grid spacing (bohr)  e.g. 0.08"
-		read(*,*) dx
-	end if
-	dy=dx
-	dz=dx
-	nx=nint(molxlen/dx)+1
-	ny=nint(molylen/dy)+1
-	nz=nint(molzlen/dz)+1
-else if (igridsel==6) then
-	write(*,*) "Input the number of grid points in X,Y,Z direction   e.g. 139,59,80"
-	read(*,*) nx,ny,nz
-	dx=molxlen/(nx-1)
-	dy=molylen/(ny-1)
-	dz=molzlen/(nz-1)
-else if (igridsel==7) then
-	write(*,*) "Input X,Y,Z coordinate of original point (Bohr) e.g. 0.1,4,-1"
-	read(*,*) orgx,orgy,orgz
-	write(*,*) "Input X,Y,Z component of translation vector (Bohr) e.g. 0.1,0.1,0.15"
-	read(*,*) dx,dy,dz
-	write(*,*) "Input the number of points in X,Y,Z direction e.g. 139,59,80"
-	read(*,*) nx,ny,nz
-	endx=orgx+dx*(nx-1)
-	endy=orgy+dy*(ny-1)
-	endz=orgz+dz*(nz-1)
-else if (igridsel==8) then
-	write(*,*) "Input X,Y,Z coordinate of box center (in Angstrom)"
-	write(*,*) "or input such as a8 to take the coordinate of atom 8 as box center"
-	write(*,*) "or input such as a3,a7 to take the midpoint of atom 3 and atom 7 as box center"
-	read(*,"(a)") c80tmp
-	if (c80tmp(1:1)=='a') then
-		do ich=1,len_trim(c80tmp)
-			if (c80tmp(ich:ich)==',') exit
-		end do
-		if (ich==len_trim(c80tmp)+1) then
-			read(c80tmp(2:),*) itmp
-			cenx=a(itmp)%x
-			ceny=a(itmp)%y
-			cenz=a(itmp)%z
-		else
-			read(c80tmp(2:ich-1),*) itmp
-			read(c80tmp(ich+2:),*) jtmp			
-			cenx=(a(itmp)%x+a(jtmp)%x)/2D0
-			ceny=(a(itmp)%y+a(jtmp)%y)/2D0
-			cenz=(a(itmp)%z+a(jtmp)%z)/2D0
-		end if
-	else
-		read(c80tmp,*) cenx,ceny,cenz
-		cenx=cenx/b2a
-		ceny=ceny/b2a
-		cenz=cenz/b2a
-	end if
-	write(*,*) "Input the grid spacing (bohr)  e.g. 0.08"
-	read(*,*) dx
-	dy=dx
-	dz=dx
-	write(*,*) "Input the box lengths in X,Y,Z direction (Bohr) e.g. 8.0,8.0,13.5"
-	read(*,*) molxlen,molylen,molzlen
-	orgx=cenx-molxlen/2D0
-	orgy=ceny-molylen/2D0
-	orgz=cenz-molzlen/2D0
-	endx=orgx+molxlen
-	endy=orgy+molylen
-	endz=orgz+molzlen
-	nx=nint(molxlen/dx)+1
-	ny=nint(molylen/dy)+1
-	nz=nint(molzlen/dz)+1
-else if (igridsel==9) then
-	write(*,*) "Input path of a cube file, e.g. C:\opai.cub"
-	do while(.true.)
-		read(*,"(a)") cubefilename
-		inquire(file=cubefilename,exist=alive)
-		if (alive) then
-			open(10,file=cubefilename,status="old")
-			read(10,*)
-			read(10,*)
-			read(10,*) nouse,orgx,orgy,orgz
-			read(10,*) nx,dx
-			read(10,*) ny,rnouse,dy
-			read(10,*) nz,rnouse,rnouse,dz
-			close(10)
-			exit
-		else
-			write(*,*) "Error: File cannot be found, input again"
-		end if
-	end do
-	endx=orgx+dx*(nx-1)
-	endy=orgy+dy*(ny-1)
-	endz=orgz+dz*(nz-1)
-end if
-
-if (igridsel==10) call setboxGUI
-
-write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6)") orgx,orgy,orgz
-write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6)") endx,endy,endz
-write(*,"(' Spacing in X,Y,Z is',3f11.6)") dx,dy,dz
-write(*,"(' Number of points in X,Y,Z is',3i5,'   Total',i10)") nx,ny,nz,nx*ny*nz
-
-gridvec1=0;gridvec1(1)=dx
-gridvec2=0;gridvec2(2)=dy
-gridvec3=0;gridvec3(3)=dz
-end subroutine
-
-
-
 !!!------------------- Delete virtual orbitals higher than LUMO+10 for HF/DFT wavefunctions
 !Each time delvirob has been called, delvirorb_back should be then called to recover previous wavefunction status
 !infomode=1 means show prompt
@@ -2429,6 +2265,7 @@ if (iuserfunc==24.or.iuserfunc==27.or.iuserfunc==28.or.iuserfunc==29.or.iuserfun
 if (wfntype==3.or.wfntype==4) return !This routine doesn't work for post-HF cases
 if (ifdelvirorb==1) return !This routine has already been called while delvirorb_back was not used after that
 
+if (allocated(CO_back)) deallocate(CO_back,MOene_back,MOocc_back,MOtype_back)
 allocate(CO_back(nmo,nprims),MOene_back(nmo),MOocc_back(nmo),MOtype_back(nmo))
 nmo_back=nmo
 CO_back=CO
@@ -2477,7 +2314,6 @@ end subroutine
 
 
 
-
 !!!-------- imode=1: Convert unit of grid/plane parameters from Bohr to Angstrom. =2: Convert them back
 subroutine convgridlenunit(imode)
 use defvar
@@ -2495,9 +2331,9 @@ orgz2D=orgz2D*scll
 endx=endx*scll
 endy=endy*scll
 endz=endz*scll
-dx=dx*scll;gridvec1=gridvec1*scll
-dy=dy*scll;gridvec2=gridvec2*scll
-dz=dz*scll;gridvec3=gridvec3*scll
+dx=dx*scll;gridv1=gridv1*scll
+dy=dy*scll;gridv2=gridv2*scll
+dz=dz*scll;gridv3=gridv3*scll
 v1x=v1x*scll
 v1y=v1y*scll
 v1z=v1z*scll
@@ -2518,9 +2354,11 @@ d2=d2*scll
 end subroutine
 
 
-!!-------- Deallocate all arrays about wavefunction except for the _org ones
+
+!!-------- Deallocate all arrays about wavefunction except for the _org ones, and re-initialize some variables
 subroutine dealloall
 use defvar
+
 call delvirorb_back(0) !If delvirorb has taken effect, use this routine to deallocate relevant arrays
 if (allocated(a)) deallocate(a)
 if (allocated(b)) deallocate(b)
@@ -2558,12 +2396,42 @@ if (allocated(Pbeta_prim)) deallocate(Pbeta_prim)
 if (allocated(Dprim)) deallocate(Dprim)
 if (allocated(Quadprim)) deallocate(Quadprim)
 if (allocated(Octoprim)) deallocate(Octoprim)
-!LIBRETA is in uninitialized status
+
+if (allocated(frag1)) deallocate(frag1)
+if (allocated(frag2)) deallocate(frag2)
+if (allocated(fragatm)) deallocate(fragatm)
+
+!Arrays used by delvirorb for backing up original MO information
+if (allocated(CO_back)) deallocate(CO_back,MOene_back,MOocc_back,MOtype_back)
+
+loadmulti=-99
+loadcharge=-99
+totenergy=0
+virialratio=2
+nelec=0
+naelec=0
+nbelec=0
+nmo=0
+nprims=0
+ncenter=0
+iresinfo=0
+nbasis=0
+nindbasis=0
+
+ifPBC=0
+cellv1=0;cellv2=0;cellv3=0
+if (allocated(Sbas_PBC)) deallocate(Sbas_PBC)
+
+call deallo_excitinfo !Deallocate excited state information
+call deallo_basinana(0) !Deallocate basin analysis information
+
+!Make LIBRETA in uninitialized status
 if_initlibreta=0
+nstates=0
 end subroutine
 
 
-!!-------- Deallocate all arrays about wavefunction for the _org ones
+!!-------- Deallocate all arrays about the system for the _org ones
 subroutine dealloall_org
 use defvar
 firstfilename=" "
@@ -2577,6 +2445,11 @@ if (allocated(CObasa_org)) deallocate(CObasa_org)
 if (allocated(CObasb_org)) deallocate(CObasb_org)
 if (allocated(Palpha_org)) deallocate(Palpha_org)
 if (allocated(Pbeta_org)) deallocate(Pbeta_org)
+if (allocated(fragatm_org)) deallocate(fragatm_org)
+ifPBC_org=0
+cellv1_org=0
+cellv2_org=0
+cellv3_org=0
 end subroutine
 
 
@@ -2658,11 +2531,9 @@ do iatm=1,ncenter_org
 	end if
 	!$OMP PARALLEL DO SHARED(cubmat,cubmattmp,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmpval) schedule(dynamic) NUM_THREADS(nthreads)
 	do k=1,nz !First calculate promolecular density and store it to cubmat
-		tmpz=orgz+(k-1)*dz
 		do j=1,ny
-			tmpy=orgy+(j-1)*dy
 			do i=1,nx
-				tmpx=orgx+(i-1)*dx
+                call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 				if (itype==1) then
 					tmpval=fdens(tmpx,tmpy,tmpz)
 				else
@@ -2849,15 +2720,16 @@ end subroutine
 subroutine MRCC_gennatorb
 use defvar
 use util
-character c200tmp*200
+character c200tmp*200,selectyn,outname*200
 real*8,allocatable :: eigvecmat(:,:),eigvalarr(:),tmparr(:)
 do while(.true.)
-	write(*,*) "Input the path of CCDENSITIES, e.g. C:\lovelive\CCDENSITIES"
-! 	c200tmp="D:\CM\my_program\Multiwfn\x\MRCCdens\HF_m3_CCSD\CCDENSITIES"
+	write(*,*) "Input the path of CCDENSITIES file, e.g. C:\lovelive\CCDENSITIES"
+    write(*,*) "If press ENTER button directly, CCDENSITIES in current folder will be loaded"
 	read(*,"(a)") c200tmp
+    if (c200tmp==" ") c200tmp="CCDENSITIES"
 	inquire(file=c200tmp,exist=alive)
 	if (alive) exit
-	write(*,*) "Cannot find the file, input again"
+	write(*,*) "Error: Cannot find the file, input again"
 end do
 write(*,*)
 write(*,*) "Input the number of frozen orbitals, e.g. 3"
@@ -2896,8 +2768,8 @@ if (wfntype==0) then !RHF reference
 	end do
 	CObasa=matmul(CObasa,eigvecmat)
 	wfntype=3
-	write(*,*) "Occupation number:"
-	write(*,"(6f12.6)") MOocc
+	write(*,*) "Occupation numbers:"
+	write(*,"(6f12.8)") MOocc
 else if (wfntype==1) then !UHF reference
 	!In CCDENSITIES, the sequence is:
 	!2RDM-alpha
@@ -2972,9 +2844,24 @@ end if
 
 call genP
 MOene=0
-write(*,*) "Done! Basis function information now correspond to natural orbital cases"
-write(*,"(a)") " Note: If next you would like to analyze real space functions, you should export .molden file, &
-and then reload it, so that GTF information will also correspond to natural orbitals"
+
+call path2filename(filename,c200tmp)
+outname=trim(c200tmp)//".mwfn"
+call outmwfn(outname,10,0)
+write(*,"(/,a)") " All natural orbitals has been exported to "//trim(outname)//" in current folder"
+write(*,"(a)") " Do you want to load it now so that you can perform wavefunction analysis based on the natural orbitals at the corresponding level? (y/n)"
+read(*,*) selectyn
+call dealloall
+if (selectyn=='y'.or.selectyn=='Y') then
+    write(*,*) "Loading "//trim(outname)
+    call readinfile(outname,1)
+    write(*,"(a)") " Loading finished!"
+else
+    write(*,"(a)") " Reloading "//trim(filename)//" to recover initial status..."
+    call readinfile(filename,1)
+    write(*,*) "Loading finished!"
+end if
+
 end subroutine
 
 
@@ -3193,57 +3080,88 @@ end subroutine
 
 
 
-!!---------- Load Fock or Kohn-Sham matrix from NBO .47 file or plain text file
+!!---------- Load Fock or Kohn-Sham matrix from NBO .47 file, ORCA output file or plain text file
+!User can also require to directly generate Fock matirx based on orbital energies
 !istatus=0 means successfully loaded. =1 means failed
 subroutine loadFockfile(istatus)
 use defvar
 use util
 character c200tmp*200
 integer istatus
+
 do while(.true.)
-	write(*,"(a)") " Input the file recording Fock/KS matrix in original basis functions in lower triangular form, e.g. C:\Fock.txt"
-	write(*,*) "Note: If the suffix is .47, the Fock/KS matrix will be directly loaded from it"
-    write(*,"(a)") "       If this is an ORCA output file using ""%output Print[P_Iter_F] 1 end"", Fock/KS matrix at last iteration will be loaded" 
+	write(*,"(/,a)") " Input the file recording Fock/KS matrix in original basis functions in lower triangular form, e.g. C:\Fock.txt"
+	write(*,"(a)") " Note: If file suffix is .47 or .mwfn, then Fock/KS matrix will be directly loaded from it"
+	write(*,"(a)") "       If this is an ORCA output file using ""%output Print[P_Iter_F] 1 end"", Fock/KS matrix printed at last iteration will be loaded"
+    !Not quite meaningful, because when need to use Fock matrix, current orbitals are not original MOs
+	!write(*,*) "To directly generate Fock/KS matrix based on orbital energies, input ""gen"""
 	read(*,"(a)") c200tmp
-	inquire(file=c200tmp,exist=alive)
-	if (alive==.false.) then
-		write(*,*) "Error: Unable to find this file! Input again"
-		cycle
-	end if
-	exit
+    if (c200tmp=="gen") then
+		call MOene2Fmat(istatus)
+        if (istatus==0) return !Successfully generated
+    else
+		inquire(file=c200tmp,exist=alive)
+		if (alive==.false.) then
+			write(*,*) "Error: Unable to find this file!"
+			cycle
+		end if
+		exit
+    end if
 end do
 
 open(10,file=c200tmp,status="old")
 call outputprog(10,iprog)
 if (allocated(FmatA)) deallocate(FmatA)
 allocate(FmatA(nbasis,nbasis))
-if (iprog==2) then
+if (iprog==2) then !ORCA output file
     write(*,*) "This file is recognized as an ORCA output file"
     call loclabelfinal(10,"Fock matrix for operator 0",nfound)
     if (nfound==0) then
 		write(*,*) "Error: Unable to locate ""Fock matrix for operator 0"" in this file!"
 		close(10)
-		istatus=0
+		istatus=1
 		return
     end if
-    if (wfntype==0) write(*,*) "Loading Fock/KS matrix (Fock matrix for operator 0)..."
-    if (wfntype==1) write(*,*) "Loading alpha Fock/KS matrix (Fock matrix for operator 0)..."
+    if (wfntype==1.or.wfntype==4) then !Unrestricted
+		write(*,*) "Loading alpha Fock/KS matrix (Fock matrix for operator 0)..."
+    else
+		write(*,*) "Loading Fock/KS matrix (Fock matrix for operator 0)..."
+    end if
     call readmatgau(10,FmatA,0,"?",10,6)
     call ORCAmatconv(nbasis,FmatA)
-else
+else !.47 or .mwfn .or. plain text file
     if (index(c200tmp,".47")/=0) then
-	    if (wfntype==0) write(*,*) "Trying to load Fock/KS matrix from .47 file..."
-	    if (wfntype==1) write(*,*) "Trying to load alpha Fock/KS matrix from .47 file..."
+	    if (wfntype==1.or.wfntype==4) then !Unrestricted
+			write(*,*) "Trying to load alpha Fock/KS matrix from .47 file..."
+	    else
+			write(*,*) "Trying to load Fock/KS matrix from .47 file..."
+        end if
 	    call loclabel(10,"$FOCK",ifound)
 	    if (ifound==0) then
 		    write(*,*) "Error: Unable to find $FOCK field in this file!"
 		    close(10)
-		    istatus=0
+		    istatus=1
 		    return
 	    end if
 	    read(10,*)
+    else if (index(c200tmp,".mwfn")/=0) then
+	    if (wfntype==1.or.wfntype==4) then !Unrestricted
+			write(*,*) "Trying to load alpha Fock/KS matrix from .mwfn file..."
+	    else
+			write(*,*) "Trying to load Fock/KS matrix from .mwfn file..."
+        end if
+	    call loclabel(10,"1-e Hamiltonian matrix",ifound) !For R/RO case, locate to $1-e Hamiltonian matrix, for U case, locate to $Alpha 1-e Hamiltonian matrix
+	    if (ifound==0) then
+		    write(*,*) "Error: Unable to find 1-e Hamiltonian matrix in this file!"
+		    close(10)
+		    istatus=1
+		    return
+	    end if
+	    read(10,*)
+    else !Plain text file
+	    rewind(10)
     end if
-    read(10,*) ((FmatA(i,j),j=1,i),i=1,nbasis) !Load total or alpha Fock matrix
+    read(10,*) ((FmatA(i,j),j=1,i),i=1,nbasis) !Load total or alpha Fock matrix (lower triangular part)
     do i=1,nbasis !Fill upper triangular part
 	    do j=i+1,nbasis
 		    FmatA(i,j)=FmatA(j,i)
@@ -3262,33 +3180,44 @@ end if
 !    end if
 !    ibas=ibas+nshbas
 !end do
-if (wfntype==1) then
+if (wfntype==1.or.wfntype==4) then !Also load beta part
 	if (allocated(FmatB)) deallocate(FmatB)
 	allocate(FmatB(nbasis,nbasis))
-    if (iprog==2) then
+    if (iprog==2) then !ORCA
         write(*,*) "Loading beta Fock/KS matrix (Fock matrix for operator 1)..."
         call readmatgau(10,FmatB,0,"?",10,6)
         call ORCAmatconv(nbasis,FmatB)
     else
-	    write(*,*) "Trying to load beta Fock/KS matrix from .47 file..."
-	    read(10,*) ((FmatB(i,j),j=1,i),i=1,nbasis) !Load beta Fock matrix
-	    do i=1,nbasis
-		    do j=i+1,nbasis
-			    FmatB(i,j)=FmatB(j,i)
-		    end do
-	    end do
+	    write(*,*) "Trying to load beta Fock/KS matrix from the file..."
+        if (index(c200tmp,".mwfn")/=0) then
+            call loclabel(10,"Beta 1-e Hamiltonian matrix",ifound)
+            read(10,*)
+        end if
+	    read(10,*,iostat=ierror) ((FmatB(i,j),j=1,i),i=1,nbasis) !Load beta Fock matrix
+        if (ierror==0) then
+			do i=1,nbasis !Fill upper triangular part
+				do j=i+1,nbasis
+					FmatB(i,j)=FmatB(j,i)
+				end do
+			end do
+        else
+			write(*,"(a)") " Warning: Unable to load Fock/KS matrix of beta spin! Now the beta Fock/KS matrix has been set to alpha Fock/KS instead"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            FmatB=FmatA
+        end if
     end if
 end if
 close(10)
-write(*,*) "Fock/KS matrix loaded successfully!"
-istatus=1
+write(*,*) "Fock/KS matrix has been loaded successfully!"
+istatus=0
 end subroutine
 
 
 
 !!-------- Randomly generate name of Sobereva's lover
 subroutine mylover(outname)
-integer,parameter :: nlovers=52
+integer,parameter :: nlovers=59
 character*80 lovername(nlovers),outname
 CALL RANDOM_SEED()
 CALL RANDOM_NUMBER(tmp)
@@ -3332,19 +3261,27 @@ lovername(36)="Gun_Gale_Online\Kirito"
 lovername(37)="Denkigai_No_Honyasan\Sennsei"
 lovername(38)="Wake_Up,Girls!\Miyu_Okamoto"
 lovername(39)="Plastic_Memories\Aira"
-lovername(40)="Real_world\sell-moe-kun"
+lovername(40)="Real_world\Kanan" !"Real_world\sell-moe-kun"
 lovername(41)="Sakurako-san_no_Ashimoto_ni_wa_Shitai_ga_Umatteiru\Sakurako"
 lovername(42)="Hibike!_Euphonium\Reina_Kousaka"
 lovername(43)="Planetarian\Yumemi_Hoshino"
-lovername(44)="Lovelive_sunshine!!\Yoshiko_Tsushima"
-lovername(45)="Lovelive_sunshine!!\You_Watanabe"
-lovername(46)="Lovelive_sunshine!!\Sakurauchi_Riko"
+lovername(44)="Lovelive_Sunshine!!\Yoshiko_Tsushima"
+lovername(45)="Lovelive_Sunshine!!\Kurosawa Dia"
+lovername(46)="Lovelive_Sunshine!!\Sakurauchi_Riko"
 lovername(47)="Violet_Evergarden\Violet_Evergarden"
 lovername(48)="Otobuko\Mizuho_Miyanokouji"
 lovername(49)="iDOLM@STER\Makoto_Kikuchi"
 lovername(50)="Fate\Rin_Tohsaka"
-lovername(51)="Magical_Girl_Spec-Ops Asuka\Asuka Otori"
+lovername(51)="Magical_Girl_Spec-Ops_Asuka\Asuka_Otori"
 lovername(52)="Granblue_Fantasy\Katalina"
+lovername(53)="Gochuumon_wa_Usagi_Desu_ka\Rize_Tedeza"
+lovername(54)="Date_A_Live\Kurumi_Tokisaki"
+lovername(55)="Adachi_to_shimamura\Sakura_Adachi"
+lovername(56)="Don't_Toy_with_Me,_Miss_Nagatoro\Hayase_Nagatoro"
+lovername(57)="Super_Cub\Reiko"
+lovername(58)="LoveLive!_Superstar!!\Sumire_Heanna"
+lovername(59)="Jahy-sama_wa_Kujikenai!\Jahy"
+
 !Dear Kanan,
 !
 !You are the only one I deeply love forever in the real world,
@@ -3384,8 +3321,7 @@ do ish=1,nshell
     ishtype=shtype(ish)
     numshbas5D=shtype2nbas(ishtype)
     numshbas6D=shtype2nbas(abs(ishtype))
-    !write(*,*) ish,ishtype,numshbas5D,ipos5D,ipos6D
-    if (ispin==1.or.ispin==3) then !alpha part
+    if (ispin==1.or.ispin==3) then !Alpha part
         if (ishtype>=0) then !S,P or Cartesian type, in this case numshbas5D=numshbas6D 
             CObasa_cart(ipos6D:ipos6D+numshbas6D-1,:)=CObasa(ipos5D:ipos5D+numshbas5D-1,:)
         else
@@ -3400,7 +3336,7 @@ do ish=1,nshell
 	        end if
         end if
     end if
-    if (ispin==2.or.ispin==3) then !beta part
+    if (ispin==2.or.ispin==3) then !Beta part
         if (ishtype>=0) then !S,P or Cartesian type, in this case numshbas5D=numshbas6D 
             CObasb_cart(ipos6D:ipos6D+numshbas6D-1,:)=CObasb(ipos5D:ipos5D+numshbas5D-1,:)
         else
@@ -3442,6 +3378,7 @@ end subroutine
 subroutine addBq(xpos,ypos,zpos)
 use defvar
 real*8 xpos,ypos,zpos
+if (allocated(a_tmp)) deallocate(a_tmp)
 allocate(a_tmp(ncenter))
 a_tmp=a
 ncenter=ncenter+1
@@ -3464,7 +3401,7 @@ subroutine runGaussian(gjfname,istate)
 use defvar
 use util
 character(len=*) gjfname
-character command*200,outname*200
+character command*400,outname*200
 outname=gjfname(:len(gjfname)-3)//"out"
 command='"'//trim(gaupath)//'" "'//gjfname//'" "'//trim(outname)//'"'
 call runcommand(command)
@@ -3474,50 +3411,53 @@ close(100)
 end subroutine
 
 
-!!------- Gaussian scratch file in current folder (only meaningful for Windows version)
-subroutine cleangauscr
-character command*200
-command="del gxx.* fort.6 Gau*.inp"
-write(*,*) "Running: "//trim(command)
-call system(command)
-end subroutine
-
-
-!!------- Delete files, cannot delete folder
-subroutine delfile(delname)
+!!------- Invoke ORCA to run a .inp
+!If returned istate=1, means normally termination, =0 means other case or failed
+subroutine runORCA(inpname,istate)
 use defvar
-character(len=*) delname
-character command*200
-if (isys==1) then
-    command="del /Q "//trim(delname)
-else if (isys==2) then
-    command="rm -f "//trim(delname)
-end if
-write(*,*) "Deleting "//trim(delname)
-call system(trim(command))
+use util
+character(len=*) inpname
+character command*400,outname*200
+outname=inpname(:len(inpname)-3)//"out"
+command='"'//trim(orcapath)//'" "'//inpname//'" > "'//trim(outname)//'"'
+call runcommand(command)
+open(100,file=outname,status="old")
+call loclabel(100,"****ORCA TERMINATED NORMALLY****",istate)
+close(100)
 end subroutine
 
 
 
-!!----- Generate connectivity matrix, invoked by such as subroutine outcml
-subroutine genconnmat
+!!----- Generate connectivity matrix
+!infomode =1: Output prompts  =0: Silent
+!iallowPBC =1: Allow considering PBC when this system is PBC  =0: Not allow (can avoid incompatibility problem)
+subroutine genconnmat(infomode,iallowPBC)
 use defvar
 implicit real*8 (a-h,o-z)
+integer infomode,iallowPBC
+
 if (allocated(a)) then
     if (allocated(connmat)) deallocate(connmat)
     allocate(connmat(ncenter,ncenter))
-    write(*,*) "Generating bonding relationship..."
-    write(*,"(a,f6.3,a)") " Note: If distance between two atoms is smaller than sum of their &
-    covalent radii multiplied by ",bondcrit,", then they are regarded as bonded"
+    if (infomode==1) then
+		write(*,*) "Generating bonding relationship..."
+		write(*,"(a,f5.3,a)") " Note: If distance between two atoms is smaller than sum of their &
+		covalent radii multiplied by ",bondcrit,", then they are regarded as bonded"
+    end if
     connmat=0
     do iatm=1,ncenter
         do jatm=iatm+1,ncenter
-            if ( distmat(iatm,jatm) < bondcrit*(covr(a(iatm)%index)+covr(a(jatm)%index)) ) connmat(iatm,jatm)=1
+			if (iallowPBC==1.and.ifPBC>0) then
+				call nearest_atmdistxyz(iatm,jatm,tmpdist,atmx,atmy,atmz)
+            else	
+				tmpdist=atomdist(iatm,jatm)
+            end if
+            if ( tmpdist < bondcrit*(covr(a(iatm)%index)+covr(a(jatm)%index)) ) connmat(iatm,jatm)=1
             connmat(jatm,iatm)=connmat(iatm,jatm)
         end do
     end do
 else
-    write(*,"(a)") " Unable to generate bonding relationship because there is no atom information!"
+    if (infomode==1) write(*,"(a)") " Unable to generate bonding relationship because there is no atom information!"
 end if
 
 !do i=1,ncenter
@@ -3619,7 +3559,7 @@ common /subgroups/ nsgb(2,57),nsgr(406)
 character symb*2,pglabel*3,pgsymb*3,irsymb*4
 integer natoms,nclass
 integer classnatm(natoms),classidx(natoms,natoms)
-integer,parameter :: nmax=150 !nmat: maximum number of symmetic operation
+integer,parameter :: nmax=200 !nmat: maximum number of symmetic operation
 real*8 coord(3,natoms),delta,pc(3),symn(3,nmax)
 integer nat(natoms),nper(natoms,250),nscl(natoms,natoms),nccl(natoms),nsym(nmax,5)
 ncr=0
@@ -3682,11 +3622,12 @@ implicit real*8 (a-h,o-z)
 integer iselatm,iffrag(ncenter)
 iffrag=0
 iffrag(iselatm)=1
-if (.not.allocated(connmat)) call genconnmat !Generate connectivity matrix
+if (.not.allocated(connmat)) call genconnmat(0,0) !Generate connectivity matrix
 do while(.true.)
     inew=0
-    do iatm=1,ncenter
-        if (iffrag(iatm)==1) cycle
+    do iatm=1,ncenter !Cycle all atoms, if it is not in fragment, and it is linked to an atom already in fragment, it will be added to fragment
+        if (iffrag(iatm)==1) cycle !The atom is already in fragment
+        if (ishowhydrogen==0.and.a(iatm)%index==1) cycle !If this is hydrogen while we request do not showing hydrogens, skip it
         do jatm=1,ncenter !Cycle neighbouring atoms
             if (jatm==iatm) cycle
             if (connmat(iatm,jatm)>0.and.iffrag(jatm)==1) then
@@ -3715,24 +3656,40 @@ if (wfntype==0) then
     end do
     idxHOMOb=idxHOMO
 else if (wfntype==1) then !U
-    ealow=-1E20
-    eblow=-1E20
-    idxHOMO=0
-    idxHOMOb=0
-    do imo=1,nmo
-        if (nint(MOocc(imo))==0) cycle
-        if (MOtype(imo)==1) then
-            if (MOene(imo)>ealow) then
-                idxHOMO=imo
-                ealow=MOene(imo)
-            end if
-        else if (MOtype(imo)==2) then
-            if (MOene(imo)>eblow) then
-                idxHOMOb=imo
-                eblow=MOene(imo)
-            end if
+	if (any(MOene/=0)) then !The following way is in principle the safest way, allowing alpha and beta orbitals occur alternately
+		ealow=-1E20
+		eblow=-1E20
+		idxHOMO=0
+		idxHOMOb=0
+		do imo=1,nmo
+			if (nint(MOocc(imo))==0) cycle
+			if (MOtype(imo)==1) then
+				if (MOene(imo)>ealow) then
+					idxHOMO=imo
+					ealow=MOene(imo)
+				end if
+			else if (MOtype(imo)==2) then
+				if (MOene(imo)>eblow) then
+					idxHOMOb=imo
+					eblow=MOene(imo)
+				end if
+			end if
+		end do
+    else !If OT is used in CP2K, no orbital energy is available, we have to use the following way and assume all alpha MOs occur prior to beta MOs
+		do itmp=nmo,1,-1 !Find the last alpha MO
+			if (MOtype(itmp)==1) exit
+		end do
+		do idxHOMO=itmp,1,-1
+			if (nint(MOocc(idxHOMO))==1) exit
+		end do
+        if (itmp==nmo) then !No beta orbital
+			idxHOMOb=0
+        else
+			do idxHOMOb=nmo,itmp+1,-1
+				if (nint(MOocc(idxHOMOb))==1) exit
+			end do
         end if
-    end do
+    end if
 else if (wfntype==2) then !RO
     do idxHOMO=nmo,1,-1
 	    if (nint(MOocc(idxHOMO))==1) exit
@@ -3776,7 +3733,7 @@ end subroutine
 
 
 
-!!--------- Show basic information for a range of orbitals (from ibeg to iend)
+!!--------- Show very basic information for a range of orbitals (from ibeg to iend)
 subroutine showorbinfo(ibeg,iend)
 use defvar
 integer ibeg,iend,i
@@ -3788,6 +3745,7 @@ end subroutine
 
 
 !!--------- Initialize LIBRETA for present wavefunction if haven't and show some notices
+!Usually according to "function ifdoESP" to determine if initialize LIBRETA for a real space function
 subroutine doinitlibreta
 use defvar
 use libreta
@@ -3803,8 +3761,9 @@ if (if_initlibreta==0) then
     if_initlibreta=1 !Global variable
     write(*,*) "LIBRETA library has been successfully initialized!"
 end if
-write(*,"(a)") " The ESP evaluation code based on LIBRETA is being used, &
-also citing its original paper is recommended: Jun Zhang, J. Chem. Theory Comput., 14, 572 (2018)"
+write(*,"(/,a)") " NOTE: The ESP evaluation code based on LIBRETA library is being used. &
+Please not only cite Multiwfn original paper in your work, but also cite the paper describing the efficient ESP evaluation algorithm adopted by Multiwfn:"
+write(*,"(a)") " Jun Zhang, Tian Lu, Phys. Chem. Chem. Phys., 23, 20323 (2021) DOI: 10.1039/D1CP02805G"
 if (isys==1.and.nthreads>10) then
     write(*,"(a,/)") " Warning!!! In Windows system, it is found that the performance of ESP evaluation code may &
     severely degrade when more than 10 CPU cores are used, therefore 10 cores are used in the following ESP calculation. &
@@ -3871,8 +3830,8 @@ real*8 AOMbas(nbasis,nbasis,ncenter),AOMtmp(nbasis,nbasis),basval(nbasis)
 real*8 atmspcweight(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 
-if (.not.allocated(Cobasa_org)) allocate(Cobasa_org(nbasis,nbasis))
-Cobasa_org=CObasa
+if (.not.allocated(CObasa_org)) allocate(CObasa_org(nbasis,nbasis))
+CObasa_org=CObasa
 CObasa=0
 do ibas=1,nbasis
     CObasa(ibas,ibas)=1
@@ -3967,5 +3926,437 @@ deallocate(COtr)
 CObasa=CObasa_org
 CO=CO_org
 radcut=radcut_old
+end subroutine
 
+
+
+
+!!---- Return electric dipole moment vector, wavefunction information must be available in either b or CObasa
+subroutine get_dipole_moment(vec)
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 vec(3)
+if (allocated(CObasa)) then
+    write(*,*) "Calculating electric dipole moment integral matrix..."
+    call genDbas_curr
+    xeledip=sum(Dbas(1,:,:)*Ptot(:,:))
+    yeledip=sum(Dbas(2,:,:)*Ptot(:,:))
+    zeledip=sum(Dbas(3,:,:)*Ptot(:,:))
+else if (allocated(b)) then
+    write(*,*) "Calculating density matrix based on GTFs..."
+    call genPprim
+    write(*,*) "Calculating electric dipole moment integral matrix..."
+    call genDprim
+    xeledip=sum(Dprim(1,:,:)*Ptot_prim(:,:))
+    yeledip=sum(Dprim(2,:,:)*Ptot_prim(:,:))
+    zeledip=sum(Dprim(3,:,:)*Ptot_prim(:,:))
+end if
+xnucdip=0
+ynucdip=0
+znucdip=0
+do iatm=1,ncenter
+    xnucdip=xnucdip+a(iatm)%x*a(iatm)%charge
+    ynucdip=ynucdip+a(iatm)%y*a(iatm)%charge
+    znucdip=znucdip+a(iatm)%z*a(iatm)%charge
+end do
+vec(1)=xeledip+xnucdip
+vec(2)=yeledip+ynucdip
+vec(3)=zeledip+znucdip
+end subroutine
+
+
+!!------ Generate "fragatm" array containing all atoms in the present system
+subroutine genfragatm
+use defvar
+if (allocated(fragatm)) deallocate(fragatm)
+allocate(fragatm(ncenter))
+nfragatm=ncenter
+forall (i=1:nfragatm) fragatm(i)=i
+ifragcontri=0 !Fragment has not been manually defined by user
+end subroutine
+
+
+!!-------- Return distance between two atoms in Bohr
+real*8 function atomdist(iatm,jatm)
+use defvar
+integer iatm,jatm
+atomdist=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)
+end function
+!!-------- Return distance between two atoms in Angstrom
+real*8 function atomdistA(iatm,jatm)
+use defvar
+integer iatm,jatm
+atomdistA=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)*b2a
+end function
+
+
+!!-------- Export all internal geometry parameters to int_coord.txt in current folder
+subroutine showgeomparam(outname)
+use defvar
+use util
+character(len=*) outname
+integer nneigh(ncenter) !Number of neighbours (the number of atoms connect to this atom)
+integer neigh(30,ncenter) !neigh(1:nneigh(i),i) is list of neighbouring atom indices of atom i
+integer nbond !Number of bonds
+integer bondA(ncenter*15),bondB(ncenter*15) !Indices of the two atoms (A,B) of each bond
+integer nangle !Number of angles
+integer angleA(ncenter*15),angleB(ncenter*15),angleC(ncenter*15) !Indices of the three atoms (A,B,C) of each angle
+integer ndih !Number of dihedrals
+integer dihA(ncenter*15),dihB(ncenter*15),dihC(ncenter*15),dihD(ncenter*15) !Indices of four atoms (A,B,C,D) of each dihedral
+real*8 atomdist
+
+open(10,file=outname,status="replace")
+
+!Determining neighbours
+nneigh=0
+do iatm=1,ncenter
+    do jatm=1,ncenter
+        if (jatm==iatm) cycle
+        if (distmat(iatm,jatm)<( covr(a(iatm)%index)+covr(a(jatm)%index) )*bondcrit) then
+            nneigh(iatm)=nneigh(iatm)+1
+            neigh(nneigh(iatm),iatm)=jatm
+        end if
+    end do
+end do
+
+!Determining bond list
+nbond=0
+do iatm=1,ncenter
+    do jatm=iatm+1,ncenter
+        if (any(neigh(1:nneigh(iatm),iatm)==jatm)) then
+            nbond=nbond+1
+            bondA(nbond)=iatm
+            bondB(nbond)=jatm
+        end if
+    end do
+end do
+write(10,"(' Number of bonds:',i8)") nbond
+do ibond=1,nbond
+    iatm=bondA(ibond)
+    jatm=bondB(ibond)
+    write(10,"(' #',i5,'      Atoms:',2i5,'    Distance:',f12.6,' Angstrom')") ibond,iatm,jatm,distmat(iatm,jatm)*b2a
+end do
+
+!Determining angle list
+nangle=0
+do icen=1,ncenter
+    if (nneigh(icen)<2) cycle
+    do idx=1,nneigh(icen)
+        iatm=neigh(idx,icen)
+        do jdx=idx+1,nneigh(icen)
+            jatm=neigh(jdx,icen)
+            nangle=nangle+1
+            angleA(nangle)=iatm
+            angleB(nangle)=icen
+            angleC(nangle)=jatm
+        end do
+    end do
+end do
+write(10,*)
+write(10,"(' Number of angles:',i8)") nangle
+do iangle=1,nangle
+    iatm=angleA(iangle)
+    jatm=angleB(iangle)
+    katm=angleC(iangle)
+    angval=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z)
+    write(10,"(' #',i5,'      Atoms:',3i5,'    Angle:',f12.6,' degree')") iangle,iatm,jatm,katm,angval
+end do
+
+!Determining dihedral list. iatm-icen-jcen-jatm
+ndih=0
+do ibond=1,nbond
+    icen=bondA(ibond)
+    jcen=bondB(ibond)
+    neiA=nneigh(icen)
+    neiB=nneigh(jcen)
+    if (neiA==0.or.neiB==0) cycle
+    do idx=1,neiA
+        iatm=neigh(idx,icen)
+        if (iatm==jcen) cycle
+        do jdx=1,neiB
+            jatm=neigh(jdx,jcen)
+            if (jatm==icen) cycle
+            ndih=ndih+1
+            dihA(ndih)=iatm
+            dihB(ndih)=icen
+            dihC(ndih)=jcen
+            dihD(ndih)=jatm
+        end do
+    end do
+end do
+write(10,*)
+write(10,"(' Number of dihedrals:',i8)") ndih
+do idih=1,ndih
+    iatm=dihA(idih)
+    jatm=dihB(idih)
+    katm=dihC(idih)
+    latm=dihD(idih)
+    dihval=xyz2dih(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z,a(latm)%x,a(latm)%y,a(latm)%z)
+    write(10,"(' #',i5,'      Atoms:',4i5,'    Dihedral:',f12.6,' degree')") idih,iatm,jatm,katm,latm,dihval
+end do
+
+close(10)
+
+end subroutine
+
+
+
+
+!!------ Generate Z-matrix. The each line of Zmat corresponds to an entry of the matrix, atomic indices are recorded
+!If ierror=1, then the generation is failed (e.g. C2H2). =0 means normal
+subroutine genZmat(Zmat,ierror)
+use defvar
+use util
+integer Zmat(ncenter,3),ierror
+integer nneigh(ncenter) !Number of neighbours (the number of atoms connect to this atom)
+integer neigh(30,ncenter) !neigh(1:nneigh(i),i) is list of neighbouring atom indices of atom i
+real*8 atomdist
+
+call genconnmat(0,0) !Z-matrix will be generated considering connectivity as much as possible, so generate this
+
+!Determining neighbours
+nneigh=0
+do iatm=1,ncenter
+    do jatm=1,ncenter
+        if (connmat(iatm,jatm)>0) then
+            nneigh(iatm)=nneigh(iatm)+1
+            neigh(nneigh(iatm),iatm)=jatm
+        end if
+    end do
+end do
+
+ierror=0
+Zmat=0 !Element of 0 means unavailable
+
+!Content of a line: iatm i1 i2 i3
+!Will determine suitable i1, then i2, then i3
+!When determining the suitable one w.r.t. current atom p, first search an atom with index less than iatm and connects to p, &
+!if nothing is found, use an atom with index less than iatm and nearest to p
+!Three atoms should not lie nearly a straight line, the angle must be >0.5 and <179.5 degree
+
+do iatm=2,ncenter
+    do jatm=1,iatm-1 !If an atom has index less than iatm, use it
+        if (any(neigh(1:nneigh(iatm),iatm)==jatm)) then
+            i1=jatm
+            exit
+        end if
+    end do
+    if (jatm==iatm) then !No atom connected to iatm, find the atom nearest to the current one
+        distmin=1E10
+        do jatm=1,iatm-1
+            dist=atomdist(iatm,jatm)
+            if (dist<distmin) then
+                i1=jatm
+                distmin=dist
+            end if
+        end do
+    end if
+    Zmat(iatm,1)=i1
+    
+    if (iatm>=3) then
+        do jatm=1,iatm-1 !If an atom has index less than i1, use it
+            if (jatm==i1) cycle
+            if (any(neigh(1:nneigh(i1),i1)==jatm)) then
+				if (ncenter>3) then
+					tmpang=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(i1)%x,a(i1)%y,a(i1)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z)
+					if (tmpang<0.5D0.or.tmpang>179.5D0) cycle
+                end if
+                i2=jatm
+                exit
+            end if
+        end do
+        if (jatm==iatm) then !No atom connected to iatm, find the atom nearest to the current one
+            distmin=1E10
+            do jatm=1,iatm-1
+                if (jatm==i1) cycle
+                dist=atomdist(i1,jatm)
+                if (dist<distmin) then
+					if (ncenter>3) then
+						tmpang=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(i1)%x,a(i1)%y,a(i1)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z)
+						if (tmpang<0.5D0.or.tmpang>179.5D0) cycle
+                    end if
+                    i2=jatm
+                    distmin=dist
+                end if
+            end do
+            if (distmin==1E10) then !distmin was unchanged, no atom satisfies condition
+				ierror=1
+                return
+            end if
+        end if
+        Zmat(iatm,2)=i2
+    
+        if (iatm>=4) then
+            do jatm=1,iatm-1 !If an atom has index less than iatm, use it
+                if (jatm==i1.or.jatm==i2) cycle
+                if (any(neigh(1:nneigh(i2),i2)==jatm)) then
+					tmpang=xyz2angle(a(i1)%x,a(i1)%y,a(i1)%z,a(i2)%x,a(i2)%y,a(i2)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z)
+					if (tmpang<0.5D0.or.tmpang>179.5D0) cycle
+					i3=jatm
+					exit
+                end if
+            end do
+            if (jatm==iatm) then !No atom connected to iatm, find the atom nearest to the current one
+                distmin=1E10
+                do jatm=1,iatm-1
+                    if (jatm==i1.or.jatm==i2) cycle
+                    dist=atomdist(i2,jatm)
+                    if (dist<distmin) then
+						tmpang=xyz2angle(a(i1)%x,a(i1)%y,a(i1)%z,a(i2)%x,a(i2)%y,a(i2)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z)
+						if (tmpang<0.5D0.or.tmpang>179.5D0) cycle
+                        i3=jatm
+                        distmin=dist
+                    end if
+                end do
+				if (distmin==1E10) then
+					ierror=1
+					return
+				end if
+            end if
+            Zmat(iatm,3)=i3
+        end if
+    end if
+	!write(*,*) iatm,Zmat(iatm,1:3)
+end do
+end subroutine
+
+
+
+
+!!---- Print information to let user to input orbital label
+!Only supports single-determinant wavefunction, except for RO, and basis function should be available
+subroutine orblabsel_prompt
+use defvar
+if ((wfntype==0.or.wfntype==1).and.allocated(CObasa)) then
+	if (wfntype==0) then
+		write(*,*) "You can also input for example: (quotation marks should not be inputted)"
+		write(*,*) """h"" for HOMO, ""h-5"" for HOMO-5, ""l"" for LUMO, ""l+3"" for LUMO+3"
+	else
+		write(*,*) "You can also input for example: (quotation marks should not be inputted)"
+		write(*,*) """ha"" for HOMO(alpha), ""hb"" for HOMO(beta), ""hb-5"" for HOMO(beta)-5"
+		write(*,*) """la"" for LUMO(alpha), ""lb"" for LUMO(beta), ""la+3"" for LUMO(alpha)+3"
+	end if
+end if
+end subroutine
+
+!!------- Return orbital index according to inputted orbital label
+!Only supports single-determinant wavefunction, except for RO, and basis function should be available
+!iorb is orbital index. If failed to determine, return 0
+!Suggested usage:
+!if (index(c200tmp,'h')==0.and.index(c200tmp,'l')==0) then 
+!   ... directly load orbital index
+!else
+!   call orblabsel(c200tmp,iorb)
+!	if (ishowmo==0) then
+!		write(*,*) "Error: The orbital label you inputted is wrong! Please double check"
+!		...cycle
+!	end if
+!end if
+subroutine orblabsel(orblab,iorb)
+use defvar
+character(len=*) orblab
+integer iorb,tmpval
+if (index(orblab,',')/=0) then
+    write(*,*) "Error: In this selection mode, you can select only one orbital each time"
+    iorb=0
+    return
+end if
+call getHOMOidx
+tmpval=0
+orblab=adjustl(orblab)
+if (orblab(1:2)=="ha") then
+    if (orblab(3:3)=='-') read(orblab(3:),*) tmpval
+    iorb=idxHOMO+tmpval
+else if (orblab(1:2)=="hb") then
+    if (orblab(3:3)=='-') read(orblab(3:),*) tmpval
+    iorb=idxHOMOb+tmpval
+else if (orblab(1:2)=="h ".or.orblab(1:2)=="h-") then
+    if (orblab(2:2)=='-') read(orblab(2:),*) tmpval
+    iorb=idxHOMO+tmpval
+else if (orblab(1:2)=="la") then
+    if (orblab(3:3)=='+') read(orblab(3:),*) tmpval
+    iorb=idxHOMO+1+tmpval
+else if (orblab(1:2)=="lb") then
+    if (orblab(3:3)=='+') read(orblab(3:),*) tmpval
+    iorb=idxHOMOb+1+tmpval
+else if (orblab(1:2)=="l ".or.orblab(1:2)=="l+") then
+    if (orblab(2:2)=='+') read(orblab(2:),*) tmpval
+    iorb=idxHOMO+1+tmpval
+else
+    iorb=0
+end if
+if (iorb<1.or.iorb>nmo) iorb=0
+end subroutine
+
+
+
+
+!!----------- Transform MO energies to Fock matrix
+!The numerical accuracy may be marginally lower than that directly loaded from e.g. 47
+!istatus is returned variable. It is 0 by default, when one or more orbital energies are zero and thus cannot generate Fock, istatus=1
+subroutine MOene2Fmat(istatus)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+real*8 tmpmat(nbasis,nbasis),Emat(nbasis,nbasis),Cinv(nbasis,nbasis)
+integer istatus
+
+istatus=0
+if (.not.allocated(CObasa)) then
+	write(*,*) "Error: Basis function information is not available!"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    istatus=1
+    return
+end if
+nzero=count(MOene==0)
+if (nzero>0) then
+    if (nzero==nbasis) then
+        write(*,"(a)") " Error: All orbital energies are zero, hence Fock/KS matrix &
+        cannot be generated based on orbital energies and expansion coefficients. Commonly this is because the orbital energies were not &
+        solved at all during your quantum chemistry calculation. For example, the current orbitals are not molecular orbitals, or you enabled OT in CP2K"
+    else
+        write(*,"(a,i6,a)") " Error:",nzero," orbital energies are zero, hence Fock/KS matrix &
+        cannot be generated based on orbital energies and expansion coefficients. Commonly this is because there is linear dependency problem &
+        in your quantum chemistry calculation, and thus some basis functions are automatically removed by your quantum chemistry code. &
+        To tackle this problem, removing diffuse functions if they have been used; if you are a Gaussian user, also add IOp(3/32=2) to fully avoid &
+        eliminating linear-dependent basis functions"
+    end if
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    istatus=1
+    return
+end if
+
+write(*,*) "Generating Fock/KS matrix based on orbital energies and LCAO coefficients ..."
+
+!Because FC=SCE, thus F=SCE(C)^-1
+if (allocated(FmatA)) deallocate(FmatA)
+allocate(FmatA(nbasis,nbasis))
+Cinv=invmat(CObasa,nbasis)
+Emat=0
+forall(i=1:nbasis) Emat(i,i)=MOene(i)
+!FmatA=matmul(matmul(matmul(Sbas,CObasa),Emat),Cinv) !Slower code
+tmpmat=matmul_blas(Sbas,CObasa,nbasis,nbasis,0,0) !Parallel MKL
+tmpmat=matmul_blas(tmpmat,Emat,nbasis,nbasis,0,0)
+FmatA=matmul_blas(tmpmat,Cinv,nbasis,nbasis,0,0)
+
+if (wfntype==1.or.wfntype==4) then !Beta part
+    if (allocated(FmatB)) deallocate(FmatB)
+    allocate(FmatB(nbasis,nbasis))
+    Cinv=invmat(CObasb,nbasis)
+    Emat=0
+    forall(i=1:nbasis) Emat(i,i)=MOene(i+nbasis)
+    tmpmat=matmul_blas(Sbas,CObasb,nbasis,nbasis,0,0) !Parallel MKL
+    tmpmat=matmul_blas(tmpmat,Emat,nbasis,nbasis,0,0)
+    FmatB=matmul_blas(tmpmat,Cinv,nbasis,nbasis,0,0)
+end if
+
+write(*,*) "Fock/KS matrix has been successfully generated!"
+
+!Compare with that loaded from .47
+!tmpmat=FmatA
+!call loadFockfile(istatus)
+!!call showmatgau(FmatA,form="f14.8")
+!write(*,"(' Maximum deviation to loaded Fock matrix',f20.10)") maxval(abs(tmpmat-FmatA))
 end subroutine

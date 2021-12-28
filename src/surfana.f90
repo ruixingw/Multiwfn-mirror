@@ -11,6 +11,7 @@ logical,allocatable :: ifbndcub(:,:,:) !if true, means this is a boundary cub
 integer,allocatable :: mergerelat(:),HirBecatm(:)
 integer tmpintarr3(3)
 character pdbfilename*200,filename_tmp*200,c80tmp*80,c200tmp*200,c400tmp*400,c2000tmp*2000,c10000tmp*10000,selectyn,grdfilename*200,char1tmp
+character FPAfile1*200,FPAfile2*200
 real*8 fragsurarea(ncenter,3),fragsuravg(ncenter,3),fragsurvar(ncenter,3) !Area, average value and variance of each atom surface. 1,2,3 corresponds to all,positive,negative part
 real*8 fragsurmax(ncenter),fragsurmin(ncenter),fragsurchgsep(ncenter)
 integer surfrag(ncenter),ifatmfrag(ncenter) !User-defined fragment contain which atoms; ifatmfrag(iatm)=1/0 means iatm belong / doesn't belong to user-defined fragment
@@ -19,6 +20,7 @@ real*8 nucchgbackup(ncenter) !Backup nuclear charge, because which may be flushe
 integer isurftype !How to define the surface. 1=Isosurface of electron density, 2=A certain real space function, 5/6=Hirshfeld/Becke surface, 10=Isosurface of existing grid data
 real*8 smat(ncenter,ncenter),Pvec(ncenter),tmprarr(ncenter)
 integer,allocatable :: tmpintarr(:)
+
 isurftype=1
 surfisoval=0.001D0
 imapfunc=1
@@ -29,6 +31,7 @@ spcmergeratio=0.5D0
 critmerge=grdspc*spcmergeratio !If the distance between two surface vertices smaller than this value, merge them
 vdwmulti=1.7D0
 nbisec=3
+iFPA=0 !By default do not use focal-point approximation (FPA)
 
 surfanaloop: do while(.true.)
 do while(.true.)
@@ -103,12 +106,24 @@ do while(.true.)
 		else if (isurftypetmp==5.or.isurftypetmp==6) then
 			if (isurftypetmp==5) isurftype=5
 			if (isurftypetmp==6) isurftype=6
-			write(*,"(a)") " Input atomic indices. e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will be selected"
-			read(*,"(a)") c10000tmp
-			call str2arr(c10000tmp,nHirBecatm)
-			if (allocated(HirBecatm)) deallocate(HirBecatm)
-			allocate(HirBecatm(nHirBecatm))
-			call str2arr(c10000tmp,nHirBecatm,HirBecatm)
+            do while(.true.)
+				write(*,"(a)") " Input atomic indices. e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will be selected"
+				read(*,"(a)") c10000tmp
+				call str2arr(c10000tmp,nHirBecatm)
+				if (allocated(HirBecatm)) deallocate(HirBecatm)
+				allocate(HirBecatm(nHirBecatm))
+				call str2arr(c10000tmp,nHirBecatm,HirBecatm)
+                if (nHirBecatm==ncenter) then
+					write(*,"(a)") " Error: You should not define all atoms as the fragment for Hirshfeld or Becke surface analysis! &
+                    Please carefully read Multiwfn manual to correctly understand the idea of this kind of analysis. The defined fragment &
+                    should correspond to a subset of the whole system"
+                    write(*,*) "Press ENTER button to re-input the atom indices"
+                    read(*,*)
+                else
+					write(*,*) "Done! The fragment has been defined"
+					exit
+                end if
+            end do
 			imapfunc=22
 		else if (isurftypetmp==10) then
 			isurftype=10
@@ -262,11 +277,14 @@ do while(.true.)
 		
 	else if (isel==4) then
 		do while(.true.)
+			write(*,*)
 			write(*,*) "0 Return to upper level menu"
 			write(*,"(a,f7.4)") " 1 The ratio of vdW radius used to extend spatial region of cubic grids:",vdwmulti
 			if (ifelim==0) write(*,*) "2 Toggle if eliminating redundant vertices: No"
 			if (ifelim==1) write(*,"(a,f6.3,a)") " 2 Toggle if eliminating redundant vertices: Yes, criterion is",critmerge," Bohr"
 			write(*,"(' 3 Number of bisections before linear interpolation, current:',i5)") nbisec
+			if (iFPA==0) write(*,*) "4 Toggle using focal-point approximation to evaluate ESP, current: No"
+			if (iFPA==1) write(*,*) "4 Toggle using focal-point approximation to evaluate ESP, current: Yes"
 			read(*,*) isel2
 			
 			if (isel2==0) then
@@ -288,6 +306,30 @@ do while(.true.)
 				write(*,*) "Perform how many times biections before linear interpolation?"
 				write(*,*) "Note: Input 0 means do interpolation directly"
 				read(*,*) nbisec
+            else if (isel2==4) then
+				if (iFPA==0) then
+					write(*,*) "Input the wavefunction file for ""low method / small basis-set"""
+                    write(*,*) "e.g. /sob/MP2_def2_TZVP.mwfn"
+                    write(*,"(a)") " Note: Any format containing recognizable wavefunction information can be used. The coordinate must be identical to present system"
+                    do while(.true.)
+						read(*,"(a)") FPAfile1
+						inquire(file=FPAfile1,exist=alive)
+						if (alive) exit
+						write(*,*) "Cannot find the file, input again!"
+					end do
+					write(*,*) "Input the wavefunction file for ""low method / large basis-set"""
+                    write(*,*) "e.g. /sob/MP2_def2_QZVP.mwfn"
+                    do while(.true.)
+						read(*,"(a)") FPAfile2
+						inquire(file=FPAfile2,exist=alive)
+						if (alive) exit
+						write(*,*) "Cannot find the file, input again!"
+					end do
+                    write(*,*) "OK, focal-point approximation will be used in the calculation"
+                    iFPA=1
+                else
+					iFPA=0
+                end if
 			end if
 		end do
 		
@@ -333,9 +375,9 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 	xlength=endx-orgx
 	ylength=endy-orgy
 	zlength=endz-orgz
-	dx=grdspc;gridvec1=0;gridvec1(1)=dx
-	dy=grdspc;gridvec2=0;gridvec2(2)=dy
-	dz=grdspc;gridvec3=0;gridvec3(3)=dz
+	dx=grdspc;gridv1=0;gridv1(1)=dx
+	dy=grdspc;gridv2=0;gridv2(2)=dy
+	dz=grdspc;gridv3=0;gridv3(3)=dz
 	nx=nint(xlength/dx)+1
 	ny=nint(ylength/dy)+1
 	nz=nint(zlength/dz)+1
@@ -375,11 +417,9 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 				call showprog(iatm,ncenter)
 				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
 				do k=1,nz
-					tmpz=orgz+(k-1)*dz
 					do j=1,ny
-						tmpy=orgy+(j-1)*dy
 						do i=1,nx
-							tmpx=orgx+(i-1)*dx
+							call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 							denstmp=calcatmdens(iatm,tmpx,tmpy,tmpz,18)
 							cubmattmp(i,j,k)=cubmattmp(i,j,k)+denstmp
 							if (any(HirBecatm==iatm)) cubmat(i,j,k)=cubmat(i,j,k)+denstmp !Density of specified fragment
@@ -396,11 +436,9 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 				call readwfn(custommapname(iatm),1)
 				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
 				do k=1,nz
-					tmpz=orgz+(k-1)*dz
 					do j=1,ny
-						tmpy=orgy+(j-1)*dy
 						do i=1,nx
-							tmpx=orgx+(i-1)*dx
+							call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 							denstmp=fdens(tmpx,tmpy,tmpz)
 							cubmattmp(i,j,k)=cubmattmp(i,j,k)+denstmp
 							if (any(HirBecatm==iatm)) cubmat(i,j,k)=cubmat(i,j,k)+denstmp !Density of specified fragment
@@ -421,15 +459,13 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 		cubmat=0D0
 		ifinish=0
 		!We calculate Becke weight for all atoms, but only summing up the value of we selected atoms to cubmat
-		!$OMP PARALLEL DO SHARED(cubmat) PRIVATE(i,j,k,tmpx,rnowx,rnowy,rnowz,smat,ii,jj,tmprarr,rmiu,chi,uij,aij,tmps,iter,Pvec) schedule(dynamic) NUM_THREADS(nthreads)
+		!$OMP PARALLEL DO SHARED(cubmat) PRIVATE(i,j,k,rnowx,rnowy,rnowz,smat,ii,jj,tmprarr,rmiu,chi,uij,aij,tmps,iter,Pvec) schedule(dynamic) NUM_THREADS(nthreads)
 		do k=1,nz
-			rnowz=orgz+(k-1)*dz
 			do j=1,ny
-				rnowy=orgy+(j-1)*dy
 				do i=1,nx
-					rnowx=orgx+(i-1)*dx
+                    call getgridxyz(i,j,k,rnowx,rnowy,rnowz)
 					!Calculate Becke weight with modified CSD radii, by using Eq. 11,21,13,22 in Becke's paper (JCP 88,15)
-					smat=1.0D0
+					smat=1D0
 					do ii=1,ncenter
 						tmprarr(ii)=dsqrt( (rnowx-a(ii)%x)**2+(rnowy-a(ii)%y)**2+(rnowz-a(ii)%z)**2 )
 					end do
@@ -510,9 +546,9 @@ do ix=1,numcubx
 				nintcub=nintcub+1
 			else if (icubtest==8) then !external cube
 				nextcub=nextcub+1
-			else
+			else !boundary cube
 				ifbndcub(ix,iy,iz)=.true.
-				nbndcub=nbndcub+1 !boundary cube
+				nbndcub=nbndcub+1
 				!Give each corner of boundary cube a unique index
 				if (abs2suridx(ix,iy,iz)==0) then
 					icorind=icorind+1
@@ -589,7 +625,7 @@ if (imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) then !The surface of Hirshfe
 	write(*,"(' V+F-E-2=',i10)") iVFEtest  !debug info
 	if (iVFEtest/=0) write(*,"(' Warning: V+F-E-2=0 is violated! Probably grid spacing is too large or the isosurface is not closed')")
 end if
-volcub=dx*dy*dz
+call calc_dvol(volcub)
 totintvol=nintcub*volcub !Volume of internal cubes
 totvol=tetravol0+tetravol1+tetravol2+tetravol3+totintvol !Volume of boundary tetrahedra
 ! write(*,"('Vol. of type-0,1,2,3:',4f11.7,' Ang.^3')") tetravol0*b2a**3,tetravol1*b2a**3,tetravol2*b2a**3,tetravol3*b2a**3
@@ -793,9 +829,12 @@ do icyc=1,nsurtri
 	if (surtriang(icyc)%area<triareamin) triareamin=surtriang(icyc)%area
 end do
 
-if (iskipmapfunc==1) goto 10 !Skip dealing with mapped function
 ! write(*,"('Minimum and maximum facet area:',E18.10,f15.10,' Angstrom^2')") triareamin*b2a*b2a,triareamax*b2a*b2a  !debug info
 write(*,"(' Isosurface area:',f12.5,' Bohr^2  (',f10.5,' Angstrom^2)')") surfareaall,surfareaall*b2a*b2a
+!https://en.wikipedia.org/wiki/Sphericity
+write(*,"(' Sphericity:',f8.4)")  pi**(1D0/3D0)*(6*totvol)**(2D0/3D0)/surfareaall
+
+if (iskipmapfunc==1) goto 10 !Skip dealing with mapped function
 
 !Calculate mapped function at each surface vertex, save to survtx%value
 if (ireadextmapval==0) then !Directly calculate
@@ -862,11 +901,7 @@ if (ireadextmapval==0) then !Directly calculate
 		close(10)
 		
 		!Delete intermediate files
-		if (isys==1) then
-			call system("del cubegenpt.txt ESPresult.cub nouseout /Q")
-		else
-			call system("rm cubegenpt.txt ESPresult.cub nouseout -f")
-		end if
+		call delfile("cubegenpt.txt ESPresult.cub nouseout")
 		
 	else !Normal case, use Multiwfn internal code to evaluate mapped functions
 		ii=0
@@ -900,11 +935,44 @@ if (ireadextmapval==0) then !Directly calculate
 			end if
 		end do
 		!$OMP END PARALLEL DO
-		if (nHirBecatm==0) deallocate(HirBecatm)
+		if (ii<100) call showprog(100,100) !Guarantee that 100% must be printed
+        !Focal-point approximation for evaluating ESP
+        !"High method / large BS" = "High method / small BS" (current survtx%value) + "Low method / large BS" (FPAfile2) - "Low method / small BS" (FPAfile1)
+		if (iFPA==1) then
+			if (imapfunc==1) then
+				write(*,*)
+				write(*,*) "Doing Focal-point approximation for evaluating ESP..."
+				write(*,"(a)") " Loading "//trim(FPAfile1)
+				write(*,*) "Calculating ESP..."
+				call dealloall
+                call readinfile(FPAfile1,1)
+        			!$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
+				do icyc=1,nsurvtx
+					if (elimvtx(icyc)==1) cycle
+					survtx(icyc)%value=survtx(icyc)%value - calcmapfunc(imapfunc,survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z,nHirBecatm,HirBecatm)
+				end do
+				!$OMP END PARALLEL DO
+				write(*,"(a)") " Loading "//trim(FPAfile2)
+				write(*,*) "Calculating ESP..."
+				call dealloall
+                call readinfile(FPAfile2,1)
+        			!$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
+				do icyc=1,nsurvtx
+					if (elimvtx(icyc)==1) cycle
+					survtx(icyc)%value=survtx(icyc)%value + calcmapfunc(imapfunc,survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z,nHirBecatm,HirBecatm)
+				end do
+				!$OMP END PARALLEL DO
+				call dealloall
+                write(*,*) "Using focal-point approximation to evaluate ESP has been finished"
+                write(*,"(a)") " Reloading "//trim(firstfilename)
+                call readinfile(firstfilename,1)
+            else
+				write(*,"(a)") " Error: Focal-point approximation can be used only when mapped function is ESP. This calculation is skipped"
+            end if
+        end if
         nthreads=noldthreads
 	end if
 	call walltime(iwalltime2)
-    if (ii<100) call showprog(100,100) !Guarantee that 100% must be printed
 	write(*,"(' Calculation of mapped function took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 
 else if (ireadextmapval==1) then !Load mapped function from external file
@@ -969,7 +1037,7 @@ else if (ireadextmapval==3) then !Will calculate mapped function by interpolatin
 	write(*,*)
 	write(*,*) "Outputting template cube file..."
 	open(10,file="template.cub",status="replace")
-	call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+	call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 	close(10)
 	write(*,"(/,a)") " The template cube file has been outputted to template.cub in current folder"
 	write(*,"(a)") " Now input the name of the cube file representing mapped function, e.g. C:\t.cub. &
@@ -1217,9 +1285,9 @@ write(*,*)
 write(*,*) "Surface analysis finished!"
 
 call walltime(iclktime2)
-write(*,"(' Total wall clock time passed during this task:',i6,'s')") iclktime2-iclktime1
+write(*,"(' Total wall clock time passed during this task:',i6,' s')") iclktime2-iclktime1
 if (imapfunc/=0.and.imapfunc/=4.and.imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call delvirorb_back(1)
-if (imapfunc==1) write(*,"(a)") " Citation of molecular polarity index (MPI): Carbon, 171, 514 (2021)"
+if (imapfunc==1) write(*,"(a)") " Citation of molecular polarity index (MPI): Carbon, 171, 514 (2021) DOI: 10.1016/j.carbon.2020.09.048"
 
 
 !============= Post-processing stage
@@ -1271,7 +1339,7 @@ do while(.true.)
 		
 	else if (isel==-2) then
 		open(10,file="surf.cub",status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done, the grid data has been exported to surf.cub in current folder"
 		
@@ -1804,7 +1872,7 @@ do while(.true.)
         fragpolaridx=fragpolaridx/fragsurarea(1,1)
 		!Print atomic values
 		write(*,*)
-		if (isel==11) write(*,*) "Note: The atoms having zero surface area (i.e. buried) are not shown below"
+		if (isel==11) write(*,"(a,/)") " Note: The atoms having zero surface area (i.e. buried) are not shown below"
 		if (abs(isel)==12) write(*,*) "Properties on the surface of this fragment:"
 		if (imapfunc==1.or.imapfunc==3) then !ESP
 			if (isel==11) then
@@ -1939,13 +2007,13 @@ do while(.true.)
 	else if (isel==13) then !Calculate and export cube file of a mapped function
 		write(*,*) "Calculating grid data of mapped function..."
 		iprog=0
+		if (allocated(cubmattmp)) deallocate(cubmattmp)
+        allocate(cubmattmp(nx,ny,nz))
 		!$OMP PARALLEL DO SHARED(cubmattmp,iprog) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
 		do k=1,nz
-			tmpz=orgz+(k-1)*dz
 			do j=1,ny
-				tmpy=orgy+(j-1)*dy
 				do i=1,nx
-					tmpx=orgx+(i-1)*dx
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 					cubmattmp(i,j,k)=calcmapfunc(imapfunc,tmpx,tmpy,tmpz,nHirBecatm,HirBecatm)
 				end do
 			end do
@@ -1954,9 +2022,10 @@ do while(.true.)
 		end do
 		!$OMP END PARALLEL DO
 		open(10,file="mapfunc.cub",status="replace")
-		call outcube(cubmattmp,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(cubmattmp,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done! grid data has been exported to mapfunc.cub in current folder"
+        deallocate(cubmattmp)
         
 	else if (isel==14) then !Calculate area of the region around a specific surface extreme
         call extreme_area
@@ -2253,7 +2322,7 @@ do while(.true.)
 		clrhigh=maxval(mat)/2D0
 		do while(.true.)
 		    write(*,*)
-            write(*,*) "   ------------------------ Fingerprint map analysis ------------------------"
+            write(*,*) "  ------------------------ Fingerprint map analysis ------------------------"
 			write(*,*) "-1 Return"
 			write(*,*) "0 Show fingerprint plot on screen"
 			write(*,*) "1 Save fingerprint plot to current folder"
@@ -2295,7 +2364,8 @@ do while(.true.)
 			else if (isel3==4) then
 				write(*,*) "Input lower and upper limit of the axes (in Angstrom), e.g. 0.5,2.8"
 				read(*,*) rlow,rhigh
-				spc=(rhigh-rlow)/(nval-1)
+		        call xypt2densmat(surval1*b2a,surval2*b2a,ncontactvtx,mat,nval,nval,rlow,rhigh,rlow,rhigh)
+		        spc=(rhigh-rlow)/(nval-1)
 			else if (isel3==5) then
 				open(10,file="finger.pdb",status="replace")
 				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' contact surface vertices')") ncontactvtx
@@ -2728,7 +2798,6 @@ vtxconn(ind1,vtxconnpos(ind1))=ind2
 vtxconnpos(ind2)=vtxconnpos(ind2)+1
 vtxconn(ind2,vtxconnpos(ind2))=ind1
 end subroutine
-
 
 
 !!---------- Calculate mapped function value

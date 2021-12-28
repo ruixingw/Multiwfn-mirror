@@ -5,12 +5,14 @@ do while(.true.)
 	write(*,*)
 	write(*,*) "              ============ Other functions (Part 3) ============ "
 	write(*,*) "0 Return"
-	write(*,*) "1 Viewing free regions and calculating free volume in a box"
+	write(*,*) "1 Viewing free regions and calculating free volume in a cell"
 	write(*,*) "2 Fitting atomic radial density as linear combination of multiple STOs or GTFs"
     write(*,*) "3 Visualize (hyper)polarizability via unit sphere and vector representations"
     write(*,*) "4 Simulating scanning tunneling microscope (STM) image"
-    write(*,*) "5 Calculate electric dipole, quadrupole and octopole moments analytically"
+    write(*,*) "5 Calculate electric dipole/multipole moments and electronic spatial extent"
     write(*,*) "6 Calculate energies of the present orbitals"
+    write(*,*) "7 Geometry operation on the present system"
+    write(*,*) "8 Plot surface distance projection map"
     
 	read(*,*) isel
 	if (isel==0) then
@@ -27,278 +29,318 @@ do while(.true.)
         call calc_multipole
     else if (isel==6) then
         call calc_orb_energy
+    else if (isel==7) then
+        call geom_operation
+    else if (isel==8) then
+        call molsurf_distmap
 	end if
 end do
 end subroutine
-    
+
 
 
 !!--------- Viewing free regions and calculating free volume in a box
+!  Error function with scale factor of 1.0 is used. Because Becke function even with n_iter=1 is to sharp, isosurface will even occur &
+!in the center region between two stacking aromatic rings. While Gaussian function decays to slow to be employed as a general choice, &
+!it is quite artificial when lots of atoms are crowded in small area, because their effect are accumulated too much in the region far away from nuclei
 subroutine freeregion
 use defvar
 use GUI
 use util
 implicit real*8 (a-h,o-z)
 character c80tmp*80
-integer :: iPBC=1,ismooth=1,isetgrid=1,iclosebound=1
-real*8 :: sclrad=1
+integer :: ismooth=1,iclosebound=1,ismoothmethod=3,nBeckeiter=1
+real*8 :: sclrad=1,xyzA(3),xyzB(3),Gauss_radmulti=2D0,erfscl=1D0
 real*8,allocatable :: cubmat_smooth(:,:,:)
 
-do while(.true.)
-    write(*,*)
-    write(*,*) " -------- Viewing free regions and calculating free volume in a box --------"
-    write(*,*) "0 Return"
-    write(*,*) "1 Set grid and start calculation"
-    if (iPBC==1) write(*,*) "2 Toggle considering periodic boundary condition, current: Yes"
-    if (iPBC==0) write(*,*) "2 Toggle considering periodic boundary condition, current: No"
-    if (ismooth==1) write(*,*) "3 Toggle calculating smoothed grid data of free regions, current: Yes"
-    if (ismooth==0) write(*,*) "3 Toggle calculating smoothed grid data of free regions, current: No"
-    if (isetgrid==1) write(*,"(' 4 Toggle the way of setting up grid, current: Manually specifying grid spacing and box lengths')")
-    if (isetgrid==0) write(*,"(' 4 Toggle the way of setting up grid, current: Defining grid using normal interface')")
-    if (iclosebound==0) write(*,"(' 5 Toggle making isosurface closed at boundary, current: No')")
-    if (iclosebound==1) write(*,"(' 5 Toggle making isosurface closed at boundary, current: Yes')")
-    write(*,"(' 6 Set scale factor of vdW radii for calculating free volume and primitive free region, current:',f6.3)") sclrad
-    
-    read(*,*) isel
-    if (isel==0) then
-        return
-    else if (isel==1) then
-        exit
-    else if (isel==2) then
-        if (iPBC==1) then
-            iPBC=0
-        else
-            iPBC=1
-        end if
-    else if (isel==3) then
-        if (ismooth==1) then
-            ismooth=0
-        else
-            ismooth=1
-        end if
-    else if (isel==4) then
-        if (isetgrid==1) then
-            isetgrid=0
-        else
-            isetgrid=1
-        end if
-    else if (isel==5) then
-        if (iclosebound==1) then
-            iclosebound=0
-        else
-            iclosebound=1
-        end if
-    else if (isel==6) then
-        write(*,*) "Input scale factor for vdW radii, e.g. 1.8"
-        read(*,*) sclrad
-    end if
-end do
-
-if (isetgrid==0) then
-    call setgrid(1,inouse)
+if (ifPBC>0) then
+    iPBC=1
 else
-    write(*,*) "Input grid spacing in Angstrom, e.g. 0.2"
-    write(*,*) "If press ENTER button directly, 0.3 Angstrom will be used"
+    iPBC=0
+end if
+
+do while(.true.)
+    do while(.true.)
+        write(*,*)
+        write(*,*) " -------- Viewing free regions and calculating free volume in a cell --------"
+        write(*,*) "0 Return"
+        write(*,*) "1 Set grid and start calculation"
+        if (iPBC==1) write(*,*) "2 Toggle considering periodic boundary condition, current: Yes"
+        if (iPBC==0) write(*,*) "2 Toggle considering periodic boundary condition, current: No"
+        if (ismooth==1) then
+            write(*,*) "3 Toggle calculating smoothed grid data of free regions, current: Yes"
+            if (ismoothmethod==1) write(*,"(a,f4.1)") " 4 Set method of smoothing, current: Gaussian function, FWHM is vdW radius multiplied by",Gauss_radmulti
+            if (ismoothmethod==2) write(*,"(a,i2)") " 4 Set method of smoothing, current: Becke function, number of iterations is",nBeckeiter
+            if (ismoothmethod==3) write(*,"(a,f5.2)") " 4 Set method of smoothing, current: Error function, scale factor:",erfscl
+        else
+            write(*,*) "3 Toggle calculating smoothed grid data of free regions, current: No"
+        end if
+        if (iclosebound==0) write(*,"(' 5 Toggle making isosurface closed at boundary, current: No')")
+        if (iclosebound==1) write(*,"(' 5 Toggle making isosurface closed at boundary, current: Yes')")
+        write(*,"(' 6 Set scale factor of vdW radii for calculating free volume and raw free region, current:',f6.3)") sclrad
+    
+        read(*,*) isel
+        if (isel==0) then
+            return
+        else if (isel==1) then
+            exit
+        else if (isel==2) then
+            if (iPBC==1) then
+                iPBC=0
+            else
+                iPBC=1
+            end if
+        else if (isel==3) then
+            if (ismooth==1) then
+                ismooth=0
+            else
+                ismooth=1
+            end if
+        else if (isel==4) then
+            write(*,*) "Choose the switching function used to calculate smoothed grid data"
+            write(*,*) "1 Gaussian function"
+            write(*,*) "2 Becke function (transformed)"
+            write(*,*) "3 Error function (transformed)"
+            write(*,"(a)") " Note: 2 and 3 have very similar decaying character and computational cost, see Section 3.300.1 of Multiwfn manual"
+            read(*,*) ismoothmethod
+            if (ismoothmethod==1) then
+                write(*,"(a)") " Set full width at half maximum (FWHM) of Gaussian function. If inputting for example 1.8, &
+                then the FWHM will be 1.8 times of van der Waals radius of corresponding atom"
+                write(*,*) "Hint: Usually the value should be <=2.0"
+                read(*,*) Gauss_radmulti
+            else if (ismoothmethod==2) then
+                write(*,*) "Input number of iterations of Becke function, e.g. 2"
+                write(*,"(a)") " Hint: Should be >=0. The smaller the number, the smoother the surface, &
+                but the farther region an atom will affect and thus more artificial it is. Usually 1 is used"
+                read(*,*) nBeckeiter
+            else if (ismoothmethod==3) then
+                write(*,*) "Input scale factor of the error function, e.g. 0.3"
+                write(*,"(a)") " Hint: The larger the value, the smoother the surface, &
+                but the farther region an atom will affect and thus more artificial it is. Usually 1.0 is a good compromise"
+                read(*,*) erfscl
+            end if
+        else if (isel==5) then
+            if (iclosebound==1) then
+                iclosebound=0
+            else
+                iclosebound=1
+            end if
+        else if (isel==6) then
+            write(*,*) "Input scale factor for vdW radii, e.g. 1.8"
+            write(*,*) "Note: This setting does not affect smoothed grid data"
+            read(*,*) sclrad
+        end if
+    end do
+
+    !Set grid
+    write(*,*) "Input X, Y, Z of origin of grid data in Angstrom, e.g. 0.3,4.5,0"
+    write(*,*) "If press ENTER button directly, (0,0,0) will be used"
     read(*,"(a)") c80tmp
     if (c80tmp==" ") then
-        tmpval=0.3D0
+        orgx=0;orgy=0;orgz=0
     else
-        read(c80tmp,*) tmpval
+        read(c80tmp,*) orgx,orgy,orgz
+        orgx=orgx/b2a
+        orgy=orgy/b2a
+        orgz=orgz/b2a
     end if
-    itmp=len_trim(filename)
-    xlen=0
-    if (filename(itmp-2:itmp)=="pdb") then
-        open(10,file=filename,status="old")
-        call loclabel(10,"CRYST1",ifound)
-        if (ifound==1) read(10,*) c80tmp,xlen,ylen,zlen
-        close(10)
-        write(*,*) "Box lengths are directly loaded from ""CRYST1"" field from input file"
-        write(*,"(' Box length in X, Y, Z:  ',3f10.3,' Angstrom')") xlen,ylen,zlen
+    write(*,*) "Input lengths of the three sides of the grid data range in Angstrom"
+    write(*,*) "For example, 31.06,31.15,31.092"
+    if (ifPBC==3) write(*,*) "If press ENTER button directly, length of three sides of the cell will be used"
+    read(*,"(a)") c80tmp
+    if (c80tmp==" ") then
+        v1len=dsqrt(sum(cellv1**2))
+        v2len=dsqrt(sum(cellv2**2))
+        v3len=dsqrt(sum(cellv3**2))
+    else
+        read(c80tmp,*) v1len,v2len,v3len
+        v1len=v1len/b2a
+        v2len=v2len/b2a
+        v3len=v3len/b2a
     end if
-    if (xlen==0) then
-        write(*,*) "Input X, Y, Z box lengths in Angstrom, e.g. 31.064,31.100,31.093"
-        read(*,*) xlen,ylen,zlen
+    write(*,*) "Input grid spacing in Angstrom, e.g. 0.2"
+    write(*,*) "If press ENTER button directly, 0.25 Angstrom will be used"
+    write(*,"(a)") " Note: The smaller the value, the more accurate the result and the smoother of the isosurface, but the higher the computational cost"
+    read(*,"(a)") c80tmp
+    if (c80tmp==" ") then
+        grdspc=0.25D0
+    else
+        read(c80tmp,*) grdspc
     end if
-    xlen=xlen/b2a
-    ylen=ylen/b2a
-    zlen=zlen/b2a
-    
-    dx=tmpval/b2a
-    dy=dx
-    dz=dx
-    nx=int(xlen/dx)+1
-    ny=int(ylen/dy)+1
-    nz=int(zlen/dz)+1
-    !Marginally re-adjust grid spacing so that the number of grids could be integer/
-    dx=xlen/(nx-1)
-    dy=ylen/(ny-1)
-    dz=zlen/(nz-1)
-    gridvec1(:)=(/ dx,0D0,0D0 /)
-    gridvec2(:)=(/ 0D0,dy,0D0 /)
-    gridvec3(:)=(/ 0D0,0D0,dz /)
-    
-    orgx=0
-    orgy=0
-    orgz=0
-    endx=orgx+dx*(nx-1) !In fact, when using setboxGUI, the endx/y/z have already been set
-    endy=orgy+dy*(ny-1)
-    endz=orgz+dz*(nz-1)
-end if
+    grdspc=grdspc/b2a
+    nx=nint(v1len/grdspc)
+    ny=nint(v2len/grdspc)
+    nz=nint(v3len/grdspc)
+    !Marginally re-adjust grid spacing so that the number of grids could be integer
+    grdspcv1=v1len/(nx-1)
+    grdspcv2=v2len/(ny-1)
+    grdspcv3=v3len/(nz-1)
+    if (ifPBC==3) then
+        gridv1(:)=cellv1(:)/v1len*grdspcv1
+        gridv2(:)=cellv2(:)/v2len*grdspcv2
+        gridv3(:)=cellv3(:)/v3len*grdspcv3
+    else
+        gridv1(:)=(/ grdspcv1,0D0,0D0 /)
+        gridv2(:)=(/ 0D0,grdspcv2,0D0 /)
+        gridv3(:)=(/ 0D0,0D0,grdspcv3 /)
+    end if
+    call getgridend
+	write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6,' Angs')") orgx*b2a,orgy*b2a,orgz*b2a
+	write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6,' Angs')") endx*b2a,endy*b2a,endz*b2a
+	write(*,"(' Grid vector 1 in X,Y,Z is',3f10.6,' Angs, norm:',f10.6)") gridv1*b2a,dsqrt(sum(gridv1**2))*b2a
+	write(*,"(' Grid vector 2 in X,Y,Z is',3f10.6,' Angs, norm:',f10.6)") gridv2*b2a,dsqrt(sum(gridv2**2))*b2a
+	write(*,"(' Grid vector 3 in X,Y,Z is',3f10.6,' Angs, norm:',f10.6)") gridv3*b2a,dsqrt(sum(gridv3**2))*b2a
+	write(*,"(' Number of points in three directions is',3i5,'  Total:',i12)") nx,ny,nz,nx*ny*nz
 
-write(*,"(' Origin in X,Y,Z is      ',3f10.3,' Angstrom')") orgx*b2a,orgy*b2a,orgz*b2a
-write(*,"(' Grid spacing in X,Y,Z is',3f10.3,' Angstrom')") dx*b2a,dy*b2a,dz*b2a
-write(*,"(' The number of points in X,Y,Z is',3i5,'   Total:',i12)") nx,ny,nz,nx*ny*nz
+    call walltime(iwalltime1)
+    allocate(cubmat(nx,ny,nz))
+    if (ismooth==1) allocate(cubmat_smooth(nx,ny,nz))
+    cubmat=1 !Free region has value of 1, occupied region has value of 0
+    cubmat_smooth=1
+    write(*,*)
+    write(*,*) "Calculating, please wait..."
+    ifinish=0
+    !$OMP PARALLEL DO SHARED(cubmat,cubmat_smooth,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,iatm,atmvdwr,sclvdwr,xyzA,xyzB,dist,tmpval,parmc,iter,tmps) schedule(dynamic) NUM_THREADS(nthreads)
+    do k=1,nz
+	    do j=1,ny
+		    do i=1,nx
+                call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+                do iatm=1,ncenter
+                    atmvdwr=vdwr(a(iatm)%index)
+                    sclvdwr=sclrad*atmvdwr
+                    if (iPBC==1) then
+                        xyzA(1)=tmpx
+                        xyzA(2)=tmpy
+                        xyzA(3)=tmpz
+                        xyzB(1)=a(iatm)%x
+                        xyzB(2)=a(iatm)%y
+                        xyzB(3)=a(iatm)%z
+                        call nearest_dist(xyzA,xyzB,dist)
+                    else
+                        dist=dsqrt((tmpx-a(iatm)%x)**2+(tmpy-a(iatm)%y)**2+(tmpz-a(iatm)%z)**2)
+                    end if
+                    if (dist<sclvdwr) then
+                        cubmat(i,j,k)=0
+                        if (ismooth==0) exit
+                    end if
+                    !Generate smoothed grid data
+                    if (ismooth==1) then
+                        if (ismoothmethod==1) then !Use (unnormalized) Gaussian function to smooth, namely broadening atoms as Gaussian distributions
+                            !When atoms are very crowd, e.g. C60 .cif, the smoothed function will be negative everywhere, because Gaussian is too extent
+                            !If FWHM = 2*atmvdwr, the value of Gaussian at atmvdwr is 0.5
+                            if (dist>3*atmvdwr*(Gauss_radmulti/2)) cycle !Ignore very far atom from this point. This was found to be very safe
+                            tmpval=switch_Gauss(dist,Gauss_radmulti*atmvdwr)
+                        else if (ismoothmethod==2) then !Use Becke switching function for smoothing, vdW radius position corresponds to 0.5
+                            if (dist>2*atmvdwr) cycle !Ignore very far atom from this point. This was found to be very safe
+                            tmpval=switch_Becke(dist,atmvdwr,nBeckeiter)
+                        else if (ismoothmethod==3) then !Use switching function based on error function for smoothing
+                            if (dist>2*atmvdwr) cycle
+                            tmpval=switch_erf(dist,atmvdwr,erfscl)
+                        end if
+                        cubmat_smooth(i,j,k)=cubmat_smooth(i,j,k)-tmpval
+                    end if
+                end do
+		    end do
+	    end do
+        !$OMP CRITICAL
+	    ifinish=ifinish+1
+        call showprog(ifinish,nz)
+        !$OMP END CRITICAL
+    end do
+    !$OMP END PARALLEL DO
 
-call walltime(iwalltime1)
-allocate(cubmat(nx,ny,nz))
-if (ismooth==1) allocate(cubmat_smooth(nx,ny,nz))
-cubmat=1 !Free region has value of 1, occupied region has value of 0
-cubmat_smooth=1
-write(*,*) "Calculating, please wait..."
-ifinish=0
-!$OMP PARALLEL DO SHARED(cubmat,cubmat_smooth,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,iatm,dist2,atmvdwr,sclvdwr,tmpval,parmc) schedule(dynamic) NUM_THREADS(nthreads)
-do k=1,nz
-	tmpz=orgz+(k-1)*dz
-	do j=1,ny
-		tmpy=orgy+(j-1)*dy
-		do i=1,nx
-			tmpx=orgx+(i-1)*dx
-            do iatm=1,ncenter
-                atmvdwr=vdwr(a(iatm)%index)
-                sclvdwr=sclrad*atmvdwr
-                if (iPBC==1) then
-                    call pbcdist2atm(tmpx,tmpy,tmpz,xlen,ylen,zlen,iatm,dist2)
-                else
-                    dist2=(tmpx-a(iatm)%x)**2+(tmpy-a(iatm)%y)**2+(tmpz-a(iatm)%z)**2
-                end if
-                if (dist2<sclvdwr**2) then
-                    cubmat(i,j,k)=0
-                    if (ismooth==0) exit
-                end if
-                if (ismooth==1) then !Use Gaussian function to smooth, namely broadening atom as Gaussian distribution
-                    if (dist2>(3*atmvdwr)**2) cycle !This was found to be very safe
-                    parmc=2*atmvdwr/2.35482D0 !2*atmvdwr=FWHM, convert to parameter c, see wiki page of Gaussian function
-                    tmpval=exp(-dist2/(2*parmc**2))
-                    cubmat_smooth(i,j,k)=cubmat_smooth(i,j,k) - tmpval
+    where(cubmat_smooth<0) cubmat_smooth=0
+
+    !Calculate free volume. Strickly speaking, center of grid should be used to determine occupancy status, however for simplicity,
+    !we do below way, corresponding to use one vertex of a grid to determine occupancy
+    call calc_dvol(dvol)
+    freevol=sum(cubmat(1:nx-1,1:ny-1,1:nz-1))*dvol*b2a**3
+    voltot=(nx-1)*(ny-1)*(nz-1)*dvol*b2a**3
+    write(*,"(' Volume of entire box:',f12.3,' Angstrom^3')") voltot
+    write(*,"(' Free volume:',f12.3,' Angstrom^3, corresponding to',f8.2,' % of whole space')") freevol,freevol/voltot*100
+
+    call walltime(iwalltime2)
+    write(*,"(/,' Calculation took up time',i10,' s')") iwalltime2-iwalltime1
+
+    !Set value of boundary grids to make isosurface map close
+    if (iclosebound==1) then
+        !XY layers
+        do i=1,nx
+            do j=1,ny
+                cubmat(i,j,1)=0
+                cubmat(i,j,nz)=0
+                if (ismooth==1) then
+                    cubmat_smooth(i,j,1)=0
+                    cubmat_smooth(i,j,nz)=0
                 end if
             end do
-		end do
-	end do
-	ifinish=ifinish+1
-    call showprog(ifinish,nz)
-end do
-!$OMP END PARALLEL DO
-
-where(cubmat_smooth<0) cubmat_smooth=0
-
-!Calculate free volume. Strickly speaking, center of grid should be used to determine occupancy status, however for simplicity,
-!we do below way, corresponding to use one vertex of a grid to determine occupancy
-freevol=sum(cubmat(1:nx-1,1:ny-1,1:nz-1))*dx*dy*dz*b2a**3
-voltot=xlen*ylen*zlen*b2a**3
-write(*,"(' Volume of entire box:',f12.3,' Angstrom^3')") voltot
-write(*,"(' Free volume:',f12.3,' Angstrom^3, corresponding to',f8.2,' % of whole space')") freevol,freevol/voltot*100
-
-call walltime(iwalltime2)
-write(*,"(/,' Calculation took up time',i10,' s')") iwalltime2-iwalltime1
-
-!Set value of boundary grids to make isosurface map close
-if (iclosebound==1) then
-    !XY layers
-    do i=1,nx
+        end do
+        !XZ layers
+        do i=1,nx
+            do k=1,nz
+                cubmat(i,1,k)=0
+                cubmat(i,ny,k)=0
+                if (ismooth==1) then
+                    cubmat_smooth(i,1,k)=0
+                    cubmat_smooth(i,ny,k)=0
+                end if
+            end do
+        end do
+        !YZ layers
         do j=1,ny
-            cubmat(i,j,1)=0
-            cubmat(i,j,nz)=0
-            if (ismooth==1) then
-                cubmat_smooth(i,j,1)=0
-                cubmat_smooth(i,j,nz)=0
-            end if
+            do k=1,nz
+                cubmat(1,j,k)=0
+                cubmat(nx,j,k)=0
+                if (ismooth==1) then
+                    cubmat_smooth(1,j,k)=0
+                    cubmat_smooth(nx,j,k)=0
+                end if
+            end do
         end do
-    end do
-    !XZ layers
-    do i=1,nx
-        do k=1,nz
-            cubmat(i,1,k)=0
-            cubmat(i,ny,k)=0
-            if (ismooth==1) then
-                cubmat_smooth(i,1,k)=0
-                cubmat_smooth(i,ny,k)=0
-            end if
-        end do
-    end do
-    !YZ layers
-    do j=1,ny
-        do k=1,nz
-            cubmat(1,j,k)=0
-            cubmat(nx,j,k)=0
-            if (ismooth==1) then
-                cubmat_smooth(1,j,k)=0
-                cubmat_smooth(nx,j,k)=0
-            end if
-        end do
-    end do
-end if
-
-idrawmol=0
-ishowatmlab=0
-ishowaxis=0
-sur_value=0.5D0
-do while(.true.)
-    write(*,*)
-    write(*,*) "0 Return"
-    write(*,*) "1 Visualize isosurface of primitive free region"
-    write(*,*) "2 Export primitive grid data as free_prim.cub in current folder"
-    if (ismooth==1) then
-        write(*,*) "3 Visualize isosurface of smoothed free region"
-        write(*,*) "4 Export smoothed grid data as free_smooth.cub in current folder"
     end if
-    read(*,*) isel
-    if (isel==0) then
-        deallocate(cubmat)
-        if (ismooth==1) deallocate(cubmat_smooth)
-        return
-    else if (isel==1) then
-        call drawisosurgui(1)
-    else if (isel==2) then
-        open(10,file="free_prim.cub",status="replace")
-        call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-        close(10)
-        write(*,"(' Done! Grid data has been exported to free_prim.cub in current folder')")
-    else if (isel==3) then
-        allocate(cubmattmp(nx,ny,nz))
-        cubmattmp=cubmat
-        cubmat=cubmat_smooth
-        call drawisosurgui(1)
-        cubmat=cubmattmp
-        deallocate(cubmattmp)
-    else if (isel==4) then
-        open(10,file="free_smooth.cub",status="replace")
-        call outcube(cubmat_smooth,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-        close(10)
-        write(*,"(' Done! Grid data has been exported to free_smooth.cub in current folder')")
-    end if
-end do
-end subroutine
 
-!Input x,y,z coordinate, return square distance to a given atom (iatm) with consideration of PBC
-subroutine pbcdist2atm(x,y,z,xlen,ylen,zlen,iatm,dist2)
-use defvar
-implicit real*8 (a-h,o-z)
-real*8 x,y,z,xlen,ylen,zlen,dist2
-integer iatm
-xa=a(iatm)%x
-ya=a(iatm)%y
-za=a(iatm)%z
-dist2=1D100
-do ix=-1,1,1
-    do iy=-1,1,1
-        do iz=-1,1,1
-            dist2tmp=(xa+ix*xlen-x)**2+(ya+iy*ylen-y)**2+(za+iz*zlen-z)**2
-            if (dist2tmp<dist2) dist2=dist2tmp
-        end do
+    idrawmol=1
+    ishowatmlab=0
+    ishowaxis=0
+    sur_value=0.5D0
+    do while(.true.)
+        write(*,*)
+        write(*,*) "                     ------- Post-processing menu -------"
+        write(*,*) "0 Return"
+        write(*,*) "1 Visualize isosurface of raw free region"
+        write(*,*) "2 Export raw grid data as free_prim.cub in current folder"
+        if (ismooth==1) then
+            write(*,*) "3 Visualize isosurface of smoothed free region"
+            write(*,*) "4 Export smoothed grid data as free_smooth.cub in current folder"
+        end if
+        read(*,*) isel
+        if (isel==0) then
+            deallocate(cubmat)
+            if (ismooth==1) deallocate(cubmat_smooth)
+            exit
+        else if (isel==1) then
+            call drawisosurgui(1)
+        else if (isel==2) then
+            open(10,file="free_prim.cub",status="replace")
+            call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+            close(10)
+            write(*,"(' Done! Grid data has been exported to free_prim.cub in current folder')")
+        else if (isel==3) then
+            allocate(cubmattmp(nx,ny,nz))
+            cubmattmp=cubmat
+            cubmat=cubmat_smooth
+            call drawisosurgui(1)
+            cubmat=cubmattmp
+            deallocate(cubmattmp)
+        else if (isel==4) then
+            open(10,file="free_smooth.cub",status="replace")
+            call outcube(cubmat_smooth,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+            close(10)
+            write(*,"(' Done! Grid data has been exported to free_smooth.cub in current folder')")
+        end if
     end do
 end do
 end subroutine
-
 
 
 
@@ -1003,266 +1045,6 @@ end function
 
 
 
-!!------------ Visualize (hyper)polarizability via unit sphere and vector representations
-subroutine vis_hypol
-use util
-use defvar
-implicit real*8 (a-h,o-z)
-real*8 :: arrowscl=0.015D0,arrowrad=0.025D0,arrowradvec=0.15D0,arrowsclvec=0.05D0
-real*8 alpha(3,3),beta(3,3,3),gamma(3,3,3,3),vec(3),vecrep(3),univec(3),ten2(3,3),ten3(3,3,3)
-real*8,allocatable :: ptxyz(:,:),allvec(:,:)
-character c200tmp*200,c80tmp*80,name*10
-integer :: numpt=600,icolorarrow=1,ispecmaxlen=0
-
-if (allocated(distmat)) then !Input file contains atom information
-    sphererad=maxval(distmat)/2*b2a*1.6D0
-else
-    sphererad=2D0
-end if
-
-do while(.true.)
-    write(*,*)
-    write(*,*) "       --------------- Visualizing (hyper)polarizability ---------------"
-    if (ispecmaxlen==0) write(*,*) "-8 Toggle making longest arrow on sphere has specific length, current: No"
-    if (ispecmaxlen==1) write(*,*) "-8 Toggle making longest arrow on sphere has specific length, current: Yes"
-    if (icolorarrow==0) write(*,*) "-7 Toggle coloring arrows on sphere, current: No"
-    if (icolorarrow==1) write(*,*) "-7 Toggle coloring arrows on sphere, current: Yes"
-    write(*,"(a,f9.6)") " -6 Set radius for the arrow of vector rep., current:",arrowradvec
-    write(*,"(a,f9.6)") " -5 Set length scale factor for the arrow of vector rep., current:",arrowsclvec
-    write(*,"(a,f9.6)") " -4 Set radius for the arrows on sphere, current:",arrowrad
-    write(*,"(a,f9.6)") " -3 Set length scale factor for the arrows on sphere, current:",arrowscl
-    write(*,"(a,i6)") " -2 Set number of points on the sphere, current:",numpt
-    write(*,"(a,f8.3,' Angstrom')") " -1 Set sphere radius, current:",sphererad
-    write(*,*) "0 Return"
-    write(*,*) "1 Do analysis for polarizability (alpha)"
-    write(*,*) "2 Do analysis for first-order hyperpolarizability (beta)"
-    write(*,*) "3 Do analysis for second-order hyperpolarizability (gamma)"
-    read(*,*) isel
-    
-    if (isel==-8) then
-        if (ispecmaxlen==1) then
-            ispecmaxlen=0
-        else
-            ispecmaxlen=1
-        end if
-    else if (isel==-7) then
-        if (icolorarrow==1) then
-            icolorarrow=0
-        else
-            icolorarrow=1
-        end if
-    else if (isel==-6) then
-        write(*,*) "Input radius of the arrow, e.g. 0.25"
-        read(*,*) arrowradvec
-    else if (isel==-5) then
-        write(*,*) "Input scale factor for the arrow, e.g. 0.05"
-        read(*,*) arrowsclvec
-    else if (isel==-4) then
-        write(*,*) "Input radius of the arrows, e.g. 0.05"
-        read(*,*) arrowrad
-    else if (isel==-3) then
-        write(*,*) "Input scale factor for the arrows, e.g. 0.15"
-        read(*,*) arrowscl
-    else if (isel==-2) then
-        write(*,*) "Input expected number of points on the sphere, e.g. 800"
-        write(*,"(a)") "  You can also input negative value to specify density of points, e.g. -8.5 means the density is 8.5 points per Angstrom^2"
-        write(*,*) "Note: The actual number will be automatically maginally adjusted"
-        read(*,*) numpt
-        if (numpt<0) numpt=nint(4*sphererad**2*abs(numpt))
-    else if (isel==-1) then
-        write(*,*) "Input radius of sphere (in Angstrom), e.g. 1.5"
-        read(*,*) sphererad
-    else if (isel==0) then
-        exit
-    
-    else if (isel==1.or.isel==2.or.isel==3) then
-        if (isel==1) name="alpha"
-        if (isel==2) name="beta"
-        if (isel==3) name="gamma"
-        c200tmp=trim(name)//".txt"
-	    inquire(file=c200tmp,exist=alive)
-        if (alive) then
-            write(*,"(a)") " Since "//trim(c200tmp)//" can be found in current folder, "//trim(name)//" tensor will be directly loaded from it"
-        else
-            write(*,*) "Input path of the file containing full "//trim(name)//" tensor, e.g. C:\yohane.txt"
-            do while(.true.)
-                read(*,"(a)") c200tmp
-	            inquire(file=c200tmp,exist=alive)
-	            if (alive) exit
-	            write(*,*) "Cannot find the file, input again!"
-            end do
-        end if
-        write(*,*) "Loading "//trim(name)//" tensor from "//trim(c200tmp)
-        open(10,file=c200tmp,status="old")
-        if (isel==1) read(10,*) ((alpha(i,j),j=1,3),i=1,3)
-        if (isel==2) read(10,*) (((beta(i,j,k),k=1,3),j=1,3),i=1,3)
-        if (isel==3) read(10,*) ((((gamma(i,j,k,l),l=1,3),k=1,3),j=1,3),i=1,3)
-        close(10)
-        allocate(ptxyz(3,numpt),allvec(3,numpt))
-        
-        call unitspherept(ptxyz,numpt) !The inputted numpt will be automatically adjusted by this routine
-        write(*,"(' Actual number of points on unit sphere:',i6)") numpt
-        ptxyz=ptxyz*sphererad
-        
-        write(*,*) "Calculating data points on the sphere ..."
-        do ipt=1,numpt
-            tmpnorm=dsqrt(sum(ptxyz(:,ipt)**2))
-            univec=ptxyz(:,ipt)/tmpnorm
-            if (isel==1) then !alpha
-                do i=1,3
-                    allvec(i,ipt)=sum(alpha(i,:)*univec(:))
-                end do
-            else if (isel==2) then !beta
-                do i=1,3
-                    do j=1,3
-                        ten2(i,j)=sum(beta(i,j,:)*univec(:))
-                    end do
-                end do
-                do i=1,3
-                    allvec(i,ipt)=sum(ten2(i,:)*univec(:))
-                end do
-            else if (isel==3) then !gamma
-                do i=1,3
-                    do j=1,3
-                        do k=1,3
-                            ten3(i,j,k)=sum(gamma(i,j,k,:)*univec(:))
-                        end do
-                    end do
-                end do
-                do i=1,3
-                    do j=1,3
-                        ten2(i,j)=sum(ten3(i,j,:)*univec(:))
-                    end do
-                end do
-                do i=1,3
-                    allvec(i,ipt)=sum(ten2(i,:)*univec(:))
-                end do
-            end if
-        end do
-        allvec=allvec*arrowscl
-        
-        valmax=0
-        valmin=1E20
-        do ipt=1,numpt
-            tmp=dsqrt(sum(allvec(:,ipt)**2))
-            if (tmp>valmax) valmax=tmp
-            if (tmp<valmin) valmin=tmp
-        end do
-        write(*,"(' Minimal arrow length after scaling:',f12.3)") valmin
-        write(*,"(' Maximal arrow length after scaling:',f12.3)") valmax
-        
-        if (ispecmaxlen==1) then
-            write(*,*)
-            write(*,*) "Input expected length of longest arrow on the sphere, e.g. 2.5"
-            read(*,*) tmpmax
-            sclf=tmpmax/valmax
-            allvec=allvec*sclf
-            valmax=valmax*sclf
-            valmin=valmin*sclf
-            write(*,"(' Current arrows on sphere have been further scaled by',f12.6)") sclf
-        end if
-        
-        c80tmp=trim(name)//".tcl"
-        write(*,*) "Outputting "//trim(c80tmp)//" ..."
-        open(10,file=c80tmp,status="replace")
-        write(10,"(a)") "color Display Background white"
-        if (icolorarrow==0) then
-            write(10,"(a)") "draw color white"
-            do ipt=1,numpt
-                call drawVMDarrow(10,ptxyz(:,ipt),allvec(:,ipt),arrowrad)
-            end do
-        else if (icolorarrow==1) then
-            call writeVMD_BWR(10)
-            do ipt=1,numpt
-                tmp=dsqrt(sum(allvec(:,ipt)**2))
-                !idcolor=nint(tmp/valmax*1000) !Using zero as color lower limit
-                idcolor=nint((tmp-valmin)/(valmax-valmin)*1000)
-                if (idcolor==0) idcolor=1
-                write(10,"(a,i5)") "draw color",idcolor+50
-                call drawVMDarrow(10,ptxyz(:,ipt),allvec(:,ipt),arrowrad)
-            end do
-        end if
-        close(10)
-        write(*,"(a,/)") " Done! "//trim(c80tmp)//" has been generated in current folder, it is a VMD plotting script, &
-        you can run ""source "//trim(c80tmp)//""" in VMD console window to plot the map"
-        deallocate(ptxyz,allvec)
-        
-        !Output vector representation
-        vecrep=0
-        if (isel==1) then
-            do i=1,3
-                do j=1,3
-                    vecrep(i)=vecrep(i)+alpha(i,j)
-                end do
-            end do
-            write(*,"(' Alpha_X:',1PE14.6,'   Alpha_Y:',1PE14.6,'   Alpha_Z:',1PE14.6,' a.u.')") vecrep(:)
-        else if (isel==2) then
-            do i=1,3
-		        do j=1,3
-			        vecrep(i)=vecrep(i)+beta(i,j,j)+beta(j,j,i)+beta(j,i,j)
-		        end do
-            end do
-            vecrep=vecrep/3
-            write(*,"(' Beta_X:',1PE14.6,'   Beta_Y:',1PE14.6,'   Beta_Z:',1PE14.6,' a.u.')") vecrep(:)
-        else if (isel==3) then
-            do i=1,3
-	            do j=1,3
-		            vecrep(i)=vecrep(i)+gamma(i,j,j,i)+gamma(i,j,i,j)+gamma(i,i,j,j)
-	            end do
-            end do
-            vecrep=vecrep/15
-            write(*,"(' Gamma_X:',1PE14.6,'   Gamma_Y:',1PE14.6,'   Gamma_Z:',1PE14.6,' a.u.')") vecrep(:)
-        end if
-        if (isel==2) then !For alpha and gamma, the vector representation is useless
-            open(10,file=trim(name)//"_vec.tcl",status="replace")
-            vec=0 !Origin of the arrow is (0,0,0)
-            write(10,"(a)") "draw color lime"
-            call drawVMDarrow(10,vec,vecrep*arrowsclvec,arrowradvec)
-            close(10)
-            write(*,"(1x,a)") trim(name)//"_vec.tcl has been generated in current folder, it contains VMD command to plot "//trim(name)//" &
-            tensor via vector representation"
-        end if
-    end if
-end do
-
-end subroutine
-
-!!--------- Write command for drawing arrow into VMD plotting script according to inputted coordinate and arrow vector
-subroutine drawVMDarrow(ifileid,ptxyz,vec,arrowrad)
-integer ifileid
-real*8 ptxyz(3),vec(3),arrowrad
-conerad=2.5D0*arrowrad !cone radius
-conepos=0.65D0
-write(ifileid,"( 'draw cylinder {',3f8.3,'} {',3f8.3,'} radius',f5.2,' filled yes resolution 20' )") ptxyz(:),ptxyz(:)+conepos*vec(:),arrowrad
-write(ifileid,"( 'draw cone {',3f8.3,'} {',3f8.3,'} radius',f5.2,' resolution 20' )") ptxyz(:)+conepos*vec(:),ptxyz(:)+vec(:),conerad
-end subroutine
-
-!!-------- Define 1000 customized colors (index from 51 to 1050) corresponding to variation of blue-white-red
-!The reason of using 50~1050: (1) 0~32 are built-in colors (2) index >=1057 is unsupported by VMD
-subroutine writeVMD_BWR(ifileid)
-write(ifileid,"(a)") "set j 0                                         "
-write(ifileid,"(a)") "for {set i 1} {$i<=500} {incr i} {              "
-write(ifileid,"(a)") "incr j                                          "
-write(ifileid,"(a)") "set red [expr double($j)/500]                       "
-write(ifileid,"(a)") "set green [expr double($j)/500]                     "
-write(ifileid,"(a)") "set blue 1                                      "
-write(ifileid,"(a)") "color change rgb [expr $i+50] $red $green $blue"
-write(ifileid,"(a)") "}                                               "
-write(ifileid,"(a)") "set j 0                                         "
-write(ifileid,"(a)") "for {set i 501} {$i<=1000} {incr i} {            "
-write(ifileid,"(a)") "incr j                                          "
-write(ifileid,"(a)") "set red 1                                       "
-write(ifileid,"(a)") "set green [expr double(500-$j)/500]               "
-write(ifileid,"(a)") "set blue [expr double(500-$j)/500]                "
-write(ifileid,"(a)") "color change rgb [expr $i+50] $red $green $blue"
-write(ifileid,"(a)") "}                                               "
-end subroutine
-
-
-
-
-
-
 
 !!----------- Simulating scanning tunneling microscope (STM) image
 !Main ref: https://en.wikipedia.org/wiki/Scanning_tunneling_microscope
@@ -1471,6 +1253,9 @@ do while(.true.)
         
         if (imode==1) then !Constant current STM
             dz=(endz-orgz)/(nz-1)
+            gridv1=(/ dx,0D0,0D0 /)
+            gridv2=(/ 0D0,dy,0D0 /)
+            gridv3=(/ 0D0,0D0,dz /)
 	        write(*,"(' Grid spacings in X,Y,Z are',3f12.6,' Bohr')") dx,dy,dz
             write(*,*) "Calculating, please wait..."
             allocate(cubmat(nx,ny,nz))
@@ -1511,10 +1296,7 @@ do while(.true.)
                     call drawisosurgui(1)
                 else if (isel2==2) then
                     open(10,file="STM.cub",status="replace")
-                    gridvec1=(/ dx,0D0,0D0 /)
-                    gridvec2=(/ 0D0,dy,0D0 /)
-                    gridvec3=(/ 0D0,0D0,dz /)
-			        call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+			        call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
                     close(10)
                     write(*,*) "Exporting finished!"
                 else if (isel2==3) then
@@ -1549,6 +1331,8 @@ do while(.true.)
                     clrlow=minval(planemat)*0.99999D0;clrhigh=maxval(planemat)*1.00001D0 !Avoid a few points marginally exceed upper limit
                     planestpz=(clrhigh-clrlow)/10
                     orgz2D=0 !In fact this is meaningless for present case, but should be initialized...
+                    idrawtype=1
+                    idrawcontour=0
                     call gencontour(2,clrlow,clrhigh,10) !Generate contour lines evenly covering lower and upper limits
                     call planemap_interface("constant current STM","STM",orgx,endx,orgy,endy,clrlow,clrhigh)
                     deallocate(planemat)
@@ -1573,6 +1357,8 @@ do while(.true.)
             clrhigh=maxval(planemat)
             planestpz=(clrhigh-clrlow)/10
             orgz2D=orgz
+            idrawtype=1
+            idrawcontour=0
             call planemap_interface("constant height STM","STM",orgx,endx,orgy,endy,clrlow,clrhigh)
             deallocate(planemat)
         end if
@@ -1618,7 +1404,7 @@ end function
 
 
 
-!!--------------- Calculate electric dipole, quadrupole and octopole moments of present system based on analytic integrals
+!!--------- Calculate electric dipole/multipole moments and electronic spatial extent based on analytic integrals
 subroutine calc_multipole
 use defvar
 use util
@@ -1645,9 +1431,7 @@ if (ispecial==1) then
 end if
 
 if (allocated(CObasa)) then
-    write(*,*) "Calculating electric dipole moment integral matrix..."
-    call genDbas_curr
-    write(*,*) "Calculating electric quadruple and octopole moment integral matrix..."
+    write(*,"(a)") " Calculating electric dipole, quadruple, octopole and Hexadecapole moment integral matrix..."
     call genMultipolebas_curr
 
     xinttot=sum(Dbas(1,:,:)*Ptot(:,:))
@@ -1672,12 +1456,26 @@ if (allocated(CObasa)) then
     xyyinttot=sum(Octobas(9,:,:)*Ptot(:,:))
     xyzinttot=sum(Octobas(10,:,:)*Ptot(:,:))
     
+    xxxxinttot=sum(Hexdebas(1,:,:)*Ptot(:,:))
+    yyyyinttot=sum(Hexdebas(2,:,:)*Ptot(:,:))
+    zzzzinttot=sum(Hexdebas(3,:,:)*Ptot(:,:))
+    xxxyinttot=sum(Hexdebas(4,:,:)*Ptot(:,:))
+    xxxzinttot=sum(Hexdebas(5,:,:)*Ptot(:,:))
+    yyyxinttot=sum(Hexdebas(6,:,:)*Ptot(:,:))
+    yyyzinttot=sum(Hexdebas(7,:,:)*Ptot(:,:))
+    zzzxinttot=sum(Hexdebas(8,:,:)*Ptot(:,:))
+    zzzyinttot=sum(Hexdebas(9,:,:)*Ptot(:,:))
+    xxyyinttot=sum(Hexdebas(10,:,:)*Ptot(:,:))
+    xxzzinttot=sum(Hexdebas(11,:,:)*Ptot(:,:))
+    yyzzinttot=sum(Hexdebas(12,:,:)*Ptot(:,:))
+    xxyzinttot=sum(Hexdebas(13,:,:)*Ptot(:,:))
+    yyxzinttot=sum(Hexdebas(14,:,:)*Ptot(:,:))
+    zzxyinttot=sum(Hexdebas(15,:,:)*Ptot(:,:))
+    
 else if (allocated(b)) then
     write(*,*) "Calculating density matrix based on GTFs..."
     call genPprim
-    write(*,*) "Calculating electric dipole moment integral matrix..."
-    call genDprim
-    write(*,*) "Calculating electric quadruple and octopole moment integral matrix..."
+    write(*,"(a)") " Calculating electric dipole, quadruple, octopole and Hexadecapole moment integral matrix..."
     call genMultipoleprim
 
     xinttot=sum(Dprim(1,:,:)*Ptot_prim(:,:))
@@ -1702,12 +1500,32 @@ else if (allocated(b)) then
     xyyinttot=sum(Octoprim(9,:,:)*Ptot_prim(:,:))
     xyzinttot=sum(Octoprim(10,:,:)*Ptot_prim(:,:))
 
+    xxxxinttot=sum(Hexdeprim(1,:,:)*Ptot_prim(:,:))
+    yyyyinttot=sum(Hexdeprim(2,:,:)*Ptot_prim(:,:))
+    zzzzinttot=sum(Hexdeprim(3,:,:)*Ptot_prim(:,:))
+    xxxyinttot=sum(Hexdeprim(4,:,:)*Ptot_prim(:,:))
+    xxxzinttot=sum(Hexdeprim(5,:,:)*Ptot_prim(:,:))
+    yyyxinttot=sum(Hexdeprim(6,:,:)*Ptot_prim(:,:))
+    yyyzinttot=sum(Hexdeprim(7,:,:)*Ptot_prim(:,:))
+    zzzxinttot=sum(Hexdeprim(8,:,:)*Ptot_prim(:,:))
+    zzzyinttot=sum(Hexdeprim(9,:,:)*Ptot_prim(:,:))
+    xxyyinttot=sum(Hexdeprim(10,:,:)*Ptot_prim(:,:))
+    xxzzinttot=sum(Hexdeprim(11,:,:)*Ptot_prim(:,:))
+    yyzzinttot=sum(Hexdeprim(12,:,:)*Ptot_prim(:,:))
+    xxyzinttot=sum(Hexdeprim(13,:,:)*Ptot_prim(:,:))
+    yyxzinttot=sum(Hexdeprim(14,:,:)*Ptot_prim(:,:))
+    zzxyinttot=sum(Hexdeprim(15,:,:)*Ptot_prim(:,:))
+
 else
     write(*,*) "Error: The current input file does not contain wavefunction information!"
     write(*,*) "Press ENTER button to return"
     read(*,*)
     return
 end if
+
+ESEx=-xxinttot
+ESEy=-yyinttot
+ESEz=-zzinttot
 
 !Combine nuclear contribution and electron contribution to obtain multiple moments
 xnucdip=0
@@ -1733,11 +1551,31 @@ do iatm=1,ncenter
 	xxyinttot=xxyinttot+a(iatm)%x*a(iatm)%x*a(iatm)%y*a(iatm)%charge
 	xyyinttot=xyyinttot+a(iatm)%x*a(iatm)%y*a(iatm)%y*a(iatm)%charge
 	xyzinttot=xyzinttot+a(iatm)%x*a(iatm)%y*a(iatm)%z*a(iatm)%charge
+    xxxxinttot=xxxxinttot+a(iatm)%x*a(iatm)%x*a(iatm)%x*a(iatm)%x*a(iatm)%charge
+    yyyyinttot=yyyyinttot+a(iatm)%y*a(iatm)%y*a(iatm)%y*a(iatm)%y*a(iatm)%charge
+    zzzzinttot=zzzzinttot+a(iatm)%z*a(iatm)%z*a(iatm)%z*a(iatm)%z*a(iatm)%charge
+    xxxyinttot=xxxyinttot+a(iatm)%x*a(iatm)%x*a(iatm)%x*a(iatm)%y*a(iatm)%charge
+    xxxzinttot=xxxzinttot+a(iatm)%x*a(iatm)%x*a(iatm)%x*a(iatm)%z*a(iatm)%charge
+    yyyxinttot=yyyxinttot+a(iatm)%y*a(iatm)%y*a(iatm)%y*a(iatm)%x*a(iatm)%charge
+    yyyzinttot=yyyzinttot+a(iatm)%y*a(iatm)%y*a(iatm)%y*a(iatm)%z*a(iatm)%charge
+    zzzxinttot=zzzxinttot+a(iatm)%z*a(iatm)%z*a(iatm)%z*a(iatm)%x*a(iatm)%charge
+    zzzyinttot=zzzyinttot+a(iatm)%z*a(iatm)%z*a(iatm)%z*a(iatm)%y*a(iatm)%charge
+    xxyyinttot=xxyyinttot+a(iatm)%x*a(iatm)%x*a(iatm)%y*a(iatm)%y*a(iatm)%charge
+    xxzzinttot=xxzzinttot+a(iatm)%x*a(iatm)%x*a(iatm)%z*a(iatm)%z*a(iatm)%charge
+    yyzzinttot=yyzzinttot+a(iatm)%y*a(iatm)%y*a(iatm)%z*a(iatm)%z*a(iatm)%charge
+    xxyzinttot=xxyzinttot+a(iatm)%x*a(iatm)%x*a(iatm)%y*a(iatm)%z*a(iatm)%charge
+    yyxzinttot=yyxzinttot+a(iatm)%y*a(iatm)%y*a(iatm)%x*a(iatm)%z*a(iatm)%charge
+    zzxyinttot=zzxyinttot+a(iatm)%z*a(iatm)%z*a(iatm)%x*a(iatm)%y*a(iatm)%charge
 end do
 rrinttot=xxinttot+yyinttot+zzinttot
 rrxinttot=xxxinttot+xyyinttot+xzzinttot
 rryinttot=xxyinttot+yyyinttot+yzzinttot
 rrzinttot=xxzinttot+yyzinttot+zzzinttot
+
+write(*,"(/,' X, Y, Z of center of positive charges (nuclear charges) in Angstrom',/,3f12.6)") &
+xnucdip/sum(a%charge)*b2a,ynucdip/sum(a%charge)*b2a,znucdip/sum(a%charge)*b2a
+write(*,"(' X, Y, Z of center of negative charges (electronic charges) in Angstrom',/,3f12.6)") &
+-xinttot/nelec*b2a,-yinttot/nelec*b2a,-zinttot/nelec*b2a
 
 write(*,"(/,' Dipole moment from nuclear charges (a.u.): ',3f11.6)") xnucdip,ynucdip,znucdip
 write(*,"(' Dipole moment from electrons (a.u.):       ',3f11.6)") xinttot,yinttot,zinttot
@@ -1797,6 +1635,20 @@ write(*,"(' Q_3,0 =',f11.4,'  Q_3,-1=',f11.4,'  Q_3,1 =',f11.4)") R30,R3n1,R3p1
 write(*,"(' Q_3,-2=',f11.4,'  Q_3,2 =',f11.4,'  Q_3,-3=',f11.4,'  Q_3,3 =',f11.4)") R3n2,R3p2,R3n3,R3p3
 write(*,"( ' Magnitude: |Q_3|=',f12.4)") dsqrt(R30**2+R3n1**2+R3p1**2+R3n2**2+R3p2**2+R3n3**2+R3p3**2)
 
+!The outputting order is identical to Gaussian
+fac=1
+!fac=au2debye*b2a*b2a*b2a !If using this, result will be identical to "Hexadecapole moment (field-independent basis, Debye-Ang**3):" printed by Gaussian
+write(*,"(/,' Hexadecapole moments:')")
+write(*,"(' XXXX=',f16.4,'  YYYY=',f16.4,'  ZZZZ=',f16.4)") xxxxinttot*fac,yyyyinttot*fac,zzzzinttot*fac
+write(*,"(' XXXY=',f16.4,'  XXXZ=',f16.4,'  YYYX=',f16.4)") xxxyinttot*fac,xxxzinttot*fac,yyyxinttot*fac
+write(*,"(' YYYZ=',f16.4,'  ZZZX=',f16.4,'  ZZZY=',f16.4)") yyyzinttot*fac,zzzxinttot*fac,zzzyinttot*fac
+write(*,"(' XXYY=',f16.4,'  XXZZ=',f16.4,'  YYZZ=',f16.4)") xxyyinttot*fac,xxzzinttot*fac,yyzzinttot*fac
+write(*,"(' XXYZ=',f16.4,'  YYXZ=',f16.4,'  ZZXY=',f16.4)") xxyzinttot*fac,yyxzinttot*fac,zzxyinttot*fac
+
+ESE=ESEx+ESEy+ESEz
+write(*,"(/,a,f16.6)") " Electronic spatial extent <r^2>:",ESE
+write(*,"(' Components of <r^2>:  X=',f15.6,'  Y=',f15.6,'  Z=',f15.6)") ESEx,ESEy,ESEz
+
 write(*,*)
 write(*,*) "Note: Unless otherwise specified, all data shown above are in a.u."
 end subroutine
@@ -1817,8 +1669,8 @@ if (.not.allocated(CObasa)) then
 end if
 
 call loadFockfile(istat)
-if (istat==0) then
-	write(*,*) "Unable to evaluate orbital energies!"
+if (istat==1) then
+	write(*,*) "Error: Unable to evaluate orbital energies!"
 else
 	Emat=matmul(matmul(transpose(CObasa),FmatA),CObasa)
 	do iorb=1,nbasis
@@ -1862,4 +1714,1199 @@ else
         write(*,*) "The original orbital energies in memory have been replaced by the new ones!"
     end if
 end if
+end subroutine
+
+
+
+
+
+!!------- Generate randomly displaced geometries
+subroutine displace_geom
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer atmlist(ncenter)
+
+write(*,*)
+write(*,*) " ------------------ Generate randomly displaced geometries ------------------"
+write(*,*) "Input index of the atoms that you want to randomly displace, e.g. 2,3,7-10"
+write(*,*) "To choose the whole system, input ""a"""
+write(*,*) "To exit, input ""q"""
+read(*,"(a)") c2000tmp
+if (index(c2000tmp,'a')/=0) then
+    nsel=ncenter
+    forall(i=1:nsel) atmlist(i)=i
+else if (c2000tmp=='q') then
+    return
+else
+    call str2arr(c2000tmp,nsel,atmlist)
+end if
+
+write(*,*) "Displace which Cartesian coordinates?"
+write(*,*) "1 X coordinate"
+write(*,*) "2 Y coordinate"
+write(*,*) "3 Z coordinate"
+write(*,*) "4 X and Y coordinates"
+write(*,*) "5 Y and Z coordinates"
+write(*,*) "6 X and Z coordinates"
+write(*,*) "7 X, Y and Z coordinates"
+read(*,*) itype
+
+write(*,*) "Input standard variation of displacement in Angstrom, e.g. 0.01"
+read(*,*) stdvar
+stdvar=stdvar/b2a
+
+write(*,*) "Generate how many geometries? e.g. 4"
+read(*,*) numgen
+
+open(10,file="new.xyz",status="replace")
+do igen=1,numgen
+    do i=1,nsel
+        iatm=atmlist(i)
+        !Use basic form of Box¨CMuller transform to generate random numbers &
+        !satisfying normal distribution (https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform)
+        CALL RANDOM_NUMBER(ran1)
+        CALL RANDOM_NUMBER(ran2)
+        CALL RANDOM_NUMBER(ran3)
+        tmp=stdvar*dsqrt(-2*log(ran1))
+        pertx=0
+        perty=0
+        pertz=0
+        if (itype==1.or.itype==4.or.itype==6.or.itype==7) pertx=tmp*cos(2*pi*ran2)
+        if (itype==2.or.itype==4.or.itype==5.or.itype==7) perty=tmp*sin(2*pi*ran2)
+        if (itype==3.or.itype==5.or.itype==6.or.itype==7) pertz=tmp*cos(2*pi*ran3)
+        a(iatm)%x=a(iatm)%x+pertx
+        a(iatm)%y=a(iatm)%y+perty
+        a(iatm)%z=a(iatm)%z+pertz
+        if (numgen==1) write(*,"(' Moved',i6,'(',a,') by X:',f9.5,'  Y:',f9.5,'  Z:',f9.5,'  Total:',f9.5,' Ang')") &
+        iatm,a(iatm)%name,pertx*b2a,perty*b2a,pertz*b2a,dsqrt(pertx**2+perty**2+pertz**2)*b2a
+    end do
+    write(10,"(i6)") ncenter
+    write(10,"(' Geometry',i10,' Generated by Multiwfn')") igen
+    do i=1,ncenter
+	    write(10,"(a,3f16.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+    end do
+    a%x=a_org%x
+    a%y=a_org%y
+    a%z=a_org%z
+end do
+close(10)
+
+write(*,*)
+if (numgen==1) then
+    write(*,*) "Done! The displaced geometry has been updated to new.xyz in current folder"
+else
+    write(*,*) "Done! The displaced geometries have been updated to new.xyz in current folder"
+end if
+end subroutine
+
+
+
+
+!!---------- Geometry relevant operations on the present system
+subroutine geom_operation
+use defvar
+use deftype
+use GUI
+use util
+implicit real*8 (a-h,o-z)
+integer fragsel(ncenter),nfragsel,intarr(ncenter),iffrag(ncenter)
+character c200tmp*200,c2000tmp*2000,selectyn
+real*8 mat(3,3),matt1(3,3),matt2(3,3)
+real*8 vec(3),vec2(3),vecr(1,3),vecc(3,1) !vector, row vector, column vector
+type(atomtype),allocatable :: a_old(:)
+type(atomtype) atmp
+real*8 inertia(3,3),eigvecmat(3,3),eigvalarr(3)
+real*8 rcoord(3),fcoord(3)
+integer,allocatable :: tmparr(:)
+
+if (allocated(b)) then
+    write(*,"(/,a)") " NOTE: This function only changes geometry, the wavefunction will not be correspondingly affected!"
+end if
+do while(.true.)
+    write(*,*)
+    write(*,*) "      ----------------- Geometry relevant operations -----------------"
+    write(*,*) "-10 Return"
+    write(*,*) "-9 Restore the original geometry"
+    write(*,*) "-3 Output system to .gjf file   -4 Output system to .cif file"
+    write(*,*) "-1 Output system to .xyz file   -2 Output system to .pdb file"
+    write(*,*) " 0 Visualize current geometry"
+    write(*,*) " 1 Translate selected atoms according to a translation vector"
+    write(*,*) " 2 Translate the system such that the center of selected atoms is at origin"
+    write(*,*) " 3 Rotate selected atoms around a Cartesian axis or a bond"
+    write(*,*) " 4 Rotate selected atoms by applying a given rotation matrix"
+    write(*,*) " 5 Make a bond parallel to a vector or Cartesian axis"
+    write(*,*) " 6 Make a vector parallel to a vector or Cartesian axis"
+    write(*,*) " 7 Make electric dipole moment parallel to a vector or Cartesian axis"
+    write(*,*) " 8 Make longest axis of selected atoms parallel to a vector or Cartesian axis"
+    write(*,*) " 9 Mirror inversion for selected atoms"
+    write(*,*) "10 Center inversion for selected atoms"
+    write(*,*) "11 Make the plane defined by selected atoms parallel to a Cartesian plane"
+    if (ifpbc>0) then
+        write(*,*) "12 Scale Cartesian coordinates of selected atoms and cell vectors"
+    else
+        write(*,*) "12 Scale Cartesian coordinates of selected atoms"
+    end if
+    write(*,*) "13 Reorder atom sequence"
+    write(*,*) "15 Add an atom     16 Remove some atoms      17 Crop some atoms"
+    write(*,*) "18 Generate randomly displaced geometries"
+    write(*,*) "19 Translate and duplicate cell (constructing supercell)"
+    write(*,*) "20 Make truncated molecules by cell boundary whole"
+    write(*,*) "21 Scale cell length and atom coordinates correspondingly"
+    write(*,*) "22 Wrap all atoms outside the cell into the cell"
+    write(*,*) "23 Translate system along cell axes by given distances"
+    write(*,*) "24 Translate system to center selected part in the cell"
+    read(*,*) isel
+    
+    if (isel==-10) then
+        return
+    else if (isel==-9) then
+        deallocate(a)
+        ncenter=ncenter_org
+        allocate(a(ncenter))
+        a=a_org
+        ifPBC=ifPBC_org
+        cellv1=cellv1_org
+        cellv2=cellv2_org
+        cellv3=cellv3_org
+        write(*,*) "Current geometry has been restored to the original one"
+    else if (isel==-4) then
+        if (ifpbc<3) then
+            write(*,*) "Error: This function can only be used for three-dimension periodic systems"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            cycle
+        else
+        	    call outcif_wrapper
+        end if
+    else if (isel==-3) then
+    	    call outgjf_wrapper
+    else if (isel==-2) then
+    	    call outpdb_wrapper
+    else if (isel==-1) then
+	    call outxyz_wrapper
+    else if (isel==0) then
+        write(*,*) "Atom list:"
+		do i=1,ncenter
+			write(*,"(i5,'(',a2,')',' --> Charge:',f10.6,'  x,y,z(Bohr):',3f11.6)") i,a(i)%name,a(i)%charge,a(i)%x,a(i)%y,a(i)%z
+		end do
+        call drawmolgui
+        
+    else if (isel==1) then !Translate selected part
+        write(*,*) "Input indices of the atoms you want to translate, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        write(*,*) "Input X, Y, Z of translation vector in Angstrom, e.g. 2.3,1.05,-3.24"
+        read(*,*) vec
+        vec=vec/b2a
+        do idx=1,nfragsel
+            iatm=fragsel(idx)
+            a(iatm)%x=a(iatm)%x+vec(1)
+            a(iatm)%y=a(iatm)%y+vec(2)
+            a(iatm)%z=a(iatm)%z+vec(3)
+        end do
+        write(*,*) "Done! The geometry as been updated"
+        
+    else if (isel==2) then !Move center of selected part to origin
+        write(*,*) "Choose center type:"
+        write(*,*) "1 Center of geometry"
+        write(*,*) "2 Center of mass"
+        write(*,*) "3 Center of nuclear charges"
+        read(*,*) icentype
+        
+        write(*,*) "Input indices of the atoms for which the center will be defined, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        write(*,*) "Note: The whole system will be translated"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        
+        if (icentype==1) then
+            vec(1)=sum(a(fragsel(1:nfragsel))%x)/nfragsel
+            vec(2)=sum(a(fragsel(1:nfragsel))%y)/nfragsel
+            vec(3)=sum(a(fragsel(1:nfragsel))%z)/nfragsel
+        else if (icentype==2) then
+            totmass=sum(atmwei(a(fragsel(1:nfragsel))%index))
+            vec(1)=sum(a(fragsel(1:nfragsel))%x*atmwei(a(fragsel(1:nfragsel))%index))/totmass
+            vec(2)=sum(a(fragsel(1:nfragsel))%y*atmwei(a(fragsel(1:nfragsel))%index))/totmass
+            vec(3)=sum(a(fragsel(1:nfragsel))%z*atmwei(a(fragsel(1:nfragsel))%index))/totmass
+        else if (icentype==3) then
+            totchg=sum(a(fragsel(1:nfragsel))%charge)
+            vec(1)=sum(a(fragsel(1:nfragsel))%x*a(fragsel(1:nfragsel))%charge)/totchg
+            vec(2)=sum(a(fragsel(1:nfragsel))%y*a(fragsel(1:nfragsel))%charge)/totchg
+            vec(3)=sum(a(fragsel(1:nfragsel))%z*a(fragsel(1:nfragsel))%charge)/totchg
+        end if
+        write(*,"(' X, Y, Z coordinate of the center:',3f12.6,' Bohr')") vec
+        
+        do iatm=1,ncenter
+            a(iatm)%x=a(iatm)%x-vec(1)
+            a(iatm)%y=a(iatm)%y-vec(2)
+            a(iatm)%z=a(iatm)%z-vec(3)
+        end do
+        write(*,*) "Done! The geometry as been updated"
+            
+    else if (isel==3) then !Rotate selected part
+        write(*,*) "Input indices of the atoms you want to rotate, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        write(*,*) "How to rotate?"
+        write(*,*) "1 Rotate around X axis"
+        write(*,*) "2 Rotate around Y axis"
+        write(*,*) "3 Rotate around Z axis"
+        write(*,*) "4 Rotate around a bond"
+        write(*,*) "5 Rotate around a specific vector"
+        read(*,*) irotsel
+        if (irotsel>=1.and.irotsel<=5) then
+            write(*,*) "Rotate how many degrees? e.g. 132  (may be negative)"
+            read(*,*) rotdeg
+        end if
+        
+        if (irotsel==1) then
+            call get_rotmat_aroundXYZ(0D0,0D0,rotdeg,mat)
+        else if (irotsel==2) then
+            call get_rotmat_aroundXYZ(0D0,rotdeg,0D0,mat)
+        else if (irotsel==3) then
+            call get_rotmat_aroundXYZ(rotdeg,0D0,0D0,mat)
+        else if (irotsel==4) then
+            write(*,*) "Input indices of two atoms to define the bond, e.g. 4,6"
+            read(*,*) iatm,jatm
+            vec(1)=a(jatm)%x-a(iatm)%x
+            vec(2)=a(jatm)%y-a(iatm)%y
+            vec(3)=a(jatm)%z-a(iatm)%z
+            call get_rotmat_aroundvec(vec,rotdeg,mat)
+        else if (irotsel==5) then
+            write(*,*) "Input X,Y,Z component of the vector, e.g. -1.05,0.26,8.3"
+            read(*,*) vec(:)
+            call get_rotmat_aroundvec(vec,rotdeg,mat)
+        end if
+        write(*,*) "Rotation matrix applied to coordinates of selected atoms:"
+        write(*,"(3f16.8)") mat(1,:)
+        write(*,"(3f16.8)") mat(2,:)
+        write(*,"(3f16.8)") mat(3,:)
+        write(*,*)
+        !Apply rotation matrix
+        do idx=1,nfragsel
+            iatm=fragsel(idx)
+            vecc(1,1)=a(iatm)%x;vecc(2,1)=a(iatm)%y;vecc(3,1)=a(iatm)%z
+            vecc=matmul(mat,vecc)
+            a(iatm)%x=vecc(1,1);a(iatm)%y=vecc(2,1);a(iatm)%z=vecc(3,1)
+        end do
+        write(*,*) "Done! The geometry as been updated"
+        
+    else if (isel==4) then !Rotate the selected part by applying a given rotation matrix
+        write(*,*) "Input indices of the atoms you want to apply rotation matrix, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        write(*,*) "Input XX,XY,XZ of rotation matrix"
+        read(*,*) mat(1,:)
+        write(*,*) "Input YX,YY,YZ of rotation matrix"
+        read(*,*) mat(2,:)
+        write(*,*) "Input ZX,ZY,ZZ of rotation matrix"
+        read(*,*) mat(3,:)
+        write(*,*)
+        write(*,*) "How to apply the rotation matrix (mat)?"
+        write(*,*) "1 v_new = mat * v_old  (v is column vector of coordinates)"
+        write(*,*) "2 v_new = v_old * mat  (v is row vector of coordinates)"
+        write(*,"(a)") " Note: Option 1 corresponds to common situation. However, if your purpose is to apply the &
+        eigenvector matrix of Hessian printed by Multiwfn as rotation matrix to eliminate its non-diagonal terms, you should choose 2"
+        read(*,*) iapply
+        
+        do idx=1,nfragsel
+            iatm=fragsel(idx)
+            if (iapply==1) then
+                vecc(1,1)=a(iatm)%x;vecc(2,1)=a(iatm)%y;vecc(3,1)=a(iatm)%z
+                vecc=matmul(mat,vecc)
+                a(iatm)%x=vecc(1,1);a(iatm)%y=vecc(2,1);a(iatm)%z=vecc(3,1)
+            else
+                vecr(1,1)=a(iatm)%x;vecr(1,2)=a(iatm)%y;vecr(1,3)=a(iatm)%z
+                vecr=matmul(vecr,mat)
+                a(iatm)%x=vecr(1,1);a(iatm)%y=vecr(1,2);a(iatm)%z=vecr(1,3)
+            end if
+        end do
+        write(*,*) "Done! The geometry as been updated"
+        
+    else if (isel==5.or.isel==6.or.isel==7.or.isel==8) then !Reorientate the system to make a bond / vector / dipole moment / longest axis parallel to a vector
+        if (isel==5) then
+            write(*,*) "Input indices of two atoms to define the bond, e.g. 4,6"
+            read(*,*) iatm,jatm
+            vec(1)=a(jatm)%x-a(iatm)%x
+            vec(2)=a(jatm)%y-a(iatm)%y
+            vec(3)=a(jatm)%z-a(iatm)%z
+            write(*,"(' X,Y,Z of the bond vector:',3f12.6)") vec
+        else if (isel==6) then
+            write(*,*) "Input X,Y,Z component of the vector, e.g. -1.05,0.26,8.3"
+            read(*,*) vec(:)
+        else if (isel==7) then
+            if (.not.allocated(b)) then
+                write(*,"(a)") " Error: Wavefunction information is not provided by your input file, this function does not work!"
+                write(*,*) "Press ENTER button to continue"
+                read(*,*)
+                cycle
+            end if
+            call get_dipole_moment(vec)
+            write(*,"(' X,Y,Z of the dipole moment:',3f12.6,' a.u.')") vec
+        else if (isel==8) then
+            write(*,*) "Input indices of the atoms for which the longest axis will be determined"
+            write(*,*) "For example, 2,3,7-10,15"
+            write(*,*) "If press ENTER button directly, the whole system will be selected"
+            read(*,"(a)") c2000tmp
+            if (c2000tmp==" ") then
+                forall(iatm=1:ncenter) fragsel(iatm)=iatm
+                nfragsel=ncenter
+            else
+                call str2arr(c2000tmp,nfragsel,fragsel)
+            end if
+            totmass=sum(atmwei(a(fragsel(1:nfragsel))%index))
+            cenmassx=sum( a(fragsel(1:nfragsel))%x*atmwei(a(fragsel(1:nfragsel))%index) )/totmass
+            cenmassy=sum( a(fragsel(1:nfragsel))%y*atmwei(a(fragsel(1:nfragsel))%index) )/totmass
+            cenmassz=sum( a(fragsel(1:nfragsel))%z*atmwei(a(fragsel(1:nfragsel))%index) )/totmass
+            inertia(1,1)=sum(atmwei(a(fragsel(1:nfragsel))%index)*( (a(fragsel(1:nfragsel))%y-cenmassy)**2+(a(fragsel(1:nfragsel))%z-cenmassz)**2) )*b2a*b2a
+            inertia(2,2)=sum(atmwei(a(fragsel(1:nfragsel))%index)*( (a(fragsel(1:nfragsel))%x-cenmassx)**2+(a(fragsel(1:nfragsel))%z-cenmassz)**2) )*b2a*b2a
+            inertia(3,3)=sum(atmwei(a(fragsel(1:nfragsel))%index)*( (a(fragsel(1:nfragsel))%x-cenmassx)**2+(a(fragsel(1:nfragsel))%y-cenmassy)**2) )*b2a*b2a
+            inertia(1,2)=-sum(atmwei(a(fragsel(1:nfragsel))%index)*(a(fragsel(1:nfragsel))%x-cenmassx)*(a(fragsel(1:nfragsel))%y-cenmassy))*b2a*b2a
+            inertia(2,1)=inertia(1,2)
+            inertia(1,3)=-sum(atmwei(a(fragsel(1:nfragsel))%index)*(a(fragsel(1:nfragsel))%x-cenmassx)*(a(fragsel(1:nfragsel))%z-cenmassz))*b2a*b2a
+            inertia(3,1)=inertia(1,3)
+            inertia(2,3)=-sum(atmwei(a(fragsel(1:nfragsel))%index)*(a(fragsel(1:nfragsel))%y-cenmassy)*(a(fragsel(1:nfragsel))%z-cenmassz))*b2a*b2a
+            inertia(3,2)=inertia(2,3)
+            call diagmat(inertia,eigvecmat,eigvalarr,300,1D-12)
+            tmpval=eigvalarr(1)
+            vec=eigvecmat(:,1)
+            do i=2,3
+                if (eigvalarr(i)<tmpval) then
+                    tmpval=eigvalarr(i)
+                    vec=eigvecmat(:,i)
+                end if
+            end do
+            write(*,"(' X,Y,Z of the longest axis of selected atoms:',3f12.6)") vec
+        end if
+        write(*,*)
+        write(*,*) "1: Parallel to X axis"
+        write(*,*) "2: Parallel to Y axis"
+        write(*,*) "3: Parallel to Z axis"
+        write(*,*) "4: Parallel to a given vector"
+        read(*,*) iaxis
+        vec2=0
+        if (iaxis==1) then
+            vec2(1)=1
+        else if (iaxis==2) then
+            vec2(2)=1
+        else if (iaxis==3) then
+            vec2(3)=1
+        else if (iaxis==4) then
+            write(*,*) "Input the vector, e.g. 2.5,0,-0.2"
+            read(*,*) vec2
+        end if
+        
+        !Generate rotation matrix
+        vec=vec/dsqrt(sum(vec**2)) !Normalize
+        vec2=vec2/dsqrt(sum(vec2**2)) !Normalize
+        call rotmat_vec1_vec2(vec,vec2,mat)
+        write(*,*) "Rotation matrix applied to coordinates of selected atoms:"
+        write(*,"(3f16.8)") mat(1,:)
+        write(*,"(3f16.8)") mat(2,:)
+        write(*,"(3f16.8)") mat(3,:)
+        write(*,*)
+        !Apply rotation matrix
+        do iatm=1,ncenter
+            vecc(1,1)=a(iatm)%x;vecc(2,1)=a(iatm)%y;vecc(3,1)=a(iatm)%z
+            vecc=matmul(mat,vecc)
+            a(iatm)%x=vecc(1,1);a(iatm)%y=vecc(2,1);a(iatm)%z=vecc(3,1)
+        end do
+        write(*,*) "Done! The geometry as been updated"
+        
+    else if (isel==9) then !Mirror invertion for selected atoms
+        write(*,*) "Input indices of the atoms you want to perform mirror inversion, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        write(*,*) "How to invert?"
+        write(*,*) "1 Invert with respect to XY plane"
+        write(*,*) "2 Invert with respect to YZ plane"
+        write(*,*) "3 Invert with respect to XZ plane"
+        read(*,*) iinvsel
+        !Apply inversion
+        do idx=1,nfragsel
+            iatm=fragsel(idx)
+            if (iinvsel==1) then
+                a(iatm)%z=-a(iatm)%z
+            else if (iinvsel==2) then
+                a(iatm)%x=-a(iatm)%x
+            else if (iinvsel==3) then
+                a(iatm)%y=-a(iatm)%y
+            end if
+        end do
+        write(*,*) "Done! The geometry as been updated"
+        
+    else if (isel==10) then !Center invertion for selected atoms
+        write(*,*) "Input indices of the atoms you want to perform center inversion, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        do idx=1,nfragsel
+            iatm=fragsel(idx)
+            a(iatm)%x=-a(iatm)%x
+            a(iatm)%y=-a(iatm)%y
+            a(iatm)%z=-a(iatm)%z
+        end do
+        write(*,*) "Done! The geometry as been updated"
+        
+    else if (isel==11) then !Make the plane defined by selected atoms parallel to a Cartesian plane
+        write(*,*) "Input indices of the atoms you want to fit a plane, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        call ptsfitplane(fragsel(1:nfragsel),nfragsel,xnor,ynor,znor,rnouse,rmsfit)
+        write(*,"(' RMS error of the plane fitting:',f12.6,' Angstrom')") rmsfit*b2a
+        facnorm=sqrt(xnor**2+ynor**2+znor**2)
+        vec(1)=xnor/facnorm !Normalize normal vector
+        vec(2)=ynor/facnorm
+        vec(3)=znor/facnorm
+        write(*,"(' X, Y and Z of the unit normal vector is',3f13.8)") xnor,ynor,znor
+        write(*,*)
+        write(*,*) "Choose the plane to which the fitted plane will be parallel to"
+        write(*,*) "1: XY"
+        write(*,*) "2: YZ"
+        write(*,*) "3: XZ"
+        read(*,*) iple
+        vec2=0
+        if (iple==1) then
+            vec2(3)=1
+        else if (iple==2) then
+            vec2(1)=1
+        else if (iple==3) then
+            vec2(2)=1
+        end if
+        
+        !Generate rotation matrix
+        vec=vec/dsqrt(sum(vec**2)) !Normalize
+        call rotmat_vec1_vec2(vec,vec2,mat)
+        write(*,*) "Rotation matrix applied to coordinates of selected atoms:"
+        write(*,"(3f16.8)") mat(1,:)
+        write(*,"(3f16.8)") mat(2,:)
+        write(*,"(3f16.8)") mat(3,:)
+        write(*,*)
+        !Apply rotation matrix
+        do iatm=1,ncenter
+            vecc(1,1)=a(iatm)%x;vecc(2,1)=a(iatm)%y;vecc(3,1)=a(iatm)%z
+            vecc=matmul(mat,vecc)
+            a(iatm)%x=vecc(1,1);a(iatm)%y=vecc(2,1);a(iatm)%z=vecc(3,1)
+        end do
+        write(*,*) "Done! The geometry as been updated"
+    
+    else if (isel==12) then !Scale Cartesian coordinate of selected atoms
+        write(*,*) "Input indices of the atoms you want to scale coordinates, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, the whole system will be selected"
+        read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+            forall(iatm=1:ncenter) fragsel(iatm)=iatm
+            nfragsel=ncenter
+        else
+            call str2arr(c2000tmp,nfragsel,fragsel)
+        end if
+        write(*,*) "Scale which coordinates? Input the corresponding index, e.g. 2"
+        write(*,*) "0: All"
+        write(*,*) "1: X"
+        write(*,*) "2: Y"
+        write(*,*) "3: Z"
+        read(*,*) icoord
+        write(*,*) "Input scale factor, e.g. 0.95"
+        read(*,*) scltmp
+        do idx=1,nfragsel
+            iatm=fragsel(idx)
+            if (icoord==0.or.icoord==1) a(iatm)%x=scltmp*a(iatm)%x
+            if (icoord==0.or.icoord==2) a(iatm)%y=scltmp*a(iatm)%y
+            if (icoord==0.or.icoord==3) a(iatm)%z=scltmp*a(iatm)%z
+        end do
+        write(*,*) "Done! The geometry as been updated"
+        if (ifpbc>0) then
+            write(*,"(/,a)") " Also scale corresponding Cartesian component of all cell vectors? (y/n)"
+            write(*,"(a)") " (For example, if you have chosen to scale X coordinates before, then X component of all cell vectors will also be scaled)"
+            read(*,*) selectyn
+            if (selectyn=='y'.or.selectyn=='Y') then
+                if (icoord==0.or.icoord==1) then
+                    cellv1(1)=cellv1(1)*scltmp
+                    cellv2(1)=cellv2(1)*scltmp
+                    cellv3(1)=cellv3(1)*scltmp
+                end if
+                if (icoord==0.or.icoord==2) then
+                    cellv1(2)=cellv1(2)*scltmp
+                    cellv2(2)=cellv2(2)*scltmp
+                    cellv3(2)=cellv3(2)*scltmp
+                end if
+                if (icoord==0.or.icoord==3) then
+                    cellv1(3)=cellv1(3)*scltmp
+                    cellv2(3)=cellv2(3)*scltmp
+                    cellv3(3)=cellv3(3)*scltmp
+                end if
+                write(*,*) "Cell vectors have been scaled"
+            end if
+        end if
+        
+    else if (isel==13) then !Reorder atom sequence
+        if (allocated(b)) write(*,"(a,/)") " Notice: Wavefunction information will not be correspondingly updated if you use this function to reorder atoms"
+        write(*,*) "How to reorder atom sequence?"
+        write(*,*) "-1 Reverse order of all atoms"
+        write(*,*) "0 Return"
+        write(*,*) "1 Reorder according to X coordinate (small to large)"
+        write(*,*) "2 Reorder according to Y coordinate (small to large)"
+        write(*,*) "3 Reorder according to Z coordinate (small to large)"
+        write(*,*) "4 Reorder according to bonding (making indices contiguous in every fragment)"
+        write(*,*) "5 Reorder according to element index (large to small)"
+        write(*,*) "6 Put hydrogens at the end"
+        write(*,*) "7 Exchange two atoms"
+        write(*,*) "8 Reorder atoms according to a given list"
+        read(*,*) imode
+        
+        if (imode==-1) then
+            do iatm=1,int(ncenter/2)
+                jatm=ncenter-iatm+1
+                atmp=a(iatm)
+                a(iatm)=a(jatm)
+                a(jatm)=atmp
+            end do
+        else if (imode==1.or.imode==2.or.imode==3) then
+            allocate(a_old(ncenter))
+            a_old=a
+            forall(i=1:ncenter) intarr(i)=i
+            if (imode==1) call sortr8(a(:)%x,list=intarr)
+            if (imode==2) call sortr8(a(:)%y,list=intarr)
+            if (imode==3) call sortr8(a(:)%z,list=intarr)
+            do iatm=1,ncenter
+                a(iatm)=a_old(intarr(iatm))
+            end do
+            deallocate(a_old)
+        else if (imode==4) then
+            iatm=1
+            nassign=0
+            intarr=1 !intarr(i)=1 means atom i has not been assigned into fragment
+            allocate(a_old(ncenter))
+            a_old=a
+            do while(.true.)
+                call getfragatoms(iatm,iffrag)
+                do jatm=1,ncenter
+                    if (iffrag(jatm)==1) then !jatm is in the newly chosen fragment
+                        nassign=nassign+1
+                        a(nassign)=a_old(jatm)
+                        intarr(jatm)=0
+                    end if
+                end do
+                if (nassign==ncenter) exit
+                do iatm=1,ncenter
+                    if (intarr(iatm)==1) exit
+                end do
+            end do
+            deallocate(a_old)
+            if (allocated(connmat)) deallocate(connmat) !getfragatoms generated connmat, while after changing order, the relationship is no longer valid
+        else if (imode==5) then
+            do iatm=1,ncenter
+                do jatm=iatm+1,ncenter
+                    if (a(iatm)%index<a(jatm)%index) then
+                        atmp=a(iatm)
+                        a(iatm)=a(jatm)
+                        a(jatm)=atmp
+                    end if
+                end do
+            end do
+        else if (imode==6) then
+            allocate(a_old(ncenter))
+            a_old=a
+            itmp=0
+            do iatm=1,ncenter
+                if (a_old(iatm)%index/=1) then
+                    itmp=itmp+1
+                    a(itmp)=a_old(iatm)
+                end if
+            end do
+            do iatm=1,ncenter
+                if (a_old(iatm)%index==1) then
+                    itmp=itmp+1
+                    a(itmp)=a_old(iatm)
+                end if
+            end do
+            deallocate(a_old)
+        else if (imode==7) then
+            write(*,*) "Input indices of two atoms to exchange them, e.g. 5,8"
+            write(*,*) "You can successively enter many times, input ""q"" can exit"
+            do while(.true.)
+                read(*,"(a)") c200tmp
+                if (index(c200tmp,'q')/=0) then
+                    exit
+                else
+                    read(c200tmp,*) iatm,jatm
+                    atmp=a(iatm)
+                    a(iatm)=a(jatm)
+                    a(jatm)=atmp
+                    write(*,"(i5,' and',i5,' have been exchanged')") iatm,jatm
+                end if
+            end do
+        else if (imode==8) then
+            write(*,*) "Input the path of the file containing new order, e.g. C:\new.txt"
+            write(*,"(a)") " Note: The content of this file should contain indices of all atoms in new order, for example (a system containing 6 atoms):"
+            write(*,*) "5"
+            write(*,*) "2-4"
+            write(*,*) "6"
+            write(*,*) "1"
+            do while(.true.)
+                read(*,"(a)") c200tmp
+	            inquire(file=c200tmp,exist=alive)
+	            if (alive) exit
+	            write(*,*) "Cannot find the file, input again!"
+            end do
+            open(10,file=c200tmp,status="old")
+            ncenter=0
+            allocate(a_old(ncenter))
+            a_old=a
+            do while(.true.)
+                read(10,"(a)",iostat=ierror) c2000tmp
+                if (ierror/=0.or.c2000tmp==" ") exit
+                call str2arr(c2000tmp,ntmp,intarr)
+                do itmp=1,ntmp
+                    iatm=intarr(itmp)
+                    ncenter=ncenter+1
+                    a(ncenter)=a_old(iatm)
+                end do
+            end do
+            close(10)
+            if (ncenter/=ncenter_org) then
+                write(*,"(a)") " Error: The atom list does not define order of all atoms! The original atom information is restored"
+                ncenter=ncenter_org
+                a=a_old
+                cycle
+            end if
+            deallocate(a_old)
+        end if
+        write(*,*) "Done!"
+        
+    else if (isel==15) then !Add an atom
+        write(*,*) "Input element of the newly added atom, e.g. Fe"
+        read(*,*) c200tmp
+        call lc2uc(c200tmp(1:1))
+        call uc2lc(c200tmp(2:2))
+        do iele=1,nelesupp
+            if (ind2name(iele)==c200tmp(1:2)) exit
+        end do
+        if (iele==nelesupp+1) then
+            write(*,*) "Error: The element cannot be recognized. Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        write(*,*) "Input X,Y,Z coordinate in Angstrom, e.g. 3.2,0.9,-1.5"
+        read(*,*) xtmp,ytmp,ztmp
+        xtmp=xtmp/b2a
+        ytmp=ytmp/b2a
+        ztmp=ztmp/b2a
+        if (allocated(a_tmp)) deallocate(a_tmp)
+        allocate(a_tmp(ncenter))
+        a_tmp=a
+        deallocate(a)
+        ncenter=ncenter+1
+        allocate(a(ncenter))
+        a(1:ncenter-1)=a_tmp
+        a(ncenter)%index=iele
+        a(ncenter)%charge=iele
+        a(ncenter)%name=ind2name(iele)
+        a(ncenter)%x=xtmp
+        a(ncenter)%y=ytmp
+        a(ncenter)%z=ztmp
+        a(ncenter)%resid=1
+        a(ncenter)%resname=" "
+        deallocate(a_tmp)
+        write(*,*) "Done! The new atom has been added"
+        
+    else if (isel==16) then !Delete some atoms
+        write(*,*) "Input indices of the atoms you want to remove, e.g. 2,3-5,7-10"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,ntmp,intarr)
+        if (allocated(a_tmp)) deallocate(a_tmp)
+        allocate(a_tmp(ncenter))
+        a_tmp=a
+        deallocate(a)
+        ncenter=ncenter-ntmp
+        allocate(a(ncenter))
+        ncenter=0
+        do iatm=1,size(a_tmp)
+            if (any(intarr==iatm)) cycle
+            ncenter=ncenter+1
+            a(ncenter)=a_tmp(iatm)
+        end do
+        deallocate(a_tmp)
+        write(*,"(a,i5,a)") " Done!",ntmp," atoms have been removed"
+        
+    else if (isel==17) then !Crop some atoms
+        write(*,*) "Input indices of the atoms you want to crop, e.g. 2,3,7-10"
+        write(*,*) "Note: The atoms not belonging to the selected range will be removed"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,ntmp,intarr)
+        if (allocated(a_tmp)) deallocate(a_tmp)
+        allocate(a_tmp(ncenter))
+        a_tmp=a
+        deallocate(a)
+        ncenter=ntmp
+        allocate(a(ncenter))
+        do idx=1,ntmp
+            iatm=intarr(idx)
+            a(idx)=a_tmp(iatm)
+        end do
+        deallocate(a_tmp)
+        write(*,"(a,i5,a)") " Done!",ntmp," atoms have been cropped"
+        
+    else if (isel==18) then !Generate randomly displaced geometries
+        call displace_geom
+    end if
+    
+    if (isel>=19.and.ifPBC==0) then !The following functions need PBC information
+        write(*,"(a)") "Error: To use this function, cell information must be provided by your input file! See Section 2.9.3 of Multiwfn manual for detail"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
+        cycle
+    end if
+    if (isel==19) then !Construct supercell
+        nrepli1=1;nrepli2=1;nrepli3=1
+        if (ifPBC>=1) then
+            write(*,*) "Input number of replicas in direction 1 (i.e. times of current cell), e.g. 3"
+            write(*,*) "If inputting 1, the cell will remain unchanged in this direction"
+            write(*,*) "If inputting -n, the cell will be duplicated in negative direction by n times"
+            read(*,*) nrepli1
+        end if
+        if (ifPBC>=2) then
+            write(*,*) "Input number of replicas in direction 2 (i.e. times of current cell), e.g. 2"
+            write(*,*) "If inputting 1, the cell will remain unchanged in this direction"
+            write(*,*) "If inputting -n, the cell will be duplicated in negative direction by n times"
+            read(*,*) nrepli2
+        end if
+        if (ifPBC==3) then
+            write(*,*) "Input number of replicas in direction 3 (i.e. times of current cell), e.g. 2"
+            write(*,*) "If inputting 1, the cell will remain unchanged in this direction"
+            write(*,*) "If inputting -n, the cell will be duplicated in negative direction by n times"
+            read(*,*) nrepli3
+        end if
+        allocate(a_old(ncenter))
+        a_old=a
+        ncenter_old=ncenter
+        deallocate(a)
+        n1=nrepli1 !Actual number of replicas after processing in direction 1
+        if (nrepli1<0) n1=1+abs(nrepli1)
+        n2=nrepli2
+        if (nrepli2<0) n2=1+abs(nrepli2)
+        n3=nrepli3
+        if (nrepli3<0) n3=1+abs(nrepli3)
+        ncenter=ncenter_old*n1*n2*n3
+        allocate(a(ncenter))
+        icen=0
+        do irepli1=1,n1
+            do irepli2=1,n2
+                do irepli3=1,n3
+                    !i1,i2,i3 are translation times in direction 1,2,3
+                    if (nrepli1>=1) then
+                        i1=irepli1-1
+                    else if (nrepli1<=-1) then
+                        if (irepli1==1) then
+                            i1=0 !Original cell
+                        else
+                            i1=-(irepli1-1)
+                        end if
+                    end if
+                    if (nrepli2>=1) then
+                        i2=irepli2-1
+                    else if (nrepli2<=-1) then
+                        if (irepli2==1) then
+                            i2=0 !Original cell
+                        else
+                            i2=-(irepli2-1)
+                        end if
+                    end if
+                    if (nrepli3>=1) then
+                        i3=irepli3-1
+                    else if (nrepli3<=-1) then
+                        if (irepli3==1) then
+                            i3=0 !Original cell
+                        else
+                            i3=-(irepli3-1)
+                        end if
+                    end if
+                    call tvec_PBC(i1,i2,i3,vec)
+                    a(icen+1:icen+ncenter_old)=a_old(:)
+                    a(icen+1:icen+ncenter_old)%x=a_old(:)%x+vec(1)
+                    a(icen+1:icen+ncenter_old)%y=a_old(:)%y+vec(2)
+                    a(icen+1:icen+ncenter_old)%z=a_old(:)%z+vec(3)
+                    icen=icen+ncenter_old
+                end do
+            end do
+        end do
+        cellv1=n1*cellv1
+        cellv2=n2*cellv2
+        cellv3=n3*cellv3
+        nelec=nelec*n1*n2*n3
+        deallocate(a_old)
+        deallocate(fragatm)
+        allocate(fragatm(ncenter))
+        nfragatm=ncenter
+        forall (i=1:nfragatm) fragatm(i)=i
+        write(*,*) "Done!"
+        
+    else if (isel==20) then !Make truncated molecules by cell boundary whole
+        call makemolwhole
+        
+    else if (isel==21) then !Scale cell size and atom coordinates
+        write(*,*) "0: Scale all cell lengths and atom coordinates correspondingly"
+        if (ifPBC>=1) write(*,*) "1: Scale cell length ""a"" and atom coordinates correspondingly"
+        if (ifPBC>=2) write(*,*) "2: Scale cell length ""b"" and atom coordinates correspondingly"
+        if (ifPBC>=3) write(*,*) "3: Scale cell length ""c"" and atom coordinates correspondingly"
+        read(*,*) iscl
+        write(*,*) "Input scale factor, e.g. 0.95"
+        read(*,*) sfac
+        do iatm=1,ncenter
+            rcoord(1)=a(iatm)%x
+            rcoord(2)=a(iatm)%y
+            rcoord(3)=a(iatm)%z
+            call Cart2fract(rcoord,fcoord)
+            if (iscl==0.or.iscl==1) fcoord(1)=fcoord(1)*sfac
+            if (iscl==0.or.iscl==2) fcoord(2)=fcoord(2)*sfac
+            if (iscl==0.or.iscl==3) fcoord(3)=fcoord(3)*sfac
+            call fract2Cart(fcoord,rcoord)
+            a(iatm)%x=rcoord(1)
+            a(iatm)%y=rcoord(2)
+            a(iatm)%z=rcoord(3)
+        end do
+        if (iscl==0.or.iscl==1) cellv1=cellv1*sfac
+        if (iscl==0.or.iscl==2) cellv2=cellv2*sfac
+        if (iscl==0.or.iscl==3) cellv3=cellv3*sfac
+        write(*,*) "Done!"
+    else if (isel==22) then !Wrap all atoms into the center cell
+        do iatm=1,ncenter
+            rcoord(1)=a(iatm)%x
+            rcoord(2)=a(iatm)%y
+            rcoord(3)=a(iatm)%z
+            call Cart2fract(rcoord,fcoord)
+            do idir=1,3
+                if (fcoord(idir)>1) then
+                    fcoord(idir)=fcoord(idir)-int(fcoord(idir))
+                else if (fcoord(idir)<0) then
+                    fcoord(idir)=fcoord(idir)+ceiling(abs(fcoord(idir)))
+                end if
+            end do
+            call fract2Cart(fcoord,rcoord)
+            a(iatm)%x=rcoord(1)
+            a(iatm)%y=rcoord(2)
+            a(iatm)%z=rcoord(3)
+        end do
+        write(*,*) "Done!"
+    else if (isel==23) then !Translate system along cell axes
+        write(*,*) "Input translation distance in direction 1 (in Angstrom), e.g. 0.6"
+        write(*,*) "The value could be either positive or negative"
+        read(*,*) dist1
+        dist2=0
+        if (ifPBC>=2) then
+            write(*,*) "Input translation distance in direction 2 (in Angstrom), e.g. 0.35"
+            write(*,*) "The value could be either positive or negative"
+            read(*,*) dist2
+        end if
+        dist3=0
+        if (ifPBC==3) then
+            write(*,*) "Input translation distance in direction 3 (in Angstrom), e.g. -0.79"
+            write(*,*) "The value could be either positive or negative"
+            read(*,*) dist3
+        end if
+        dist1=dist1/b2a
+        dist2=dist2/b2a
+        dist3=dist3/b2a
+        rnorm1=dsqrt(sum(cellv1**2))
+        rnorm2=dsqrt(sum(cellv2**2))
+        rnorm3=dsqrt(sum(cellv3**2))
+        iout=0
+        do iatm=1,ncenter
+            a(iatm)%x = a(iatm)%x + dist1*cellv1(1)/rnorm1 + dist2*cellv2(1)/rnorm2 + dist3*cellv3(1)/rnorm3
+            a(iatm)%y = a(iatm)%y + dist1*cellv1(2)/rnorm1 + dist2*cellv2(2)/rnorm2 + dist3*cellv3(2)/rnorm3
+            a(iatm)%z = a(iatm)%z + dist1*cellv1(3)/rnorm1 + dist2*cellv2(3)/rnorm2 + dist3*cellv3(3)/rnorm3
+            rcoord(1)=a(iatm)%x
+            rcoord(2)=a(iatm)%y
+            rcoord(3)=a(iatm)%z
+            call Cart2fract(rcoord,fcoord)
+            if (any(fcoord(:)>1)) iout=1
+        end do
+        write(*,*) "Done!"
+        if (iout==1) write(*,"(a)") " Warning: One or more atoms are lying outside the cell, if you want to wrap them into cell, you can use option 22"
+    else if (isel==24) then !Translate system to center selected part in the cell
+        write(*,"(a)") " Input indices of the atoms, whose geometry center will be centered in the cell by translating the whole system. e.g. 1,3,7-10"
+        read(*,"(a)") c2000tmp
+        call str2arr(c2000tmp,ntmp)
+        allocate(tmparr(ntmp))
+        call str2arr(c2000tmp,ntmp,tmparr)
+        fcoord(:)=0.5D0
+        call fract2Cart(fcoord,rcoord)
+        xcencell=rcoord(1)
+        ycencell=rcoord(2)
+        zcencell=rcoord(3)
+        write(*,"(' X/Y/Z of center of cell:',3f12.6,' Bohr')") xcencell,ycencell,zcencell
+        xcenfrag=sum(a(tmparr(:))%x)/ntmp
+        ycenfrag=sum(a(tmparr(:))%y)/ntmp
+        zcenfrag=sum(a(tmparr(:))%z)/ntmp
+        write(*,"(' X/Y/Z of center of selected atoms:',3f12.6,' Bohr')") xcenfrag,ycenfrag,zcenfrag
+        rmove1=xcencell-xcenfrag
+        rmove2=ycencell-ycenfrag
+        rmove3=zcencell-zcenfrag
+        iout=0
+        do iatm=1,ncenter
+            a(iatm)%x = a(iatm)%x + rmove1
+            a(iatm)%y = a(iatm)%y + rmove2
+            a(iatm)%z = a(iatm)%z + rmove3
+            rcoord(1)=a(iatm)%x
+            rcoord(2)=a(iatm)%y
+            rcoord(3)=a(iatm)%z
+            call Cart2fract(rcoord,fcoord)
+            if (any(fcoord(:)>1)) iout=1
+        end do
+        write(*,*) "Done!"
+        if (iout==1) write(*,"(a)") " Warning: One or more atoms are lying outside the cell, if you want to wrap them into cell, you can use option 22"
+    end if
+end do
+    
+end subroutine
+
+
+
+!!----------- Plot surface distance projection map
+subroutine molsurf_distmap
+use defvar
+use function
+use util
+implicit real*8 (a-h,o-z)
+real*8 :: rhoiso=0.05D0,zstep=0.05D0/b2a
+integer :: isurftype=1
+character c80tmp*80,c80tmp2*80
+
+nx=300
+ny=300
+xlow=minval(a%x)-3
+xhigh=maxval(a%x)+3
+ylow=minval(a%y)-3
+yhigh=maxval(a%y)+3
+zstart=maxval(a%z)
+zend=minval(a%z)
+if (abs(zstart-zend)<0.1D0) zstart=zstart+2/b2a !For molecule in exactly XY plane, zstart is higher than the plane by 2 Angstrom
+
+!Plotting settings
+plesel=1 !XY plane
+planestpx=1
+planestpy=1
+planestpz=1
+ilenunit2D=2
+numdigx=0
+numdigy=0
+numdigz=1
+disshowlabel=2
+iatom_on_plane=1 !Show atom label on map
+iclrindatmlab=3 !Blue label
+iatom_on_plane_far=1
+iclrtrans=3
+ctrnegstyle=1;ctrnegstyle=0 !Use solid line for negative contour
+ngenctr=25
+idrawtype=1
+idrawcontour=1
+
+if (.not.allocated(a)) then
+    write(*,"(a)") " Error: Your input file must contain atom information! Please read Section 2.5 of Multiwfn manual carefully!"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
+
+do while(.true.)
+    write(*,*)
+    write(*,*) " ====================== Surface distance projection map ====================="
+    write(*,*) "-1 Return"
+    write(*,*) " 0 Start calculation"
+    if (isurftype==1) write(*,"(a,f9.5,' a.u.')") "  1 Set definition of system surface, current: Promolecular density with isovalue of",rhoiso
+    if (isurftype==2) write(*,"(a,f9.5,' a.u.')") "  1 Set definition of system surface, current: Electron density with isovalue of",rhoiso
+    if (isurftype==3) write(*,"(a,f7.3)") "  1 Set definition of system surface, current: Superposition of vdW spheres multiplied by",vdwsphscl
+    write(*,"(a,f8.3,a,f8.3,a)") "  2 Choose range of X axis, current:",xlow*b2a," to",xhigh*b2a," Angstrom"
+    write(*,"(a,f8.3,a,f8.3,a)") "  3 Choose range of Y axis, current:",ylow*b2a," to",yhigh*b2a," Angstrom"
+    write(*,"(a,i4)") "  4 Set number of grids in X, current:",nx
+    write(*,"(a,i4)") "  5 Set number of grids in Y, current:",ny
+    write(*,"(a,f8.4,' Angstrom')") "  6 Set stepsize for detection isosurface in Z, current:",zstep*b2a
+    write(*,"(a,f9.4,' Angstrom')") "  7 Set Z position of starting detection, current:",zstart*b2a
+    write(*,"(a,f9.4,' Angstrom')") "  8 Set Z position of ending detection, current:",zend*b2a
+    write(*,"(a,i5)") "  9 Set number of contour lines to generate, current:",ngenctr
+    read(*,*) isel
+    
+    if (isel==-1) then
+        return
+    else if (isel==1) then
+        write(*,*) "Use which definition of system surface?"
+        write(*,*) "1 Promolecular electron density"
+        if (allocated(b)) write(*,*) "2 Electron density calculated based on wavefunction"
+        write(*,*) "3 Superposition of atomic van der Waals spheres scaled by a factor"
+        read(*,*) isurftype
+        if (isurftype==1.or.isurftype==2) then
+            write(*,*) "Input isovalue of electron density in a.u., e.g. 0.01"
+            read(*,*) rhoiso
+        else if (isurftype==3) then
+            write(*,*) "Input scale factor for vdW radii, e.g. 0.8"
+            read(*,*) vdwsphscl
+        end if
+    else if (isel==2) then
+        write(*,*) "Input lower and upper limits of X in Angstrom, e.g. -2.6,8.3"
+        read(*,*) xlow,xhigh
+        xlow=xlow/b2a
+        xhigh=xhigh/b2a
+    else if (isel==3) then
+        write(*,*) "Input lower and upper limits of Y in Angstrom, e.g. -2.6,8.3"
+        read(*,*) ylow,yhigh
+        ylow=ylow/b2a
+        yhigh=yhigh/b2a
+    else if (isel==4) then
+        write(*,*) "Input number of grids in X, e.g. 150"
+        read(*,*) nx
+    else if (isel==5) then
+        write(*,*) "Input number of grids in Y, e.g. 150"
+        read(*,*) ny
+    else if (isel==6) then
+        write(*,*) "Input stepsize for detecting isosurface in Z (in Angstrom), e.g. 0.01"
+        read(*,*) zstep
+        zstep=zstep/b2a
+    else if (isel==7) then
+        write(*,*) "Input Z position of starting detection (in Angstrom), e.g. 6.25"
+        write(*,*) "You can also input e.g. ""a 5"" to use Z coordinate of atom 5 as this position"
+        read(*,"(a)") c80tmp
+        if (index(c80tmp,'a')/=0) then
+            read(c80tmp,*) c80tmp2,iatm
+            zstart=a(iatm)%z
+        else
+            read(c80tmp,*) zstart
+            zstart=zstart/b2a
+        end if
+    else if (isel==8) then
+        write(*,*) "Input Z position of ending detection (in Angstrom), e.g. -3.2"
+        read(*,*) zend
+        zend=zend/b2a
+    else if (isel==9) then
+        write(*,*) "Number of contour lines to generate, e.g. 30"
+        read(*,*) ngenctr
+        
+    else if (isel==0) then !Start calculation!
+        allocate(planemat(nx,ny))
+        dx=(xhigh-xlow)/(nx-1)
+        dy=(yhigh-ylow)/(ny-1)
+        call walltime(iwalltime1)
+        call showprog(0,nx)
+        planemat=zend-zstart
+        ifinish=0
+        !$OMP PARALLEL DO SHARED(planemat,ifinish) PRIVATE(ix,iy,xtmp,ytmp,ztmp,tmpval,ifin,tmpvallast,ztmplast) schedule(dynamic) NUM_THREADS(nthreads)
+        do ix=1,nx
+            xtmp=xlow+dx*(ix-1)
+            do iy=1,ny
+                ytmp=ylow+dy*(iy-1)
+                ztmp=zstart
+                do while(ztmp>=zend)
+                    if (isurftype==1.or.isurftype==2) then
+                        if (isurftype==1) then
+                            tmpval=calcprodens(xtmp,ytmp,ztmp,0)
+                        else if (isurftype==2) then
+                            tmpval=fdens(xtmp,ytmp,ztmp)
+                        end if
+                        if (tmpval>rhoiso) then
+                            if (ztmp==zstart) then
+                                planemat(ix,iy)=0
+                            else !Use linear interpolation to improve smoothness
+                                planemat(ix,iy)=ztmp+(rhoiso-tmpval)/(tmpvallast-tmpval)*zstep - zstart
+                            end if
+                            exit
+                        end if
+                        tmpvallast=tmpval
+                        ztmplast=ztmp
+                    else if (isurftype==3) then
+                        call inside_vdWsph(xtmp,ytmp,ztmp,vdwsphscl,ifin)
+                        if (ifin==1) then
+                            planemat(ix,iy)=ztmp-zstart
+                            exit
+                        end if
+                    end if
+                    ztmp=ztmp-zstep
+                end do
+            end do
+            !$OMP CRITICAL
+            ifinish=ifinish+1
+            call showprog(ifinish,nx)
+            !$OMP END CRITICAL
+        end do
+        !$OMP END PARALLEL DO
+        planemat=planemat*b2a
+        call walltime(iwalltime2)
+        write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+        
+        ngridnum1=nx
+        ngridnum2=ny
+        orgz2D=zstart
+        clrhigh=0
+        clrlow=ceiling((zend-zstart)*b2a)-1E-5
+        call gencontour(2,clrlow,clrhigh,25) !Generate contour lines evenly covering lower and upper limits
+        call planemap_interface("surface projection","distmap",xlow,xhigh,ylow,yhigh,clrlow,clrhigh)
+        deallocate(planemat)
+    end if
+end do
+end subroutine
+
+!------- Test if a point is inside molecular vdW surface defined by superposition of Bondi vdW spheres scaled by vdwsphscl
+!ifin=1: inside  ifin=0: outside
+subroutine inside_vdWsph(xtmp,ytmp,ztmp,vdwsphscl,ifin)
+use defvar
+implicit real*8 (a-h,o-z)
+real*8 xtmp,ytmp,ztmp,vdwsphscl,xyzA(3),xyzB(3)
+integer ifin
+ifin=0
+do iatm=1,ncenter
+	rx=a(iatm)%x-xtmp
+	ry=a(iatm)%y-ytmp
+	rz=a(iatm)%z-ztmp
+    if (ifPBC==0) then
+    	dist=dsqrt(rx*rx+ry*ry+rz*rz)
+    else
+        xyzA(1)=xtmp;xyzA(2)=ytmp;xyzA(3)=ztmp
+        xyzB(1)=a(iatm)%x;xyzB(2)=a(iatm)%y;xyzB(3)=a(iatm)%z
+        call nearest_dist(xyzA,xyzB,dist)
+    end if
+    if (dist<vdwr(a(iatm)%index)*vdwsphscl) then
+        ifin=1
+        return
+    end if
+end do
 end subroutine

@@ -3,14 +3,14 @@
 !For .mwfn/.fch/.molden/.gms, etc., user can switch spin type anytime
 
 !  Note on arrays and open-shell case:
-!  MOene_dos and MOocc_do are working horse for present module, they are completely identical to MOene and MOocc but may be changed in this module (e.g. between a.u. and eV).
+!  MOene_dos and MOocc_dos are working horse for present module, they are completely identical to MOene and MOocc but may be changed in this module (e.g. between a.u. and eV).
 !Both of them have size of "nmo", the first and last half correspond to alpha and beta.
 !  Other arrays such as str, FWHM, PDOSliney and compfrag also have size of nmo. For closed shell case, imoend=nmo, and all slots are meaningful.
 !When only one spin is taken into account, namely alpha (ispin=1) or beta (ispin=2) case, imoend=nbasis, and their (1:nbasis) part correspond
 !to alpha or beta MOs, respectively, and (nbasis+1:nmo) part is meaningless.
 !  Therefore, to cycle all MOs in current set, looping "imo=1,imoend", the irealmo=imo+nbasis should be used for MOene_dos and MOocc_dos,
 !while imo should be used for other arrays
-    
+
 subroutine DOS
 use defvar
 use util
@@ -27,7 +27,7 @@ real*8 atmcomp(ncenter,nmo) !Use to store all atomic contributions to MOs by Hir
 real*8 :: curvexpos(num1Dpoints),TDOScurve(num1Dpoints),OPDOScurve(num1Dpoints),PDOScurve(num1Dpoints,nfragmax),LDOScurve(num1Dpoints)
 real*8 :: LDOSxpos(num2Dpoints)
 !All ?DOSliney share DOSlinex(:) as X axis data
-real*8,allocatable :: DOSlinex(:),TDOSliney(:),PDOSliney(:,:),OPDOSliney(:),LDOSliney(:)
+real*8,allocatable :: DOSlinex(:),TDOSliney(:),TDOSliney_unocc(:),PDOSliney(:,:),OPDOSliney(:),LDOSliney(:) !TDOSliney_unocc only records TDOS of unoccupied MOs
 real*8,allocatable :: compfrag(:,:) !i,k element is the composition of fragment k in MO i. compfrag(:,0) is used for recording degeneracy for TDOS
 real*8,allocatable :: OPfrag12(:) !Overlap population between fragment 1 and 2
 real*8,allocatable :: LDOScomp(:) !Composition at a point of each orbital
@@ -38,6 +38,7 @@ real*8,allocatable :: MOene_dos(:),MOocc_dos(:) !Using the ene/occ in this to pl
 integer,allocatable :: selorbarr(:)
 character clegend*960 !Legend strings. (10+2) lines * 80 character per line
 integer :: legendx=400,legendy=160
+integer :: ticksize=45,height_axis=45,legtextsize=42
 character :: TDOSstring*80="TDOS",OPDOSstring*80="OPDOS",graphformat_old*4
 character :: PDOSstring(nfragmax)*80=(/"PDOS frag.1","PDOS frag.2","PDOS frag.3","PDOS frag.4","PDOS frag.5","PDOS frag.6","PDOS frag.7","PDOS frag.8","PDOS frag.9","PDOS frag.10"/)
 integer :: ishowPDOSline(nfragmax),ishowPDOScurve(nfragmax),icurvewidth=3,ilinewidth=2,intarr(2)
@@ -50,7 +51,7 @@ real*8 :: PES_shift=0,PES_Xlow=0,PES_Xhigh=5,PES_Xstep=0.5D0,scalePEScurve=0.2D0
 real*8,allocatable :: PESlinex(:),PESliney(:),PES_str(:),PES_FWHM(:)
 real*8 :: PEScurve(num1Dpoints)
 real*8,allocatable :: bindene(:)
-integer :: ishowPEScurve=1,ishowPESline=1,iusersetPES_Y=0,invPES_X=0
+integer :: ishowPEScurve=1,ishowPESline=1,iusersetPES_Y=0,invPES_X=0,ilinebottom=0
 
 if (.not.(ifiletype==0.or.allocated(CObasa))) then
 	write(*,"(a,/)") " Error: This function is only available for input file containing basis function information &
@@ -175,11 +176,11 @@ if (ifiletype==0) then
         end if
 	end if
 	close(10)
-	allocate(DOSlinex(3*nmo),TDOSliney(3*nmo))
+	allocate(DOSlinex(3*nmo),TDOSliney(3*nmo),TDOSliney_unocc(3*nmo))
 else if (allocated(CObasa)) then !For ispin=1 or 2, only 1:nbasis is used, while for ispin==3 (both spin), all nmo slots will be used
 	allocate(str(nmo),FWHM(nmo))
 	!Allocate all arrays that may be used, don't consider if they will actually be used, because memory consuming is very little
-	allocate(DOSlinex(3*nmo),TDOSliney(3*nmo),PDOSliney(3*nmo,nfragmax),OPDOSliney(3*nmo),LDOSliney(3*nmo))
+	allocate(DOSlinex(3*nmo),TDOSliney(3*nmo),TDOSliney_unocc(3*nmo),PDOSliney(3*nmo,nfragmax),OPDOSliney(3*nmo),LDOSliney(3*nmo))
 	allocate(compfrag(nmo,0:nfragmax),OPfrag12(nmo))
 	allocate(fragDOS(nbasis,nfragmax+1)) !The last slot is used to exchange fragment
 	allocate(LDOScomp(nmo))
@@ -330,6 +331,8 @@ if (index(c80tmp,'s')/=0) then
         write(10,*) nfragDOS(ifrag)
         if (nfragDOS(ifrag)>0) write(10,"(12i6)") fragDOS(:nfragDOS(ifrag),ifrag)
     end do
+    !New parameters, recording with labels
+    write(10,"('ilinebottom',i5)") ilinebottom
     close(10)
     write(*,*) "Done!"
     cycle
@@ -411,6 +414,7 @@ else if (index(c80tmp,'l')/=0) then
         read(10,*) nfragDOS(ifrag)
         if (nfragDOS(ifrag)>0) read(10,"(12i6)") fragDOS(:nfragDOS(ifrag),ifrag)
     end do
+    call readoption_int(10,"ilinebottom",' ',ilinebottom)
     close(10)
     write(*,*) "Loading finished!"
     cycle
@@ -524,6 +528,7 @@ else if (isel==-2) then !Define MO sets for PDOS
     Carbon, 165, 461 (2020) DOI: 10.1016/j.carbon.2020.05.023. Please cite this paper if MO-PDOS map is employed in your work, thank you!"
     do while(.true.)
         write(*,*)
+		write(*,*) "     ---------------- Define fragments for MO-PDOS map ----------------"
         write(*,*) " 0 Return"
         do iset=1,nfragmax
             if (nfragDOS(iset)==0) then
@@ -590,7 +595,7 @@ else if (isel==-1) then
 		if (index(c80tmp(1:len_trim(c80tmp)),' ')/=0.or.c80tmp==" ") then
 			write(*,*) "Inputting error!"
         else if (c80tmp=='0'.or.c80tmp=='q') then
-            if (any(nfragDOS>1)) then
+            if (any(nfragDOS>0)) then
                 iPDOStype=1
             else
                 iPDOStype=0
@@ -742,7 +747,7 @@ else if (isel==8) then
 		scalecurve=scalecurve*au2eV
 		stepx=stepx*au2eV
 		stepy=stepy/au2eV
-	else !eV->a.u.
+	else if (iunitx==2) then!eV->a.u.
 		iunitx=1
 		MOene_dos=MOene_dos/au2eV
 		FWHM=FWHM/au2eV
@@ -821,13 +826,14 @@ else if (isel==0.or.isel==10) then
 		    ntime=1 !One set of orbital
 		    if (ispin==3) ntime=2 !Unrestricted wavefunction and both spins are considered, two passes using different CObas are needed
             if (icompmethod<=2) then !Mulliken/SCPA
+                call ask_Sbas_PBC
 		        write(*,*) "Calculating orbital composition, please wait..."
 		        OPfrag12=0
 			    tmpmat=>CObasa
 			    if (ispin==2) tmpmat=>CObasb
 			    do itime=1,ntime !itime=1: tmpmat=CObasa, itime=2: tmpmat=CObasb
 				    if (itime==2) tmpmat=>CObasb
-				    !!$OMP PARALLEL DO SHARED(compfrag,OPfrag12) PRIVATE(ifrag,imo,imoall,imoslot,allsqr,i,j,ibas,jbas) schedule(dynamic) NUM_THREADS(nthreads)
+				    !$OMP PARALLEL DO SHARED(compfrag,OPfrag12) PRIVATE(ifrag,imo,imoall,imoslot,allsqr,i,j,ibas,jbas) schedule(dynamic) NUM_THREADS(nthreads)
 				    do imo=1,nbasis !Cycle MOs
 					    imoslot=imo !The index to be placed into arrays, count from 1 even for beta only
 					    if (itime==2) imoslot=imo+nbasis
@@ -859,7 +865,7 @@ else if (isel==0.or.isel==10) then
 						    end do
 					    end if
 				    end do
-				    !!$OMP END PARALLEL DO
+				    !$OMP END PARALLEL DO
 			    end do
             
             else if (icompmethod>=3) then !Hirshfeld/Becke, the compositions have already been calculated when switch to them in the interface
@@ -915,6 +921,7 @@ else if (isel==0.or.isel==10) then
                 if (abs(MOene_dos(imo)-MOene_dos(jmo))<enediff) ndegen=ndegen+1
             end do
             compfrag(imo,0)=ndegen
+            if (ndegen>maxdegen) maxdegen=ndegen
             imo=imo+ndegen
         end do
     else
@@ -940,18 +947,23 @@ else if (isel==0.or.isel==10) then
 	
 	!======Generate energy levels line=======
 	TDOSliney=0
+    TDOSliney_unocc=0
 	LDOSliney=0
 	OPDOSliney=0
+    inow_unocc=0
 	do imo=1,imoend
 		inow=3*(imo-1)
 		irealmo=imo
 		if (ispin==2) irealmo=imo+nbasis
+        if (MOene_dos(irealmo)==0) cycle !In the case of CP2K, virtual orbitals are not solved and energies are exactly zero, skip them
 		DOSlinex(inow+1:inow+3)=MOene_dos(irealmo)
 		if (isel==0) then
-			TDOSliney(inow+1)=0D0
 			TDOSliney(inow+2)=str(imo)
             if (idegen==1) TDOSliney(inow+2)=compfrag(imo,0)
-			TDOSliney(inow+3)=0D0
+            if (MOocc_dos(irealmo)==0) then
+				TDOSliney_unocc(inow+2)=str(imo)
+				if (idegen==1) TDOSliney_unocc(inow+2)=compfrag(imo,0)
+            end if
 			do ifrag=1,nfragmax
 				if (nfragDOS(ifrag)>0) then
 					PDOSliney(inow+1,ifrag)=0D0
@@ -982,6 +994,7 @@ else if (isel==0.or.isel==10) then
 		do imo=1,imoend !Cycle each orbital
 			irealmo=imo
 			if (ispin==2) irealmo=imo+nbasis
+            if (MOene_dos(irealmo)==0) cycle !In the case of CP2K, virtual orbitals are not solved and energies are exactly zero, skip them
 			preterm=str(imo)*0.5D0/pi*FWHM(imo)
 			do ipoint=1,num1Dpoints !Broaden imo as curve
 				tmp=preterm/( (curvexpos(ipoint)-MOene_dos(irealmo))**2+0.25D0*FWHM(imo)**2 )
@@ -1002,6 +1015,7 @@ else if (isel==0.or.isel==10) then
 		do imo=1,imoend !Cycle each orbital
 			irealmo=imo
 			if (ispin==2) irealmo=imo+nbasis
+            if (MOene_dos(irealmo)==0) cycle !In the case of CP2K, virtual orbitals are not solved and energies are exactly zero, skip them
 			gauss_c=FWHM(imo)/2D0/sqrt(2*dlog(2D0))
 			gauss_a=str(imo)/(gauss_c*sqrt(2D0*pi))
 			do ipoint=1,num1Dpoints !Broaden imo as curve
@@ -1023,8 +1037,33 @@ else if (isel==0.or.isel==10) then
 	PDOScurve=PDOScurve*scalecurve
 	OPDOScurve=OPDOScurve*scalecurve
 	LDOScurve=LDOScurve*scalecurve
-	
+    
+    !Calculate center of TDOS and PDOS curves. May be used to calcualte e.g. d-band center
+    TDOSnomin=0
+    TDOSdenomin=0
+    do ipoint=1,num1Dpoints
+        TDOSnomin=TDOSnomin+curvexpos(ipoint)*TDOScurve(ipoint)*enestep
+        TDOSdenomin=TDOSdenomin+TDOScurve(ipoint)*enestep
+    end do
+    write(*,"(' Center of TDOS:',f12.6,a)") TDOSnomin/TDOSdenomin,unitstr
+    do ifrag=1,nfragmax
+        if (nfragDOS(ifrag)>0) then
+            PDOSnomin=0
+            PDOSdenomin=0
+            do ipoint=1,num1Dpoints
+                PDOSnomin=PDOSnomin+curvexpos(ipoint)*PDOScurve(ipoint,ifrag)*enestep
+                PDOSdenomin=PDOSdenomin+PDOScurve(ipoint,ifrag)*enestep
+		    end do
+            write(*,"(' Center of PDOS',i3,':',f12.6,a)") ifrag,PDOSnomin/PDOSdenomin,unitstr
+        end if
+	end do
+    write(*,*)
+    
+    !! All calculations have finished !!
+    
+	!Initialize some plotting statues
 	idraw=1
+    if (isilent==1) idraw=0 !Do not automatically draw at the first time entering the post-processing menu
 	isavepic=0
 	if (iusersetYleft==0) then !Y axis range was not set by user, we automatically determine
 		if (isel==0) then
@@ -1043,9 +1082,11 @@ else if (isel==0.or.isel==10) then
 	ylowerright=ylowerleft*Yrightsclfac !Lower and upper limit for OPDOS
 	yupperright=yupperleft*Yrightsclfac
 	
-	do while(.true.)
+	do while(.true.) !Cycle of plotting post-processing menu
+    
         !======Draw various kinds of DOS now=======
-		if (idraw==1.and.isilent==0) then
+		!If drawing lines at bottom, we first draw curves (without axis name and labels), and finally use additional section to draw lines
+		if (idraw==1) then
 			if (isavepic==0) then
 				call METAFL('xwin')
 				call window(200,100,1000,600)
@@ -1057,46 +1098,64 @@ else if (isel==0.or.isel==10) then
 			CALL IMGFMT("RGB")
 			CALL PAGE(3000,1800)
 			CALL setxid(0,'NONE')
-			call disini
-			if (isavepic==0.and.isys==1) then
-				call height(45)
-				CALL HNAME(45)
-			else
-				call height(40) !The text shown in graphic file is strangely larger than window, so slight decrease it
-			end if
+			call DISINI
+            call HNAME(height_axis) !Height of axis name
+            call height(ticksize) !Size of ticks
 			call hwfont
-			call AXSLEN(2450,1400)
-			if (ishowOPDOScurve==1.or.ishowOPDOSline==1) then
-                call AXSLEN(2300,1400) !Because OPDOS axis will be shown at right side
-            else if (idegen==1) then !Because degeneracy axis will be shown at right side
-                call AXSLEN(2350,1400)
+            leny_curve=1400
+            iyaxspos_curve=1550
+            leny_line=160 !When showing lines at bottom, leave space for plotting lines
+            iyaxspos_line=1550
+            if (ilinebottom==1) then
+				leny_curve=leny_curve-leny_line
+                iyaxspos_curve=iyaxspos_curve-leny_line
             end if
-			call AXSPOS(350,1550)
+            lenx=2450
+			if (ishowOPDOScurve==1.or.ishowOPDOSline==1) then !Because OPDOS axis will be shown at right side, use smaller X-axis length
+				lenx=2300
+            else if (idegen==1) then !Because degeneracy axis will be shown at right side, use smaller X-axis length
+				lenx=2350
+            end if
+			call AXSLEN(lenx,leny_curve)
+			call AXSPOS(350,iyaxspos_curve)
 			if (isavepic==0) call WINTIT("Click right mouse button to close")
+            c80tmp="NAME"
+            if (ilinebottom==1) c80tmp="LINE" !Do not show axis name if showing lines at bottom
 			if (idoOPDOS==1.or.idegen==1) then
-				call setgrf('NAME','NAME','TICKS','LINE')
+				call setgrf(trim(c80tmp),'NAME','TICKS','LINE')
 			else
-				call setgrf('NAME','NAME','TICKS','TICKS')
+				call setgrf(trim(c80tmp),'NAME','TICKS','TICKS')
 			end if
             if (ishowYlab==0) then
                 call labels("NONE","Y")
-		    	CALL TICKS(0,'Y')
+                CALL TICKS(0,'Y')
                 CALL TICKS(1,'X')
                 CALL NAMDIS(70,'Y')
             else
-		    	CALL TICKS(1,'XY')
+		    		CALL TICKS(1,'XY')
                 CALL NAMDIS(40,'Y')
             end if
 			call ERRMOD("ALL","OFF")
 			CALL LABDIG(nlabdigX,"X")
 			CALL LABDIG(nlabdigY,"Y")
-			if (iunitx==1) CALL NAME('Energy (a.u.)','X')
-			if (iunitx==2) CALL NAME('Energy (eV)','X')
+            if (ilinebottom==0) then
+				if (iunitx==1) CALL NAME('Energy (a.u.)','X')
+				if (iunitx==2) CALL NAME('Energy (eV)','X')
+            end if
 			CALL NAME('Density-of-states','Y')
 			numleg=0
 			ileg=1
 
-			if (isel==0) then
+			if (isel==0) then !Draw regular DOS
+				!Sequence:
+				!(1) Set legends
+				!(2) Vertical dashed line
+				!(3) TDOS (only plot curve if idegen==1)
+				!(4) PDOS (only plot curve if idegen==1)
+				!(5) TDOS&PDOS lines (idegen==1, using special axis)
+				!(6) OPDOS
+                !(7) Lines at bottom (if ilinebottom=1, TDOS lines will be plotted in this stage, including TDOS and (MO-)PDOS with/without degen. Do not draw OPDOS lines)
+            
 				!Set legends
 				if (ishowTDOScurve==1.or.ishowTDOSline==1) numleg=numleg+1
 				do ifrag=1,nfragmax
@@ -1127,7 +1186,7 @@ else if (isel==0.or.isel==10) then
 						end if
 					end do
 					HOMOlevx=MOene_dos(iFermi)
-					write(*,"(a,f10.3,a)") " Note: The vertical dash line corresponds to HOMO level at",MOene_dos(iFermi),unitstr
+					write(*,"(a,f10.5,a)") " Note: The vertical dash line corresponds to HOMO level at",MOene_dos(iFermi),unitstr
 					HOMOlevy(1)=ylowerleft
 					HOMOlevy(2)=yupperleft
 					call linwid(ilinewidth) !Set to user-defined line width
@@ -1137,9 +1196,15 @@ else if (isel==0.or.isel==10) then
 				
 				!Draw TDOS
 				call linwid(icurvewidth) !Set to user-defined line width
-				if (ishowTDOScurve==1) CALL CURVE(curvexpos,TDOScurve,num1Dpoints)
+				if (ishowTDOScurve==1) CALL CURVE(curvexpos,TDOScurve,num1Dpoints) !Draw TDOS curve
 				call linwid(ilinewidth) !Set to user-defined line width
-				if (ishowTDOSline==1.and.idegen/=1) CALL CURVE(DOSlinex,TDOSliney,3*imoend)
+				if (ishowTDOSline==1.and.idegen==0.and.ilinebottom==0) then
+					call color('WHITE')
+					CALL CURVE(DOSlinex,TDOSliney,3*imoend) !Draw TDOS lines
+					call setcolor(6) !Gray
+					CALL CURVE(DOSlinex,TDOSliney_unocc,3*imoend) !Draw TDOS lines for unoccupied MOs
+					call color('WHITE')
+                end if
 				if (ishowTDOScurve==1.or.ishowTDOSline==1) then !Set legend
 					call legpat(0,1,-1,-1,-1,ileg)
 					CALL LEGLIN(clegend,trim(TDOSstring),ileg)
@@ -1152,8 +1217,10 @@ else if (isel==0.or.isel==10) then
 						call setcolor(iclrPDOS(ifrag))
 						call linwid(icurvewidth) !Set to user-defined line width
 						if (ishowPDOScurve(ifrag)==1) CALL CURVE(curvexpos,PDOScurve(:,ifrag),num1Dpoints)
-						call linwid(ilinewidth) !Set to user-defined line width
-						if (ishowPDOSline(ifrag)==1.and.idegen/=1) CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
+                        if (ilinebottom==0) then !If showing lines at bottom, PDOS lines will never be shown
+							call linwid(ilinewidth) !Set to user-defined line width
+							if (ishowPDOSline(ifrag)==1.and.idegen/=1) CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
+                        end if
 						if (ishowPDOScurve(ifrag)==1.or.ishowPDOSline(ifrag)==1) then !Set legend
 							call legpat(0,1,-1,-1,-1,ileg)
 							CALL LEGLIN(clegend,trim(PDOSstring(ifrag)),ileg)
@@ -1164,25 +1231,31 @@ else if (isel==0.or.isel==10) then
 				call color('WHITE')
 				call linwid(ilinewidth) !Set to user-defined line width
 				call XAXGIT !Draw a black line at Y=0 to cover the colored PDOS line
-				call linwid(1) !Recovery to default line width of dislin
-                call height(38)
+				call linwid(1) !Recover to default line width of dislin
+                call height(legtextsize) !Define legend text size
 				if (ishowlegend==1) call legend(clegend,3) !Draw the legends (for TDOS,PDOS), must before endgrf
 				call endgrf !Finished drawing TDOS/PDOS
                 
-                !Draw degeneracy for MO-PDOS using axis at right side
-                if (idegen==1) then
-					CALL LABDIG(1,"Y")
+                !We do not draw lines before, now draw degeneracy of lines for TDOS and/or MO-PDOS using axis at right side (note: degeneracy is not supported for PDOS)
+                if (idegen==1.and.ilinebottom==0) then
+					CALL LABDIG(-1,"Y")
 					CALL NAME('Degeneracy','Y')
+					call height(ticksize)
 					call setgrf('NONE','NONE','NONE','NAME')
 					CALL GRAF(enelow,enehigh,enelow,stepx, 0D0,10D0,0D0,1D0)
-                    if (ishowTDOSline==1) CALL CURVE(DOSlinex,TDOSliney,3*imoend)
-				    do ifrag=1,nfragmax
-					    if (nfragDOS(ifrag)>0.and.ishowPDOSline(ifrag)==1) then
-						    call setcolor(iclrPDOS(ifrag))
-						    call linwid(ilinewidth) !Set to user-defined line width
-						    CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
-					    end if
-				    end do
+					if (ishowTDOSline==1) then
+						call color('WHITE')
+						CALL CURVE(DOSlinex,TDOSliney,3*imoend) !Draw TDOS lines
+						call setcolor(6) !Gray
+						CALL CURVE(DOSlinex,TDOSliney_unocc,3*imoend) !Draw TDOS lines for unoccupied MOs
+                    end if
+					do ifrag=1,nfragmax
+						if (nfragDOS(ifrag)>0.and.ishowPDOSline(ifrag)==1) then
+							call setcolor(iclrPDOS(ifrag))
+							call linwid(ilinewidth) !Set to user-defined line width
+							CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
+						end if
+					end do
                     call endgrf
                 end if
 
@@ -1196,37 +1269,93 @@ else if (isel==0.or.isel==10) then
 					call color('GREEN')
 					call linwid(icurvewidth) !Set to user-defined line width
 					if (ishowOPDOScurve==1) CALL CURVE(curvexpos,OPDOScurve,num1Dpoints)
-					call linwid(ilinewidth) !Set to user-defined line width
-					if (ishowOPDOSline==1) CALL CURVE(DOSlinex,OPDOSliney,3*imoend)
+                    if (ilinebottom==0) then !If showing lines at bottom, OPDOS lines will never be shown
+						call linwid(ilinewidth) !Set to user-defined line width
+						if (ishowOPDOSline==1) CALL CURVE(DOSlinex,OPDOSliney,3*imoend)
+                    end if
 					call legpat(0,1,-1,-1,-1,ileg)
 					CALL LEGLIN(clegend,trim(OPDOSstring),ileg)
 					call color('WHITE')
 					call XAXGIT !Draw a black line at Y=0 to cover the colored OPDOS line
-					call linwid(1) !Recovery to default line width of dislin
+					call linwid(1) !Recover to default line width of dislin
 					if (ishowlegend==1) call legend(clegend,3) !Draw the legends (for TDOS,PDOS,OPDOS), must before endgrf
 					call endgrf
 				end if
+            
+				!Draw lines at bottom
+                !If current unit is eV (iunitx==2), the T/PDOSliney (when degeneracy is not considered) must be multiplied by au2eV, &
+                !so that full height corresponds to 1.0, namely default str() array. While T/PDOSliney with consideration of degeneracy comes &
+                !from compfrag() array, which is not affected by choice of unit of X-axis
+				if (ilinebottom==1) then
+					call AXSLEN(lenx,leny_line)
+					call AXSPOS(350,iyaxspos_line)
+					if (iunitx==1) CALL NAME('Energy (a.u.)','X')
+					if (iunitx==2) CALL NAME('Energy (eV)','X')
+					call height(ticksize)
+					call color('WHITE')
+					if (idegen==0) then !Do not consider degeneracy
+						call setgrf('NAME','LINE','NONE','LINE')
+						CALL GRAF(enelow,enehigh,enelow,stepx, 0D0,1.2D0,0D0,0.5D0)
+						if (ishowTDOSline==1) then
+                            if (iunitx==1) CALL CURVE(DOSlinex,TDOSliney,3*imoend) !Draw TDOS lines
+                            if (iunitx==2) CALL CURVE(DOSlinex,TDOSliney*au2eV,3*imoend)
+							call setcolor(6) !Gray
+							if (iunitx==1) CALL CURVE(DOSlinex,TDOSliney_unocc,3*imoend) !Draw TDOS lines for unoccupied MOs
+							if (iunitx==2) CALL CURVE(DOSlinex,TDOSliney_unocc*au2eV,3*imoend)
+						end if
+					else if (idegen==1) then !Draw degeneracy of lines for TDOS and/or MO-PDOS
+						degenmax=1
+						do imo=1,nmo !Get maximum degeneracy in the plotting energy range
+							if (MOene_dos(imo)>enelow.and.MOene_dos(imo)<enehigh) then
+								if (compfrag(imo,0)>degenmax) degenmax=compfrag(imo,0)
+							end if
+						end do
+						CALL LABDIG(-1,"Y")
+						CALL NAME('Degen.','Y')
+						call setgrf('NAME','LINE','NONE','NAME')
+		    				CALL TICKS(nint(degenmax),'Y')
+						CALL GRAF(enelow,enehigh,enelow,stepx, 0D0,degenmax*1.2D0,0D0,degenmax*1.2D0)
+						if (ishowTDOSline==1) then
+							CALL CURVE(DOSlinex,TDOSliney,3*imoend) !Draw TDOS lines
+							call setcolor(6) !Gray
+							CALL CURVE(DOSlinex,TDOSliney_unocc,3*imoend) !Draw TDOS lines for unoccupied MOs
+						end if
+					end if
+					do ifrag=1,nfragmax
+						if (nfragDOS(ifrag)>0.and.ishowPDOSline(ifrag)==1) then
+							call setcolor(iclrPDOS(ifrag))
+							call linwid(ilinewidth) !Set to user-defined line width
+							if (iunitx==1) CALL CURVE(DOSlinex,PDOSliney(:,ifrag),3*imoend)
+							if (iunitx==2) CALL CURVE(DOSlinex,PDOSliney(:,ifrag)*au2eV,3*imoend)
+						end if
+					end do
+					call endgrf
+				end if
 			
-			!Draw LDOS
+            !Draw LDOS
 			else if (isel==10) then
 				CALL LABDIG(nlabdigY_LDOS,"Y")
 				CALL GRAF(enelow,enehigh,enelow,stepx, ylowerleft,yupperleft,ylowerleft,stepy)
-				call linwid(icurvewidth) !Set to user-defined line width
-				if (ishowLDOScurve==1) CALL CURVE(curvexpos,LDOScurve,num1Dpoints)
-				call linwid(ilinewidth) !Set to user-defined line width
-				if (ishowLDOSline==1) CALL CURVE(DOSlinex,LDOSliney,3*imoend)
-				call linwid(1) !Recovery to default line width of dislin
+                if (ishowLDOScurve==1) then
+					call linwid(icurvewidth) !Set to user-defined line width
+					CALL CURVE(curvexpos,LDOScurve,num1Dpoints)
+                end if
+                if (ishowLDOSline==1) then
+					call linwid(ilinewidth) !Set to user-defined line width
+					CALL CURVE(DOSlinex,LDOSliney,3*imoend)
+                end if
+				call linwid(1) !Recover to default line width of dislin
 				call endgrf !Finished drawing LDOS
-			end if
+            end if
 
 			call disfin
-			if (isavepic==1) write(*,*) "Graphic file has been saved to current folder with ""DISLIN"" prefix"
+			if (isavepic==1) write(*,*) "Image file has been saved to current folder with ""DISLIN"" prefix"
 		end if
 		idraw=0
 		
-		!============= post-processing menu ==============
-		!============= post-processing menu ==============
-		!============= post-processing menu ==============
+		!============= Post-processing menu ==============
+		!============= Post-processing menu ==============
+		!============= Post-processing menu ==============
 		write(*,*)
 		write(*,*) "                    -------- Post-processing menu --------"
 		if (isel==0) then !T/P/OPDOS
@@ -1266,6 +1395,9 @@ else if (isel==0.or.isel==10) then
 		    if (ishowYlab==1) write(*,*) "19 Toggle showing labels and ticks on Y-axis, current: Yes"
 		    if (ishowYlab==0) write(*,*) "19 Toggle showing labels and ticks on Y-axis, current: No"
             write(*,*) "20 Set number of decimal places for axes"
+            write(*,*) "21 Set text sizes"
+            if (ilinebottom==0) write(*,*) "22 Toggle drawing lines at bottom of curves, current: No"
+            if (ilinebottom==1) write(*,*) "22 Toggle drawing lines at bottom of curves, current: Yes"
 			read(*,*) isel2
 
             if (isel2==-1) then
@@ -1394,7 +1526,7 @@ else if (isel==0.or.isel==10) then
 					end do
 					read(*,*) iselfrag
 					if (iselfrag<0.or.iselfrag>nfragmax) then
-						write(*,*) "ERROR: Index exceeded valid range!"
+						write(*,*) "Error: Index exceeded valid range!"
 					else if (iselfrag==0) then
 						exit
 					else
@@ -1481,6 +1613,33 @@ else if (isel==0.or.isel==10) then
                         if (itmp==4) read(*,*) nlabdigY_LDOS
                     end if
                 end do
+            else if (isel2==21) then !Set text sizes
+                do while(.true.)
+                    write(*,*)
+                    write(*,*) "0 Return"
+                    write(*,"(a,i3)") " 1 Set text size of name of axes, current:",height_axis
+                    write(*,"(a,i3)") " 2 Set text size of ticks, current:",ticksize
+                    write(*,"(a,i3)") " 3 Set text size of legend, current:",legtextsize
+                    read(*,*) itmp
+                    if (itmp==0) then
+                        exit
+                    else if (itmp==1) then
+                        write(*,*) "Input size, e.g. 45"
+                        read(*,*) height_axis
+                    else if (itmp==2) then
+                        write(*,*) "Input size, e.g. 45"
+                        read(*,*) ticksize
+                    else if (itmp==3) then
+                        write(*,*) "Input size, e.g. 40"
+                        read(*,*) legtextsize
+                    end if
+                end do
+            else if (isel2==22) then
+				if (ilinebottom==1) then
+					ilinebottom=0
+                else
+					ilinebottom=1
+                end if
 			end if
 			
 		else if (isel==10) then !LDOS in 1D
@@ -1739,7 +1898,7 @@ else if (isel==12) then
 	write(*,"(a)") " Note: Most plotting parameters of PES module are irrelevant to those in the DOS module. &
 	Only eV and Gaussian broadening function will be used for PES plotting. Spin types are not distinguished"
 	nmoocc=count(MOocc/=0)
-	if (allocated(bindene)) deallocate(bindene,PESlinex,PESliney,PES_str,PES_FWHM) !binding energy
+	if (allocated(bindene)) deallocate(bindene,PESlinex,PESliney,PES_str,PES_FWHM) !Binding energy
 	allocate(PESlinex(3*nmoocc),PESliney(3*nmoocc),bindene(nmoocc),PES_str(nmoocc),PES_FWHM(nmoocc))
 	!Only consider occupied MOs
 	nmoocc=0
@@ -1917,10 +2076,10 @@ else if (isel==12) then
 				CALL IMGFMT("RGB")
 				CALL PAGE(3000,1800)
 				CALL setxid(0,'NONE')
-				call disini
+				call DISINI
+                CALL HNAME(45)
 				if (isavepic==0.and.isys==1) then
 					call height(45)
-					CALL HNAME(45)
 				else
 					call height(40) !The text shown in graphic file is strangely larger than window, so slight decrease it
 				end if

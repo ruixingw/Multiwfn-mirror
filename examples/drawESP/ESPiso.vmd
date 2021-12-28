@@ -8,13 +8,21 @@ display depthcue off
 display rendermode GLSL
 light 2 on
 light 3 on
-material change transmode EdgyGlass 1.000000
+material change transmode EdgyGlass 1.0
+material change specular EdgyGlass 0.15
+material change shininess EdgyGlass 0.95
+material change opacity EdgyGlass 0.7
+material change outlinewidth EdgyGlass 0.9
+material change outline EdgyGlass 0.5
 
 #The maximum number of systems to be loaded
 set nsystem 1
 #Lower and upper limit of color scale of ESP (a.u.)
 set colorlow -0.03
 set colorhigh 0.03
+#eV as unit
+#set colorlow -0.8
+#set colorhigh 0.8
 
 for {set i 1} {$i<=$nsystem} {incr i} {
 set id [expr $i-1]

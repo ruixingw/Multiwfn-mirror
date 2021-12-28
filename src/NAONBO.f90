@@ -240,7 +240,20 @@ read(10,*);read(10,*);read(10,*);read(10,*)
 do while(.true.)
 	read(10,"(a)") c80tmp
 	if (c80tmp/=' ') then
-		read(c80tmp,*) inao,c80tmp2,iatm
+		read(c80tmp,*,iostat=ierror) inao,c80tmp2,iatm
+        
+        !Sometimes the content is " 940    H127  s      Ryd( 2s)...", there is no spacing between element symbol and atom index, use special treatment
+        if (ierror/=0) then
+            read(c80tmp,*) iNAO,c80tmp2
+            do i=1,len_trim(c80tmp2)
+                if ( iachar(c80tmp2(i:i))>=48 .and. iachar(c80tmp2(i:i))<=57 ) then !This is the first digit
+                    read(c80tmp2(i:),*) iatm
+                    c80tmp2(i:)=" "
+                    exit
+                end if
+            end do
+        end if
+        
 		do iele=1,nelesupp
 			if (c80tmp2(1:2)==ind2name(iele)) then
 				a(iatm)%name=c80tmp2(1:2)

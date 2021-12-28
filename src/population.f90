@@ -25,7 +25,7 @@ else
 	do while(.true.)
 		imodwfnold=imodwfn
 		write(*,*)
-		write(*,*) "                ============== Population analysis =============="
+		write(*,*) "     ============== Population analysis and atomic charges =============="
 		write(*,*) "-2 Calculate interaction energy between fragments based on atomic charges"
 		if (.not.allocated(frag1)) then
 			write(*,*) "-1 Define fragment"
@@ -35,7 +35,7 @@ else
 		write(*,*) "0 Return"
 		write(*,*) "1 Hirshfeld atomic charge"
 		write(*,*) "2 Voronoi deformation density (VDD) atom population"
-		!Not available because integration error of below two methods by means of Becke integration are too large
+		!Not available because integration errors of below two methods by means of Becke integration are too large
 	! 		write(*,*) "3 Integrate electron density in voronoi cell"
 	! 		write(*,*) "4 Adjusted method 3 by Rousseau et al."
 		if (allocated(CObasa)) then
@@ -51,10 +51,11 @@ else
 		write(*,*) "13 Merz-Kollmann (MK) ESP fitting atomic charge"
 		write(*,*) "14 AIM atomic charge"
 		write(*,*) "15 Hirshfeld-I atomic charge"
-		write(*,*) "16 CM5 atomic charge"
+		write(*,*) "16 CM5 atomic charge    -16 Generate 1.2*CM5 atomic charge"
 		write(*,*) "17 Electronegativity Equalization Method (EEM) atomic charge"
 		write(*,*) "18 Restrained ElectroStatic Potential (RESP) atomic charge"
         write(*,*) "19 Gasteiger (PEOE) charge"
+		!write(*,*) "50 Generate input file of uESE code"
 		read(*,*) ipopsel
 		
 		if (ipopsel==0) then
@@ -102,6 +103,7 @@ else
 			write(*,*) "Citation: J. Mol. Struct.(Theochem), 538, 235-238 (2001)"
 			call spacecharge(4)
 		else if (ipopsel==5) then
+            call ask_Sbas_PBC
 			do while(.true.)
 				write(*,*)
 				write(*,*) "              ---------- Mulliken population analysis ----------"
@@ -127,6 +129,7 @@ else
 				end if
 			end do
 		else if (ipopsel==6) then
+            call ask_Sbas_PBC
 			write(*,*) "Performing Lowdin orthogonalization, please wait..."
 			call symmortho
 			write(*,*) "Input the path for printing population analysis result, e.g. C:\ACG.txt"
@@ -136,10 +139,13 @@ else
 			call dealloall
 			call readinfile(firstfilename,1) !Current wavefunction has been altered, recover the initial state
 		else if (ipopsel==7) then
+            call ask_Sbas_PBC
 			call MMPA(1)
 		else if (ipopsel==8) then
+            call ask_Sbas_PBC
 			call MMPA(2)
 		else if (ipopsel==9) then
+            call ask_Sbas_PBC
 			call Bickelhaupt
 		else if (ipopsel==10) then
 			call spacecharge(5)
@@ -160,6 +166,8 @@ else
 			call Hirshfeld_I_wrapper(1)
 		else if (ipopsel==16) then
 			call spacecharge(7)
+		else if (ipopsel==-16) then
+			call spacecharge(-7)
 		else if (ipopsel==17) then
 			call EEM
 		else if (ipopsel==18) then
@@ -248,7 +256,7 @@ if (wfntype==0.or.wfntype==3) then
 	do iatm=1,ncenter
 		write(*,"(' Atom',i6,'(',a2,')','  Population:',f12.8,'  Atomic charge:',f12.8)") iatm,a(iatm)%name,atmeletot(iatm),a(iatm)%charge-atmeletot(iatm)
 	end do
-	write(*,"(' Total net charge:',f12.8)") sum(a(:)%charge)-sum(atmeletot(:))
+	write(*,"(' Total net charge:',f14.8)") sum(a(:)%charge)-sum(atmeletot(:))
 else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	write(*,*) "    Atom      Alpha pop.   Beta pop.    Spin pop.     Atomic charge"
 	totbetapop=0D0
@@ -258,7 +266,7 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 		spinpop(iatm)=atmelea(iatm)-betapop
 		write(*,"(i6,'(',a2,')',4f14.8)") iatm,a(iatm)%name,atmelea(iatm),betapop,spinpop(iatm),a(iatm)%charge-atmeletot(iatm)
 	end do
-	write(*,"(' Total net charge:',f12.8,'      Total spin electrons:',f12.8)") sum(a(:)%charge)-sum(atmeletot(:)),sum(atmelea(:))-totbetapop
+	write(*,"(' Total net charge:',f14.8,'      Total spin electrons:',f12.8)") sum(a(:)%charge)-sum(atmeletot(:)),sum(atmelea(:))-totbetapop
 end if
 
 !Show fragment information
@@ -334,7 +342,7 @@ if (wfntype==0.or.wfntype==3) then
 	do iatm=1,ncenter
 		write(*,"(' Atom',i6,'(',a2,')','  Population:',f12.8,'  Atomic charge:',f12.8)") iatm,a(iatm)%name,atmelea(iatm),a(iatm)%charge-atmelea(iatm)
 	end do
-	write(*,"(' Total net charge:',f12.8)") sum(a(:)%charge)-sum(atmelea(:))
+	write(*,"(' Total net charge:',f14.8)") sum(a(:)%charge)-sum(atmelea(:))
 	if (allocated(frag1)) then
         write(*,"(/,' Fragment charge:',f14.8)") sum(a(frag1)%charge-atmelea(frag1))
         write(*,"(' Fragment population:',f14.8)") sum(atmelea(frag1))
@@ -344,7 +352,7 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	do iatm=1,ncenter
 		write(*,"(i6,'(',a2,')',4f14.8)") iatm,a(iatm)%name,atmelea(iatm),atmeleb(iatm),atmelea(iatm)-atmeleb(iatm),a(iatm)%charge-atmelea(iatm)-atmeleb(iatm)
 	end do
-	write(*,"(' Total net charge:',f12.8,'   Total spin electrons:',f12.8)") sum(a(:)%charge)-sum(atmelea(:))-sum(atmeleb(:)),sum(atmelea(:))-sum(atmeleb(:))
+	write(*,"(' Total net charge:',f14.8,'   Total spin electrons:',f12.8)") sum(a(:)%charge)-sum(atmelea(:))-sum(atmeleb(:)),sum(atmelea(:))-sum(atmeleb(:))
 	if (allocated(frag1)) then
 		write(*,"(/,' Fragment charge:',f14.8)") sum(a(frag1)%charge-atmelea(frag1)-atmeleb(frag1))
         write(*,"(' Fragment population:',f14.8)") sum(atmelea(frag1)+atmeleb(frag1))
@@ -452,7 +460,7 @@ if (isel==1.or.isel==2.or.isel==4) then
 					charge(iatm)=a(iatm)%charge-groatmmat(ncenter+1,iatm)
 					write(ides,"(' Atom',i6,'(',a2,')','    Population:',f12.8,'    Net charge:',f12.8)") iatm,a(iatm)%name,groatmmat(ncenter+1,iatm),charge(iatm)
 				end do
-				write(ides,"(' Total net charge:',f12.8)") sum(a(:)%charge)-sum(groatmmat(ncenter+1,:))
+				write(ides,"(' Total net charge:',f14.8)") sum(a(:)%charge)-sum(groatmmat(ncenter+1,:))
 			else if ((wfntype==1.or.wfntype==2.or.wfntype==4).and.itime==3) then !For unrestrict wfn, at last "itime" cycle print result
 				allocate(angorbpopa(ncenter,0:5),angorbpopb(ncenter,0:5))
 				angorbpopa=0D0
@@ -704,7 +712,7 @@ end subroutine
 
 !!-------------- Calculate charge based on space partition method
 !1=Hirshfeld, 2=VDD, 3=Integrate electron density in voronoi cell
-!4=Adjusted method 3 by Rousseau et al., 5= Becke with/without ADC, 6= ADCH, 7= CM5
+!4=Adjusted method 3 by Rousseau et al., 5= Becke with/without ADC, 6= ADCH, 7= CM5, -7= 1.2*CM5
 subroutine spacecharge(chgtype)
 use defvar
 use function
@@ -716,6 +724,14 @@ type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 real*8 atmdipx(ncenter),atmdipy(ncenter),atmdipz(ncenter),charge(ncenter)
 real*8 :: covr_becke(0:nelesupp) !covalent radii used for Becke population
 integer :: nbeckeiter=3
+
+if (.not.allocated(b)) then
+    write(*,"(a)") " Error: Your input file does not contain wavefunction information which is needed by this function! &
+    Please carefully check Section 2.5 of Multiwfn manual to understand which kind of input files can be used. You should use e.g. .wfn/.mwfn/.molden/.fch..."
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
 
 if (chgtype==5) then !Select atomic radii for Becke population
 	covr_becke=covr_TianLu
@@ -807,13 +823,18 @@ end if
 !Generate quadrature point and weighs by combination of Gauss-Chebyshev and Lebedev grids
 call gen1cintgrid(gridatmorg,iradcut)
 
-!***** 1=Hirshfeld, 2=VDD, 6=ADCH, 7=CM5
-if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7) then
-	write(*,*) "This task requests atomic densities, please select how to obtain them"
-	write(*,*) "1 Use build-in sphericalized atomic densities in free-states (more convenient)"
-	write(*,"(a)") " 2 Provide wavefunction file of involved elements by yourself or invoke Gaussian to automatically calculate them"
-	read(*,*) iatmdensmode
-	if (iatmdensmode==2) call setpromol !In this routine reload first molecule at the end
+!***** 1=Hirshfeld, 2=VDD, 6=ADCH, 7=CM5, -7=1.2*CM5
+if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7.or.chgtype==-7) then
+    if (ifPBC==0) then
+	    write(*,*) "This task requests atomic densities, please select how to obtain them"
+	    write(*,*) "1 Use build-in sphericalized atomic densities in free-states (more convenient)"
+	    write(*,"(a)") " 2 Provide wavefunction file of involved elements by yourself or invoke Gaussian to automatically calculate them"
+	    read(*,*) iatmdensmode
+	    if (iatmdensmode==2) call setpromol !In this routine reload first molecule at the end
+    else
+        iatmdensmode=1
+        write(*,"(a)") " Note: Build-in sphericalized atomic densities in free-states will be used in the calculation"
+    end if
 	write(*,"(' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
 	write(*,*) "Calculating, please wait..."
 	write(*,*)
@@ -829,28 +850,41 @@ if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7) then
 		gridatm%z=gridatmorg%z+atmz
 		!Calculate molecular density first
 		!$OMP parallel do shared(molrho) private(i) num_threads(nthreads)
-		do i=1,radpot*sphpot
+        do i=1+iradcut*sphpot,radpot*sphpot
 			molrho(i)=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
 		end do
 		!$OMP end parallel do
-		!Calc free atomic density to obtain promolecule density
+		!Calculate free atomic density to obtain promolecule density
 		promol=0D0
 		if (iatmdensmode==1) then
 			do jatm=1,ncenter
 				!$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
-				do ipt=1,radpot*sphpot
+                do ipt=1+iradcut*sphpot,radpot*sphpot
 					tmpdens(ipt)=calcatmdens(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,0)
 				end do
 				!$OMP end parallel do
 				promol=promol+tmpdens
 				if (jatm==iatm) selfdens=tmpdens
 			end do
+            !In order to calculate Hirshfeld charge for periodic systems, the promolecular density should be calculated considering PBC,
+            !as already done above. The density of current atom should be calculated without PBC, otherwise the function to be
+            !integrated will not converge to zero as the integration points go away from current atomic center, and thus it is not integrabel
+            if (ifPBC>0) then
+                ifPBCorg=ifPBC
+                ifPBC=0
+                !$OMP parallel do shared(selfdens) private(ipt) num_threads(nthreads)
+                do ipt=1+iradcut*sphpot,radpot*sphpot
+				    selfdens(ipt)=calcatmdens(iatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,0)
+			    end do
+                !$OMP end parallel do
+                ifPBC=ifPBCorg
+            end if
 		else if (iatmdensmode==2) then
 			do jatm=1,ncenter
 				call dealloall
 				call readwfn(custommapname(jatm),1)
 				!$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
-				do ipt=1,radpot*sphpot
+                do ipt=1+iradcut*sphpot,radpot*sphpot
 					tmpdens(ipt)=fdens(gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
 				end do
 				!$OMP end parallel do
@@ -866,9 +900,11 @@ if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7) then
 		dipx=0D0
 		dipy=0D0
 		dipz=0D0
-		if (chgtype==1.or.chgtype==6.or.chgtype==7) then !Hirshfeld, ADCH charge, CM5 charge
-			do i=1,radpot*sphpot
+		if (chgtype==1.or.chgtype==6.or.chgtype==7.or.chgtype==-7) then !Hirshfeld, ADCH charge, CM5 charge, 1.2*CM5 charge
+            do i=1+iradcut*sphpot,radpot*sphpot
 				if (promol(i)/=0D0) then
+                    !write(10,"(3f14.6)") gridatm(i)%x,gridatm(i)%y,gridatm(i)%z
+                    !write(10,"(5E14.6)") selfdens(i),promol(i),molrho(i),gridatm(i)%value,tmpcharge
 					tmpv=selfdens(i)/promol(i)*molrho(i)*gridatm(i)%value
 					tmpcharge=tmpcharge-tmpv
 					dipx=dipx-(gridatm(i)%x-atmx)*tmpv
@@ -879,7 +915,7 @@ if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7) then
 			if (nEDFelec==0) charge(iatm)=a(iatm)%charge+tmpcharge
 			if (nEDFelec>0) charge(iatm)=a(iatm)%index+tmpcharge !EDF is provided
 		else if (chgtype==2) then !VDD charge
-			do i=1,radpot*sphpot !Cycle each grid point of iatm, if the distance between the grid point and other atom is shorter than iatm, weight=0
+            do i=1+iradcut*sphpot,radpot*sphpot !Cycle each grid point of iatm, if the distance between the grid point and other atom is shorter than iatm, weight=0
 				vddwei=1D0
 				discen2=(gridatm(i)%x-atmx)**2+(gridatm(i)%y-atmy)**2+(gridatm(i)%z-atmz)**2 !Distance between this grid and current center atom
 				do jatm=1,ncenter_org !Note: Current wfn is atomic wfn, so use _org suffix
@@ -901,8 +937,11 @@ if (chgtype==1.or.chgtype==2.or.chgtype==6.or.chgtype==7) then
 		atmdipx(iatm)=dipx
 		atmdipy(iatm)=dipy
 		atmdipz(iatm)=dipz
-		if (chgtype==1.or.chgtype==6.or.chgtype==7) write(*,"(' Hirshfeld charge of atom ',i5,'(',a2,')',' is',f12.8)") iatm,a_org(iatm)%name,charge(iatm)
-		if (chgtype==2) write(*,"(' VDD charge of atom ',i5,'(',a2,')',' is',f12.8)") iatm,a_org(iatm)%name,charge(iatm)
+		if (chgtype==1.or.chgtype==6.or.chgtype==7.or.chgtype==-7) then
+            write(*,"(' Hirshfeld charge of atom ',i5,'(',a2,')',' is',f12.8)") iatm,a_org(iatm)%name,charge(iatm)
+        else if (chgtype==2) then
+            write(*,"(' VDD charge of atom ',i5,'(',a2,')',' is',f12.8)") iatm,a_org(iatm)%name,charge(iatm)
+        end if
 	end do
 	
 !***** 3=Integrate electron density in Voronoi cell, 4=Adjusted method 3 by Rousseau et al
@@ -936,7 +975,7 @@ else if (chgtype==3.or.chgtype==4) then
 		gridatm%x=gridatmorg%x+atmx !Move quadrature point with center of current atom
 		gridatm%y=gridatmorg%y+atmy
 		gridatm%z=gridatmorg%z+atmz
-		do i=1,radpot*sphpot
+		do i=1+iradcut*sphpot,radpot*sphpot
 			vorwei=1.0D0
 			discen2=(gridatm(i)%x-atmx)**2+(gridatm(i)%y-atmy)**2+(gridatm(i)%z-atmz)**2 !Distance between this grid and current center atom
 			do jatm=1,ncenter !Determine the boundary of cell
@@ -986,7 +1025,7 @@ else if (chgtype==5) then
 		gridatm%y=gridatmorg%y+a(iatm)%y
 		gridatm%z=gridatmorg%z+a(iatm)%z
 		!$OMP parallel do shared(tmpdens) private(i) num_threads(nthreads)
-	    do i=1,radpot*sphpot !Calc molecular density first
+	    do i=1+iradcut*sphpot,radpot*sphpot !Calc molecular density first
 		    tmpdens(i)=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
 	    end do
 		!$OMP end parallel do
@@ -1023,7 +1062,7 @@ do i=1,ncenter
 end do
 totdip=dsqrt(xmoldip**2+ymoldip**2+zmoldip**2)
 write(*,"(' Total dipole moment from atomic charges:',f12.6,' a.u.')") totdip
-write(*,"(' X/Y/Z of dipole moment from atomic charges:',3f12.6,' a.u.')") xmoldip,ymoldip,zmoldip
+write(*,"(' X/Y/Z of dipole moment vector:',3f12.6,' a.u.')") xmoldip,ymoldip,zmoldip
 
 if (chgtype==5.or.chgtype==6) then
 	write(*,*)
@@ -1042,7 +1081,9 @@ if (chgtype==5.or.chgtype==6) then
 	if (chgtype==5) call doADC(atmdipx,atmdipy,atmdipz,charge,realdip,5) !Becke with ADC
 	if (chgtype==6) call doADC(atmdipx,atmdipy,atmdipz,charge,realdip,6) !ADCH
 else if (chgtype==7) then
-	call doCM5(charge)
+	call doCM5(charge,0)
+else if (chgtype==-7) then
+	call doCM5(charge,1)
 end if
 
 call normalizecharge(charge) !Calculate and print normalized charge
@@ -1055,10 +1096,45 @@ end if
 write(*,*)
 call walltime(nwalltime2)
 write(*,"(' Calculation took up',i8,' seconds wall clock time')")  nwalltime2-nwalltime1
+if (chgtype==7.and.uESEinp==1) call gen_uESE_input(10,charge)
 write(*,*)
 call outatmchg(10,charge(:))
 end subroutine
 
+
+!!--------- Generate input file of uESE for evaluating solvation energy
+!"charge" contains CM5 charges of all atoms. ifileid is the file id that can be used.
+subroutine gen_uESE_input(ifileid,charge)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+real*8 charge(ncenter)
+integer ifileid
+character outname*200,c200tmp*200
+
+call path2filename(filename,c200tmp)
+write(*,*)
+write(*,*) "Input path for generating uESE input file, e.g. C:\ltwd.inp"
+write(*,"(a)") " If press ENTER button directly, will be exported to "//trim(c200tmp)//".inp"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".inp"
+
+open(ifileid,file=outname,status="replace")
+write(ifileid,"(a)") "Generated by Multiwfn"
+write(ifileid,"(a)") " Atomic coordinates"
+do iatm=1,ncenter
+	write(ifileid,"(i6,3f12.6)") a(iatm)%index,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+end do
+write(ifileid,*)
+write(ifileid,"(a)") " Ground state charges"
+do iatm=1,ncenter
+	write(ifileid,"(f8.4)",advance="no") charge(iatm)
+    if (mod(iatm,10)==0) write(ifileid,*)
+end do
+write(ifileid,*)
+write(ifileid,*)
+close(ifileid)
+end subroutine
 
 
 
@@ -1081,7 +1157,7 @@ write(*,*)
 chargecorr=charge
 
 do i=1,ncenter
-	if (ishowchgtrans==1) write(*,"('Atom: 'i4,a)") i,a(i)%name !ishowchgtrans==1 means output detail of charge transferation process during atomic dipole moment correction
+	if (ishowchgtrans==1) write(*,"(' Atom: 'i4,a)") i,a(i)%name !ishowchgtrans==1 means output detail of charge transferation process during atomic dipole moment correction
 	!Initialize variables
 	totq=0.0D0
 	tottmpdipx=0.0D0
@@ -1102,6 +1178,7 @@ do i=1,ncenter
 		distij=dsqrt(r2)
 		
 		!Use modified Becke weight function with vdW radii criterion
+        !Charge transfer is considered only when the distance between two atoms is smaller than sum of their vdW radii
 		rmaxdist=vdwr(a(i)%index)+vdwr(a(j)%index)
 		tr=distij/(rmaxdist/2.0D0)-1 !Transform variable so that it can in 0~rmaxdist range
 		tr=1.5*tr-0.5*tr**3
@@ -1186,12 +1263,88 @@ charge=chargecorr !Overlay charge array, then return to Hirshfeld module and out
 end subroutine
 
 
-!!--------- Calculate CM5 charges by correcting inputted Hirshfeld charges
-subroutine doCM5(charge)
+!!--------- Calculate CM5 or 1.2*CM5 charges by correcting inputted Hirshfeld charges
+!itype=0: CM5, itype=1: 1.2*CM5
+subroutine doCM5(charge,itype)
 use defvar
 implicit real*8 (a-h,o-z)
-real*8 charge(ncenter),CMcharge(ncenter),radius(118),Dparm(118)
+integer itype
+real*8 charge(ncenter),CMcharge(ncenter),radius(118),tvec(3)
 alpha=2.474D0
+!As shown in CM5 paper, the covalent radii used in CM5 equation are tabulated in CRC book 91th, where they are obtained as follows:
+!For Z=1~96, the radii are the average of CSD radii (For Fe, Mn, Co the low-spin is used) and Pyykko radii
+!For Z=97~118, the radii are Pyykko radii
+radius(1:96)=(covr(1:96)+covr_pyy(1:96))/2D0
+radius(97:118)=covr_pyy(97:118)
+radius=radius*b2a !Because the radii have already been converted to Bohr, so we convert them back to Angstrom
+
+if (ishowchgtrans==1) write(*,"(/,a)") " Details of CM5 charge correction (only terms > 1E-5 will be shown):"
+
+do iatm=1,ncenter
+	CMcorr=0
+	iZ=a(iatm)%index
+    if (ifPBC==0) then
+	    do jatm=1,ncenter
+		    if (iatm==jatm) cycle
+		    jZ=a(jatm)%index
+		    Bval=exp( -alpha*(distmat(iatm,jatm)*b2a-radius(iZ)-radius(jZ)) )
+            call getCM5Tval(iZ,jZ,Tval)
+		    CMcorr=CMcorr+Tval*Bval
+		    if (ishowchgtrans==1.and.abs(Tval*Bval)>1D-5) write(*,"(i4,a,i4,a,'  B_term:',f10.5,'  T_term:',f10.5,'  Corr. charge:',f10.5)") &
+            iatm,a(iatm)%name,jatm,a(jatm)%name,Bval,Tval,Tval*Bval
+	    end do
+    else !PBC case
+        do icell=-PBCnx,PBCnx
+            do jcell=-PBCny,PBCny
+                do kcell=-PBCnz,PBCnz
+	                do jatm=1,ncenter
+		                if (iatm==jatm) cycle
+		                jZ=a(jatm)%index
+                        call tvec_PBC(icell,jcell,kcell,tvec)
+                        atmx=a(jatm)%x+tvec(1)
+                        atmy=a(jatm)%y+tvec(2)
+                        atmz=a(jatm)%z+tvec(3)
+                        dist=dsqrt((atmx-a(iatm)%x)**2+(atmy-a(iatm)%y)**2+(atmz-a(iatm)%z)**2)
+		                Bval=exp( -alpha*(dist*b2a-radius(iZ)-radius(jZ)) )
+                        call getCM5Tval(iZ,jZ,Tval)
+		                CMcorr=CMcorr+Tval*Bval
+		                if (ishowchgtrans==1.and.abs(Tval*Bval)>1D-5) write(*,"(i4,a,i4,a,'  B_term:',f10.5,'  T_term:',f10.5,'  Corr. charge:',f10.5)") &
+                        iatm,a(iatm)%name,jatm,a(jatm)%name,Bval,Tval,Tval*Bval
+	                end do
+                end do
+            end do
+        end do
+    end if
+    CMcharge(iatm)=charge(iatm)+CMcorr
+end do
+
+if (itype==1) CMcharge=CMcharge*1.2D0 !Convert to 1.2*CM5 charge
+
+write(*,*)
+if (itype==0) write(*,*) "                    ======= Summary of CM5 charges ======="
+if (itype==1) write(*,*) "                    ======= Summary of 1.2*CM5 charges ======="
+do i=1,ncenter
+	if (itype==0) write(*,"(' Atom: ',i4,a,'  CM5 charge:',f12.6,'  Hirshfeld charge:',f12.6)") i,a(i)%name,CMcharge(i),charge(i)
+	if (itype==1) write(*,"(' Atom: ',i4,a,'  1.2*CM5 charge:',f12.6,'  Hirshfeld charge:',f12.6)") i,a(i)%name,CMcharge(i),charge(i)
+end do
+if (itype==0) write(*,"(' Summing up all CM5 charges:',f15.8)") sum(CMcharge)
+if (itype==1) write(*,"(' Summing up all 1.2*CM5 charges:',f15.8)") sum(CMcharge)
+CM5dipx=sum(a%x*CMcharge)
+CM5dipy=sum(a%y*CMcharge)
+CM5dipz=sum(a%z*CMcharge)
+CM5dip=sqrt(CM5dipx**2+CM5dipy**2+CM5dipz**2)
+write(*,*)
+if (itype==0) write(*,"(' Total dipole moment from CM5 charges',f12.7,' a.u.')") CM5dip
+if (itype==0) write(*,"(' X/Y/Z of dipole moment from CM5 charges',3f10.5, ' a.u.')") CM5dipx,CM5dipy,CM5dipz
+if (itype==1) write(*,"(' Total dipole moment from 1.2*CM5 charges',f12.7,' a.u.')") CM5dip
+if (itype==1) write(*,"(' X/Y/Z of dipole moment from 1.2*CM5 charges',3f10.5, ' a.u.')") CM5dipx,CM5dipy,CM5dipz
+charge=CMcharge
+end subroutine
+
+!---- Return Tval used in CM5 charge
+subroutine getCM5Tval(iZ,jZ,Tval)
+integer iZ,jZ
+real*8 Dparm(118),Tval
 Dparm=0D0
 Dparm(1)=0.0056D0
 Dparm(2)=-0.1543D0
@@ -1237,70 +1390,33 @@ Dparm(115)=-0.0187D0
 Dparm(116)=-0.0140D0
 Dparm(117)=-0.0110D0
 Dparm(118)=-0.0189D0
-!As shown in CM5 paper, the covalent radii used in CM5 equation are tabulated in CRC book 91th, where they are obtained as follows:
-!For Z=1~96, the radii are the average of CSD radii (For Fe, Mn, Co the low-spin is used) and Pyykko radii
-!For Z=97~118, the radii are Pyykko radii
-radius(1:96)=(covr(1:96)+covr_pyy(1:96))/2D0
-radius(97:118)=covr_pyy(97:118)
-radius=radius*b2a !Because the radii have already been converted to Bohr, so we convert them back to Angstrom
-
-if (ishowchgtrans==1) write(*,"(/,a)") " Details of CM5 charge correction:"
-
-do iatm=1,ncenter
-	CMcorr=0
-	iZ=a(iatm)%index
-	do jatm=1,ncenter
-		if (iatm==jatm) cycle
-		jZ=a(jatm)%index
-		Bval=exp( -alpha*(distmat(iatm,jatm)*b2a-radius(iZ)-radius(jZ)) )
-		if (iZ==1.and.jZ==6) then
-			Tval=0.0502D0
-		else if (iZ==6.and.jZ==1) then
-			Tval=-0.0502D0
-		else if (iZ==1.and.jZ==7) then
-			Tval=0.1747D0
-		else if (iZ==7.and.jZ==1) then
-			Tval=-0.1747D0
-		else if (iZ==1.and.jZ==8) then
-			Tval=0.1671D0
-		else if (iZ==8.and.jZ==1) then
-			Tval=-0.1671D0
-		else if (iZ==6.and.jZ==7) then
-			Tval=0.0556D0
-		else if (iZ==7.and.jZ==6) then
-			Tval=-0.0556D0
-		else if (iZ==6.and.jZ==8) then
-			Tval=0.0234D0
-		else if (iZ==8.and.jZ==6) then
-			Tval=-0.0234D0
-		else if (iZ==7.and.jZ==8) then
-			Tval=-0.0346D0
-		else if (iZ==8.and.jZ==7) then
-			Tval=0.0346D0
-		else
-			Tval=Dparm(iZ)-Dparm(jZ)
-		end if
-		CMcorr=CMcorr+Tval*Bval
-		if (ishowchgtrans==1) then
-			write(*,"(i4,a,i4,a,'  B_term:',f10.5,'  T_term:',f10.5,'  Corr. charge:',f10.5)") iatm,a(iatm)%name,jatm,a(jatm)%name,Bval,Tval,Tval*Bval
-		end if
-	end do
-	CMcharge(iatm)=charge(iatm)+CMcorr
-end do
-write(*,*)
-write(*,*) "                    ======= Summary of CM5 charges ======="
-do i=1,ncenter
-	write(*,"(' Atom: ',i4,a,'  CM5 charge:',f12.6,'  Hirshfeld charge:',f12.6)") i,a(i)%name,CMcharge(i),charge(i)
-end do
-write(*,"(' Summing up all CM5 charges:',f15.8)") sum(CMcharge)
-CM5dipx=sum(a%x*CMcharge)
-CM5dipy=sum(a%y*CMcharge)
-CM5dipz=sum(a%z*CMcharge)
-CM5dip=sqrt(CM5dipx**2+CM5dipy**2+CM5dipz**2)
-write(*,*)
-write(*,"(' Total dipole moment from CM5 charges',f12.7,' a.u.')") CM5dip
-write(*,"(' X/Y/Z of dipole moment from CM5 charges',3f10.5, ' a.u.')") CM5dipx,CM5dipy,CM5dipz
-charge=CMcharge
+if (iZ==1.and.jZ==6) then
+	Tval=0.0502D0
+else if (iZ==6.and.jZ==1) then
+	Tval=-0.0502D0
+else if (iZ==1.and.jZ==7) then
+	Tval=0.1747D0
+else if (iZ==7.and.jZ==1) then
+	Tval=-0.1747D0
+else if (iZ==1.and.jZ==8) then
+	Tval=0.1671D0
+else if (iZ==8.and.jZ==1) then
+	Tval=-0.1671D0
+else if (iZ==6.and.jZ==7) then
+	Tval=0.0556D0
+else if (iZ==7.and.jZ==6) then
+	Tval=-0.0556D0
+else if (iZ==6.and.jZ==8) then
+	Tval=0.0234D0
+else if (iZ==8.and.jZ==6) then
+	Tval=-0.0234D0
+else if (iZ==7.and.jZ==8) then
+	Tval=-0.0346D0
+else if (iZ==8.and.jZ==7) then
+	Tval=0.0346D0
+else
+	Tval=Dparm(iZ)-Dparm(jZ)
+end if
 end subroutine
 
 
@@ -2306,7 +2422,8 @@ real*8 coord(3,ncenter)
 integer atmlist(ncenter),atmindex(ncenter),classnatm(ncenter),classidx(ncenter,ncenter)
 toler=0.1D0 !loose
 open(10,file="eqvcons_PG.txt",status="replace")
-write(*,"(a)") " Note: You can change tolerance for detecting point group to e.g. 0.08 by inputting ""t 0.08"". The default tolerance is 0.1"
+write(*,"(a)") " Note: You can change the tolerance for detecting point group to e.g. 0.08 by inputting ""t 0.08"". The default tolerance is 0.1. &
+If Multiwfn shows ""ERROR: Too many symmetry operations"", you should set the tolerance to a smaller value and retry"
 do while(.true.)
     write(*,*)
     write(*,*) "Input indices of the atoms in the fragment, e.g. 3,6-10,12,14"
@@ -3174,12 +3291,10 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 		if (iESPtype==2.or.iESPtype==3) ESPptval(ipt)=ESPptval(ipt)-nucesp(xtmp/b2a,ytmp/b2a,ztmp/b2a) !Remove nuclear contribution
 	end do
 	close(10)
+    
 	!Delete intermediate files
-	if (isys==1) then
-		call system("del cubegenpt.txt ESPresult.cub nouseout /Q")
-	else
-		call system("rm cubegenpt.txt ESPresult.cub nouseout -f")
-	end if
+    call delfile("cubegenpt.txt ESPresult.cub nouseout")
+    
 else !Use internal code to evaluate ESP
     nESPthreads=nthreads
     if (iESPcode==2) then
@@ -3191,7 +3306,7 @@ else !Use internal code to evaluate ESP
     call showprog(0,nESPpt)
 	!$OMP PARALLEL DO SHARED(itmp,ESPptval) PRIVATE(ipt) schedule(dynamic) NUM_THREADS(nESPthreads)
 	do ipt=1,nESPpt
-		if (ipt>=itmp*300.or.ipt==nESPpt) then
+		if (ipt>=itmp*300) then
 			call showprog(ipt,nESPpt)
 			itmp=itmp+1
 		end if
@@ -3201,6 +3316,7 @@ else !Use internal code to evaluate ESP
 			ESPptval(ipt)=eleesp(ESPpt(1,ipt),ESPpt(2,ipt),ESPpt(3,ipt))
 		end if
 	end do    !$OMP END PARALLEL DO
+    call showprog(nESPpt,nESPpt)
 end if
 call walltime(iwalltime2)
 if (ishowprompt==1) write(*,"(' Calculation of ESP took up wall clock time',i10,' s')") iwalltime2-iwalltime1
@@ -3311,9 +3427,9 @@ ntotpot=radpot*sphpot
 write(*,*)
 write(*,"(a,/)") " IMPORTANT HINT: If your system does not contain lanthanides and actinides and meantime you want to directly &
 perform Hirshfeld-I calculation without letting Multiwfn to automatically invoke Gaussian &
-to generate atomic .wfn files for various charged states, you can copy ""atmrad"" folder from ""examples"" directory &
+to generate atomic .wfn files for various charged states, it is strongly suggested to copy ""atmrad"" folder from ""examples"" directory &
 to current directory, then the atomic radial density files in the ""atmrad"" folder will be directly utilized. See Section &
-3.9.13 of Multiwfn manual for more detail about the underlying mechanism."
+3.9.13 of Multiwfn manual for more detail about the underlying mechanism, and see Section 4.7.4 for example of Hirshfeld-I calculation"
 
 do while(.true.)
     if (itype==1) write(*,*) "     =============== Iterative Hirshfeld (Hirshfeld-I) ==============="
@@ -3428,7 +3544,7 @@ if (imode==2) then
 				if (a(jatm)%index==1.and.istat==1) cycle !H+ doesn't contains electron and cannot compute density
 				c80tmp="atmrad"//sep//trim(a(jatm)%name)//statname(istat)//".rad"
 				inquire(file=c80tmp,exist=alive)
-				if (alive==.false.) cycle
+				if (alive==.false.) cycle !If the .rad file of jatm in charge state "istat" is not available, skip calculation
 				open(10,file=c80tmp,status="old")
 				read(10,*) atmradnpt(jatm)
 				do ipt=1,atmradnpt(jatm)
@@ -3449,7 +3565,16 @@ end if
 !Set atomic initial radial density as neutral state, which is loaded from corresponding .rad file
 atmradrho=0
 do iatm=1,ncenter
-	open(10,file="atmrad"//sep//trim(a(iatm)%name)//"_0.rad",status="old")
+    c80tmp="atmrad"//sep//trim(a(iatm)%name)//"_0.rad"
+    inquire(file=c80tmp,exist=alive)
+    if (alive==.false.) then
+        write(*,*)
+        write(*,*) "Error: The file "//trim(c80tmp)//" cannot be found!"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+        return
+    end if
+	open(10,file=c80tmp,status="old")
 	read(10,*) atmradnpt(iatm)
 	do ipt=1,atmradnpt(iatm)
 		read(10,*) rnouse,atmradrho(iatm,ipt)
@@ -3524,7 +3649,6 @@ do icyc=1,maxcyc
 			exit
 		else
 			write(*,*) "Hirshfeld-I atomic spaces converged successfully!"
-			write(*,*)
 			return
 		end if
 	else
@@ -3945,11 +4069,25 @@ real*8 EEMmat(ncenter+1,ncenter+1),EEMarr(ncenter+1),qarr(ncenter+1)
 real*8 kappa,Aparm(nelesupp,maxBO),Bparm(nelesupp,maxBO) !If parameter is -1, means undefined parameter
 real*8 :: chgnet=0
 
-if (ifiletype/=11.and.ifiletype/=13) then
-	write(*,"(a)") " Error: MDL Molfile (.mol) or .mol2 file must be used as input file, since it contains atomic connectivity information!"
-	write(*,*) "Press Enter button to return"
-	read(*,*)
-	return
+if (ifPBC==0) then
+	if (ifiletype/=11.and.ifiletype/=13) then
+		write(*,"(/,a)") " Warning: Commonly MDL Molfile (.mol) or .mol2 file should be used as input file, &
+        since it contains atomic connectivity information. If you want to let Multiwfn guess interatomic connectivity &
+        and then calculate EEM charges, you can input ""g"", however bond multiplicity cannot be determined in this way, and thus &
+        the EEM charges may be problematic if the employed EEM parameters explicitly involve bond multiplicity"
+		write(*,*) "If you simply want to return, press ENTER button"
+		read(*,"(a)") c200tmp
+        if (index(c200tmp,'g')/=0) then
+			call genconnmat(1,0)
+        else
+			return
+        end if
+	end if
+else
+	write(*,"(/,a)") " Note: Multiwfn will guess interatomic connectivity and then calculate EEM. &
+    However bond multiplicity cannot be determined in this way, and thus the &
+    EEM charges may be problematic if the employed EEM parameters explicitly involve bond multiplicity"
+	call genconnmat(1,1)
 end if
 
 iparmset=2
@@ -4358,7 +4496,7 @@ parma(53,1)=9.90D0; parmb(53,1)=7.96D0; parmc(53,1)=0.96D0 !One bond
 !hydroxyl oxygen is identified as o3, =O as o2, the result is identical to Antechamber. It seems that only when P connected to multiple =O &
 !the case will be come more complicated, but this situation is quite rare and thus not needed to consider
 
-call genconnmat
+call genconnmat(1,1)
 write(*,*)
 
 nbond=0

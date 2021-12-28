@@ -95,3 +95,4 @@ chgname=${1//$suffix/chg}
 mv gau.chg $chgname
 
 echo Finished! The optimized atomic coordinates with RESP charges \(the last column\) have been exported to $chgname in current folder
+echo Please properly cite Multiwfn in your publication according to \"How to cite Multiwfn.pdf\" in Multiwfn package

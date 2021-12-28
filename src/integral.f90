@@ -149,6 +149,7 @@ iz1=type2iz(b(iGTF)%type)+iz1p
 ix2=type2ix(b(jGTF)%type)+ix2p
 iy2=type2iy(b(jGTF)%type)+iy2p
 iz2=type2iz(b(jGTF)%type)+iz2p
+
 !First, calculate sx,sy,sz as usual as doSint
 numx=ceiling( (ix1+ix2+1)/2D0 ) !Need to calculate n points
 sx=0.0D0
@@ -177,6 +178,7 @@ do i=1,numz
 	sz=sz+Whm(numz,i)*term1*term2
 end do
 sz=sz/sqrtep
+
 !Second, calculate overlap integral in X,Y,Z directions but with X,Y,Z coordinate variables (relative to the original point of the whole system) to produce sxx,syy,szz
 numx=ceiling( (ix1+ix2+2)/2D0 ) !Because X variable is introduced, ix1+ix2+2 is used instead of ix1+ix2+1
 sxx=0.0D0
@@ -605,14 +607,17 @@ end subroutine
 
 
 
-!!!-------- Evaluate quadrupole and octopole moment integral for two unnormalized GTFs, e.g. <GTF|-xz|GTF>
+!!!-------- Evaluate dipole, quadrupole, octopole and hexadecapole moment integral for two unnormalized GTFs, e.g. <GTF|-xz|GTF>
 !The negative charge of electron has been considered!
-subroutine domultipoleint(iGTF,jGTF,Quad,Octo)
+subroutine domultipoleint(iGTF,jGTF,D,Quad,Octo,Hexde)
 use util
 use defvar
 implicit real*8(a-h,o-z)
-real*8 Quad(6),Octo(10)
+real*8 D(3),Quad(6),Octo(10),Hexde(15)
 integer iGTF,jGTF
+integer,parameter :: maxorder=4 !Maximum order of GTF with respect to a direction
+real*8 sx(0:maxorder),sy(0:maxorder),sz(0:maxorder)
+
 x1=a(b(iGTF)%center)%x
 y1=a(b(iGTF)%center)%y
 z1=a(b(iGTF)%center)%z
@@ -634,217 +639,182 @@ ix2=type2ix(b(jGTF)%type)
 iy2=type2iy(b(jGTF)%type)
 iz2=type2iz(b(jGTF)%type)
 
-!First, calculate sx,sy,sz as usual as doSint
-numx=ceiling( (ix1+ix2+1)/2D0 ) !Need to calculate n points
-sx=0.0D0
-do i=1,numx
-	tmp=Rhm(numx,i)/sqrtep+px
-	term1=(tmp-x1)**ix1
-	term2=(tmp-x2)**ix2
-	sx=sx+Whm(numx,i)*term1*term2
+!sx(0) corresponds to the sx in subroutine doSint, sx(i) is used in order of i in x direction
+sx=0
+sy=0
+sz=0
+do iorder=0,maxorder
+	numx=ceiling( (ix1+ix2+1+iorder)/2D0 ) !Need to calculate n points
+	do i=1,numx
+		tmp=Rhm(numx,i)/sqrtep+px
+		term1=(tmp-x1)**ix1
+		term2=(tmp-x2)**ix2
+		sx(iorder)=sx(iorder)+Whm(numx,i)*term1*term2*tmp**iorder
+	end do
+    sx(iorder)=sx(iorder)
+    
+	numy=ceiling( (iy1+iy2+1+iorder)/2D0 )
+	do i=1,numy
+		tmp=Rhm(numy,i)/sqrtep+py
+		term1=(tmp-y1)**iy1
+		term2=(tmp-y2)**iy2
+		sy(iorder)=sy(iorder)+Whm(numy,i)*term1*term2*tmp**iorder
+	end do
+    
+	numz=ceiling( (iz1+iz2+1+iorder)/2D0 )
+	do i=1,numz
+		tmp=Rhm(numz,i)/sqrtep+pz
+		term1=(tmp-z1)**iz1
+		term2=(tmp-z2)**iz2
+		sz(iorder)=sz(iorder)+Whm(numz,i)*term1*term2*tmp**iorder
+	end do
 end do
 sx=sx/sqrtep
-numy=ceiling( (iy1+iy2+1)/2D0 )
-sy=0.0D0
-do i=1,numy
-	tmp=Rhm(numy,i)/sqrtep+py
-	term1=(tmp-y1)**iy1
-	term2=(tmp-y2)**iy2
-	sy=sy+Whm(numy,i)*term1*term2
-end do
 sy=sy/sqrtep
-numz=ceiling( (iz1+iz2+1)/2D0 )
-sz=0.0D0
-do i=1,numz
-	tmp=Rhm(numz,i)/sqrtep+pz
-	term1=(tmp-z1)**iz1
-	term2=(tmp-z2)**iz2
-	sz=sz+Whm(numz,i)*term1*term2
-end do
 sz=sz/sqrtep
 
-!Second, calculate overlap integral in X,Y,Z directions but with various order of X/Y/Z coordinate variables
-!sx_x
-numx=ceiling( (ix1+ix2+2)/2D0 ) !Because X variable is introduced, ix1+ix2+2 is used instead of ix1+ix2+1
-sx_x=0D0
-do i=1,numx
-	tmp=Rhm(numx,i)/sqrtep+px !X variable
-	term1=(tmp-x1)**ix1
-	term2=(tmp-x2)**ix2
-	sx_x=sx_x+Whm(numx,i)*term1*term2*tmp
-end do
-sx_x=sx_x/sqrtep
-!sx_xx
-numx=ceiling( (ix1+ix2+3)/2D0 ) !Because XX variable is introduced, ix1+ix2+3 is used instead of ix1+ix2+1
-sx_xx=0D0
-do i=1,numx
-	tmp=Rhm(numx,i)/sqrtep+px !X variable
-	term1=(tmp-x1)**ix1
-	term2=(tmp-x2)**ix2
-	sx_xx=sx_xx+Whm(numx,i)*term1*term2*tmp*tmp
-end do
-sx_xx=sx_xx/sqrtep
-!sx_xxx
-numx=ceiling( (ix1+ix2+4)/2D0 ) !Because XXX variable is introduced, ix1+ix2+4 is used instead of ix1+ix2+1
-sx_xxx=0D0
-do i=1,numx
-	tmp=Rhm(numx,i)/sqrtep+px !X variable
-	term1=(tmp-x1)**ix1
-	term2=(tmp-x2)**ix2
-	sx_xxx=sx_xxx+Whm(numx,i)*term1*term2*tmp*tmp*tmp
-end do
-sx_xxx=sx_xxx/sqrtep
+D(1)=-sx(1)*sy(0)*sz(0) !X
+D(2)=-sx(0)*sy(1)*sz(0) !Y
+D(3)=-sx(0)*sy(0)*sz(1) !Z
+D=D*expterm
 
-!sy_y
-numy=ceiling( (iy1+iy2+2)/2D0 )
-sy_y=0D0
-do i=1,numy
-	tmp=Rhm(numy,i)/sqrtep+py
-	term1=(tmp-y1)**iy1
-	term2=(tmp-y2)**iy2
-	sy_y=sy_y+Whm(numy,i)*term1*term2*tmp
-end do
-sy_y=sy_y/sqrtep
-!sy_yy
-numy=ceiling( (iy1+iy2+3)/2D0 )
-sy_yy=0D0
-do i=1,numy
-	tmp=Rhm(numy,i)/sqrtep+py
-	term1=(tmp-y1)**iy1
-	term2=(tmp-y2)**iy2
-	sy_yy=sy_yy+Whm(numy,i)*term1*term2*tmp*tmp
-end do
-sy_yy=sy_yy/sqrtep
-!sy_yyy
-numy=ceiling( (iy1+iy2+4)/2D0 )
-sy_yyy=0D0
-do i=1,numy
-	tmp=Rhm(numy,i)/sqrtep+py
-	term1=(tmp-y1)**iy1
-	term2=(tmp-y2)**iy2
-	sy_yyy=sy_yyy+Whm(numy,i)*term1*term2*tmp*tmp*tmp
-end do
-sy_yyy=sy_yyy/sqrtep
+Quad(1)=-sx(2)*sy(0)*sz(0) !XX
+Quad(2)=-sx(0)*sy(2)*sz(0) !YY
+Quad(3)=-sx(0)*sy(0)*sz(2) !ZZ
+Quad(4)=-sx(1)*sy(1)*sz(0) !XY
+Quad(5)=-sx(0)*sy(1)*sz(1) !YZ
+Quad(6)=-sx(1)*sy(0)*sz(1) !XZ
+Quad=Quad*expterm
 
-!sz_z
-numz=ceiling( (iz1+iz2+2)/2D0 )
-sz_z=0D0
-do i=1,numz
-	tmp=Rhm(numz,i)/sqrtep+pz
-	term1=(tmp-z1)**iz1
-	term2=(tmp-z2)**iz2
-	sz_z=sz_z+Whm(numz,i)*term1*term2*tmp
-end do
-sz_z=sz_z/sqrtep
-!sz_zz
-numz=ceiling( (iz1+iz2+3)/2D0 )
-sz_zz=0D0
-do i=1,numz
-	tmp=Rhm(numz,i)/sqrtep+pz
-	term1=(tmp-z1)**iz1
-	term2=(tmp-z2)**iz2
-	sz_zz=sz_zz+Whm(numz,i)*term1*term2*tmp*tmp
-end do
-sz_zz=sz_zz/sqrtep
-!sz_zzz
-numz=ceiling( (iz1+iz2+4)/2D0 )
-sz_zzz=0D0
-do i=1,numz
-	tmp=Rhm(numz,i)/sqrtep+pz
-	term1=(tmp-z1)**iz1
-	term2=(tmp-z2)**iz2
-	sz_zzz=sz_zzz+Whm(numz,i)*term1*term2*tmp*tmp*tmp
-end do
-sz_zzz=sz_zzz/sqrtep
+Octo(1)=-sx(3)*sy(0)*sz(0) !XXX
+Octo(2)=-sx(0)*sy(3)*sz(0) !YYY
+Octo(3)=-sx(0)*sy(0)*sz(3) !ZZZ
+Octo(4)=-sx(0)*sy(1)*sz(2) !YZZ
+Octo(5)=-sx(1)*sy(0)*sz(2) !XZZ
+Octo(6)=-sx(2)*sy(0)*sz(1) !XXZ
+Octo(7)=-sx(0)*sy(2)*sz(1) !YYZ
+Octo(8)=-sx(2)*sy(1)*sz(0) !XXY
+Octo(9)=-sx(1)*sy(2)*sz(0) !XYY
+Octo(10)=-sx(1)*sy(1)*sz(1) !XYZ
+Octo=Octo*expterm
 
-Quad(1)=-sx_xx*sy*sz*expterm !XX
-Quad(2)=-sx*sy_yy*sz*expterm !YY
-Quad(3)=-sx*sy*sz_zz*expterm !ZZ
-Quad(4)=-sx_x*sy_y*sz*expterm !XY
-Quad(5)=-sx*sy_y*sz_z*expterm !YZ
-Quad(6)=-sx_x*sy*sz_z*expterm !XZ
-
-Octo(1)=-sx_xxx*sy*sz*expterm !XXX
-Octo(2)=-sx*sy_yyy*sz*expterm !YYY
-Octo(3)=-sx*sy*sz_zzz*expterm !ZZZ
-Octo(4)=-sx*sy_y*sz_zz*expterm !YZZ
-Octo(5)=-sx_x*sy*sz_zz*expterm !XZZ
-Octo(6)=-sx_xx*sy*sz_z*expterm !XXZ
-Octo(7)=-sx*sy_yy*sz_z*expterm !YYZ
-Octo(8)=-sx_xx*sy_y*sz*expterm !XXY
-Octo(9)=-sx_x*sy_yy*sz*expterm !XYY
-Octo(10)=-sx_x*sy_y*sz_z*expterm !XYZ
+Hexde(1)=-sx(4)*sy(0)*sz(0) !XXXX
+Hexde(2)=-sx(0)*sy(4)*sz(0) !YYYY
+Hexde(3)=-sx(0)*sy(0)*sz(4) !ZZZZ
+Hexde(4)=-sx(3)*sy(1)*sz(0) !XXXY
+Hexde(5)=-sx(3)*sy(0)*sz(1) !XXXZ
+Hexde(6)=-sx(1)*sy(3)*sz(0) !YYYX
+Hexde(7)=-sx(0)*sy(3)*sz(1) !YYYZ
+Hexde(8)=-sx(1)*sy(0)*sz(3) !ZZZX
+Hexde(9)=-sx(0)*sy(1)*sz(3) !ZZZY
+Hexde(10)=-sx(2)*sy(2)*sz(0) !XXYY
+Hexde(11)=-sx(2)*sy(0)*sz(2) !XXZZ
+Hexde(12)=-sx(0)*sy(2)*sz(2) !YYZZ
+Hexde(13)=-sx(2)*sy(1)*sz(1) !XXYZ
+Hexde(14)=-sx(1)*sy(2)*sz(1) !YYXZ
+Hexde(15)=-sx(1)*sy(1)*sz(2) !ZZXY
+Hexde=Hexde*expterm
 end subroutine
 
-!!!----------- Generate quadrupole and Octopole moment integral matrix between all GTFs, e.g. -<GTF_i|-xz|GTF_j>, store to Quadprim and Octoprim
+!!!-------- Generate electric dipole ~ Hexadecapole moment integral matrix between all GTFs, e.g. -<GTF_i|-xz|GTF_j>
 subroutine genMultipoleprim
 use defvar
 implicit real*8 (a-h,o-z)
+if (allocated(Dprim)) deallocate(Dprim)
+allocate(Dprim(3,nprims,nprims))
 if (allocated(Quadprim)) deallocate(Quadprim)
 allocate(Quadprim(6,nprims,nprims))
 if (allocated(Octoprim)) deallocate(Octoprim)
 allocate(Octoprim(10,nprims,nprims))
+if (allocated(Hexdeprim)) deallocate(Hexdeprim)
+allocate(Hexdeprim(15,nprims,nprims))
+Dprim=0D0
 Quadprim=0D0
 Octoprim=0D0
-!$OMP PARALLEL DO SHARED(Quadprim,Octoprim) PRIVATE(i,j) schedule(dynamic) NUM_THREADS(nthreads)
+Hexdeprim=0D0
+!$OMP PARALLEL DO SHARED(Dprim,Quadprim,Octoprim,Hexdeprim) PRIVATE(i,j) schedule(dynamic) NUM_THREADS(nthreads)
 do i=1,nprims
 	do j=i,nprims
-        call domultipoleint(i,j,Quadprim(:,i,j),Octoprim(:,i,j))
+        call domultipoleint(i,j,Dprim(:,i,j),Quadprim(:,i,j),Octoprim(:,i,j),Hexdeprim(:,i,j))
+		Dprim(:,j,i)=Dprim(:,i,j)
 		Quadprim(:,j,i)=Quadprim(:,i,j)
 		Octoprim(:,j,i)=Octoprim(:,i,j)
+		Hexdeprim(:,j,i)=Hexdeprim(:,i,j)
 	end do
 end do
 !$OMP END PARALLEL DO
 end subroutine
 
-!!!----------- Generate quadrupole and Octopole moment integral matrix between all Cartesian basis functions, e.g. -<basis_i|-xz|basis_j>
+!!!-------- Generate electric dipole ~ hexadecapole moment integral matrix between all Cartesian basis functions, e.g. -<basis_i|-xz|basis_j>
+!Dbas should be allocated first. First index 1~3=X,Y,Z
 !Quadbas should be allocated first. First index 1~6=XX,YY,ZZ,XY,YZ,XZ
 !Octobas should be allocated first. First index 1~10=XXX,YYY,ZZZ,YZZ,XZZ,XXZ,YYZ,XXY,XYY,XYZ
+!Hexdebas should be allocated first. First index 1~15=XXXX,YYYY,ZZZZ,XXXY,XXXZ,YYYX,YYYZ,ZZZX,ZZZY,XXYY,XXZZ,YYZZ,XXYZ,YYXZ,ZZXY (same as Gaussian)
 !If current basis functions contain spherical ones, it must be then converted to spherical-harmonic one before any practical use
 subroutine genMultipolebas
 use defvar
 implicit real*8 (a-h,o-z)
-real*8 Quadtmp(6),Octotmp(10)
+real*8 Dtmp(3),Quadtmp(6),Octotmp(10),Hexdetmp(15)
+Dbas=0D0
 Quadbas=0D0
 Octobas=0D0
-!$OMP PARALLEL DO SHARED(Quadbas,Octobas) PRIVATE(i,ii,j,jj,Quadtmp,Octotmp) schedule(dynamic) NUM_THREADS(nthreads)
+Hexdebas=0D0
+!$OMP PARALLEL DO SHARED(Dbas,Quadbas,Octobas,Hexdebas) PRIVATE(i,ii,j,jj,Dtmp,Quadtmp,Octotmp,Hexdetmp) schedule(dynamic) NUM_THREADS(nthreads)
 do i=1,nbasisCar
 	do j=i,nbasisCar
 		do ii=primstart(i),primend(i)
 			do jj=primstart(j),primend(j)
-				call domultipoleint(ii,jj,Quadtmp(:),Octotmp(:))
+				call domultipoleint(ii,jj,Dtmp(:),Quadtmp(:),Octotmp(:),Hexdetmp(:))
+                Dbas(:,i,j)=Dbas(:,i,j)+primconnorm(ii)*primconnorm(jj)*Dtmp(:)
                 Quadbas(:,i,j)=Quadbas(:,i,j)+primconnorm(ii)*primconnorm(jj)*Quadtmp(:)
                 Octobas(:,i,j)=Octobas(:,i,j)+primconnorm(ii)*primconnorm(jj)*Octotmp(:)
+                Hexdebas(:,i,j)=Hexdebas(:,i,j)+primconnorm(ii)*primconnorm(jj)*Hexdetmp(:)
 			end do
 		end do
+		Dbas(:,j,i)=Dbas(:,i,j)
 		Quadbas(:,j,i)=Quadbas(:,i,j)
 		Octobas(:,j,i)=Octobas(:,i,j)
+		Hexdebas(:,j,i)=Hexdebas(:,i,j)
 	end do
 end do
 !$OMP END PARALLEL DO
 end subroutine
-!!!------------------ Generate quadrupole/octopole moment integral matrix between all current basis functions
+!!!------------- Generate electric dipole ~ hexadecapole moment integral matrix between all current basis functions
 subroutine genMultipolebas_curr
 use defvar
 real*8,allocatable :: mattmp(:,:,:)
+if (allocated(Dbas)) deallocate(Dbas)
+allocate(Dbas(6,nbasisCar,nbasisCar))
 if (allocated(Quadbas)) deallocate(Quadbas)
 allocate(Quadbas(6,nbasisCar,nbasisCar))
 if (allocated(Octobas)) deallocate(Octobas)
 allocate(Octobas(10,nbasisCar,nbasisCar))
+if (allocated(Hexdebas)) deallocate(Hexdebas)
+allocate(Hexdebas(15,nbasisCar,nbasisCar))
 if (isphergau==0) then
     call genMultipolebas
 else
-    allocate(mattmp(10,nbasisCar,nbasisCar))
+    allocate(mattmp(15,nbasisCar,nbasisCar))
     call genMultipolebas !Generate matrix in purely Cartesian basis
+    mattmp(1:3,:,:)=Dbas(:,:,:)
+    deallocate(Dbas);allocate(Dbas(3,nbasis,nbasis))
+    do i=1,3
+        call matCar2curr(mattmp(i,:,:),Dbas(i,:,:)) !Transform matrix from Cartesian basis to current basis
+    end do
     mattmp(1:6,:,:)=Quadbas(:,:,:)
     deallocate(Quadbas);allocate(Quadbas(6,nbasis,nbasis))
     do i=1,6
         call matCar2curr(mattmp(i,:,:),Quadbas(i,:,:)) !Transform matrix from Cartesian basis to current basis
     end do
-    mattmp=Octobas
+    mattmp(1:10,:,:)=Octobas(:,:,:)
     deallocate(Octobas);allocate(Octobas(10,nbasis,nbasis))
     do i=1,10
         call matCar2curr(mattmp(i,:,:),Octobas(i,:,:)) !Transform matrix from Cartesian basis to current basis
+    end do
+    mattmp(1:15,:,:)=Hexdebas(:,:,:)
+    deallocate(Hexdebas);allocate(Hexdebas(15,nbasis,nbasis))
+    do i=1,15
+        call matCar2curr(mattmp(i,:,:),Hexdebas(i,:,:)) !Transform matrix from Cartesian basis to current basis
     end do
 end if
 end subroutine
@@ -862,10 +832,13 @@ real*8 conv5d6d(6,5),conv7f10f(10,7),conv9g15g(15,9),conv11h21h(21,11)
 real*8 conv5d6dtr(5,6),conv7f10ftr(7,10),conv9g15gtr(9,15),conv11h21htr(11,21)
 real*8 matCar(nbasisCar,nbasisCar),matcurr(nbasis,nbasis)
 
-if (ifiletype==1) then !Fch case
+if (ifiletype==1.or.ifiletype==14) then !Fch or mwfn case
     call gensphcartab(1,conv5d6d,conv7f10f,conv9g15g,conv11h21h)
-else !molden case
+else if (ifiletype==9) then !Molden case
     call gensphcartab(2,conv5d6d,conv7f10f,conv9g15g,conv11h21h)
+else
+	write(*,*) "Error: The file type is not supported by matCar2curr!"
+    read(*,*)
 end if
 conv5d6dtr=transpose(conv5d6d)
 conv7f10ftr=transpose(conv7f10f)

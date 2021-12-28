@@ -39,8 +39,12 @@ if (igauout==1) then !Gaussian+NBO output file
 	write(*,"(' The number of basis functions:',i6)") nbasis
     if (numNAO/=nbasis) then
         write(*,"(a)") " Warning: The number of basis functions is unequal to the number of NAOs, commonly this is because &
-        diffuse functions are used. If then Multiwfn fails to load data from input file and thus crashes, &
+        diffuse functions are used. If then Multiwfn fails to load data from the input file and crashes, or the result is weird, &
         you should remove diffuse functions and regenerate the files, then try to redo the AdNDP analysis"
+        write(*,*) "This situation is usually safe if NBO >=6.0 is used, while dangerous if NBO 3.1 is used"
+        !I noticed that when linear dependency is occurred, although the number of NAOs is smaller than nbasis, &
+        !the DMNAO printed by NBO 3.1 still has dimension of nbasis, making DMNAO incorrectly loaded by Multiwfn.
+        !While for NBO 6, the dimension of DMNAO is always numNAO, as expected.
     end if
 else !Cannot load from Gaussian output, assume the number of basis functions is identical to numNAO. However, when this is not true, cumbersome thing will occur...
 	nbasis=numNAO
@@ -68,7 +72,12 @@ end if
 
 close(10) !Loading finished
 
-
+DMnele=0
+do iNAO=1,numNAO
+	!write(*,"(i5,3f12.6)") iNAO,DMNAO(iNAO,iNAO),DMNAOa(iNAO,iNAO),DMNAOb(iNAO,iNAO)
+	DMnele=DMnele+DMNAO(iNAO,iNAO)
+end do
+write(*,"(' Number of electrons of this density matrix:',f12.5)") DMnele
 !==== Remove core contribution from density matrix
 removeocc=0
 do iNAO=1,numNAO
@@ -77,7 +86,8 @@ do iNAO=1,numNAO
         removeocc=removeocc+NAOocc(iNAO,ispin)
     end if
 end do
-write(*,"(a,i6,a)") " Note: Contributions from core NAOs to density matrix (",nint(removeocc)," electrons) have been eliminated"
+write(*,"(a,f10.3,a)") " Note: Contributions from core NAOs to density matrix (",removeocc," e) &
+have been eliminated by setting corresponding diagonal terms of density matrix to zero"
 write(*,*) "Note: Default exhaustive search list is the entire system"
 write(*,*)
 !Initialization
@@ -528,7 +538,7 @@ do while(.true.)
 					if (sum(cubmat)<0) cubmat=-cubmat
 					write(c80tmp,"('AdNDPorb',i4.4,'.cub')") iorb
 					open(10,file=c80tmp,status="replace")
-					call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+					call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 					close(10)
 					write(*,"(1x,a,' has been exported to current folder')") trim(c80tmp)
 				end do
@@ -555,7 +565,7 @@ do while(.true.)
 					if (sum(cubmat)<0) cubmat=-cubmat
 					write(c80tmp,"('candiorb',i4.4,'.cub')") iorb
 					open(10,file=c80tmp,status="replace")
-					call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+					call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 					close(10)
 					write(*,"(1x,a,' has been exported to current folder')") trim(c80tmp)
 				end do

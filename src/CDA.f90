@@ -23,7 +23,7 @@ real*8,allocatable :: cobasCDA(:,:,:),cobasCDAb(:,:,:) !Coefficient matrices in 
 !Below arrays will be computed rather than read
 real*8,allocatable :: tmpmat(:,:),tmpmat2(:,:)
 real*8,allocatable :: coFO(:,:),coFOb(:,:) !(i,j) denotes coefficient of FO i in complex orbitals j. FO index is sorted as 1~nmo1:~nmo2~nmo3...
-real*8,allocatable :: FOcomp(:,:),FOcompb(:,:) !(i,j) denotes composition of FO i in complex orbitals j. Calculated by Mulliken method. FO index is sorted as 1~nmo1~nmo2~nmo3...
+real*8,allocatable :: FOcomp(:,:),FOcompb(:,:) !(i,j) denotes composition of FO i in complex orbitals j. Calculated by Mulliken or SCPA method. FO index is sorted as 1~nmo1~nmo2~nmo3...
 real*8,allocatable :: FOovlpmat(:,:),FOovlpmatb(:,:) !Overlap matrix between all FOs. FO index is sorted as 1~nmo1~nmo2~nmo3...
 real*8,allocatable :: dterm(:),bterm(:),rterm(:), dtermb(:),btermb(:),rtermb(:) !d,b,r defined in original paper
 real*8 :: conncritleft=0.1D0,conncritright=0.1D0,degencrit=0.1D0,eneshiftA=0D0,eneshiftB=0D0,eneshiftcomp=0D0,eneintv=2D0
@@ -233,13 +233,15 @@ do ifrag=1,nCDAfrag
     if (ifrag>1) ntmp=sum(natmCDA(1:ifrag-1))
     do iatm=ntmp+1,natmCDA(ifrag)
         devtmp=dsqrt(sum((atmpos(iatm,:,0)-atmpos(iatm,:,ifrag))**2)) !Distance between fragment atom and complex atom
+		!write(*,*) ifrag,iatm,devtmp
         if (devtmp>devmax) devmax=devtmp
     end do
 end do
 if (devmax>0.01D0) then
-    write(*,"(/,' Maximum deviation of atomic coordinate between fragment and complex:',f10.3,' Bohr')") devmax
+    write(*,"(/,' Maximum deviation of atomic coordinate between fragment and complex:',f10.3,' Angstrom')") devmax*b2a
     write(*,"(/,a)") " Warning: The coordinate of the fragments deviates from the complex distinctly! The result may be fully meaningless. &
-    Please check input files of your quantum chemistry code to make the coordinate of the fragments fully consistent with the complex"
+    Please check input files of your quantum chemistry code to make the coordinate of the fragments fully consistent with the complex. &
+    If you are a Gaussian user, please do not forget to add ""nosymm"" to avoid automatically translating and rotating the system to standard orientation"
     write(*,*) "Press ENTER button to continue"
     read(*,*)
 end if
@@ -387,7 +389,7 @@ do ifrag=0,nCDAfrag
 		call dealloall
 		if (ifrag==nCDAfrag) then
 			write(*,"(/,a,a)") " Reloading ",trim(firstfilename)
-			call readinfile(firstfilename,1) !Recovery to the first file
+			call readinfile(firstfilename,1) !Recover to the first file
 			if (nmo==2*nbasis) nmo=nbasis !The nmo used in present module is the number of either alpha or beta MOs rather than their sum as in other modules
 		end if
 	end if
@@ -454,32 +456,49 @@ if (iopshCDA==1) then
 end if
 deallocate(ovlpbasmatblk,tmpmat2)
 
-!===== Calculate complex orbital composition in FO basis by Mulliken method. Note: nmo=nbasis even for unrestricted cases in this module
+!===== Calculate complex orbital composition in FO basis method. Note: nmo=nbasis even for unrestricted cases in this module
 write(*,*) "Calculating composition of complex orbitals..."
+if (iCDAcomp==1) write(*,"(a)") " Note: Mulliken method is used. The method can be chosen by ""iCDAcomp"" parameter in settings.ini"
+if (iCDAcomp==2) write(*,"(a)") " Note: SCPA method is used. The method can be chosen by ""iCDAcomp"" parameter in settings.ini"
 allocate(FOcomp(nmo,nmo),tmpmat(nmo,nmo))
+
 !$OMP PARALLEL DO SHARED(FOcomp) PRIVATE(imo,iFO,jFO,tmpval) schedule(dynamic) NUM_THREADS(nthreads)
 do imo=1,nmo
-	do iFO=1,nmo
-		tmpval=0
-		do jFO=1,nmo
-			tmpval=tmpval+coFO(jFO,imo)*FOovlpmat(iFO,jFO)
+	if (iCDAcomp==1) then !Mulliken
+		do iFO=1,nmo
+			tmpval=0
+			do jFO=1,nmo
+				tmpval=tmpval+coFO(jFO,imo)*FOovlpmat(iFO,jFO)
+			end do
+			FOcomp(iFO,imo)=coFO(iFO,imo)*tmpval
 		end do
-		FOcomp(iFO,imo)=coFO(iFO,imo)*tmpval
-	end do
+    else if (iCDAcomp==2) then !SCPA
+		tmpval=sum(coFO(:,imo)**2)
+		do iFO=1,nmo
+			FOcomp(iFO,imo)=coFO(iFO,imo)**2/tmpval
+        end do
+    end if
 end do
 !$OMP END PARALLEL DO
 if (iopshCDA==1) then !Beta part
 	allocate(FOcompb(nmo,nmo))
 	!$OMP PARALLEL DO SHARED(FOcompb) PRIVATE(imo,iFO,jFO,tmpval) schedule(dynamic) NUM_THREADS(nthreads)
 	do imo=1,nmo
-		do iFO=1,nmo
-			tmpval=0
-			do jFO=1,nmo
-				tmpval=tmpval+coFOb(jFO,imo)*FOovlpmatb(iFO,jFO)
+		if (iCDAcomp==1) then !Mulliken
+			do iFO=1,nmo
+				tmpval=0
+				do jFO=1,nmo
+					tmpval=tmpval+coFOb(jFO,imo)*FOovlpmatb(iFO,jFO)
+				end do
+				FOcompb(iFO,imo)=coFOb(iFO,imo)*tmpval
 			end do
-			FOcompb(iFO,imo)=coFOb(iFO,imo)*tmpval
-		end do
-	end do
+		else if (iCDAcomp==2) then !SCPA
+			tmpval=sum(coFOb(:,imo)**2)
+			do iFO=1,nmo
+				FOcompb(iFO,imo)=coFOb(iFO,imo)**2/tmpval
+			end do
+		end if    
+    end do
 	!$OMP END PARALLEL DO
 end if
 
@@ -633,6 +652,8 @@ do while(.true.)
 				write(iout,"(a)") " Note: ECDA is not applicable to more than two fragments cases, ECDA analysis is thus skipped"
 			else if (any(iRO==1)) then
 				write(iout,"(a)") " Note: ECDA is not applicable to restricted open-shell case and thus the analysis is skipped"
+            else if (iCDAcomp==2) then !I found ECDA in combination with SCPA result in evidently wrong result, even for closed-shell
+				write(iout,"(a)") " Note: ECDA is not applicable when SCPA is used to compute orbital composition, thus this analysis is skipped"
 			else
 				write(iout,*)
 				write(iout,*) "     ========== Extended Charge decomposition analysis (ECDA) =========="
@@ -727,7 +748,7 @@ do while(.true.)
 		end if 
 		if (nCDAfrag==2) goto 1
 
-	else if (isel==2) then !Compositions have been computed by Mulliken method before
+	else if (isel==2) then !Compositions have been computed by Mulliken or SCPA method before
 		do while(.true.)
 			write(*,*) "Input the index of complex orbital you are interested in, e.g. 6"
 			write(*,*) "To exit, input 0"
@@ -744,7 +765,7 @@ do while(.true.)
 					write(*,"(a,f5.1,a,/)") " Note: Only the fragment orbitals with contribution >",compthresCDA," % will be shown below, &
                     the threshold can be changed by ""compthresCDA"" in settings.ini"
 					if (iopshCDA==0) then
-						write(*,"(' Occupation number of orbital',i6,' of the complex:',f8.8)") iorb,occCDA(iorb,0)
+						write(*,"(' Occupation number of orbital',i6,' of the complex:',f12.8)") iorb,occCDA(iorb,0)
                         sumcontri=0
 						do ifrag=1,nCDAfrag
 							do iFOidx=1,nmoCDA(ifrag)
@@ -906,8 +927,15 @@ do while(.true.)
 						cycle
 					end if
 				end if
-				if (isel2==1) c80tmp="show"
-				if (isel2==2) c80tmp="save"
+				if (isel2==1) then
+                    c80tmp="show"
+				else if (isel2==2) then
+                    c80tmp="save"
+                    c80tmp2=graphformat
+                    write(*,*) "Hint: Using pdf format is recommended for orbital interaction diagram"
+                    write(*,*)
+                    call setgraphformat
+                end if
 				if (iopshCDA==0.or.(iopshCDA==1.and.ispinplot==1)) call plotintdiag(trim(c80tmp),ifrag,jfrag,nCDAfrag,nmoCDA,&
 				FOcomp,nmo,nmoCDA(ifrag),nmoCDA(jfrag),occCDA(:,0),occCDA(:,ifrag),occCDA(:,jfrag),&
 				eneCDA(:,0)+eneshiftcomp,eneCDA(:,ifrag)+eneshiftA,eneCDA(:,jfrag)+eneshiftB,eneplotlow,eneplothigh,eneintv,conncritleft,conncritright,&
@@ -916,7 +944,10 @@ do while(.true.)
 				FOcompb,nmo,nmoCDA(ifrag),nmoCDA(jfrag),occCDAb(:,0),occCDAb(:,ifrag),occCDAb(:,jfrag),&
 				eneCDAb(:,0)+eneshiftcomp,eneCDAb(:,ifrag)+eneshiftA,eneCDAb(:,jfrag)+eneshiftB,eneplotlow,eneplothigh,eneintv,conncritleft,conncritright,&
 				idrawMObar,iconnlogi,ilabelorbidx,ilabelcomp,labsize,complabshift,degencrit,eneshiftA,eneshiftB,eneshiftcomp)
-				if (isel2==2) write(*,*) "Done! The graph has been saved to current folder with ""DISLIN"" prefix"
+				if (isel2==2) then
+                    write(*,*) "Done! The graph has been saved to current folder with ""DISLIN"" prefix"
+                    graphformat=c80tmp2
+                end if
 			else if (isel2==3) then
 				write(*,*) "Input the lower and upper limits of the MO energy to be plotted (in eV)"
 				write(*,*) "e.g. -70.6,8.5 (0,0 corresponds to the full energy range)"

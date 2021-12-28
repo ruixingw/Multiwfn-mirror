@@ -7,12 +7,12 @@
 !When 50-50 is used in Gaussian, both singlet and triplet states are taken into account together. However, &
 !when generation of triplet is specified in ORCA, only one set of excited state can be taken into account
 module excitinfo
-character :: excitfilename*200=" " !"D:\CM\my_program\Multiwfn\x\excittrans\4-Nitroaniline\4-Nitroaniline.out"
+character :: excitfilename*200=" " !"D:\CM\my_program\Multiwfn\x\excittrans\4-Nitroaniline\4-Nitroaniline.out". If nstates=0, then Multiwfn asks user to input
 integer :: ifiletypeexc !1=Gaussian output; 2=ORCA output; 3=Plain text file; 4=Firefly output file
 integer :: iORCAsTD=0 !1=ORCA with sTDA/sTDDFT, 0: Common ORCA TDA/TDDFT
 integer :: nstates=0 !The total number of excited states (for ORCA, if triplet keyword is used, only one set of spin multiplicity states is loaded)
 integer numexctime !The number of times of excited state printing of Gaussian/ORCA (1 corresponds to only once). >1 may due to geometry optimization or using state specific model
-real*8,allocatable :: allexcene(:) !Excitation energies
+real*8,allocatable :: allexcene(:) !Excitation energies in eV
 real*8,allocatable :: allexcf(:) !Oscillator strength
 integer,allocatable :: allexcmulti(:) !Multiplicity of the states. 0 means the multiplicity is undefined (i.e. unrestricted reference state)
 integer,allocatable :: allexcnorb(:) !The number of MO pairs in the states
@@ -31,6 +31,26 @@ real*8,allocatable :: tdmata(:,:),tdmatb(:,:)
 end module
 
 
+!---------- Deallocate excited state information
+subroutine deallo_excitinfo
+use excitinfo
+nstates=0
+excitfilename=" "
+if (allocated(allexcene)) deallocate(allexcene)
+if (allocated(allexcf)) deallocate(allexcf)
+if (allocated(allexcmulti)) deallocate(allexcmulti)
+if (allocated(allexcnorb)) deallocate(allexcnorb)
+if (allocated(allexcdir)) deallocate(allexcdir)
+if (allocated(allorbleft)) deallocate(allorbleft)
+if (allocated(allorbright)) deallocate(allorbright)
+if (allocated(allexccoeff)) deallocate(allexccoeff)
+if (allocated(excdir)) deallocate(excdir)
+if (allocated(orbleft)) deallocate(orbleft)
+if (allocated(orbright)) deallocate(orbright)
+if (allocated(exccoeff)) deallocate(exccoeff)
+if (allocated(tdmata)) deallocate(tdmata)
+if (allocated(tdmatb)) deallocate(tdmatb)
+end subroutine
 
 
 !-------- Main interface of various electron excitation analyses
@@ -56,6 +76,7 @@ do while(.true.)
 	write(*,*) "13 Generate natural orbitals of specific excited states"
 	write(*,*) "14 Calculate lambda index to characterize electron excitation (JCP,128,044118)"
 	write(*,*) "15 Print major MO transitions in all excited states"
+	write(*,"(a)") " 16 Calculate charge-transfer spectrum (Carbon, 187, 78) and characters of all excited states"
 
 	read(*,*) isel
 	if (isel==-1) then
@@ -97,6 +118,8 @@ do while(.true.)
 		call lambda_excit
     else if (isel==15) then
         call majorMOtrans
+    else if (isel==16) then
+        call CTspectrum
 	end if
 end do
 end subroutine
@@ -160,7 +183,8 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 	end if
 
 	open(10,file=excitfilename,status="old")
-	call loclabel(10,"Gaussian, Inc",igauout,maxline=100)
+	call loclabel(10,"Gaussian, Inc",igauout,maxline=300)
+	if (igauout==0) call loclabel(10,"Entering Gaussian System",igauout,maxline=200)
 	if (igauout==1) then
 		ifiletypeexc=1
 		write(*,*) "This file is recognized as a Gaussian output file"
@@ -357,11 +381,15 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 				    end if
 			    end do
 		    end do
-            call loclabel(10,"ABSORPTION SPECTRUM",ifound,0) !Load oscillator strengths
-            call skiplines(10,5)
-		    do iexc=1,nstates
-                read(10,*) rnouse,rnouse,rnouse,allexcf(iexc)
-            end do
+            if (imultisel==3) then !Spin-forbidden
+                allexcf=0
+            else
+                call loclabel(10,"ABSORPTION SPECTRUM",ifound,0) !Load oscillator strengths
+                call skiplines(10,5)
+		        do iexc=1,nstates
+                    read(10,*) rnouse,rnouse,rnouse,allexcf(iexc)
+                end do
+            end if
         else if (iORCAsTD==1) then !sTDA or sTDDFT
             !If triplets=true, at least for ORCA 4.2, singlet and triplets are not outputted with clear labels, and transition strengths are always zero
             !In this case their information are loaded together
@@ -1052,11 +1080,11 @@ if (ioutinfo==1) then
 	write(*,"(' The sum of above two values',f10.6)") sumsqrall
     if (wfntype==0.or.wfntype==3) then
         dev=abs(sumsqrall-0.5D0)
-        write(*,"(' Deviation to expected normalization value (0.5) is',f8.4)") dev
+        write(*,"(' Deviation to expected normalization value (0.5) is',f10.6)") dev
         if (dev>0.05D0) write(*,"(a)") " Warning: The deviation is too obvious, in this case the analysis result is not reliable or even fully misleading!"
     else
         dev=abs(sumsqrall-1D0)
-        write(*,"(' Deviation to expected normalization value (1.0) is',f8.4)") dev
+        write(*,"(' Deviation to expected normalization value (1.0) is',f10.6)") dev
         if (dev>0.05D0) write(*,"(a)") " Warning: The deviation is too obvious, in this case the analysis result is not reliable or even fully misleading!"
     end if
 end if
@@ -1125,7 +1153,7 @@ call selexcit(istate)
 call loadexccoeff(istate,1)
 write(*,*)
 write(*,"(a)") " !!! Please cite hole-electron analysis as follows, the supplemental material presents a concise introduction of this analysis"
-write(*,*) "Carbon, 165, 461 (2020) DOI: 10.1016/j.carbon.2020.05.023"
+write(*,*) "Tian Lu, et al., Carbon, 165, 461-467 (2020) DOI: 10.1016/j.carbon.2020.05.023"
 
 10 do while(.true.)
 	write(*,*)
@@ -1174,7 +1202,7 @@ if (idomag==1) then !Will also calculate transition magnetic dipole moment densi
 	allocate(magtrdens(nx,ny,nz,3))
 	magtrdens=0D0
 end if
-write(*,"(a)") " Note: During the calculation of cross term of electron, the orbital pairs whose absolute value of coefficient <0.01 will be ignored to save time"
+write(*,"(a)") " Note: During the calculation of cross term of hole and electron, the orbital pairs whose absolute value of coefficient <0.01 will be ignored to save time"
 allocate(skippair(excnorb))
 skippair=.false.
 do iexcitorb=1,excnorb
@@ -1188,11 +1216,9 @@ ifinish=0
 !$OMP PRIVATE(i,j,k,tmpx,tmpy,tmpz,orbval,wfnderv,imo,jmo,excwei,iexcitorb,jexcitorb,ileft,jleft,iright,jright,tmpleft,tmpright,idir,jdir,tmpval) &
 !$OMP schedule(dynamic) NUM_THREADS(nthreads)
 do k=1,nz
-	tmpz=orgz+(k-1)*dz
 	do j=1,ny
-		tmpy=orgy+(j-1)*dy
 		do i=1,nx
-			tmpx=orgx+(i-1)*dx
+            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 			if (idomag==1) then !Study transition magnetic dipole moment density requests orbital 1st-derivative
 				call orbderv(2,1,nmo,tmpx,tmpy,tmpz,orbval,wfnderv)
 			else
@@ -1292,7 +1318,7 @@ call walltime(iwalltime2)
 write(*,"(' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
 
 !Check normalization
-dvol=dx*dy*dz
+call calc_dvol(dvol)
 rnormhole=0
 rnormele=0
 Sm_index=0
@@ -1313,11 +1339,9 @@ rtransmagz=0
 ele_deloc=0
 hole_deloc=0
 do k=1,nz
-	tmpz=orgz+(k-1)*dz
 	do j=1,ny
-		tmpy=orgy+(j-1)*dy
 		do i=1,nx
-			tmpx=orgx+(i-1)*dx
+            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 			rnormhole=rnormhole+holegrid(i,j,k)
 			rnormele=rnormele+elegrid(i,j,k)
 			Sm_index=Sm_index+Sm(i,j,k)
@@ -1386,11 +1410,9 @@ write(*,"(' X:',f12.6,'  Y:',f12.6,'  Z:',f12.6,'    Norm:',f12.6,' a.u.')") dip
 sigxele=0D0;sigyele=0D0;sigzele=0D0
 sigxhole=0D0;sigyhole=0D0;sigzhole=0D0
 do k=1,nz
-	tmpz=orgz+(k-1)*dz
 	do j=1,ny
-		tmpy=orgy+(j-1)*dy
 		do i=1,nx
-			tmpx=orgx+(i-1)*dx
+            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 			sigxele=sigxele+elegrid(i,j,k)*(tmpx-centelex)**2
 			sigyele=sigyele+elegrid(i,j,k)*(tmpy-centeley)**2
 			sigzele=sigzele+elegrid(i,j,k)*(tmpz-centelez)**2
@@ -1427,17 +1449,7 @@ write(*,"(' t index:',f7.3,' Angstrom')") t_index*b2a
 write(*,"(' Hole delocalization index (HDI):    ',f7.2)") hole_deloc
 write(*,"(' Electron delocalization index (EDI):',f7.2)") ele_deloc
 
-!---- Calculate ghost state diagnostic index proposed by Adamo (JCC,38,2151)
-ghostp2=1/disnorm !in a.u.
-!Definition 1 (the original paper definition). The original paper doesn't clearly mention how to deal with de-excitation, so I treat it as usual
-sumC=sum(exccoeff(1:excnorb))
-ghostp1=0
-do itmp=1,excnorb
-	ghostp1=ghostp1+exccoeff(itmp)/sumC*(-MOene(orbleft(itmp))-MOene(orbright(itmp)))
-end do
-ghostidx=ghostp1-ghostp2
-write(*,"(' Ghost-hunter index (def 1):',f11.3,' eV, 1st/2nd terms:',f7.3,f11.3,' eV')") ghostidx*au2eV,ghostp1*au2eV,ghostp2*au2eV
-!Definition 2 (defined by Tian Lu, more reasonable)
+!---- Calculate ghost state diagnostic index proposed by Adamo (JCC,38,2151) and modified by Tian Lu
 sumCsqr=0
 do itmp=1,excnorb
 	if (excdir(itmp)==2) cycle !Skip de-excitation
@@ -1446,21 +1458,27 @@ end do
 ghostp1=0
 do itmp=1,excnorb
 	if (excdir(itmp)==2) cycle !Skip de-excitation
-	ghostp1=ghostp1+exccoeff(itmp)**2/sumCsqr*(-MOene(orbleft(itmp))-MOene(orbright(itmp)))
+	ghostp1=ghostp1+exccoeff(itmp)**2/sumCsqr*(MOene(orbright(itmp))-MOene(orbleft(itmp)))
 end do
+ghostp2=1/disnorm !in a.u.
 ghostidx=ghostp1-ghostp2
-write(*,"(' Ghost-hunter index (def 2):',f11.3,' eV, 1st/2nd terms:',f7.3,f11.3,' eV')") ghostidx*au2eV,ghostp1*au2eV,ghostp2*au2eV
+write(*,"(' Ghost-hunter index:',f11.3,' eV, 1st term:',f7.3,' eV, 2nd term:',f10.3,' eV')") ghostidx*au2eV,ghostp1*au2eV,ghostp2*au2eV
 write(*,"(' Excitation energy of this state:',f10.3,' eV')") excene
-if (excene<ghostidx*au2eV) write(*,"(a)") " Note: Probably this is a ghost state, because excitation energy is lower than ghost-hunter index of definition 2"
+if (excene<ghostidx*au2eV) then
+	write(*,"(a)") " Note: Probably this is a ghost state, because excitation energy is lower than ghost-hunter index"
+    write(*,"(a)") " Comment by Multiwfn author: It is frequently found that the condition of determining ghost state by the ghost-hunder &
+    index is too stringent, it is only suitable to be viewed as a necessary condition of ghost state rather than a sufficient condition. If you used a &
+    DFT functional having high Hartree-Fock composition in long range of electronic interaction, such as wB97XD, CAM-B3LYP, and M06-2X, &
+    you do not need to worry about presence of ghost state at all. In addition, ghost state should have excitation wavelength around 1000 nm or more and have &
+    negligible oscillator strength, if this is not the current case, you also do not to worry about the possibility of occurrence of ghost state"
+end if
 
 if (allocated(Cele)) deallocate(Cele,Chole)
 allocate(Cele(nx,ny,nz),Chole(nx,ny,nz))
 do i=1,nx
 	do j=1,ny
 		do k=1,nz
-			rnowx=orgx+(i-1)*dx
-			rnowy=orgy+(j-1)*dy
-			rnowz=orgz+(k-1)*dz
+            call getgridxyz(i,j,k,rnowx,rnowy,rnowz)
 			Cele(i,j,k)=exp( -(rnowx-centelex)**2/(2*sigxele**2) -(rnowy-centeley)**2/(2*sigyele**2) -(rnowz-centelez)**2/(2*sigzele**2))
 			Chole(i,j,k)=exp( -(rnowx-centholex)**2/(2*sigxhole**2) -(rnowy-centholey)**2/(2*sigyhole**2) -(rnowz-centholez)**2/(2*sigzhole**2))
 		end do
@@ -1555,19 +1573,18 @@ do while(.true.)
 	 		sur_value=0.001D0
 		else if (isel==6) then
 			write(*,*) "Select the component of transition dipole moment density"
-			write(*,*) "1: X component  2: Y component  3: Z component"
+			write(*,*) "1: X component  2: Y component  3: Z component  4: Norm, sqrt(x^2+y^2+z^2)"
 	 		read(*,*) ifac
 			isosur1style=4
 	 		sur_value=0.001D0
 	 		do k=1,nz
-				tmpz=orgz+(k-1)*dz
 				do j=1,ny
-					tmpy=orgy+(j-1)*dy
 					do i=1,nx
-						tmpx=orgx+(i-1)*dx
+                        call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 						if (ifac==1) cubmat(i,j,k)=-tmpx*transdens(i,j,k)
 						if (ifac==2) cubmat(i,j,k)=-tmpy*transdens(i,j,k)
 						if (ifac==3) cubmat(i,j,k)=-tmpz*transdens(i,j,k)
+                        if (ifac==4) cubmat(i,j,k)=dsqrt(tmpx**2+tmpy**2+tmpz**2)*transdens(i,j,k)
 					end do
 				end do
 			end do
@@ -1583,13 +1600,14 @@ do while(.true.)
                 cycle
             end if
 			write(*,*) "Select the component of transition magnetic dipole moment density"
-			write(*,*) "1: X component  2: Y component  3: Z component"
+			write(*,*) "1: X component  2: Y component  3: Z component  4: Norm, sqrt(x^2+y^2+z^2)"
 	 		read(*,*) ifac
 			isosur1style=4
 	 		sur_value=0.007D0
 			if (ifac==1) cubmat=magtrdens(:,:,:,1)
 			if (ifac==2) cubmat=magtrdens(:,:,:,2)
 			if (ifac==3) cubmat=magtrdens(:,:,:,3)
+			if (ifac==4) cubmat=dsqrt(magtrdens(:,:,:,1)**2+magtrdens(:,:,:,2)**2+magtrdens(:,:,:,3)**2)
 	 	end if
 		call drawisosurgui(1)
 		deallocate(cubmat)
@@ -1638,9 +1656,9 @@ do while(.true.)
  		read(*,*) isel2
 		write(*,*) "Outputting hole distribution to hole"//trim(cubsuff)//" in current folder"
 		open(10,file="hole"//trim(cubsuff),status="replace")
-		if (isel2==1) call outcube(holegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-		if (isel2==2) call outcube(holegrid-holecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-		if (isel2==3) call outcube(holecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (isel2==1) call outcube(holegrid,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		if (isel2==2) call outcube(holegrid-holecross,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		if (isel2==3) call outcube(holecross,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==11) then
@@ -1651,9 +1669,9 @@ do while(.true.)
  		read(*,*) isel2
 		write(*,*) "Outputting electron distribution to electron"//trim(cubsuff)//" in current folder"
 		open(10,file="electron"//trim(cubsuff),status="replace")
-		if (isel2==1) call outcube(elegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-		if (isel2==2) call outcube(elegrid-elecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-		if (isel2==3) call outcube(elecross,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (isel2==1) call outcube(elegrid,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		if (isel2==2) call outcube(elegrid-elecross,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		if (isel2==3) call outcube(elecross,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==12) then
@@ -1664,59 +1682,58 @@ do while(.true.)
  		if (iovlptype==1) then
 			write(*,*) "Outputting Sm function to Sm"//trim(cubsuff)//" in current folder"
 			open(10,file="Sm"//trim(cubsuff),status="replace")
-			call outcube(Sm,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+			call outcube(Sm,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
  		else if (iovlptype==2) then
 			write(*,*) "Outputting Sr function to Sr"//trim(cubsuff)//" in current folder"
 			open(10,file="Sr"//trim(cubsuff),status="replace")
-			call outcube(Sr,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+			call outcube(Sr,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
  		end if
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==13) then
 		write(*,"(a)") " Outputting transition density to transdens"//trim(cubsuff)//" in current folder"
 		open(10,file="transdens"//trim(cubsuff),status="replace")
-		call outcube(transdens,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(transdens,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done!"
  	else if (isel==14) then
 		write(*,*) "Select the component of transition dipole moment density"
-		write(*,*) "1: X component  2: Y component  3: Z component"
+		write(*,*) "1: X component  2: Y component  3: Z component  4: Norm, sqrt(x^2+y^2+z^2)"
  		read(*,*) ifac
  		if (allocated(cubmat)) deallocate(cubmat)
 	 	allocate(cubmat(nx,ny,nz))
  		do k=1,nz
-			tmpz=orgz+(k-1)*dz
 			do j=1,ny
-				tmpy=orgy+(j-1)*dy
 				do i=1,nx
-					tmpx=orgx+(i-1)*dx
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 					if (ifac==1) cubmat(i,j,k)=-tmpx*transdens(i,j,k)
 					if (ifac==2) cubmat(i,j,k)=-tmpy*transdens(i,j,k)
 					if (ifac==3) cubmat(i,j,k)=-tmpz*transdens(i,j,k)
+					if (ifac==4) cubmat(i,j,k)=dsqrt(tmpx**2+tmpy**2+tmpz**2)*transdens(i,j,k)
 				end do
 			end do
 		end do
 		write(*,*) "Outputting to transdipdens"//trim(cubsuff)//" in current folder"
 		open(10,file="transdipdens"//trim(cubsuff),status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done!"
 		deallocate(cubmat)
 	else if (isel==15) then
 		write(*,*) "Outputting charge density difference to CDD"//trim(cubsuff)//" in current folder"
 		open(10,file="CDD"//trim(cubsuff),status="replace")
-		call outcube(elegrid-holegrid,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(elegrid-holegrid,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done!"
 	else if (isel==16) then
 		open(10,file="Cele"//trim(cubsuff),status="replace")
-		call outcube(Cele,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(Cele,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
-		write(*,"('Cele function has been outputted to Cele"//trim(cubsuff)//" in current folder')")
+		write(*,"(' Cele function has been outputted to Cele"//trim(cubsuff)//" in current folder')")
 		open(10,file="Chole"//trim(cubsuff),status="replace")
-		call outcube(Chole,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(Chole,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
-		write(*,"('Chole function has been outputted to Chole"//trim(cubsuff)//" in current folder')")
+		write(*,"(' Chole function has been outputted to Chole"//trim(cubsuff)//" in current folder')")
  	else if (isel==17) then
         if (idomag==0) then
             write(*,"(a)") " Error: In order to export transition magnetic dipole moment density, you must select &
@@ -1726,13 +1743,14 @@ do while(.true.)
             cycle
         end if
 		write(*,*) "Select the component of transition magnetic dipole moment density"
-		write(*,*) "1: X component  2: Y component  3: Z component"
+		write(*,*) "1: X component  2: Y component  3: Z component  4: Norm, sqrt(x^2+y^2+z^2)"
  		read(*,*) ifac
 		write(*,*) "Outputting to magtrdipdens"//trim(cubsuff)//" in current folder"
 		open(10,file="magtrdipdens"//trim(cubsuff),status="replace")
-		if (ifac==1) call outcube(magtrdens(:,:,:,1),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-		if (ifac==2) call outcube(magtrdens(:,:,:,2),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
-		if (ifac==3) call outcube(magtrdens(:,:,:,3),nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		if (ifac==1) call outcube(magtrdens(:,:,:,1),nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		if (ifac==2) call outcube(magtrdens(:,:,:,2),nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		if (ifac==3) call outcube(magtrdens(:,:,:,3),nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		if (ifac==4) call outcube(dsqrt(magtrdens(:,:,:,1)**2+magtrdens(:,:,:,2)**2+magtrdens(:,:,:,3)**2),nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,*) "Done!"
  	else if (isel==18) then
@@ -1777,7 +1795,7 @@ do while(.true.)
 			end do
 			call showprog(i,nx)
 		end do
-		dvol=dx*dy*dz
+		call calc_dvol(dvol)
 		coulene=coulene*dvol*dvol
 		call walltime(iwalltime2)
 		write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
@@ -1858,7 +1876,14 @@ real*8,allocatable :: he_atmnoh(:,:) !Similar to he_atm, but hydrogens are not t
 real*8,allocatable :: he_frag(:,:) !hole-electron composition of fragments. row 1,2,3 = hole,electron,overlap
 integer,allocatable :: frag(:,:),fragnatm(:),nohlist(:)
 
-call do_atmcontri_hole_ele(he_atm(:,1),he_atm(:,2)) !Calculate atomic contribution to hole and electron via Mulliken-like partition
+write(*,*)
+write(*,*) "Select the method for calculating fragment contributions to hole and electron"
+write(*,*) "1 Mulliken (very fast, but incompatible with diffuse functions)"
+write(*,*) "2 Hirshfeld partition (slower but very robust)"
+read(*,*) imethod
+
+if (imethod==1) call atmcontri_holeele_Mulliken(he_atm(:,1),he_atm(:,2),1) !Calculate atomic contribution to hole and electron via Mulliken-like partition
+if (imethod==2) call atmcontri_holeele_Hirshfeld(he_atm(:,1),he_atm(:,2),1) !Calculate atomic contribution to hole and electron via Hirshfeld partition
 
 do iatm=1,ncenter !Evaluate overlap in atom space. If contribution to hole or electron is unphysical negative, then the overlap will be regarded as zero
 ! 	he_atm(iatm,3)=minval(he_atm(iatm,1:2)) !Not as good as below
@@ -1884,7 +1909,7 @@ do idx=1,ncennoh
 	write(*,"(i5,'(',a,')  Hole:',f6.2,' %  Electron:',f6.2,' %  Overlap:',f6.2,' %  Diff.:',f7.2,' %')") &
 	iatm,a(iatm)%name,he_atmnoh(idx,:)*100,(he_atmnoh(idx,2)-he_atmnoh(idx,1))*100
 end do
-write(*,"(' Sum of hole shown above:',f6.2,'%   Sum of electron shown above:',f6.2,'%')") sum(he_atmnoh(:,1))*100,sum(he_atmnoh(:,2))*100
+write(*,"(' Sum of hole shown above:',f7.2,'%   Sum of electron shown above:',f7.2,'%')") sum(he_atmnoh(:,1))*100,sum(he_atmnoh(:,2))*100
 
 ifhydrogen=0 !By default, hydrogens are not taken into account
 clrlimlow=0
@@ -2112,7 +2137,8 @@ end subroutine
 
 
 !!------- Calculate atomic contribution to hole and electron via Mulliken-like partition
-subroutine do_atmcontri_hole_ele(atmhole,atmele)
+!ioutinfo=1 means output prompts, 0 means silent
+subroutine atmcontri_holeele_Mulliken(atmhole,atmele,ioutinfo)
 use defvar
 use util
 use excitinfo
@@ -2122,9 +2148,8 @@ real*8 Tmat(nbasis,nbasis) !Used to store intermediate data during calculating a
 
 atmhole=0;atmele=0
 call walltime(iwalltime1)
-write(*,*) "Evaluating atomic contributions..."
+if (ioutinfo==1) write(*,*) "Evaluating atomic contributions..."
 thres=0.001D0 !Threshold of product of configuration coefficient for ignoring inter-configuration contributions
-he_atm=0
 do iexcitorb=1,excnorb
 	ileft=orbleft(iexcitorb)
 	iright=orbright(iexcitorb)
@@ -2197,7 +2222,76 @@ atmhole=atmhole/sum(atmhole)
 atmele=atmele/sum(atmele)
 
 call walltime(iwalltime2)
-write(*,"(' Calculation took up time',i10,'s')") iwalltime2-iwalltime1
+if (ioutinfo==1) write(*,"(' Calculation took up time',i10,' s')") iwalltime2-iwalltime1
+end subroutine
+
+
+
+
+!!------- Calculate atomic contribution to hole and electron via Hirshfeld partition
+!ioutinfo=1 means output prompts, 0 means silent
+subroutine atmcontri_holeele_Hirshfeld(atmhole,atmele,ioutinfo)
+use defvar
+use util
+use function
+use excitinfo
+implicit real*8 (a-h,o-z)
+real*8 atmhole(ncenter),atmele(ncenter)
+real*8 hole(radpot*sphpot),ele(radpot*sphpot),promol(radpot*sphpot),tmpdens(radpot*sphpot),selfdens(radpot*sphpot)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+
+atmhole=0
+atmele=0
+if (ioutinfo==1) then
+    call walltime(iwalltime1)
+    write(*,"(' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
+    write(*,*) "Evaluating atomic contributions..."
+end if
+
+!Generate quadrature point and weighs by combination of Gauss-Chebyshev and Lebedev grids
+call gen1cintgrid(gridatmorg,iradcut)
+
+do iatm=1,ncenter
+	call showprog(iatm,ncenter)
+	gridatm%value=gridatmorg%value !Weight in this grid point
+	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+	!Calculate hole and electron at all atom grids
+	!$OMP parallel do shared(hole,ele) private(i) num_threads(nthreads)
+    do i=1+iradcut*sphpot,radpot*sphpot
+        call calc_holeele(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,0.01D0,hole(i),ele(i))
+	end do
+	!$OMP end parallel do
+	!Calculate free atomic density to obtain promolecule density
+	promol=0D0
+	do jatm=1,ncenter
+		!$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
+        do ipt=1+iradcut*sphpot,radpot*sphpot
+			tmpdens(ipt)=calcatmdens(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,0)
+		end do
+		!$OMP end parallel do
+		promol=promol+tmpdens
+		if (jatm==iatm) selfdens=tmpdens
+	end do
+    do i=1+iradcut*sphpot,radpot*sphpot
+		if (promol(i)/=0D0) then
+			tmpv=selfdens(i)/promol(i)*gridatm(i)%value
+			atmhole(iatm)=atmhole(iatm)+tmpv*hole(i)
+			atmele(iatm)=atmele(iatm)+tmpv*ele(i)
+		end if
+	end do
+end do
+
+!Normalize the data, because minor terms have been ignored, the sum of all data is not exactly 100%
+if (ioutinfo==1) write(*,"(' Sum of hole:',f10.7, '   Sum of electron:',f10.7)") sum(atmhole),sum(atmele)
+atmhole=atmhole/sum(atmhole)
+atmele=atmele/sum(atmele)
+
+if (ioutinfo==1) then
+    call walltime(iwalltime2)    
+    write(*,"(' Calculation took up time',i10,' s')") iwalltime2-iwalltime1
+end if
 end subroutine
 
 
@@ -2277,7 +2371,7 @@ end do
 bashole=bashole/2
 basele=basele/2
 call walltime(iwalltime2)
-write(*,"(' Calculation took up time',i10,'s')") iwalltime2-iwalltime1
+write(*,"(' Calculation took up time',i10,' s')") iwalltime2-iwalltime1
 
 if (wfntype==0.or.wfntype==3) then
 	bashole=bashole*2
@@ -2788,7 +2882,7 @@ do iatm=1,ncenter
 	end do
 end do
 call walltime(iwalltime2)
-write(*,"(' Preparation finished! Calculation took up time',i10,'s')") iwalltime2-iwalltime1
+write(*,"(' Preparation finished! Calculation took up time',i10,' s')") iwalltime2-iwalltime1
 write(*,*)
 
 do while(.true.)
@@ -3439,7 +3533,7 @@ do i=1,nx
 		end do
 	end do
 end do
-dvol=dx*dy*dz
+call calc_dvol(dvol)
 sumpos=sumpos*dvol
 sumneg=sumneg*dvol
 Rxpos=Rxpos*dvol/sumpos
@@ -3509,9 +3603,7 @@ allocate(Cpos(nx,ny,nz),Cneg(nx,ny,nz),tmpmat(nx,ny,nz))
 do i=1,nx
 	do j=1,ny
 		do k=1,nz
-			rnowx=orgx+(i-1)*dx
-			rnowy=orgy+(j-1)*dy
-			rnowz=orgz+(k-1)*dz
+            call getgridxyz(i,j,k,rnowx,rnowy,rnowz)
 			Cpos(i,j,k)=exp( -(rnowx-Rxpos)**2/(2*sigxpos**2) -(rnowy-Rypos)**2/(2*sigypos**2) -(rnowz-Rzpos)**2/(2*sigzpos**2))
 			Cneg(i,j,k)=exp( -(rnowx-Rxneg)**2/(2*sigxneg**2) -(rnowy-Ryneg)**2/(2*sigyneg**2) -(rnowz-Rzneg)**2/(2*sigzneg**2))
 		end do
@@ -3580,11 +3672,11 @@ do while(.true.)
 		clrBcub2oppomeshpt=clrBcub2oppomeshptold
 	else if (isel==2) then
 		open(10,file="Cpos.cub",status="replace")
-		call outcube(Cpos,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(Cpos,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,"(' C+ function has been outputted to ""Cpos.cub"" in current folder')")
 		open(10,file="Cneg.cub",status="replace")
-		call outcube(Cneg,nx,ny,nz,orgx,orgy,orgz,gridvec1,gridvec2,gridvec3,10)
+		call outcube(Cneg,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,"(' C- function has been outputted to ""Cneg.cub"" in current folder')")
 	end if
@@ -3608,6 +3700,7 @@ character tdmatfilename*200,c200tmp*200,c2000tmp*2000
 real*8 tdmatbas(nbasis,nbasis),tmatatmtmp(ncenter,ncenter),tmatatm(ncenter,ncenter)
 real*8,allocatable :: tmatatmnoh(:,:),tmatfrag(:,:)
 integer,allocatable :: frag(:,:),fragnatm(:)
+
 !Load density transition matrix in basis representation
 if (excitfilename==" ") then
 	write(*,*) "Below kinds of files are acceptable"
@@ -3763,6 +3856,13 @@ ninterpo=10
 nstepsize=nint(dfloat(ncennoh)/10D0)
 ifnormsum=0
 facnorm=1D0 !Normalization factor, default is 1, namely do not do normalization
+stepsizez=(clrlimhigh/facnorm-clrlimlow/facnorm)/10
+nlabdigz=4
+labsize=55
+if (allocated(frag)) then
+	labsize=65
+    nlabdigz=3
+end if
 
 do while(.true.)
 	write(*,*)
@@ -3783,11 +3883,13 @@ do while(.true.)
 	write(*,"(a,f10.4,a,f10.4)") " 5 Change lower and upper limit of color scale, current:",clrlimlow/facnorm," to",clrlimhigh/facnorm
 	if (.not.allocated(frag)) then
 		write(*,"(a,i3)") " 6 Set the number of interpolation steps between grids, current:",ninterpo
-		write(*,"(a,i3)") " 7 Set stepsize between labels, current:",nstepsize
+		write(*,"(a,i3,a,f9.5)") " 7 Set stepsize between labels, current:  X/Y is ",nstepsize,", Z is",stepsizez
 		if (ifnormsum==0) write(*,*) "8 Switch if normalizing the sum of all elements to unity, current: No"
 		if (ifnormsum==1) write(*,*) "8 Switch if normalizing the sum of all elements to unity, current: Yes"
 	end if
     write(*,"(a,a)") " 9 Set color transition, current: ",trim(clrtransname(iclrtrans))
+    write(*,"(a,i4)") " 10 Set label size, current:",labsize
+    write(*,"(a,i2)") " 11 Set number of decimal places in labels of Z-axis, current:",nlabdigz
 	read(*,*) isel
 
 	if (isel==0) then
@@ -3870,12 +3972,15 @@ do while(.true.)
 	else if (isel==1.or.isel==2) then
 		if (isel==2) isavepic=1
 		if (allocated(frag)) then !Fragment transition matrix
-			call drawmatcolor(tmatfrag/facnorm,nfrag,nfrag,1D0,dfloat(nfrag),1D0,dfloat(nfrag),clrlimlow/facnorm,clrlimhigh/facnorm,1D0,1D0,ninterpo,-1,65,3)
+			call drawmatcolor(tmatfrag/facnorm,nfrag,nfrag,1D0,dfloat(nfrag),1D0,dfloat(nfrag),&
+            clrlimlow/facnorm,clrlimhigh/facnorm,1D0,1D0,ninterpo,-1,labsize,nlabdigz,stepsizez)
 		else !Atom transition matrix
 			if (ifhydrogen==1) then
-				call drawmatcolor(tmatatm/facnorm,ncenter,ncenter,1D0,dfloat(ncenter),1D0,dfloat(ncenter),clrlimlow/facnorm,clrlimhigh/facnorm,dfloat(nstepsize),dfloat(nstepsize),ninterpo,-1)
+				call drawmatcolor(tmatatm/facnorm,ncenter,ncenter,1D0,dfloat(ncenter),1D0,dfloat(ncenter),&
+                clrlimlow/facnorm,clrlimhigh/facnorm,dfloat(nstepsize),dfloat(nstepsize),ninterpo,-1,labsize,nlabdigz,stepsizez)
 			else if (ifhydrogen==0) then
-				call drawmatcolor(tmatatmnoh/facnorm,ncennoh,ncennoh,1D0,dfloat(ncennoh),1D0,dfloat(ncennoh),clrlimlow/facnorm,clrlimhigh/facnorm,dfloat(nstepsize),dfloat(nstepsize),ninterpo,-1)
+				call drawmatcolor(tmatatmnoh/facnorm,ncennoh,ncennoh,1D0,dfloat(ncennoh),1D0,dfloat(ncennoh),&
+                clrlimlow/facnorm,clrlimhigh/facnorm,dfloat(nstepsize),dfloat(nstepsize),ninterpo,-1,labsize,nlabdigz,stepsizez)
 			end if
 		end if
 		if (isel==2) then
@@ -3922,15 +4027,17 @@ do while(.true.)
 		read(*,*) clrlimlow,clrlimhigh
 		clrlimlow=clrlimlow*facnorm
 		clrlimhigh=clrlimhigh*facnorm
-		
+        stepsizez=(clrlimhigh/facnorm-clrlimlow/facnorm)/10
 	else if (isel==6) then
-		write(*,*) "Please input a number, e.g. 2"
+		write(*,*) "Please input interpolation steps between grids, e.g. 2"
 		write(*,"(a)") " Note: Larger value gives rise to more smooth graph, &
 		1 means do not do interpolation, in this case each grid in the map corresponds to a matrix element"
 		read(*,*) ninterpo
 	else if (isel==7) then
-		write(*,*) "Please input a number, e.g. 5"
+		write(*,*) "Please input stepsize for X and Y axes, e.g. 4"
 		read(*,*) nstepsize
+		write(*,*) "Please input stepsize for Z axis, e.g. 0.05"
+		read(*,*) stepsizez
 	else if (isel==8) then
 		if (ifnormsum==0) then
 			ifnormsum=1
@@ -3942,6 +4049,12 @@ do while(.true.)
 		end if
 	else if (isel==9) then
         call selcolortable
+	else if (isel==10) then
+		write(*,*) "Input text size, e.g. 55"
+        read(*,*) labsize
+    else if (isel==11) then
+		write(*,*) "Input number of decimal places in labels of Z-axis, e.g. 3"
+        read(*,*) nlabdigz
 	end if
 end do
 end subroutine
@@ -3965,23 +4078,21 @@ real*8,allocatable :: CTmatfrag(:,:),fraghole(:),fragele(:)
 character c2000tmp*2000,c200tmp*200,selectyn
 logical alivehole,aliveele
 
-icompmethod=1 !By default use Mulliken-like partition to evaluate composition
-
 inquire(file="hole.cub",exist=alivehole)
 inquire(file="electron.cub",exist=aliveele)
-if (alivehole.and.aliveele) then
-	write(*,"(a)") " hole.cub and electron.cub are found in current folder, &
-	do you want to perform IFCT analysis based on these hole and electron distributions? (y/n)"
-	read(*,*) selectyn
-	if (selectyn=='y'.or.selectyn=='Y') icompmethod=2
-end if
+write(*,*) "Select the method for calculating hole and electron composition"
+write(*,*) "1 Mulliken-like partition (very fast, but incompatible with diffuse functions)"
+write(*,*) "2 Hirshfeld partition (slow, but very robust)"
+if (alivehole.and.aliveele) write(*,"(a)") " 3 Becke partition via interpolation based on hole.cub and electron.cub in current folder"
+read(*,*) icompmethod
 
-if (icompmethod==1) then !Mulliken-like partition for selected excitation
+if (icompmethod==1.or.icompmethod==2) then !Mulliken-like or Hirshfeld partition for selected excitation
 	call loadallexcinfo(1)
 	call selexcit(istate)
 	call loadexccoeff(istate,1)
-	call do_atmcontri_hole_ele(atmhole,atmele)
-else !Employ fuzzy partition to obtain atomic contributions based on interpolated function of existing cube files of hole and electron
+	if (icompmethod==1) call atmcontri_holeele_Mulliken(atmhole,atmele,1)
+	if (icompmethod==2) call atmcontri_holeele_Hirshfeld(atmhole,atmele,1)
+else if (icompmethod==3) then !Employ fuzzy partition to obtain atomic contributions based on interpolated function of existing cube files of hole and electron
 	iuserfuncold=iuserfunc
 	iuserfunc=-1
 	call readcube("hole.cub",1,1)
@@ -4049,7 +4160,7 @@ do while (.true.)
 	else
 		allocate(frag(nfrag,ncenter),fragnatm(nfrag))
 		do ifrag=1,nfrag
-			write(*,"(' Input atomic indices for fragment',i4,', e.g. 1,4,8-12,15')") ifrag
+			write(*,"(' Input atom indices for fragment',i4,', e.g. 1,4,8-12,15')") ifrag
 			read(*,"(a)") c2000tmp
 			call str2arr(c2000tmp,fragnatm(ifrag),frag(ifrag,:))
 		end do
@@ -4063,7 +4174,7 @@ do while (.true.)
 		write(*,"(i3,'  Hole:',f7.2,' %     Electron:',f7.2,' %')") ifrag,fraghole(ifrag)*100,fragele(ifrag)*100
 	end do
 	if (any(fraghole<0).or.any(fragele<0)) then
-		write(*,"(a)") " Note: There are unphysical negative contributions, &
+		write(*,"(a)") " Warning: There are unphysical negative contributions, &
 		they are regarded as zero during the calculation of interfragment charger-transfer matrix"
 		where (fraghole<0) fraghole=0
 		where (fragele<0) fragele=0
@@ -4442,15 +4553,16 @@ end subroutine
 
 
 
-!-----------------------------------------------------------------------------------
-!---------- Generate transition density matrix between two excited states ----------
-!-----------------------------------------------------------------------------------
-subroutine genTDM_2exc(istate,jstate)
+!---------------------------------------------------------------------------------------------------------------
+!---------- Generate transition density matrix between two excited states and store to tdmata/tdmatab ----------
+!---------------------------------------------------------------------------------------------------------------
+!isymmetry controls how to symmetrize the matrix. If =-1, then user will be asked to choose a symmetrization method
+subroutine genTDM_2exc(istate,jstate,isymmetry)
 use defvar
 use util
 use excitinfo
 implicit real*8 (a-h,o-z)
-integer istate,jstate
+integer istate,jstate,isymmetry
 real*8 CObasa_tr(nbasis,nbasis),CObasb_tr(nbasis,nbasis)
 character c80tmp*80
 
@@ -4467,8 +4579,8 @@ end if
 write(*,*) "Calculating, please wait patiently..."
 call walltime(iwalltime1)
 
-!I have tried to parallize this section in various ways, however the calculation cost is weirdly higher, the reason is unclear,
-!Probably due to e.g. intensive memory use
+!I have tried to parallize this section in various ways, however the calculation cost is weirdly higher,
+!the reason is unclear, probably due to e.g. intensive memory use
 nterm=0
 if (.not.allocated(tdmata)) allocate(tdmata(nbasis,nbasis))
 tdmata=0
@@ -4553,15 +4665,19 @@ call walltime(iwalltime2)
 write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 write(*,"(' Totally',i12,' terms were calculated')") nterm
 
-write(*,*)
-write(*,*) "If symmetrizing the transition density matrix?"
-write(*,*) "0 or n: Do not symmetrize"
-write(*,*) "1 or y: Symmetrize as TDM_sym(i,j)=[TDM(i,j)+TDM(j,i)]/2"
-write(*,*) "2: Symmetrize as TDM_sym(i,j)=[TDM(i,j)+TDM(j,i)]/sqrt(2)"
-read(*,*) c80tmp
-if (c80tmp(1:1)=='1'.or.c80tmp(1:1)=='y'.or.c80tmp(1:1)=='2') then
-	if (c80tmp(1:1)=='1'.or.c80tmp(1:1)=='y') tmpfac=2
-	if (c80tmp(1:1)=='2') tmpfac=dsqrt(2D0)
+if (isymmetry==-1) then
+    write(*,*)
+    write(*,*) "If symmetrizing the transition density matrix?"
+    write(*,*) "0: Do not symmetrize"
+    write(*,*) "1: Symmetrize as TDM_sym(i,j)=[TDM(i,j)+TDM(j,i)]/2"
+    write(*,*) "2: Symmetrize as TDM_sym(i,j)=[TDM(i,j)+TDM(j,i)]/sqrt(2)" !Used by Gaussian, weird!
+    read(*,*) isymmmethod
+else
+	isymmmethod=isymmetry
+end if
+if (isymmmethod/=0) then
+	if (isymmmethod==1) tmpfac=2
+	if (isymmmethod==2) tmpfac=dsqrt(2D0)
 	do ibas=1,nbasis
 		do jbas=ibas,nbasis
 			tdmata(ibas,jbas)=(tdmata(ibas,jbas)+tdmata(jbas,ibas))/tmpfac
@@ -4605,7 +4721,7 @@ else if (isel==2) then
 	call loadallexccoeff(0)
 	write(*,*) "Input index of the two excited states, e.g. 2,5"
 	read(*,*) istate,jstate
-	call genTDM_2exc(istate,jstate)
+	call genTDM_2exc(istate,jstate,-1)
 end if
 write(*,*)
 if (wfntype==0.or.wfntype==3) then
@@ -4651,9 +4767,9 @@ end subroutine
 
 
 
-!------------------------------------------------------------------------------------------------------------------------------
-!----------  Decompose transition electric/magnetic dipole moment as basis function and atom contributions (Mulliken partition)
-!------------------------------------------------------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------------------------------------------
+!  Decompose transition electric/magnetic dipole moment as basis function and atom contributions (Mulliken partition)
+!--------------------------------------------------------------------------------------------------------------------
 subroutine transdip_basatm
 use defvar
 use excitinfo
@@ -4663,15 +4779,34 @@ character selectyn
 real*8 bastrdip(3,nbasis) !Contribution from each basis function to transition dipole moment, the first index 1/2/3=X/Y/Z
 real*8 trdipmatbas(3,nbasis,nbasis),trdipmatatm(3,ncenter,ncenter) !Transition dipole moment matrix in basis function / atom representation, the first index 1/2/3=X/Y/Z
 real*8,pointer :: tmpbas(:,:,:)
-	
+character c80tmp*80
+
 call loadallexcinfo(1)
-call selexcit(istate)
-call loadexccoeff(istate,1)
+write(*,*) "Calculate the transition dipole moment between which two states?"
+write(*,*) "If you input e.g. 3, then ground state and excited state 3 will be calculated"
+write(*,*) "If you input e.g. 2,5, then excited states 2 and 5 will be calculated"
+read(*,"(a)") c80tmp
 write(*,*)
 write(*,*) "Decompose which type of transition dipole moment?"
 write(*,*) "1: Electric      2: Magnetic"
 read(*,*) idecomptype
-call genTDM(idecomptype,3)
+
+!Generate TDM without symmetrization, because symmetrization will be done later
+if (index(c80tmp,',')/=0) then
+    if (idecomptype==2) then
+        write(*,"(a)") " Error: Calculating magnetic transition dipole moment between two excited states is not supported!"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+        return
+    end if
+	read(c80tmp,*) istate,jstate
+	call loadallexccoeff(0)
+	call genTDM_2exc(istate,jstate,0) !Generate TDM between two excited states, without symmetrization
+else
+    read(c80tmp,*) istate
+	call loadexccoeff(istate,1)
+    call genTDM(idecomptype,3) !Generate TDM using configuration coefficients in memory, without symmetrization
+end if
 
 !Haven't calculated dipole moment integral matrix, so reload the input file and calculate it
 if (idecomptype==1.and.(.not.allocated(Dbas))) then
@@ -5169,4 +5304,327 @@ do itime=1,2 !=1: Print on screen, =2: Print to file
         write(*,*) "Output finished!"
     end if
 end do
+end subroutine
+
+
+
+
+!----------------------------------------------------------------------
+!-------- Calculate data for plotting charge-transfer spectrum --------
+!----------------------------------------------------------------------
+subroutine CTspectrum
+use excitinfo
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c80tmp*80,c2000tmp*2000,tmpdir*12
+integer,allocatable :: fragnatm(:),frag(:,:) !Indices of atoms in fragments, frag(1:fragnatm(i),i) are atoms in fragment i
+real*8 atmhole(ncenter),atmele(ncenter)
+real*8,allocatable :: fraghole(:,:),fragele(:,:)
+integer sphpot_bk,radpot_bk
+
+write(*,"(/,2a,/)") " NOTE: The charge-transfer spectrum was first proposed in &
+Carbon, 187, 78 (2022) DOI: 10.1016/j.carbon.2021.11.005, please cite this paper in your work"
+
+write(*,*) "How many fragments to define? At least 2 fragments should be defined"
+write(*,*) "Note: Input 0 can exit"
+read(*,*) nfrag
+if (nfrag==0) return
+allocate(fragnatm(nfrag),frag(ncenter,nfrag))
+
+do ifrag=1,nfrag
+    write(*,"(' Input atom indices in fragment',i3,', e.g. 3,5-8,15-20')") ifrag
+    read(*,"(a)") c2000tmp
+    call str2arr(c2000tmp,fragnatm(ifrag),frag(:,ifrag))
+end do
+
+!Test examples\excit\NH2_C8_NO2\NH2_C8_NO2.out
+!nfrag=3
+!allocate(fragnatm(nfrag),frag(ncenter,nfrag))
+!c2000tmp="1,13,14"
+!call str2arr(c2000tmp,fragnatm(1),frag(:,1))
+!c2000tmp="2-9,15-22"
+!call str2arr(c2000tmp,fragnatm(2),frag(:,2))
+!c2000tmp="10-12"
+!call str2arr(c2000tmp,fragnatm(3),frag(:,3))
+
+call loadallexcinfo(0)
+call loadallexccoeff(0)
+
+write(*,*) "Summary of excited states:"
+do iexc=1,nstates
+	sumsqrexc=0
+	sumsqrdeexc=0
+	do itmp=1,allexcnorb(iexc)
+		if (allexcdir(itmp,iexc)==1) sumsqrexc=sumsqrexc+allexccoeff(itmp,iexc)**2
+		if (allexcdir(itmp,iexc)==2) sumsqrdeexc=sumsqrdeexc-allexccoeff(itmp,iexc)**2
+	end do
+	sumsqrall=sumsqrexc+sumsqrdeexc
+    write(*,"(' State:',i5,'   E_exc:',f8.3,' eV   f:',f7.4,'   Norm:',f8.5,'   MO pairs:',i7)") &
+    iexc,allexcene(iexc),allexcf(iexc),sumsqrall,allexcnorb(iexc)
+end do
+
+write(*,*)
+write(*,*) "Select the method for calculating fragment contributions to hole and electron"
+write(*,*) "1 Mulliken (very fast, but incompatible with diffuse functions)"
+write(*,*) "2 Hirshfeld partition (slower but very robust)"
+read(*,*) imethod
+if (imethod==2) then
+    write(*,"(a)") " Note: During the calculation of cross term of hole and electron, &
+the orbital pairs whose absolute value of coefficient <0.01 will be ignored to save time"
+    if (iautointgrid==1) then !Though this grid setting is quite poor, I found it works equally well as (75,434)
+        radpot_bk=radpot
+        sphpot_bk=sphpot
+        radpot=30
+        sphpot=170
+        write(*,"(' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
+    end if
+end if
+    
+allocate(fraghole(nfrag,nstates),fragele(nfrag,nstates))
+open(11,file="IFCTdata.txt",status="replace")
+write(11,"(a)",advance='no') "state "
+do ifrag=1,nfrag
+    write(11,"(1x,'hole(',i1,')')",advance='no') ifrag
+    write(11,"(1x,'ele(',i1,') ')",advance='no') ifrag
+end do
+do ifrag=1,nfrag
+    write(11,"(1x,'redis(',i1,')')",advance='no') ifrag
+end do
+do ifrag=1,nfrag
+    do jfrag=ifrag+1,nfrag
+        write(11,"(2x,i1,'->',i1,1x)",advance='no') ifrag,jfrag
+        write(11,"(2x,i1,'<-',i1,1x)",advance='no') ifrag,jfrag
+    end do
+end do
+write(11,*)
+
+open(12,file="IFCTmajor.txt",status="replace")
+write(12,*) "Contribution of IFCT terms larger than 5% are shown below"
+write(12,"(/,a)") "state    f     nm"
+
+call walltime(iwalltime1)
+write(*,*)
+do istate=1,nstates
+    write(*,"(' Calculating excited state',i6,'  of',i6)") istate,nstates
+    call loadexccoeff(istate,0)
+    
+	if (imethod==1) then
+        call atmcontri_holeele_Mulliken(atmhole,atmele,0) !Calculate atomic contribution to hole and electron by Mulliken method
+	else if (imethod==2) then
+        call atmcontri_holeele_Hirshfeld(atmhole,atmele,0) !Calculate atomic contribution to hole and electron by Hirshfeld method
+    end if
+
+	do ifrag=1,nfrag
+		fraghole(ifrag,istate)=sum(atmhole(frag(1:fragnatm(ifrag),ifrag)))
+		fragele(ifrag,istate)=sum(atmele(frag(1:fragnatm(ifrag),ifrag)))
+		write(*,"(' Fragment ',i3,'    Hole:',f7.2,' %     Electron:',f7.2,' %')") ifrag,fraghole(ifrag,istate)*100,fragele(ifrag,istate)*100
+	end do
+    !Unphysical negative contributions may occur when using Mulliken partition, simply set them to zero
+    if (imethod==1) then
+        if (any(fraghole(:,istate)<-0.01D0).or.any(fragele(:,istate)<-0.01D0)) then
+            write(*,"(a)") " Warning: Evident negative fragment contribution is detected! &
+            The result may be unreliable, please use Hirshfeld partition instead! Now all negative contributions are set to 0"
+        end if
+	    where (fraghole(:,istate)<0) fraghole(:,istate)=0
+	    where (fragele(:,istate)<0) fragele(:,istate)=0
+    end if
+    
+    !Print IFCT data to IFCTdata.txt
+    write(11,"(i4,1x)",advance='no') istate
+    do ifrag=1,nfrag
+        write(11,"(f8.4)",advance='no') fraghole(ifrag,istate)
+        write(11,"(f8.4)",advance='no') fragele(ifrag,istate)
+    end do
+    do ifrag=1,nfrag
+        write(11,"(f9.4)",advance='no') fraghole(ifrag,istate)*fragele(ifrag,istate)
+    end do
+    write(11,"(1x)",advance='no')
+    do ifrag=1,nfrag
+        do jfrag=ifrag+1,nfrag
+            write(11,"(f7.4)",advance='no') fraghole(ifrag,istate)*fragele(jfrag,istate)
+            write(11,"(f7.4)",advance='no') fragele(ifrag,istate)*fraghole(jfrag,istate)
+        end do
+    end do
+    write(11,*)
+    
+    !Print major IFCT terms (those > 5%) to IFCTmajor.txt
+    write(12,"(i4,1x,f7.4,f7.1':')",advance='no') istate,allexcf(istate),eV2nm/allexcene(istate)
+    do ifrag=1,nfrag
+        tmp=fraghole(ifrag,istate)*fragele(ifrag,istate)
+        if (tmp>0.05D0) write(12,"('  Redis(',i1,')',f5.1,' %')",advance='no') ifrag,tmp*100
+    end do
+    do ifrag=1,nfrag
+        do jfrag=ifrag+1,nfrag
+            tmp1=fraghole(ifrag,istate)*fragele(jfrag,istate)
+            if (tmp1>0.05D0) write(12,"(2x,i1,'->',i1,f5.1,' %')",advance='no') ifrag,jfrag,tmp1*100
+            tmp2=fragele(ifrag,istate)*fraghole(jfrag,istate)
+            if (tmp2>0.05D0) write(12,"(2x,i1,'<-',i1,f5.1,' %')",advance='no') ifrag,jfrag,tmp2*100
+        end do
+    end do
+    write(12,*)
+end do
+close(11)
+close(12)
+
+call walltime(iwalltime2)
+write(*,"(/,' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+
+if (imethod==2.and.iautointgrid==1) then
+    radpot=radpot_bk
+    sphpot=sphpot_bk
+end if
+
+!Generate CTspectrum.txt
+inquire(directory="CT_multiple",exist=alive)
+if (alive) then
+	if (isys==1) then !delete old wfntmp folder
+		write(*,*) "Running: rmdir /S /Q CT_multiple"
+		call system("rmdir /S /Q CT_multiple")
+	else if (isys==2) then
+		write(*,*) "Running: rm -rf CT_multiple"
+		call system("rm -rf CT_multiple")
+	end if
+end if
+call system("mkdir CT_multiple")
+if (isys==1) tmpdir="CT_multiple\"
+if (isys==2) tmpdir="CT_multiple/"
+open(12,file=tmpdir//"CT_multiple.txt",status="replace")
+write(12,"(a)") tmpdir//"total_spectrum.txt UV-Vis"
+do ifrag=1,nfrag
+    write(12,"(a,i1,a,i1)") tmpdir//"Redis_",ifrag,".txt Redistribution ",ifrag
+end do
+do ifrag=1,nfrag
+    do jfrag=ifrag+1,nfrag
+        write(12,"(a,i1,a,i1,a,i1,a,i1)") tmpdir//"ET_",ifrag,"to",jfrag,".txt Electron transfer ",ifrag,"->",jfrag
+        write(12,"(a,i1,a,i1,a,i1,a,i1)") tmpdir//"ET_",jfrag,"to",ifrag,".txt Electron transfer ",ifrag,"<-",jfrag
+    end do
+end do
+close(12)
+!Generate files included in CTspectrum.txt
+open(12,file=tmpdir//"total_spectrum.txt",status="replace")
+write(12,*) nstates,1
+do istate=1,nstates
+    write(12,"(f10.5,f10.5)") allexcene(istate),allexcf(istate)
+end do
+close(12)
+do ifrag=1,nfrag
+    write(c80tmp,"(a,i1,a)") tmpdir//"Redis_",ifrag,".txt"
+    open(12,file=trim(c80tmp),status="replace")
+    write(12,*) nstates,1
+    do istate=1,nstates
+        write(12,"(f10.5,f10.5)") allexcene(istate),allexcf(istate)*fraghole(ifrag,istate)*fragele(ifrag,istate)
+    end do
+    close(12)
+end do
+do ifrag=1,nfrag
+    do jfrag=ifrag+1,nfrag
+        write(c80tmp,"(a,i1,a,i1,a)") tmpdir//"ET_",ifrag,"to",jfrag,".txt"
+        open(12,file=trim(c80tmp),status="replace")
+        write(12,*) nstates,1
+        do istate=1,nstates
+            write(12,"(f10.5,f10.5)") allexcene(istate),allexcf(istate)*fraghole(ifrag,istate)*fragele(jfrag,istate)
+        end do
+        close(12)
+        
+        write(c80tmp,"(a,i1,a,i1,a)") tmpdir//"ET_",jfrag,"to",ifrag,".txt"
+        open(12,file=trim(c80tmp),status="replace")
+        write(12,*) nstates,1
+        do istate=1,nstates
+            write(12,"(f10.5,f10.5)") allexcene(istate),allexcf(istate)*fragele(ifrag,istate)*fraghole(jfrag,istate)
+        end do
+        close(12)
+    end do
+end do
+
+write(*,*)
+write(*,*) "The following files have been generated in current folder:"
+write(*,"(a)") "   IFCTdata.txt: IFCT data of all excited states, including fragment contributions to hole and electron, as well as intrafragment &
+redistribution and interfragment electron transfer terms"
+write(*,"(a)") "   IFCTmajor.txt: IFCT terms with contribution larger than 5% for every excited state"
+write(*,"(a)") "   Files in ""CT_multiple"" subfolder: The CT_multiple.txt can be used as input file of Multiwfn to plot UV-Vis charge-transfer spectrum via main function 11"
+end subroutine
+
+
+
+!!--------- Calculate hole and electron at a point
+!If a coefficient has magnitude less than skipthres (e.g. 0.01), then this configuration will be skipped
+!This code uses the same calculation method as subroutine hole_electron, but removed irrelevant codes
+subroutine calc_holeele(x,y,z,skipthres,hole,ele)
+use defvar
+use excitinfo
+use function
+implicit real*8 (a-h,o-z)
+real*8 x,y,z,skipthres,hole,ele,orbval(nmo)
+
+hole=0
+ele=0
+elecross=0
+holecross=0
+
+call orbderv(1,1,nmo,x,y,z,orbval)
+!Calculate local term of hole and electron
+do iexcitorb=1,excnorb
+	imo=orbleft(iexcitorb)
+	jmo=orbright(iexcitorb)
+	excwei=exccoeff(iexcitorb)**2
+	if (excdir(iexcitorb)==1) then ! ->
+		hole=hole+excwei*orbval(imo)**2
+		ele=ele+excwei*orbval(jmo)**2
+	else ! <-
+		hole=hole-excwei*orbval(imo)**2
+		ele=ele-excwei*orbval(jmo)**2
+	end if
+end do
+!Calculate cross term of hole and electron, this part takes most computational time
+do iexcitorb=1,excnorb
+	!Below cases are skipped:
+	!i->l,i->l and i->l,i<-l and i<-l,i<-l, since ileft==jleft.and.iright==jright
+	!i->l,j->m, since ileft/=jleft.and.iright/=jright
+	!i->l,i<-m and i<-l,j->l, since excdir(iexcitorb)/=excdir(jexcitorb)
+	!**If i->l,i<-l should be taken into account is unsolved
+	! Currently only take below cases into account:
+	! Cross term of hole (do <i|j>):     i->l,j->l substract i<-l,j<-l
+	! Cross term of electron (do <l|m>): i->l,i->m substract i<-l,i<-m
+    if (abs(exccoeff(iexcitorb))<skipthres) cycle
+	ileft=orbleft(iexcitorb)
+	iright=orbright(iexcitorb)
+	tmpleft=exccoeff(iexcitorb)*orbval(ileft) !Use temporary variable to save the time for locating element
+	tmpright=exccoeff(iexcitorb)*orbval(iright)
+	idir=excdir(iexcitorb)
+	do jexcitorb=1,excnorb
+        if (abs(exccoeff(jexcitorb))<skipthres) cycle
+		jleft=orbleft(jexcitorb)
+		jright=orbright(jexcitorb)
+		jdir=excdir(jexcitorb)
+		if (idir/=jdir) cycle
+		if (ileft==jleft) then !do <l|m>
+			if (iright==jright) cycle
+			tmpval=tmpright*exccoeff(jexcitorb)*orbval(jright) !Originally virtual orbital
+			if (idir==1) then !->
+				elecross=elecross+tmpval
+			else !<-
+				elecross=elecross-tmpval
+			end if
+		else if (iright==jright) then !do <i|j>
+			tmpval=tmpleft*exccoeff(jexcitorb)*orbval(jleft) !Originally occupied orbital
+			if (idir==1) then !->
+				holecross=holecross+tmpval
+			else !<-
+				holecross=holecross-tmpval
+			end if
+		end if
+	end do
+end do
+
+!For closed-shell wavefunction, the weights are normalized to 0.5 (or say the orbitals are doubly occupied), so correct it
+if (wfntype==0.or.wfntype==3) then
+	hole=hole*2
+	ele=ele*2
+	holecross=holecross*2
+	elecross=elecross*2
+end if
+
+hole=hole+holecross
+ele=ele+elecross
 end subroutine
