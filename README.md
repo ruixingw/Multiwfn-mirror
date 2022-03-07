@@ -1,6 +1,6 @@
 # About this repository
 
-This repository tracks the latest *Linux* version of Multiwfn and its manual (hereinafter referred to as *the Software*). I merely download *the Software* from official Multiwfn website and upload them to this repository without any change. I will try to update this repository as soon as possible when there is a new version published on Multiwfn website, however there is no guarantee.
+This repository tracks the latest *Linux* version of Multiwfn and its manual (hereinafter referred to as *the Software*). I merely download *the Software* from official Multiwfn website and upload them to this repository without any change. I will try to update this repository as soon as possible when there is a new version published on Multiwfn website, however this is not guaranteed.
 
 **Disclaimer:**
 
@@ -8,7 +8,7 @@ The owner of this repository claims no right to *the Software*. All rights are r
 
 Should any information in this repository be in conflict with the official Multiwfn website, the official Multiwfn website should be taken as valid and binding.
 
-**Install:**
+**Installation:**
 
 A detailed guide is in Section 2.1.2 of the Multiwfn manual. Here's a short version for Ubuntu 18.04 LTS.
 
@@ -66,7 +66,7 @@ Multiwfn允许用于给别人代算时使用，但必须主动告诉对方在文
 ---------
 另：
 
-如果有Multiwfn使用上的问题，欢迎到http://bbs.keinsci.com的“波函数分析与Multiwfn”版块发帖咨询，开发者会非常及时回复（通常在24小时内回复）。也欢迎在Multiwfn英文论坛http://sobereva.com/wfnbbs上用英语发帖求助、和外国Multiwfn用户交流。开发者不在其它任何其它中文论坛里解答Multiwfn的使用问题。
+如果有Multiwfn使用上的问题，欢迎到 http://bbs.keinsci.com 的“波函数分析与Multiwfn”版块发帖咨询，开发者会非常及时回复（通常在24小时内回复）。也欢迎在Multiwfn英文论坛http://sobereva.com/wfnbbs上用英语发帖求助、和外国Multiwfn用户交流。开发者不在其它任何其它中文论坛里解答Multiwfn的使用问题。
 
 初次接触Multiwfn者请务必阅读《Multiwfn入门tips》（http://sobereva.com/167）。《Multiwfn FAQ》（http://sobereva.com/452）也非常重要，强烈建议完整过目一遍。
 

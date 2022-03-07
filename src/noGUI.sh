@@ -4,8 +4,7 @@ mkdir noGUI
 cp ./Makefile_noGUI noGUI/Makefile
 cp *.a noGUI
 cp *.F noGUI
-cp -r libreta_slow noGUI
-cp -r libreta_fast noGUI
+cp -r libreta_hybrid noGUI
 for f90 in *.f90
 do
 grep -a -v -E "use dislin_d|use plot|use GUI|call gifmod|call pngmod|call angle|\
@@ -18,8 +17,9 @@ endgrf|xaxgit|disfin|disini|call ticks|errmod|legini|legtit|call frame|legpos|le
 legpat|swgfnt|setscr|symfil|messag|imgfmt|complx|sursze|call center|rlmess|call rline|\
 call height|setxid|winsiz|autres|ax3len|crvmat|getscr|ticpos|call labels|call dot|\
 winsiz|namdis|call linwid|call legend|call setboxgui|call selfilegui|call selcolor|\
-call setcolor|call clridx2rgb|call minigui|call texmod|call triplx|call legopt|call myline|call hname|\
-call setgraphformat|call setfil|call SETVLT|call AXSSCL|call GETPOS" $f90 -i > noGUI/$f90
+call setcolor|call clridx2rgb|call percent2RGB|call minigui|call texmod|call triplx|\
+call legopt|call myline|call hname|call setgraphformat|call setfil|call SETVLT|call AXSSCL|\
+call GETPOS|call incmrk|call marker|call hsymbl|call PROJ3D" $f90 -i > noGUI/$f90
 done
 cp Bspline.f90 noGUI
 cp fparser.f90 noGUI

@@ -1,19 +1,20 @@
 SIMD = -msse3
 OPT = -O2 -qopenmp -qopenmp-link=static -threads -qopt-matmul $(SIMD) -diag-disable 8290,8291,6371,10316 -fpp -mkl -static-intel
+OPT1 = -O1 -qopenmp -qopenmp-link=static -threads $(SIMD) -diag-disable 8290,8291,6371,10316 -fpp -mkl -static-intel
 #Options in the next line is for debugging purpose
-#OPT = -O0 -qopenmp -diag-disable 8290,8291,6371 -threads -qopenmp-link=static -debug all -g -traceback -check all -fstack-protector -fpp -mkl -static-intel
+#OPTDBG = -O0 -qopenmp -diag-disable 8290,8291,6371 -threads -qopenmp-link=static -debug all -g -traceback -check all -fstack-protector -fpp -mkl -static-intel
 
-LIB = ./dislin_d-11.0.a -lXm -lXt -lX11 -lGL #Works for CentOS 7.x
+LIB = ./dislin_d-11.0.a -lXm -lXt -lX11 -lGL   #At least works for CentOS 7.x
 FC = ifort
 EXE = Multiwfn
-LIBRETAPATH = ./libreta_slow
+LIBRETAPATH = ./libreta_hybrid
 
 objects = define.o util.o plot.o Bspline.o sym.o libreta.o function.o GUI.o sub.o integral.o Lebedev-Laikov.o \
 DFTxclib.o edflib.o fparser.o fileIO.o spectrum.o DOS.o Multiwfn.o 0123dim.o LSB.o \
 population.o orbcomp.o bondorder.o topology.o excittrans.o otherfunc.o \
-otherfunc2.o otherfunc3.o surfana.o procgriddata.o AdNDP.o fuzzy.o CDA.o basin.o \
+otherfunc2.o otherfunc3.o O1.o surfana.o procgriddata.o AdNDP.o fuzzy.o CDA.o basin.o \
 orbloc.o visweak.o EDA.o CDFT.o ETS_NOCV.o atmraddens.o NAONBO.o grid.o PBC.o hyper_polar.o deloc_aromat.o \
-minpack.o ean.o hrr_012345.o eanvrr_012345.o boysfunc.o
+minpack.o blockhrr_012345.o ean.o hrr_012345.o eanvrr_012345.o boysfunc.o
 
 default : $(objects) 
 	$(FC) $(OPT) $(objects) $(LIB) -o $(EXE)
@@ -24,9 +25,19 @@ default : $(objects)
 clean:
 	rm -f $(EXE) *.o *.mod
 
+#Only clean Multiwfn files, compiled libreta files are not affected
+cleanmultiwfn:
+	mkdir tmplib
+	mv libreta.o ean.o hrr_012345.o blockhrr_012345.o eanvrr_012345.o boysfunc.o \
+	libreta.mod hrr.mod blockhrr.mod ean.mod eanvrr.mod boysfunc.mod tmplib
+	rm -f $(EXE) *.o *.mod
+	mv tmplib/* ./
+	rm -r tmplib
+
+#Only clean libreta files, Multiwfn libreta files are not affected
 cleanlibreta:
-	rm -f $(EXE) libreta.o ean.o hrr_012345.o eanvrr_012345.o \
-	boysfunc.o libreta.mod hrr.mod ean.mod eanvrr.mod boysfunc.mod
+	rm -f $(EXE) libreta.o ean.o hrr_012345.o blockhrr_012345.o eanvrr_012345.o \
+	boysfunc.o libreta.mod hrr.mod blockhrr.mod ean.mod eanvrr.mod boysfunc.mod
 
 
 #Define modules that used by other files
@@ -128,6 +139,9 @@ otherfunc2.o : otherfunc2.f90 $(modules)
 
 otherfunc3.o : otherfunc3.f90 $(modules)
 	$(FC) $(OPT) -c otherfunc3.f90
+	
+O1.o : O1.f90 $(modules)
+	$(FC) $(OPT1) -c O1.f90
 
 surfana.o : surfana.f90 $(modules)
 	$(FC) $(OPT) -c surfana.f90
@@ -181,7 +195,7 @@ deloc_aromat.o : deloc_aromat.f90 $(modules)
 
 # Interfaces of libreta to Multiwfn
 
-libreta.o: ${LIBRETAPATH}/libreta.f90 ean.o hrr_012345.o eanvrr_012345.o boysfunc.o
+libreta.o: ${LIBRETAPATH}/libreta.f90 ean.o hrr_012345.o blockhrr_012345.o eanvrr_012345.o boysfunc.o
 	$(FC) $(OPT) -c ${LIBRETAPATH}/libreta.f90
 
 # Pure libreta files
@@ -190,7 +204,10 @@ ean.o: ${LIBRETAPATH}/ean.f90 hrr_012345.o eanvrr_012345.o boysfunc.o ${LIBRETAP
 	$(FC) $(OPT) -c ${LIBRETAPATH}/ean.f90
 
 hrr_012345.o: ${LIBRETAPATH}/hrr_012345.f90
-	$(FC) -O2 -diag-disable 6843 $(SIMD) -c ${LIBRETAPATH}/hrr_012345.f90
+	$(FC) $(OPT) -diag-disable 6843 $(SIMD) -c ${LIBRETAPATH}/hrr_012345.f90
+
+blockhrr_012345.o: ${LIBRETAPATH}/blockhrr_012345.f90
+	$(FC) -O1 -diag-disable 6843 $(SIMD) -c ${LIBRETAPATH}/blockhrr_012345.f90
 
 eanvrr_012345.o: ${LIBRETAPATH}/eanvrr_012345.f90 boysfunc.o
 	$(FC) $(OPT) -c ${LIBRETAPATH}/eanvrr_012345.f90

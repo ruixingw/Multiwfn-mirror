@@ -139,26 +139,21 @@ do while(.true.)
 		open(10,file="output.txt",status="replace")
 		write(*,*) "Outputting data, please wait..."
 		ii=0
-		do i=1,nx
+		do k=1,nz
 			do j=1,ny
-				do k=1,nz
-					write(10,"(3f10.5,f22.15)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
+				do i=1,nx
+					call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					write(10,"(3f10.5,f22.15)") tmpx*b2a,tmpy*b2a,tmpz*b2a,cubmat(i,j,k)
 				end do
 			end do
-			progress=dfloat(i)/nx*100
-			if (progress>ii) then
-				ii=ii+10
-				write(*,"(f6.1,'%')") progress
-			end if
+			call showprog(k,nz)
 		end do
-		write(*,"(f6.1,'%')") 100D0
 		write(*,*)
 		write(*,*) "The data have been saved to output.txt in current folder"
 		write(*,"(a)") " The first three columns correspond to X,Y,Z, unit is Angstrom, the last column is data value"
 		close(10)
 	else if (isel==2) then
-		open(10,file="output.txt",status="replace")
-		write(*,*) "Input Z (in Angstrom) to define a XY plane"
+		write(*,*) "Input Z (in Angstrom) to define a XY plane, e.g. 0.52"
 		read(*,*) posZ
 		posZ=posZ/b2a
 		rmindist=abs(orgz-posZ)
@@ -171,18 +166,18 @@ do while(.true.)
 			end if
 		end do
 		write(*,"(a,f14.6,a)") " The X-Y plane closest to your input is Z=",(orgz+(k-1)*dz)*b2a," Angstrom"
+		open(10,file="output.txt",status="replace")
 		do i=1,nx
 			do j=1,ny
 				write(10,"(3f11.6,f22.15)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
 			end do
 		end do
+		close(10)
 		write(*,*) "The data have been exported to output.txt in current folder"
 		write(*,*) "The first three columns correspond to X,Y,Z, unit is Angstrom"
-		close(10)
 		
 	else if (isel==3) then
-		open(10,file="output.txt",status="replace")
-		write(*,*) "Input X (in Angstrom) to define a YZ plane"
+		write(*,*) "Input X (in Angstrom) to define a YZ plane, e.g. 0.52"
 		read(*,*) posX
 		posX=posX/b2a
 		rmindist=abs(orgx-posX)
@@ -195,18 +190,18 @@ do while(.true.)
 			end if
 		end do
 		write(*,"(a,f14.6,a)") " The YZ plane closest to your input is X=",(orgx+(i-1)*dx)*b2a," Angstrom"
+		open(10,file="output.txt",status="replace")
 		do j=1,ny
 			do k=1,nz
 				write(10,"(3f11.6,f22.15)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
 			end do
 		end do
+		close(10)
 		write(*,*) "The data have been exported to output.txt in current folder"
 		write(*,*) "The first three columns correspond to X,Y,Z, unit is Angstrom"
-		close(10)
 		
 	else if (isel==4) then
-		open(10,file="output.txt",status="replace")
-		write(*,*) "Input Y (in Angstrom) to define a XZ plane"
+		write(*,*) "Input Y (in Angstrom) to define a XZ plane, e.g. 0.52"
 		read(*,*) posY
 		posY=posY/b2a
 		rmindist=abs(orgy-posY)
@@ -219,20 +214,20 @@ do while(.true.)
 			end if
 		end do
 		write(*,"(a,f14.6,a)") " The XZ plane closest to your input is Y=",(orgy+(j-1)*dy)*b2a," Angstrom"
+		open(10,file="output.txt",status="replace")
 		do i=1,nx
 			do k=1,nz
 				write(10,"(3f11.6,f22.15)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
 			end do
 		end do
+		close(10)
 		write(*,*) "The data have been exported to output.txt in current folder"
 		write(*,*) "The column 1/2/3/4 correspond to X,Y,Z,value respectively unit is Angstrom"
-		close(10)
 		
 	else if (isel==5) then
 		if (allocated(avgdata)) deallocate(avgdata)
 		allocate(avgdata(nx,ny))
 		avgdata=0D0
-		open(10,file="output.txt",status="replace")
 		write(*,*) "Input the range of Z (Angstrom) for XY planes, e.g. 3.0 12.4"
 		read(*,*) rangelow,rangehigh
 		rangelow=rangelow/b2a
@@ -246,20 +241,20 @@ do while(.true.)
 		end do
 		avgdata=avgdata/nlayers
 		write(*,"(' There are ',i8,' layers within the range')") nlayers
+		open(10,file="output.txt",status="replace")
 		do i=1,nx
 			do j=1,ny
 				write(10,"(2f11.6,f22.15)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,avgdata(i,j)
 			end do
 		end do
+		close(10)
 		write(*,*) "The data have been exported to output.txt in current folder"
 		write(*,*) "Column 1,2,3 correspond to X,Y,value respectively"
-		close(10)
 		
 	else if (isel==6) then
 		if (allocated(avgdata)) deallocate(avgdata)
 		allocate(avgdata(ny,nz))
 		avgdata=0D0
-		open(10,file="output.txt",status="replace")
 		write(*,*) "Input the range of X (Angstrom) for YZ planes, e.g. 3.0 12.4"
 		read(*,*) rangelow,rangehigh
 		rangelow=rangelow/b2a
@@ -273,20 +268,20 @@ do while(.true.)
 		end do
 		avgdata=avgdata/nlayers
 		write(*,"(' There are ',i8,' layers within the range')") nlayers
+		open(10,file="output.txt",status="replace")
 		do j=1,ny
 			do k=1,nz
 				write(10,"(2f11.6,f22.15)") (orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,avgdata(j,k)
 			end do
 		end do
+		close(10)
 		write(*,*) "The data have been exported to output.txt in current folder"
 		write(*,*) "Column 1,2,3 correspond to Y,Z,value respectively"
-		close(10)
 				
 	else if (isel==7) then
 		if (allocated(avgdata)) deallocate(avgdata)
 		allocate(avgdata(nx,nz))
 		avgdata=0D0
-		open(10,file="output.txt",status="replace")
 		write(*,*) "Input the range of Y (Angstrom) for XZ planes, e.g. 3.0 12.4"
 		read(*,*) rangelow,rangehigh
 		rangelow=rangelow/b2a
@@ -300,14 +295,15 @@ do while(.true.)
 		end do
 		avgdata=avgdata/nlayers
 		write(*,"(' There are ',i8,' layers within the range')") nlayers
+		open(10,file="output.txt",status="replace")
 		do i=1,nx
 			do k=1,nz
 				write(10,"(2f11.6,f22.15)") (orgx+(i-1)*dx)*b2a,(orgz+(k-1)*dz)*b2a,avgdata(i,k)
 			end do
 		end do
+		close(10)
 		write(*,*) "The data have been exported to output.txt in current folder"
 		write(*,*) "Column 1,2,3 correspond to X,Z,value respectively"
-		close(10)
 		
 	else if (isel==8) then
 		do while(.true.)
@@ -864,9 +860,9 @@ if (temp/=0) distoler=temp
 
 allocate(planedata(nx*ny*nz))
 npt=0
-do i=1,nx
+do k=1,nz
 	do j=1,ny
-		do k=1,nz
+		do i=1,nx
 			cubmatpt%value=cubmat(i,j,k)
             call getgridxyz(i,j,k,cubmatpt%x,cubmatpt%y,cubmatpt%z)
 			pttemp=protoplane_pos(cubmatpt,userplane,vec3)  !Project original data a(i,j,k) to userplane
@@ -879,7 +875,7 @@ do i=1,nx
 end do
 write(*,"(i10,' points are presented in the plane you defined')") npt
 
-write(*,*) "If project data to XY plane? 1=yes 2=no"
+write(*,*) "If projecting data to XY plane? 1=yes 2=no"
 read(*,*) itest
 
 if (itest==1) then

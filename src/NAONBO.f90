@@ -254,14 +254,13 @@ do while(.true.)
             end do
         end if
         
-		do iele=1,nelesupp
-			if (c80tmp2(1:2)==ind2name(iele)) then
-				a(iatm)%name=c80tmp2(1:2)
-				a(iatm)%index=iele
-				exit
-			end if
-			if (iele==nelesupp) write(*,"(a)") " Warning: Detected unrecognizable element name "//c80tmp2(1:2)//" !"
-		end do
+        call elename2idx(c80tmp2(1:2),iele)
+        if (iele/=0) then
+			a(iatm)%name=c80tmp2(1:2)
+			a(iatm)%index=iele
+        else
+			write(*,"(a)") " Warning: Detected unrecognizable element name "//c80tmp2(1:2)//" !"
+		end if
 	else
 		if (iatm==ncenter) exit
 	end if

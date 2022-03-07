@@ -104,8 +104,12 @@ do while(.true.)
 			isurftype=2
 			call selfunc_interface(1,ifuncintp)
 		else if (isurftypetmp==5.or.isurftypetmp==6) then
-			if (isurftypetmp==5) isurftype=5
-			if (isurftypetmp==6) isurftype=6
+			if (isurftypetmp==5) then
+				isurftype=5
+                grdspc=0.2D0 !Make points in finger plot denser
+			else if (isurftypetmp==6) then
+				isurftype=6
+            end if
             do while(.true.)
 				write(*,"(a)") " Input atomic indices. e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will be selected"
 				read(*,"(a)") c10000tmp
@@ -171,12 +175,12 @@ do while(.true.)
 	else if (isel==2) then !Select mapped function
 		if (imapfunc==3) a%charge=nucchgbackup !If .chg file was loaded previously by option 3 shown below, so this time firstly recovery actual nuclear charges
 		write(*,*) "Select to real space function to be mapped on the molecular surface"
-		write(*,"(a,i3)") "-1 User-defined real space function, iuserfunc=",iuserfunc
+		write(*,"(a,i4)") "-1 User-defined real space function, iuserfunc=",iuserfunc
 		write(*,*) "0 Function from external file"
 		write(*,*) "1 Electrostatic potential (ESP)"
 		write(*,*) "2 Average local ionization energy (ALIE)"
 		write(*,*) "3 Electrostatic potential from atomic charges in a .chg file"
-		write(*,*) "4 Local electron affinity"
+		write(*,*) "4 Local electron affinity (LEA)"
 		write(*,*) "5 Electron delocalization range function EDR(r;d)"	
 		write(*,*) "6 Orbital overlap length function D(r) which maximizes EDR(r;d)"	
 ! 		if (allocated(b)) write(*,*) "10 Pair density" !Rarely used by normal users, so comment it
@@ -188,9 +192,9 @@ do while(.true.)
 			write(*,*) "12 Sign(lambda2)*rho with promolecular approximation"
 		end if
 		if (nHirBecatm>0) then
-			write(*,*) "20 d_i: Distance from the nearest nucleus inside the surface"
-			write(*,*) "21 d_e: Distance from the nearest nucleus outside the surface"
-			write(*,*) "22 d_norm: Normalized contact distance"
+			write(*,*) "20 d_i: Distance in Angstrom from the nearest nucleus inside the surface"
+			write(*,*) "21 d_e: Distance in Angstrom from the nearest nucleus outside the surface"
+			write(*,*) "22 d_norm: Normalized contact distance in Angstrom"
 		end if
 		read(*,*) imapfunc
 		
@@ -205,7 +209,7 @@ do while(.true.)
 		if (imapfunc==5) then !Input length scale to evaluate EDR(r;d)
 			write(*,*) "The EDR(r;d) computing code was contributed by Arshad Mehmood"
 			write(*,"(a,/)") " References: J. Chem. Phys., 141, 144104 (2014); J. Chem. Theory Comput., 12, 79 (2016); Angew. Chem. Int. Ed., 56, 6878 (2017)"
-			write(*,*) " Input length scale d (Bohr)   e.g. 0.85"
+			write(*,*) " Input length scale d (Bohr), e.g. 0.85"
 			read(*,*) dedr
 		end if
 		if (imapfunc==6) then !Input parameters to evaluate D(r)
@@ -215,16 +219,16 @@ do while(.true.)
 			write(*,*) "2 Use default values   i.e. 20,2.50,1.50"
 			read(*,*) edrmaxpara
 			if (edrmaxpara==1) then  
-				write(*,*) "Please input in order: exponents start increment   e.g. 20,2.5,1.5"
+				write(*,*) "Please input in order: exponents start increment, e.g. 20,2.5,1.5"
 				write(*,*) "Note: Max. allowed exponents are 50 and min. allowed increment is 1.01"
 				read (*,*) nedr,edrastart,edrainc
 				if (nedr<1) then
-					write(*,*) "Error: Bad Number of EDR exponents. Should be between 1 to 50"
+					write(*,*) "Error: Bad number of EDR exponents. Should be between 1 to 50"
 					write(*,*) "Press ENTER button to exit"
 					read(*,*)
 					stop
 				else if (nedr>50) then
-					write(*,*) "Error: Bad Number of EDR exponents. Should be between 1 to 50"
+					write(*,*) "Error: Bad number of EDR exponents. Should be between 1 to 50"
 					write(*,*) "Press ENTER button to exit"
 					read(*,*)
 					stop
@@ -240,7 +244,7 @@ do while(.true.)
 				edrastart=2.5d0
 				edrainc=1.5d0
 			end if
-			write(*,*) " The following EDR exponents will be used in calculation:"
+			write(*,*) "The following EDR exponents will be used in calculation:"
 			wrtstart=edrastart
 			do wrtnumedr=1,nedr
 				wrtexpo(wrtnumedr)=wrtstart
@@ -255,7 +259,7 @@ do while(.true.)
 				read(*,"(a)") c200tmp
 				inquire(file=c200tmp,exist=alive)
 				if (alive) exit
-				write(*,*) "Cannot find the file, input again"
+				write(*,*) "Error: Cannot find the file, input again"
 			end do
 			nucchgbackup=a%charge
 			open(10,file=c200tmp,status="old")
@@ -269,7 +273,7 @@ do while(.true.)
 		if (imapfunc==20.or.imapfunc==21) write(*,*) "NOTE: ALL VALUES OF THIS FUNCTION SHOWN IN LATER STAGE WILL BE BOHR!"
 		
 	else if (isel==3) then
-		write(*,*) "Input a value (in Bohr)"
+		write(*,*) "Input a value (in Bohr), e.g. 0.2"
 		if (imapfunc==0.or.imapfunc==1.or.imapfunc==20.or.imapfunc==21.or.imapfunc==22) write(*,*) "Note: In general 0.25 is enough. For higher accuracy, 0.15~0.20 is recommended"
 		if (imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-1) write(*,*) "Note: In general 0.20 is enough. For higher accuracy, 0.13~0.17 is recommended"
 		read(*,*) grdspc
@@ -349,6 +353,7 @@ end do
 !======== Start calculation ========!
 ! Delete high-lying virtual orbitals to speed up calculation
 if (imapfunc/=0.and.imapfunc/=4.and.imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call delvirorb(1)
+call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
 
 call walltime(iclktime1)
 if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculate grid data for determining isosurface
@@ -414,7 +419,6 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 		cubmattmp=0D0
 		if (ihirshmode==1) then !Doesn't work well currently, because interpolation of density at long range is problematic by Lagrange method
 			do iatm=1,ncenter
-				call showprog(iatm,ncenter)
 				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
 				do k=1,nz
 					do j=1,ny
@@ -427,11 +431,11 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 					end do
 				end do
 				!$OMP END PARALLEL DO
+				call showprog(iatm,ncenter)
 			end do
 		else if (ihirshmode==2) then
 			call setpromol
 			do iatm=1,ncenter_org
-				call showprog(iatm,ncenter_org)
 				call dealloall
 				call readwfn(custommapname(iatm),1)
 				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
@@ -446,6 +450,7 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 					end do
 				end do
 				!$OMP END PARALLEL DO
+				call showprog(iatm,ncenter_org)
 			end do
 			call dealloall
 			write(*,"(' Reloading ',a)") trim(firstfilename)
@@ -607,7 +612,7 @@ write(*,*) "Generating isosurface by Marching Tetrahedra algorithm, please wait.
 do ix=1,numcubx
 	do iy=1,numcuby
 		do iz=1,numcubz
-			if (ifbndcub(ix,iy,iz)==.true.) then !Numbering of cube corner is identical to figure 3 of WFA original paper
+			if (ifbndcub(ix,iy,iz)) then !Numbering of cube corner is identical to figure 3 of WFA original paper
 				call marchtetra(ix,iy,iz)
 ! 				call marchcube(ix,iy,iz)
 			end if
@@ -863,7 +868,7 @@ if (ireadextmapval==0) then !Directly calculate
 	alive=.false.
 	if (cubegenpath/=" ".and.ifiletype==1.and.imapfunc==1) then
 		inquire(file=cubegenpath,exist=alive)
-		if (alive==.false.) then
+		if (.not.alive) then
 			write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
 			the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 		end if
@@ -916,8 +921,8 @@ if (ireadextmapval==0) then !Directly calculate
         
         noldthreads=nthreads
         if (imapfunc==1) then !ESP
-            if (iESPcode==2) then
-                call doinitlibreta
+            if (iESPcode==2.or.iESPcode==3) then
+                call doinitlibreta(1)
                 if (isys==1.and.nESPthreads>10) nthreads=10
             end if
         end if
@@ -1287,6 +1292,7 @@ write(*,*) "Surface analysis finished!"
 call walltime(iclktime2)
 write(*,"(' Total wall clock time passed during this task:',i6,' s')") iclktime2-iclktime1
 if (imapfunc/=0.and.imapfunc/=4.and.imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call delvirorb_back(1)
+call del_GTFuniq !Destory unique GTF informtaion
 if (imapfunc==1) write(*,"(a)") " Citation of molecular polarity index (MPI): Carbon, 171, 514 (2021) DOI: 10.1016/j.carbon.2020.09.048"
 
 
@@ -1330,7 +1336,7 @@ do while(.true.)
 ! 	write(*,*) "16 Export center of surface facets as pdb file" !Can also output to xyz file
     write(*,*) "18 Discard some surface extrema by inputting their indices"
     write(*,*) "19 Merge some surface extrema and take their average position"
-	if (imapfunc==22) write(*,*) "20 Fingerprint plot analysis"
+	if (imapfunc==22) write(*,*) "20 Fingerprint plot and local contact analyses"
 	read(*,*) isel
 	
 	if (isel==-3) then
@@ -2040,7 +2046,10 @@ do while(.true.)
 ! 		write(10,*)
 ! 		do i=1,nsurtri
 ! 			if (elimtri(i)==1) cycle
-! 			write(10,"(a,3f14.8)") "O   ",surtriang(i)%cenx*b2a,surtriang(i)%ceny*b2a,surtriang(i)%cenz*b2a
+			!surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
+			!surtriy=sum(survtx(surtriang(itri)%idx(1:3))%y)/3D0
+			!surtriz=sum(survtx(surtriang(itri)%idx(1:3))%z)/3D0
+! 			write(10,"(a,3f14.8)") "O   ",surtrix*b2a,surtriy*b2a,surtriz*b2a
 ! 		end do
 ! 		close(10)
 ! 		write(*,*) "Center of surface facets have been outputted to fac.xyz in current folder"
@@ -2135,7 +2144,7 @@ end subroutine
 
 
 
-!!------ Fingerprint plot analysis
+!!----------------- Fingerprint plot analysis
 subroutine fingerprt(HirBecatm,nHirBecatm)
 use plot
 use surfvertex
@@ -2143,10 +2152,12 @@ use util
 use function
 implicit real*8 (a-h,o-z)
 integer nHirBecatm,HirBecatm(nHirBecatm),tmparr(ncenter),ifcontactvtx(nsurvtx)
-integer,parameter :: nval=200
-real*8 :: mat(nval,nval),mattmp(nval,nval),vtxdnorm(nsurvtx),rlow=0.6D0,rhigh=2.6D0 !Angstrom
+real*8 dens(nsurvtx)
+real*8 vtxdnorm(nsurvtx),d_i(nsurvtx),d_e(nsurvtx) !In Angstrom
+real*8 :: rlow=0.6D0,rhigh=2.6D0,rstep=0.2D0
+integer :: ptsize=10
 integer,allocatable :: inarr(:),outarr(:),notHirBecatm(:)
-real*8,allocatable :: surval1(:),surval2(:)
+real*8,allocatable :: xarr(:),yarr(:)
 character c2000tmp*2000,c2tmp*2
 !Set default inside and outside fragment
 ninarr=nHirBecatm
@@ -2164,6 +2175,8 @@ end do
 outarr=notHirBecatm
 
 do while(.true.)
+    write(*,*)
+	write(*,*) "  -------------- Fingerprint plot and local contact analyses --------------"
 	write(*,*) "-1 Return"
 	write(*,*) "0 Start analysis"
 	write(*,"(a,i8)") " 1 Set the inside atoms, current number is",ninarr
@@ -2179,7 +2192,7 @@ do while(.true.)
 		write(*,*) "Now input two conditions, the inside atoms will be their intersection"
 		write(*,*)
 		write(*,"(a)") " First, input index range, e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 are selected"
-		write(*,"(a)") " Note: If press ENTER directly, all atoms in the Hirshfeld/Becke fragment will be taken into consideration"
+		write(*,"(a)") " Note: If press ENTER button directly, all atoms in the Hirshfeld/Becke fragment will be taken into consideration"
 		read(*,"(a)") c2000tmp
 		if (c2000tmp==" ") then
 			nelement=nHirBecatm
@@ -2188,8 +2201,8 @@ do while(.true.)
 			call str2arr(c2000tmp,nelement)
 			call str2arr(c2000tmp,nelement,tmparr(1:nelement))
 		end if
-		write(*,*) "Next, input element, e.g. Cl"
-		write(*,*) "Note: If press ENTER directly, the element filter will be ignored"
+		write(*,*) "Please input element as filter condition, e.g. Cl"
+		write(*,*) "Note: If press ENTER button directly, the element filter will be ignored"
 		read(*,"(a)") c2tmp
 		deallocate(inarr)
 		if (c2tmp==" ") then
@@ -2220,7 +2233,7 @@ do while(.true.)
 		write(*,*) "Now input two conditions, the outside atoms will be their intersection"
 		write(*,*)
 		write(*,"(a)") " First, input index range, e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 are selected"
-		write(*,"(a)") " Note: If press ENTER directly, all atoms do not belong to the Hirshfeld/Becke fragment will be taken into consideration"
+		write(*,"(a)") " Note: If press ENTER button directly, all atoms do not belong to the Hirshfeld/Becke fragment will be taken into consideration"
 		read(*,"(a)") c2000tmp
 		if (c2000tmp==" ") then
 			nelement=nnotHirBecatm
@@ -2229,8 +2242,8 @@ do while(.true.)
 			call str2arr(c2000tmp,nelement)
 			call str2arr(c2000tmp,nelement,tmparr(1:nelement))
 		end if
-		write(*,*) "Next, select element, e.g. Cl"
-		write(*,*) "Note: If press ENTER directly, the element filter will be ignored"
+		write(*,*) "Please input element as filter condition, e.g. Cl"
+		write(*,*) "Note: If press ENTER button directly, the element filter will be ignored"
 		read(*,"(a)") c2tmp
 		deallocate(outarr)
 		if (c2tmp==" ") then
@@ -2252,147 +2265,227 @@ do while(.true.)
 		write(*,"(10i7)") outarr
 		write(*,*)
 	else if (isel==0) then
-		write(*,*) "Calculating contact surface points..."
+		write(*,*) "Calculating points on contact surface..."
+        !Finding vertices corresponding to contact surface between the two atom sets. If ivtx belongs to, then ifcontactvtx(ivtx)=1
+        !Also determine d_i, d_e, d_norm of all vertices
 		ifcontactvtx=0
-		do icyc=1,2 !The first time count how many contact point are there so that arrays can be allocated, the second time record information
-			if (icyc==2) allocate(surval1(ncontactvtx),surval2(ncontactvtx))
-			ncontactvtx=0
-			ncurrvtx=0
-			do ivtx=1,nsurvtx
-				if (elimvtx(ivtx)==1) cycle
-				ncurrvtx=ncurrvtx+1
-				dist2minin=1D100
-				dist2minout=1D100
-				iminin=0
-				iminout=0
-				do iatm=1,ncenter
-					dist2=(a(iatm)%x-survtx(ivtx)%x)**2+(a(iatm)%y-survtx(ivtx)%y)**2+(a(iatm)%z-survtx(ivtx)%z)**2
-					if (any(HirBecatm==iatm)) then !Find the closest atom in Hirshfeld/Becke fragment to the surface point
-						if (dist2<dist2minin) then
-							dist2minin=dist2
-							iminin=iatm
-						end if
-					else !Find the closest atom that does not belong to Hirshfeld/Becke fragment to the surface point
-						if (dist2<dist2minout) then
-							dist2minout=dist2
-							iminout=iatm
-						end if
+		ncontactvtx=0 !Number of vertices on local contact surface
+		ncurrvtx=0 !Number of non-eliminated vertices
+		do ivtx=1,nsurvtx
+			if (elimvtx(ivtx)==1) cycle
+			ncurrvtx=ncurrvtx+1
+			dist2minin=1D100
+			dist2minout=1D100
+			iminin=0
+			iminout=0
+			do iatm=1,ncenter
+				dist2=(a(iatm)%x-survtx(ivtx)%x)**2+(a(iatm)%y-survtx(ivtx)%y)**2+(a(iatm)%z-survtx(ivtx)%z)**2
+				if (any(HirBecatm==iatm)) then !Find the closest atom in Hirshfeld/Becke fragment to the surface point
+					if (dist2<dist2minin) then
+						dist2minin=dist2
+						iminin=iatm
 					end if
-				end do
-				if (any(inarr==iminin).and.any(outarr==iminout)) then
-					ncontactvtx=ncontactvtx+1
-					if (icyc==2) then
-						surval1(ncontactvtx)=dsqrt(dist2minin) !d_i
-						surval2(ncontactvtx)=dsqrt(dist2minout) !d_e
-						ifcontactvtx(ivtx)=1 !This is a vertex in contact surface
-						vtxdnorm(ivtx)=surfana_norm(survtx(ivtx)%x,survtx(ivtx)%y,survtx(ivtx)%z,nHirBecatm,HirBecatm)
+				else !Find the closest atom that does not belong to Hirshfeld/Becke fragment to the surface point
+					if (dist2<dist2minout) then
+						dist2minout=dist2
+						iminout=iatm
 					end if
 				end if
 			end do
+			d_i(ivtx)=dsqrt(dist2minin)*b2a
+			d_e(ivtx)=dsqrt(dist2minout)*b2a
+            vtxdnorm(ivtx)=surfana_norm(survtx(ivtx)%x,survtx(ivtx)%y,survtx(ivtx)%z,nHirBecatm,HirBecatm)
+			if (any(inarr==iminin).and.any(outarr==iminout)) then !This point is on local contact surface
+				ncontactvtx=ncontactvtx+1
+                ifcontactvtx(ivtx)=1 !This is a point on local contact surface
+			end if
 		end do
         
+        !Calculate distribution density in fingerprint plot of every point on local contact surface
+        !For each point, calculate number of other points in specific radius and divide by circle area
+		radtest=0.03D0 !Compare radius in Angstrom
+        dens=0
+		do ivtx=1,nsurvtx
+			if (ifcontactvtx(ivtx)==0) cycle
+            di1=d_i(ivtx)
+            de1=d_e(ivtx)
+			do jvtx=1,nsurvtx
+				if (ifcontactvtx(jvtx)==0) cycle
+				di2=d_i(jvtx)
+				de2=d_e(jvtx)
+                dist=dsqrt((di1-di2)**2+(de1-de2)**2)
+                if (dist<radtest) dens(ivtx)=dens(ivtx)+1
+			end do
+        end do
+        dens=dens/(pi*radtest**2)
+        
+        !Loop over all center of surface facets, if a facet belongs to a contact surface, sum it area to arealoc
+        !Also, calculate Hirshfeld surface area here
         arealoc=0
         areaall=0D0
         do itri=1,nsurtri
 	        if (elimtri(itri)==1) cycle
+			surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
+			surtriy=sum(survtx(surtriang(itri)%idx(1:3))%y)/3D0
+			surtriz=sum(survtx(surtriang(itri)%idx(1:3))%z)/3D0
+			dist2minin=1D100
+			dist2minout=1D100
+			iminin=0
+			iminout=0
+			do iatm=1,ncenter
+				dist2=(a(iatm)%x-surtrix)**2+(a(iatm)%y-surtriy)**2+(a(iatm)%z-surtriz)**2
+				if (any(HirBecatm==iatm)) then !Find the closest atom in Hirshfeld/Becke fragment to the surface point
+					if (dist2<dist2minin) then
+						dist2minin=dist2
+						iminin=iatm
+					end if
+				else !Find the closest atom that does not belong to Hirshfeld/Becke fragment to the surface point
+					if (dist2<dist2minout) then
+						dist2minout=dist2
+						iminout=iatm
+					end if
+				end if
+			end do
+			if (any(inarr==iminin).and.any(outarr==iminout)) arealoc=arealoc+surtriang(itri)%area
 	        areaall=areaall+surtriang(itri)%area
-            if (all(ifcontactvtx(surtriang(itri)%idx(:))==1)) arealoc=arealoc+surtriang(itri)%area
         end do
         arealoc=arealoc*b2a*b2a
         areaall=areaall*b2a*b2a
+        
         write(*,*)
 		write(*,"(' The area of the local contact surface is',f10.3,' Angstrom^2')") arealoc
 		write(*,"(' The area of the total contact surface is',f10.3,' Angstrom^2')") areaall
 		write(*,"(' The local surface occupies',f8.2,'% of the total surface')") arealoc/areaall*100D0
-		!write(*,"(' The number of contact surface points is',i10)") ncontactvtx
-		!write(*,"(' The number of total Hirshfeld/Becke surface points is',i10)") ncurrvtx
-		!write(*,"(' They occupy',f10.3,'% of total Hirshfeld/Becke surface points')") dfloat(ncontactvtx)/ncurrvtx*100D0
-		
-! 		rhigh=max(maxval(surval1),maxval(surval2)) !Automatically determines the axis range
-! 		rlow=min(minval(surval1),minval(surval2))
-! 		range=rhigh-rlow
-! 		shift=range/10D0
-! 		rlow=(rlow-shift)*b2a !All length variables in this part are in Angstrom
-! 		rhigh=(rhigh+shift)*b2a
         write(*,*)
-		write(*,*) "Calculating the distribution of surface vertices..."
-		call xypt2densmat(surval1*b2a,surval2*b2a,ncontactvtx,mat,nval,nval,rlow,rhigh,rlow,rhigh)
-		spc=(rhigh-rlow)/(nval-1)
-		clrlow=1D-5 !This makes backgound black when default color transition method (rainbow) is used
-		clrhigh=maxval(mat)/2D0
+		write(*,"(' The number of points on the contact surface:        ',i10)") ncontactvtx
+		write(*,"(' The number of points on total Hirshfeld/Becke surface:',i10)") ncurrvtx
+		!write(*,"(' They occupy',f10.3,'% of total Hirshfeld/Becke surface points')") dfloat(ncontactvtx)/ncurrvtx*100D0
+        
 		do while(.true.)
 		    write(*,*)
-            write(*,*) "  ------------------------ Fingerprint map analysis ------------------------"
+            write(*,*) "------ Post process menu of fingerprint map and local contact analyses ------"
 			write(*,*) "-1 Return"
-			write(*,*) "0 Show fingerprint plot on screen"
-			write(*,*) "1 Save fingerprint plot to current folder"
-			write(*,*) "2 Export original data of fingerprint plot to finger.txt in current folder"
-			write(*,"(a,f10.3,a,f10.3)") " 3 Set color scale of fingerprint plot, current: from",clrlow," to",clrhigh
-			write(*,"(a,f10.3,a,f10.3)") " 4 Set the range of axes, current: from",rlow," to",rhigh
-			write(*,*) "5 Export the points in fingerprint plot to finger.pdb in current folder"
-            write(*,"(a,a)") " 6 Set color transition, current: ",trim(clrtransname(iclrtrans))
-			write(*,*) "10 Draw scatter map of surface points between d_i and d_e"
-			write(*,*) "11 Export d_i and d_e of surface points to di_de.txt in current folder"
+			write(*,*) "0 Show fingerprint plot (quality is much poorer than that saved by option 1)"
+			write(*,*) "1 Save fingerprint plot to an image file in current folder"
+			write(*,"(a,i3)") " 2 Set size of points, current:",ptsize
+			write(*,"(a,f8.3,a,f8.3,a,f5.2,a)") " 3 Set range of axes, current: from",rlow," to",rhigh,', with step',rstep,' Angstrom'
+			write(*,*) "4 Export surface points to .pdb file in current folder"
+			write(*,*) "5 Export d_i and d_e of surface points to .txt file in current folder"
 			read(*,*) isel3
+            
 			if (isel3==-1) then
-				return
+				exit
 			else if (isel3==0.or.isel3==1) then
-                !Making grid with value higher than upper color limit will not be rendered as white when default color transition is used
-                mattmp=mat
-                where(iclrtrans==1.and.mattmp>clrhigh) mattmp=clrhigh-1D-10
-				if (isel3==1) isavepic=1
-				write(*,*) "Note: X and Y axes (in Angstrom) correspond to d_i and d_e, respectively"
-				call drawmatcolor(mattmp,nval,nval,rlow,rhigh,rlow,rhigh,clrlow,clrhigh,0.2D0,0.2D0,5,2)
-				isavepic=0
-				if (isel3==1) write(*,*) "The graph has been saved to current folder with DISLIN prefix"
-			else if (isel3==2) then
-				open(10,file="finger.txt",status="replace")
-				do i=1,nval
-					xval=xmin+(i-1)*spc
-					do j=1,nval
-						yval=ymin+(j-1)*spc !Already in Angstrom
-						write(10,"(2f11.5,f12.3)") xval,yval,mat(i,j)
-					end do
-				end do
-				close(10)
-				write(*,"(a)") " Done! The distribution has been exported to finger.txt in current folder. &
-				The first and second columns (in Angstrom) correspond to d_i and d_e, respectively"
+				call SCRMOD('REVERSE')
+				CALL PAGE(3000,3000)
+				if (isel3==0) then
+					call METAFL('xwin')
+					call window(100,100,800,800)
+				else if (isel3==1) then
+					call METAFL("pdf")
+					call winsiz(graph1Dwidth,graph1Dwidth) !Ensure 1:1
+				end if
+				CALL setxid(0,'NONE')
+				CALL DISINI
+				if (isel3==0) call WINTIT("Click right mouse button to continue")
+				call ERRMOD("ALL","OFF")
+				call hwfont
+				call center
+                call AXSLEN(2400,2400)
+				CALL HNAME(60) !Axis name size
+				CALL height(65) !Axis tick size
+				call TEXMOD("ON")
+				CALL NAME('$d{_i}$ (Angstrom)','X')
+				CALL NAME('$d{_e}$ (Angstrom)','Y')
+				CALL LABDIG(1,"X")
+				CALL LABDIG(1,"Y")
+				CALL NAMDIS(70,"X")
+				CALL NAMDIS(85,"Y")
+                CALL TICKS(1,"XYZ")
+				CALL GRAF(rlow,rhigh,rlow,rstep,rlow,rhigh,rlow,rstep)
+                call setRGB(0.8D0,0.8D0,0.8D0) !Light gray
+                CALL GRID(1,1)
+				CALL INCMRK(-1) !Plot every point and do not connect them by line
+				CALL MARKER(21) !Symbol of point
+				CALL HSYMBL(ptsize) !Size of point
+                !Plotting the surface points not on current contact surface
+                nnow=ncurrvtx-ncontactvtx
+                allocate(xarr(nnow),yarr(nnow))
+                itmp=0
+				do ivtx=1,nsurvtx
+					if (elimvtx(ivtx)==1) cycle
+                    if (ifcontactvtx(ivtx)==0) then
+						itmp=itmp+1
+						xarr(itmp)=d_i(ivtx)
+						yarr(itmp)=d_e(ivtx)
+                    end if
+                end do
+				call curve(xarr,yarr,nnow)
+                deallocate(xarr,yarr)
+                !Plot points on local contact surface
+                densmax=maxval(dens)
+                do ivtx=1,nsurvtx
+					if (ifcontactvtx(ivtx)==1) then
+                        call percent2RGB(1,dens(ivtx)/densmax,Rval,Gval,Bval)
+                        call setRGB(Rval,Gval,Bval)
+						CALL MARKER(21)
+						call curve(d_i(ivtx),d_e(ivtx),1)
+                    end if
+                end do
+                !Finish
+				call color("WHITE") !Restore to default (black)
+				CALL DISFIN
+				if (isel3==1) write(*,"(a)") " The image has been saved to a pdf file in current folder with DISLIN prefix"
+            else if (isel3==2) then
+				write(*,*) "Input size of points, e.g. 10"
+				read(*,*) ptsize
 			else if (isel3==3) then
-				write(*,*) "Input lower and upper limit of color scale, e.g. 0.01,6.5"
-				read(*,*) clrlow,clrhigh
-                if (clrlow==0D0) clrlow=1D-5 !Ensure the vacant region is black
+				write(*,*) "Input lower, upper limits of axis in Angstrom, e.g. 0.4,2.8"
+                read(*,*) rlow,rhigh
+                write(*,*) "Input step size, e.g. 0.2"
+                read(*,*) rstep
 			else if (isel3==4) then
-				write(*,*) "Input lower and upper limit of the axes (in Angstrom), e.g. 0.5,2.8"
-				read(*,*) rlow,rhigh
-		        call xypt2densmat(surval1*b2a,surval2*b2a,ncontactvtx,mat,nval,nval,rlow,rhigh,rlow,rhigh)
-		        spc=(rhigh-rlow)/(nval-1)
-			else if (isel3==5) then
 				open(10,file="finger.pdb",status="replace")
-				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' contact surface vertices')") ncontactvtx
+				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' points on the surface')") ncontactvtx
 				do ivtx=1,nsurvtx
 					if (ifcontactvtx(ivtx)==0) cycle
+                    idx=ivtx
+                    if (ivtx>99999) idx=99999
 					write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
-					"HETATM",ivtx,' '//"C "//' ',"MOL",'A',1,survtx(ivtx)%x*b2a,survtx(ivtx)%y*b2a,survtx(ivtx)%z*b2a,1.0,vtxdnorm(ivtx),"C "
+					"HETATM",idx,' '//"C "//' ',"MOL",'A',1,survtx(ivtx)%x*b2a,survtx(ivtx)%y*b2a,survtx(ivtx)%z*b2a,1.0,vtxdnorm(ivtx),"C "
 				end do
 				write(10,"('END')")
 				close(10)
-				write(*,"(a)") " The vertices in contact surface have been outputted to finger.pdb in current folder"
-			else if (isel3==6) then
-                call selcolortable
-                if (clrlow==1D-5) clrlow=0
-			else if (isel3==10) then !Scatter map between d_i and d_e
-				isavepic=1
-				call drawscatter(surval1*b2a,surval2*b2a,ncontactvtx,rlow,rhigh,rlow,rhigh,2)
-				isavepic=0
-				write(*,"(a)") " The graph has been saved to current folder with DISLIN prefix. X and Y axes correspond to d_i and d_e (in Angstrom), respectively"
-			else if (isel3==11) then
+				write(*,"(a)") " The points on the current contact surface have been outputted to finger.pdb in current folder"
+				open(10,file="finger_all.pdb",status="replace")
+				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' points on the surface')") ncurrvtx
+				do ivtx=1,nsurvtx
+					if (elimvtx(ivtx)==1) cycle
+                    idx=ivtx
+                    if (ivtx>99999) idx=99999
+					write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
+					"HETATM",idx,' '//"C "//' ',"MOL",'A',1,survtx(ivtx)%x*b2a,survtx(ivtx)%y*b2a,survtx(ivtx)%z*b2a,1.0,vtxdnorm(ivtx),"C "
+				end do
+				write(10,"('END')")
+				close(10)
+				write(*,"(a)") " The points on the entire Hirshfeld/Becke surface have been outputted to finger_all.pdb in current folder"
+                write(*,*) "Beta factor in these files corresponds to d_norm in Angstrom"
+			else if (isel3==5) then
 				open(10,file="di_de.txt",status="replace")
-				do ivtx=1,ncontactvtx
-					write(10,"(2f12.6)") surval1(ivtx)*b2a,surval2(ivtx)*b2a
+				do ivtx=1,nsurvtx
+					if (ifcontactvtx(ivtx)==0) cycle
+					write(10,"(2f12.6)") d_i(ivtx),d_e(ivtx)
 				end do
 				close(10)
-				write(*,"(a)") " Done! The data has been exported to di_de.txt in current folder. &
-				The first and second columns (in Angstrom) correspond to d_i and d_e, respectively"
+				write(*,"(a)") " d_i and d_e of the points on the local contact surface been exported to di_de.txt in current folder"
+				open(10,file="di_de_all.txt",status="replace")
+				do ivtx=1,nsurvtx
+					if (elimvtx(ivtx)==1) cycle
+					write(10,"(2f12.6)") d_i(ivtx),d_e(ivtx)
+				end do
+				close(10)
+				write(*,"(a)") " d_i and d_e of the points on the entire Hirshfeld/Becke surface been exported to di_de_all.txt in current folder"
+                write(*,*) "Columns 1 and 2 in these files are d_i and d_e, respectively"
 			end if
 		end do
 	end if

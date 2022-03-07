@@ -507,6 +507,7 @@ if (ifPBC>0) then
     dx=gridv1(1) !Only for compatibility with old codes
     dy=gridv2(2)
     dz=gridv3(3)
+    write(*,"(a,3i5)") " Number of grids in the three directions:",nx,ny,nz
     call genSbas_PBC
 end if
 end subroutine
@@ -546,6 +547,7 @@ real*8 Sbas_tmp(nbasis,nbasis),basval(nmo)
 !end do
 !call matCar2curr(Sbas_PBC_cart,Sbas_PBC)
 
+!After using following code, value of orbitals will correspond to value of basis functions
 if (.not.allocated(CObasa_org)) allocate(CObasa_org(nbasis,nbasis))
 if (.not.allocated(CO_org)) allocate(CO_org(nmo,nprims))
 CObasa_org=CObasa
@@ -555,12 +557,15 @@ do ibas=1,nbasis
 end do
 call CObas2CO(1)
 
+!Generate unique GTFs, for faster evaluation in orbderv
+call gen_GTFuniq(0)
+
 call walltime(iwalltime1)
 Sbas_PBC=0
 ifinish=0
 if (expcutoff_PBC<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff_PBC
 call showprog(0,nz)
-!$OMP PARALLEL SHARED(Sbas_PBC,ifinish) PRIVATE(Sbas_tmp,i,j,k,tmpx,tmpy,tmpz,basval,ibas,jbas) NUM_THREADS(nthreads)
+!$OMP PARALLEL SHARED(Sbas_PBC,ifinish) PRIVATE(Sbas_tmp,i,j,k,tmpx,tmpy,tmpz,basval,ibas,jbas,basi) NUM_THREADS(nthreads)
 Sbas_tmp=0
 !$OMP do schedule(dynamic)
 do k=1,nz
@@ -568,10 +573,11 @@ do k=1,nz
         do i=1,nx
             call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
             call orbderv_PBC(1,1,nbasis,tmpx,tmpy,tmpz,basval)
-            
+            !Cycle rows, and fill lower-triangular part
             do ibas=1,nbasis
+                basi=basval(ibas)
 	            do jbas=ibas,nbasis
-                    Sbas_tmp(ibas,jbas)=Sbas_tmp(ibas,jbas)+basval(ibas)*basval(jbas)
+                    Sbas_tmp(jbas,ibas)=Sbas_tmp(jbas,ibas)+basval(jbas)*basi
 	            end do
             end do
         end do
@@ -584,8 +590,9 @@ end do
 Sbas_PBC=Sbas_PBC+Sbas_tmp
 !$OMP END CRITICAL
 !$OMP END PARALLEL
-do ibas=1,nbasis
-	do jbas=ibas+1,nbasis
+!Fill upper-triangular part
+do ibas=2,nbasis
+	do jbas=1,ibas-1
         Sbas_PBC(jbas,ibas)=Sbas_PBC(ibas,jbas)
 	end do
 end do
@@ -593,11 +600,14 @@ call calc_dvol(dvol)
 Sbas_PBC=Sbas_PBC*dvol
 Sbas=Sbas_PBC !Usually Sbas_PBC is not directly involved in practical analysis
 
+call del_GTFuniq !Destory unique GTF informtaion
+
 CObasa=CObasa_org
 CO=CO_org
 deallocate(CObasa_org,CO_org)
 
-write(*,"(' Quality test, Tr(P*S):',f14.8,'   (The larger the deviation to integer, the larger the integral error of overlap matrix)')") sum(Ptot*Sbas)
+write(*,"(' Quality test, Tr(P*S):',f14.8,' (In principle it should be equal to actual number of electrons. &
+The larger the deviation to integer, the larger the integration error of current overlap matrix (S))')") sum(Ptot*Sbas)
 call walltime(iwalltime2)
 write(*,"(' Generation of overlap matrix took up',i8,' seconds wall clock time')") iwalltime2-iwalltime1
 !open(10,file="ovlpmat.txt",status="replace")
@@ -642,6 +652,7 @@ end subroutine
 !implicit real*8 (a-h,o-z)
 !real*8 x,y,z,basval(nbasis),GTFvalarr(nprims)
 !
+!lastcen=-1
 !GTFvalarr=0D0
 !do j=1,nprims
 !	ix=type2ix(b(j)%type)

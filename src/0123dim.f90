@@ -229,7 +229,7 @@ else !Common case
 		    alive=.false.
 		    if (cubegenpath/=" ".and.ifiletype==1.and.isel==12) then
 			    inquire(file=cubegenpath,exist=alive)
-			    if (alive==.false.) then
+			    if (.not.alive) then
 				    write(*,"(a)") " Note: Albeit current file type is fch/fchk/chk and ""cubegenpath"" parameter in settings.ini has been defined, &
 				    the cubegen cannot be found, therefore electrostatic potential will still be calculated using internal code of Multiwfn"
 			    end if
@@ -274,8 +274,8 @@ else !Common case
 		    else !Normal case, use internal code to calculate data
                 nthreads_old=nthreads
                 !Use fast ESP evaluation function for almost all functions that rely on ESP
-                if (ifdoESP(isel).and.iESPcode==2) then
-                    call doinitlibreta
+                if (ifdoESP(isel).and.(iESPcode==2.or.iESPcode==3)) then
+                    call doinitlibreta(1)
                     if (isys==1.and.nESPthreads>10) nthreads=10
                 end if
                 ifinish=0
@@ -642,7 +642,7 @@ end if
 write(*,*) "Hint: You can press ENTER button directly to use recommended value"
 read(*,"(a)") c200tmp
 
-if (c200tmp==' ') then !Press enter directly
+if (c200tmp==' ') then !Pressing enter button directly
 	if (idrawtype==1.or.idrawtype==2.or.idrawtype==6) then
 		if (ifdoESP(ifuncsel)) then
 			ngridnum1=100
@@ -1057,6 +1057,7 @@ if (iplaneextdata==1) then !Export plane data to external file, and then load da
 	
 else !Start calculation of plane data
 	if (ifuncsel/=4) call delvirorb(1) !Delete high-lying virtual orbitals for faster calculation, but don't do this when analyzing MO
+	call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
 	write(*,*) "Calculating plane data, please wait..."	
 	if (ifuncsel/=12) then
         if (ifPBC>0) then
@@ -1107,8 +1108,8 @@ else !Start calculation of plane data
 	else !Common case
         nthreads_old=nthreads
         !For some ESP related functions, initialize LIBRETA so that fast code will be used
-        if (ifdoESP(ifuncsel).and.iESPcode==2) then
-            call doinitlibreta
+        if (ifdoESP(ifuncsel).and.(iESPcode==2.or.iESPcode==3)) then
+            call doinitlibreta(1)
             if (isys==1.and.nthreads>10) nthreads=10
         end if
 	    !$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planemat,d1add,d1min,d2add,d2min) schedule(dynamic) NUM_THREADS(nthreads)
@@ -1188,6 +1189,7 @@ else !Start calculation of plane data
 			call readinfile(filename,1)
             call loadPBCinfo
 			if (ifuncsel/=4) call delvirorb(0)
+			call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
 			!Input the MO index for current file. Since the MO index may be not the same as the first loaded one
 			if (ifuncsel==4) then
 				write(*,"(' Input index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
@@ -1213,6 +1215,7 @@ else !Start calculation of plane data
 		gradd2=(d2add-d2min)/2/diff
 	end if
 	
+	call del_GTFuniq !Destory unique GTF informtaion
     call delvirorb_back(1) !delvirorb may have taken effect, now restore to previous wavefunction
 	call walltime(iwalltime2)
 	write(*,"(/,' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
@@ -2147,7 +2150,6 @@ else !Calculate grid data
 	else if (ifuncsel==120) then !Calculate and output three components of Steric force to plain text file
 		open(20,file="stericforce.txt",status="replace")
 		do k=1,nz
-			call showprog(k,nz)
 			do j=1,ny
 				do i=1,nx
                     call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
@@ -2155,6 +2157,7 @@ else !Calculate grid data
 					write(20,"(7f12.6)") tmpx*b2a,tmpy*b2a,tmpz*b2a,-tmpvec,dsqrt(sum(tmpvec**2))
 				end do
 			end do
+			call showprog(k,nz)
 		end do
 		close(20)
 		write(*,*) "Done, the results have been outputted to stericforce.txt in current folder"
@@ -2356,12 +2359,14 @@ else !Calculate grid data
             if (iaddprefix==1) call addprefix(c200tmp)
 			open(10,file=c200tmp,status="replace")
 			write(*,"(a)") " Outputting "//trim(c200tmp)//" in current folder..."
-			do i=1,nx
+			do k=1,nz
 				do j=1,ny
-					do k=1,nz
-						write(10,"(3f12.6,2x,1PE18.8E3)") (orgx+(i-1)*dx)*b2a,(orgy+(j-1)*dy)*b2a,(orgz+(k-1)*dz)*b2a,cubmat(i,j,k)
+					do i=1,nx
+						call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+						write(10,"(3f12.6,2x,1PE18.8E3)") tmpx*b2a,tmpy*b2a,tmpz*b2a,cubmat(i,j,k)
 					end do
 				end do
+                call showprog(k,nz)
 			end do
 			close(10)
 			write(*,"(a)") " Output finished, column 1/2/3/4 correspond to X/Y/Z/value. The coordinate unit is Angstrom, the unit of the calculated function is a.u."
@@ -2525,7 +2530,7 @@ do while(.true.)
 		do while(.true.)
 			read(*,"(a)") extctrsetting
 			inquire(file=extctrsetting,exist=alive)
-			if (alive==.true.) exit
+			if (alive) exit
 			write(*,*) "File not found, input again"
 		end do
 		open(10,file=extctrsetting,status="old")

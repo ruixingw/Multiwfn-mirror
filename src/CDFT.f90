@@ -6,7 +6,7 @@ use function
 use util
 implicit real*8 (a-h,o-z)
 character keywords*200,c200tmp*200,inpname*200,selectyn,c3*3,c3p*3,c3q*3
-character*200 wfnfile(4)
+character(len=200) wfnfile(4)
 integer charge(4),spin(4) !Charge and spin multiplicity for N,N+1,N-1,N-2 states
 integer :: iwcubic=0,iQCprog=1
 integer :: np=1,nq=1 !Degenerate of LUMO, HOMO. Normal case is 1,1, for (quasi)-degenerate case they are p,q
@@ -112,11 +112,11 @@ do while(.true.)
     else if (isel==2.or.isel==3) then !Check wavefunction files
         wfnfile(1)="N.wfn"
         inquire(file=wfnfile(1),exist=alive)
-        if (alive==.false.) then
+        if (.not.alive) then
             write(*,"(/,a)") " Unable to find N.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N electrons state, e.g. /sob/N.fch"
             read(*,"(a)") c200tmp
             inquire(file=c200tmp,exist=alive)
-            if (alive==.false.) then
+            if (.not.alive) then
                 write(*,*) "Error: Unable to find this file!"
                 cycle
             end if
@@ -126,11 +126,11 @@ do while(.true.)
         end if
         wfnfile(2)=c3p//".wfn"
         inquire(file=wfnfile(2),exist=alive)
-        if (alive==.false.) then
+        if (.not.alive) then
             write(*,"(/,a)") " Unable to find "//c3p//".wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of "//c3p//" electrons state, e.g. /sob/"//c3p//".fch"
             read(*,"(a)") c200tmp
             inquire(file=c200tmp,exist=alive)
-            if (alive==.false.) then
+            if (.not.alive) then
                 write(*,*) "Error: Unable to find this file!"
                 cycle
             end if
@@ -140,11 +140,11 @@ do while(.true.)
         end if
         wfnfile(3)=c3q//".wfn"
         inquire(file=wfnfile(3),exist=alive)
-        if (alive==.false.) then
+        if (.not.alive) then
             write(*,"(/,a)") " Unable to find "//c3q//".wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of "//c3q//" electrons state, e.g. /sob/"//c3q//".fch"
             read(*,"(a)") c200tmp
             inquire(file=c200tmp,exist=alive)
-            if (alive==.false.) then
+            if (.not.alive) then
                 write(*,*) "Error: Unable to find this file!"
                 cycle
             end if
@@ -155,11 +155,11 @@ do while(.true.)
         if (iwcubic==1) then
             wfnfile(4)="N-2.wfn"
             inquire(file=wfnfile(4),exist=alive)
-            if (alive==.false.) then
+            if (.not.alive) then
                 write(*,"(/,a)") " Unable to find N-2.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N-2 electrons state, e.g. /sob/N-2.fch"
                 read(*,"(a)") c200tmp
                 inquire(file=c200tmp,exist=alive)
-                if (alive==.false.) then
+                if (.not.alive) then
                     write(*,*) "Error: Unable to find this file!"
                     cycle
                 end if
@@ -320,7 +320,7 @@ do while(.true.)
                 automatically invoking Gaussian to run the input files is skipped"
                 write(*,*)
             end if
-            if (alive==.false..or.selectyn=='n') then
+            if ((.not.alive).or.selectyn=='n') then
 				write(*,"(a)") " Now please manually run the input files by Gaussian, and then put the generated .wfn files to current folder, so that &
 				options 2 and 3 can perform analyses based on them"
             end if
@@ -446,7 +446,7 @@ do while(.true.)
                 automatically invoking ORCA to run the input files is skipped"
                 write(*,*)
             end if
-            if (alive==.false..or.selectyn=='n') then
+            if ((.not.alive).or.selectyn=='n') then
 				write(*,"(a)") " Now please manually run the input files by ORCA, and then put the generated .wfn files to current folder, so that &
 				options 2 and 3 can perform analyses based on them"
             end if

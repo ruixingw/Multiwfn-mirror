@@ -10,7 +10,7 @@ contains
 
 !!--------- Select input file by GUI
 subroutine selfilegui
-CALL dwgfil("Choose an input file (.wfn/.wfx/.fch/.molden/.31/.chg/.pdb/.xyz/.mol/.cub, etc.)",filename,"*")
+CALL dwgfil("Choose an input file (.wfn/wfx/fch/molden/mwfn/chg/pdb/xyz/mol/mol2/cif/cub, etc.)",filename,"*")
 end subroutine
 
 !!--------- A GUI for drawing molecular structure and orbital isosurface
@@ -85,6 +85,7 @@ call wgapp(idisisosurquality,"Perfect quality (1500k points)",idisisosurperfect)
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set extension distance",idisextdist)
 CALL wgapp(idisotherset,"Make box size consistent to cell",idisboxeqcell)
@@ -111,6 +112,7 @@ CALL wgapp(idistools,"Batch plotting orbitals",idisbatchplot)
 CALL wgapp(idistools,"Select fragment",idisselfrag)
 CALL wgapp(idistools,"Get atom indices of given element",idisgetatmidx_by_ele)
 CALL wgapp(idistools,"Print XYZ coordinates in Angstrom",idisshowcoordA)
+CALL wgapp(idistools,"Print XYZ coordinates in Bohr",idisshowcoordB)
 CALL wgapp(idistools,"Print fractional coordinates",idisshowfractcoord)
 if (ifPBC==0) call swgatt(idisshowfractcoord,"INACTIVE","STATUS")
 CALL wgapp(idistools,"Export all internal coordinates",idisexpintcoord)
@@ -215,6 +217,7 @@ call SWGCBK(idisisosurperfect,setisosurnumpt)
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
 call SWGCBK(idisextdist,setextdist)
+call SWGCBK(idisortho,setorthoview)
 call SWGCBK(idisboxeqcell,setboxeqcell)
 call SWGCBK(idissetorbisovalue,setorbisovalue)
 call SWGCBK(idissetlight,setlight)
@@ -235,6 +238,7 @@ call SWGCBK(idisbatchplot,batchplot)
 call SWGCBK(idisselfrag,GUIselfrag)
 call SWGCBK(idisgetatmidx_by_ele,getatmidx_by_ele)
 call SWGCBK(idisshowcoordA,showcoordA)
+call SWGCBK(idisshowcoordA,showcoordB)
 call SWGCBK(idisshowfractcoord,showfractcoord)
 call SWGCBK(idisexpintcoord,export_intcoord)
 call SWGCBK(idisreturn,GUIreturn)
@@ -277,7 +281,7 @@ end subroutine
 subroutine drawplanegui(init1,end1,init2,end2,init3,end3,idrawtype)
 real*8 init1,end1,init2,end2,init3,end3
 integer,intent (in) :: idrawtype
-character*20 tmpstring
+character tmpstring*20
 GUI_mode=2
 dp_init1=init1
 dp_end1=end1
@@ -347,7 +351,7 @@ end subroutine
 subroutine drawisosurgui(iallowsetstyle)
 use defvar
 integer iallowsetstyle
-character*20 temp
+character temp*20
 if (ifgridortho()==0) then
     write(*,"(/,a)") " Warning: The current grid is not orthogonal, in this case the isosurfaces cannot be normally shown in the GUI window of Multiwfn. &
     However, you can export grid data and visualize its isosurface via other softwares such as VMD and VESTA"
@@ -396,6 +400,7 @@ end if
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set lighting",idissetlight)
 CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
@@ -479,6 +484,7 @@ else if (iallowsetstyle==2) then
 end if
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
 call SWGCBK(idissetlight,setlight)
 call SWGCBK(idisatmlabtyp,setatmlabtyp)
 call SWGCBK(idisatmlabclr,setatmlabclr)
@@ -541,9 +547,6 @@ CALL WGINI('HORI',idiswindow)
 call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
 call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
 !Menu bar
-CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
-CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
-CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
 CALL WGPOP(idiswindow,"CP labelling settings",idissetlabclr)
 CALL wgapp(idissetlabclr,"Set atomic label color",idisatmlabclr)
 CALL wgapp(idissetlabclr,"Set CP label color",idisCPlabclr)
@@ -551,6 +554,7 @@ CALL wgapp(idissetlabclr,"Labelling only one CP",idisCPlabone)
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
 CALL wgapp(idisotherset,"Set atomic label color",idisatmlabclr)
@@ -601,6 +605,7 @@ call SWGSTP(0.05D0)
 call wgscl(idisright,"Ratio of CP size",0.0D0,2D0,ratioCPsphere,2,idisCPsize)
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
 call SWGCBK(idisatmlabclr,setatmlabclr)
 call SWGCBK(idisCPlabclr,setCPlabclr)
 call SWGCBK(idisCPlabone,setCPlabone)
@@ -669,6 +674,7 @@ CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idisright,"VERT",idisOK)
 call wgpbut(idisOK,"RETURN",idisreturn)
@@ -696,6 +702,7 @@ call SWGSTP(2.0D0)
 call wgscl(idisright,"Size of labels",0.0D0,80.0D0,textheigh,0,idislabelsize)
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -756,6 +763,7 @@ CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGPOP(idiswindow,"Set basin drawing method",idissetdraw)
 if (allocated(b)) CALL wgapp(idissetdraw,"Entire basin",idisshowbasinall)
 if (allocated(b)) CALL wgapp(idissetdraw,"rho>0.001 region only",idisshowbasinvdw)
@@ -803,6 +811,7 @@ end if
 !Widget response
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -868,6 +877,7 @@ CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idiswindow,"VERT",idisright2) !Provide another frame for linux version
 CALL WGBAS(idisright,"VERT",idisOK)
@@ -904,6 +914,7 @@ call SWGLIS(idisdomainplot,idrawdomainidx+1)
 !Widget response
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -930,7 +941,7 @@ end subroutine
 !!--------- A GUI for setting box of grid data to be calculated
 subroutine setboxGUI
 use defvar
-character*12 ngridstr
+character ngridstr*12
 GUI_mode=7 !Use GUI_mode setting in dislin response routine
 ishowdatarange=1 !Draw box range
 ishowatmlab=0 !Don't show atomic labels
@@ -950,6 +961,7 @@ call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
 CALL WGBAS(idiswindow,"VERT",idisright)
@@ -1026,6 +1038,7 @@ call WGLAB(idisright,ngridstr,idisnpt)
 
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
 if (imodlayout<=1) call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -1072,6 +1085,7 @@ call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
 CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
 CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
 CALL WGBAS(idiswindow,"VERT",idisright)
@@ -1095,6 +1109,7 @@ call wgscl(idisright,"Size of labels",0.0D0,80.0D0,textheigh,0,idislabelsize)
 
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -1132,7 +1147,7 @@ end subroutine
 
 subroutine rotleft(id)
 integer,intent (in) :: id
-character*20 tmpstr
+character tmpstr*20
 XVU=XVU+10
 if (GUI_mode/=2) then
 	call drawmol
@@ -1145,7 +1160,7 @@ end subroutine
 
 subroutine rotright(id)
 integer,intent (in) :: id
-character*20 tmpstr
+character tmpstr*20
 XVU=XVU-10
 if (GUI_mode/=2) then
 	call drawmol
@@ -1158,7 +1173,7 @@ end subroutine
 
 subroutine rotup(id)
 integer,intent (in) :: id
-character*20 tmpstr
+character tmpstr*20
 if (YVU<90D0) YVU=YVU+10 !I found value range of YVU is -90 to 90, the viewpoint outside this range is equivalent to that within this range
 !YVU=YVU+10
 !write(*,*) YVU
@@ -1173,7 +1188,7 @@ end subroutine
 
 subroutine rotdown(id)
 integer,intent (in) :: id
-character*20 tmpstr
+character tmpstr*20
 if (YVU>-90D0) YVU=YVU-10
 if (GUI_mode/=2) then
 	call drawmol
@@ -1393,7 +1408,7 @@ end subroutine
 !The select orbital is recorded as global variable "iorbvis"
 subroutine showorbsellist(id)
 integer,intent (in) :: id
-character*10 tmpstr
+character tmpstr*10
 call GWGLIS(id,isel)
 iorbvis=isel-1
 if (wfntype==0.or.wfntype==2.or.wfntype==3) then !R or RO case
@@ -1415,7 +1430,7 @@ end subroutine
 !The select orbital is recorded as global variable "iorbvis"
 subroutine showorbselbox(id)
 integer,intent (in) :: id
-character*10 tmpstr
+character tmpstr*10
 call GWGTXT(id,tmpstr)
 if (index(tmpstr,'h')==0.and.index(tmpstr,'l')==0) then 
 	read(tmpstr,*,iostat=ierror) iorbvis
@@ -1473,8 +1488,8 @@ use function
 use defvar
 integer id,iorb
 real*8 molxlen,molylen,molzlen
-character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
-character*6 :: symstr
+character(len=3) :: orbtype(0:2)=(/ "A+B"," A "," B " /)
+character :: symstr*6
 !Set grid for calculating cube data
 if (aug3D_main0>=0) then !Normal case 
     molxlen=(maxval(a%x)-minval(a%x))+2*aug3D_main0
@@ -1536,11 +1551,12 @@ else
 	if (isosursec==0) then !Save cube data for isosurface 1 to cubmat
 		if (allocated(cubmat)) deallocate(cubmat)
 		allocate(cubmat(nx,ny,nz))
-		!$OMP parallel do PRIVATE(i,j,k) SHARED(cubmat) NUM_THREADS(nthreads)
+		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat) NUM_THREADS(nthreads)
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
-					cubmat(i,j,k)=fmo(orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz,iorb)
+					call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					cubmat(i,j,k)=fmo(tmpx,tmpy,tmpz,iorb)
 				end do
 			end do
 		end do
@@ -1549,11 +1565,12 @@ else
 	else if (isosursec==1) then !Save cube data for isosurface 2 to cubmattmp
 		if (allocated(cubmattmp)) deallocate(cubmattmp)
 		allocate(cubmattmp(nx,ny,nz))
-		!$OMP parallel do PRIVATE(i,j,k) SHARED(cubmat) NUM_THREADS(nthreads)
+		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat) NUM_THREADS(nthreads)
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
-					cubmattmp(i,j,k)=fmo(orgx+(i-1)*dx,orgy+(j-1)*dy,orgz+(k-1)*dz,iorb)
+					call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					cubmattmp(i,j,k)=fmo(tmpx,tmpy,tmpz,iorb)
 				end do
 			end do
 		end do
@@ -1634,7 +1651,7 @@ end subroutine
 
 subroutine setisosurscl(id) !Drag scale bar, change sur_value & text
 integer,intent (in) :: id
-character*20 temp
+character temp*20
 call GWGSCL(id,sur_value)
 if (GUI_mode==3) then
 	write(temp,"(f8.3)") sur_value
@@ -1699,6 +1716,16 @@ if (ishowhydrogen==1) then
     ishowhydrogen=0
 else
     ishowhydrogen=1
+end if
+call drawmol
+end subroutine
+
+subroutine setorthoview(id)
+integer,intent (in) :: id
+if (iorthoview==1) then
+    iorthoview=0
+else
+    iorthoview=1
 end if
 call drawmol
 end subroutine
@@ -2376,7 +2403,7 @@ end subroutine
 subroutine setboxspc(id)
 use defvar
 integer,intent (in) :: id
-character*12 ngridstr
+character ngridstr*12
 call GWGSCL(id,grdspc)
 dx=grdspc
 dy=grdspc
@@ -2395,7 +2422,7 @@ end subroutine
 !------- Calculate box setting (orgx,orgy,orgz,endx,endy,endz,nx,ny,nz) according to (boxlenX,boxlenY,boxlenZ,boxcenX,boxcenY,boxcenZ,dx,dy,dz)
 subroutine updatebox
 use defvar
-character*12 ngridstr
+character ngridstr*12
 orgx=boxcenX-boxlenX/2
 endx=boxcenX+boxlenX/2
 orgy=boxcenY-boxlenY/2
@@ -2525,7 +2552,6 @@ end subroutine
 
 
 
-
 !!!-------- Select a whole fragment in GUI by inputting an atom index
 subroutine GUIselfrag(id)
 use defvar
@@ -2624,6 +2650,21 @@ end do
 end subroutine
 
 
+
+!!!-------- Show atomic coordinates in Bohr
+subroutine showcoordB(id)
+use defvar
+integer,intent (in) :: id
+integer iatm
+write(*,*)
+do iatm=1,ncenter
+	write(*,"(i5,'(',a2,')','  Charge:',f9.5,'  x,y,z(Bohr):',3f11.6)") &
+    iatm,a(iatm)%name,a(iatm)%charge,a(iatm)%x,a(iatm)%y,a(iatm)%z
+end do
+end subroutine
+
+
+
 !!!-------- Show fractional coordinates
 subroutine showfractcoord(id)
 use defvar
@@ -2642,6 +2683,7 @@ end do
 end subroutine
 
 
+
 !!!-------- Export all internal coordinates
 subroutine export_intcoord(id)
 integer,intent (in) :: id
@@ -2649,6 +2691,7 @@ call showgeomparam("int_coord.txt")
 call swgtit(" ")
 call dwgmsg("All internal coordinates have been written to int_coord.txt in current folder")
 end subroutine
+
 
 
 !!!-------- Plot a batch of orbitals
@@ -2677,7 +2720,6 @@ end subroutine
 
 
 
-
 !!!-------- Set highlighting for a batch of atoms
 subroutine sethighlightatom(id)
 use defvar
@@ -2703,7 +2745,7 @@ end subroutine
 subroutine writeGUIsetting(id)
 use defvar
 integer,intent (in) :: id
-character*200 c200tmp
+character c200tmp*200
 call getenv("Multiwfnpath",c200tmp)
 if (c200tmp/=" ") then
     c200tmp=trim(c200tmp)//"/GUIsettings.ini"
@@ -2765,6 +2807,7 @@ write(10,*) "clrGcub2oppomeshpt",clrGcub2oppomeshpt
 write(10,*) "clrBcub2oppomeshpt",clrBcub2oppomeshpt
 close(10)
 end subroutine
+
 
 
 !!!-------- Load GUI setting from GUIsettings.ini, currently only invoked by main function 0
@@ -2859,7 +2902,7 @@ end subroutine
 subroutine write_isosur_setting(id)
 use defvar
 integer,intent (in) :: id
-character*200 c200tmp
+character c200tmp*200
 call getenv("Multiwfnpath",c200tmp)
 if (c200tmp/=" ") then
     c200tmp=trim(c200tmp)//"/isosur.ini"
@@ -2909,6 +2952,7 @@ write(10,*) "clrGcub1oppomeshpt",clrGcub1oppomeshpt
 write(10,*) "clrBcub1oppomeshpt",clrBcub1oppomeshpt
 close(10)
 end subroutine
+
 
 
 !!!-------- Load isosurface GUI setting from isosur.ini. Currently only invoked by GUI_mode=3

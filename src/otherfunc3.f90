@@ -363,7 +363,7 @@ use function
 use util
 use plot
 implicit real*8 (a-h,o-z)
-character*3 :: funclab(2)=(/ "STO","GTF" /)
+character(len=3) :: funclab(2)=(/ "STO","GTF" /)
 character clegend*80,c200tmp*200
 real*8 parm(maxfitfunc*2) !Up to maxfitfunc fitting functions. The first half is coefficient, the latter half is exponents
 real*8,allocatable :: fiterr(:),fitrho(:) !Fitting error and fitted density at each fitting point
@@ -391,6 +391,7 @@ npoint=4000
 !radstep=0.002D0/b2a
 !npoint=2000
 call delvirorb(1)
+call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
 
 do while(.true.)
     write(*,*)
@@ -417,6 +418,7 @@ do while(.true.)
     read(*,*) isel
     
     if (isel==0) then
+        call del_GTFuniq !Destory unique GTF informtaion
 	    call delvirorb_back(1)
         return
     else if (isel==2) then
@@ -1764,7 +1766,7 @@ open(10,file="new.xyz",status="replace")
 do igen=1,numgen
     do i=1,nsel
         iatm=atmlist(i)
-        !Use basic form of Box¨CMuller transform to generate random numbers &
+        !Use basic form of Boxâ€“Muller transform to generate random numbers &
         !satisfying normal distribution (https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform)
         CALL RANDOM_NUMBER(ran1)
         CALL RANDOM_NUMBER(ran2)
@@ -1843,7 +1845,7 @@ do while(.true.)
     write(*,*) " 9 Mirror inversion for selected atoms"
     write(*,*) "10 Center inversion for selected atoms"
     write(*,*) "11 Make the plane defined by selected atoms parallel to a Cartesian plane"
-    if (ifpbc>0) then
+    if (ifPBC>0) then
         write(*,*) "12 Scale Cartesian coordinates of selected atoms and cell vectors"
     else
         write(*,*) "12 Scale Cartesian coordinates of selected atoms"
@@ -1857,6 +1859,7 @@ do while(.true.)
     write(*,*) "22 Wrap all atoms outside the cell into the cell"
     write(*,*) "23 Translate system along cell axes by given distances"
     write(*,*) "24 Translate system to center selected part in the cell"
+    write(*,*) "25 Extract a molecular cluster (central molecule + neighbouring ones)"
     read(*,*) isel
     
     if (isel==-10) then
@@ -1872,7 +1875,7 @@ do while(.true.)
         cellv3=cellv3_org
         write(*,*) "Current geometry has been restored to the original one"
     else if (isel==-4) then
-        if (ifpbc<3) then
+        if (ifPBC<3) then
             write(*,*) "Error: This function can only be used for three-dimension periodic systems"
             write(*,*) "Press ENTER button to continue"
             read(*,*)
@@ -1887,10 +1890,15 @@ do while(.true.)
     else if (isel==-1) then
 	    call outxyz_wrapper
     else if (isel==0) then
-        write(*,*) "Atom list:"
-		do i=1,ncenter
-			write(*,"(i5,'(',a2,')',' --> Charge:',f10.6,'  x,y,z(Bohr):',3f11.6)") i,a(i)%name,a(i)%charge,a(i)%x,a(i)%y,a(i)%z
-		end do
+        if (ncenter<=300) then
+            write(*,*) "Atom list:"
+		    do i=1,ncenter
+			    write(*,"(i5,'(',a2,')',' --> Charge:',f10.6,'  x,y,z(Bohr):',3f11.6)") i,a(i)%name,a(i)%charge,a(i)%x,a(i)%y,a(i)%z
+		    end do
+        else
+			write(*,"(a)") " Note: There are more than 300 atoms, so their information are not shown here now. &
+            To print, in the manu bar please select ""Tools"" - ""Print XYZ coordinates"""
+        end if
         call drawmolgui
         
     else if (isel==1) then !Translate selected part
@@ -2257,7 +2265,7 @@ do while(.true.)
             if (icoord==0.or.icoord==3) a(iatm)%z=scltmp*a(iatm)%z
         end do
         write(*,*) "Done! The geometry as been updated"
-        if (ifpbc>0) then
+        if (ifPBC>0) then
             write(*,"(/,a)") " Also scale corresponding Cartesian component of all cell vectors? (y/n)"
             write(*,"(a)") " (For example, if you have chosen to scale X coordinates before, then X component of all cell vectors will also be scaled)"
             read(*,*) selectyn
@@ -2294,6 +2302,7 @@ do while(.true.)
         write(*,*) "6 Put hydrogens at the end"
         write(*,*) "7 Exchange two atoms"
         write(*,*) "8 Reorder atoms according to a given list"
+        write(*,*) "9 Put specific atoms prior to others"
         read(*,*) imode
         
         if (imode==-1) then
@@ -2413,18 +2422,35 @@ do while(.true.)
                 cycle
             end if
             deallocate(a_old)
+        else if (imode==9) then
+            write(*,*) "Input indices of the atoms, they will appear in front of others. e.g. 2,3,7-10"
+            read(*,"(a)") c2000tmp
+            call str2arr(c2000tmp,ntmp)
+            allocate(tmparr(ntmp))
+            call str2arr(c2000tmp,ntmp,tmparr)
+            allocate(a_old(ncenter))
+            a_old=a
+            ncenter_old=ncenter
+            ncenter=0
+            do itmp=1,ntmp
+                ncenter=ncenter+1
+                a(ncenter)=a_old(tmparr(itmp))
+            end do
+            do iatm=1,ncenter_old
+                if (all(tmparr/=iatm)) then
+                    ncenter=ncenter+1
+                    a(ncenter)=a_old(iatm)
+                end if
+            end do
+            deallocate(a_old)
         end if
         write(*,*) "Done!"
         
     else if (isel==15) then !Add an atom
         write(*,*) "Input element of the newly added atom, e.g. Fe"
         read(*,*) c200tmp
-        call lc2uc(c200tmp(1:1))
-        call uc2lc(c200tmp(2:2))
-        do iele=1,nelesupp
-            if (ind2name(iele)==c200tmp(1:2)) exit
-        end do
-        if (iele==nelesupp+1) then
+        call elename2idx(c200tmp,iele)
+        if (iele==0) then
             write(*,*) "Error: The element cannot be recognized. Press ENTER button to return"
             read(*,*)
             cycle
@@ -2494,7 +2520,7 @@ do while(.true.)
     end if
     
     if (isel>=19.and.ifPBC==0) then !The following functions need PBC information
-        write(*,"(a)") "Error: To use this function, cell information must be provided by your input file! See Section 2.9.3 of Multiwfn manual for detail"
+        write(*,"(a)") " Error: To use this function, cell information must be provided by your input file! See Section 2.9.3 of Multiwfn manual for detail"
         write(*,*) "Press ENTER button to continue"
         read(*,*)
         cycle
@@ -2611,6 +2637,7 @@ do while(.true.)
         if (iscl==0.or.iscl==2) cellv2=cellv2*sfac
         if (iscl==0.or.iscl==3) cellv3=cellv3*sfac
         write(*,*) "Done!"
+        
     else if (isel==22) then !Wrap all atoms into the center cell
         do iatm=1,ncenter
             rcoord(1)=a(iatm)%x
@@ -2630,6 +2657,7 @@ do while(.true.)
             a(iatm)%z=rcoord(3)
         end do
         write(*,*) "Done!"
+        
     else if (isel==23) then !Translate system along cell axes
         write(*,*) "Input translation distance in direction 1 (in Angstrom), e.g. 0.6"
         write(*,*) "The value could be either positive or negative"
@@ -2665,6 +2693,7 @@ do while(.true.)
         end do
         write(*,*) "Done!"
         if (iout==1) write(*,"(a)") " Warning: One or more atoms are lying outside the cell, if you want to wrap them into cell, you can use option 22"
+    
     else if (isel==24) then !Translate system to center selected part in the cell
         write(*,"(a)") " Input indices of the atoms, whose geometry center will be centered in the cell by translating the whole system. e.g. 1,3,7-10"
         read(*,"(a)") c2000tmp
@@ -2697,9 +2726,152 @@ do while(.true.)
         end do
         write(*,*) "Done!"
         if (iout==1) write(*,"(a)") " Warning: One or more atoms are lying outside the cell, if you want to wrap them into cell, you can use option 22"
+    
+    else if (isel==25) then !Extract a molecular cluster (central molecule + neighbouring ones)
+        call extract_molclus
+        
     end if
 end do
     
+end subroutine
+
+
+
+!!---------- Extract a molecular cluster (central molecule + neighbouring ones)
+!The botteneck of cost is call genconnmat(1,0). In fact the cost of this routine can be reduced &
+!if directly constructing neighbouring list and then atmfrg
+subroutine extract_molclus
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+type(atomtype),allocatable :: a_old(:)
+character c2000tmp*2000,c80tmp*80
+real*8 vec(3)
+integer,allocatable :: cenidx(:),atmfrg(:),iffrag(:),idxarr(:)
+integer,allocatable :: iext(:) !=1 need to extract, =0 do not need
+
+write(*,"(/,a)") " Input index of an atom, e.g. 5. The whole molecule that the atom belongs to as well as the neighbouring molecules will be extracted"
+read(*,*) iselatm
+write(*,*) "Input threshold of detecting contact"
+write(*,"(a)") " If you input e.g. 1.5, then if the closest distance between a neighbouring molecule &
+and current molecule is shorter than the sum of the corresponding atomic vdW radii multiplied by 1.5, the neighbouring molecule will be extracted"
+write(*,*) "If pressing ENTER button directly, 1.2 will be used"
+write(*,"(a)") " If you simply want to keep get the single molecule containing the atom you selected, input 0"
+read(*,"(a)") c80tmp
+if (c80tmp==" ") then
+    crit=1.2D0
+else
+    read(c80tmp,*) crit
+end if
+
+allocate(a_old(ncenter))
+a_old=a
+ncenter_old=ncenter
+deallocate(a)
+nelec=0
+
+call walltime(iwalltime1)
+
+write(*,*) "Constructing 5*5*5 supercell..."
+!Temporarily replicate original cell in each direction as (-2:2), where 0 is current cell
+!This guarantee that we can extract a cluster containing selected molecule and all whole molecules surrounding it
+!The original atoms keep their original indices
+ncenter=ncenter_old*5*5*5
+allocate(a(ncenter))
+a(1:ncenter_old)=a_old
+icen=ncenter_old
+do i1=-2,2
+    do i2=-2,2
+        do i3=-2,2
+            if (i1==0.and.i2==0.and.i3==0) cycle !Original cell
+            call tvec_PBC(i1,i2,i3,vec)
+            a(icen+1:icen+ncenter_old)=a_old(:)
+            a(icen+1:icen+ncenter_old)%x=a_old(:)%x+vec(1)
+            a(icen+1:icen+ncenter_old)%y=a_old(:)%y+vec(2)
+            a(icen+1:icen+ncenter_old)%z=a_old(:)%z+vec(3)
+            icen=icen+ncenter_old
+        end do
+    end do
+end do
+deallocate(a_old)
+
+!PBC information is useless anymore
+ifPBC=0
+cellv1=0
+cellv2=0
+cellv3=0
+
+write(*,*) "Generating fragments according to connectivity..."
+allocate(atmfrg(ncenter))
+call genconnfrag(atmfrg) !atmfrg records fragment index of every atom
+ncenidx=count(atmfrg==atmfrg(iselatm)) !Number of atoms in central molecule
+allocate(iext(ncenter),cenidx(ncenidx))
+iext=0
+itmp=0
+do iatm=1,ncenter
+    if (atmfrg(iatm)==atmfrg(iselatm)) then 
+        itmp=itmp+1
+        cenidx(itmp)=iatm !cenidx array records indices of central atoms
+        iext(iatm)=1 !This atom will be extracted
+    end if
+end do
+
+!Determine which atoms should be kepted
+write(*,*) "Determining neighbouring molecules..."
+do iatm=1,ncenter
+    if (iext(iatm)==1) cycle !This atom is already to be extracted
+    vdwr_i=vdwr(a(iatm)%index)
+    do idx=1,ncenidx !Cycle atoms in central molecule
+        jatm=cenidx(idx)
+        sumvdwrad=vdwr_i+vdwr(a(jatm)%index)
+        if (atomdist(iatm,jatm)<sumvdwrad*crit) then !If an atom is close enough to an atom in central molecule, all atoms having the same fragment index as it will be extracted
+            iatmfrg=atmfrg(iatm)
+            do katm=1,ncenter
+                if (atmfrg(katm)==iatmfrg) iext(katm)=1
+            end do
+            exit
+        end if
+    end do
+end do
+
+allocate(a_old(ncenter))
+a_old=a
+ncenter_old=ncenter
+ncenter=count(iext==1)
+write(*,"(a,i8)") " Done! Number of extracted atoms:",ncenter
+deallocate(a)
+allocate(a(ncenter))
+icen=0
+do iatm=1,ncenter_old
+    if (iext(iatm)==1) then
+        icen=icen+1
+        a(icen)=a_old(iatm)
+        if (iatm==iselatm) iselnew=icen
+    end if
+end do
+
+call walltime(iwalltime2)
+write(*,"(' Extraction totally took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+
+write(*,"(/,' Index of you previously selected atom in current system:',i8)") iselnew
+allocate(iffrag(ncenter),idxarr(ncenter))
+call getfragatoms(iselnew,iffrag)
+icen=0
+do iatm=1,ncenter
+    if (iffrag(iatm)==1) then
+        icen=icen+1
+        idxarr(icen)=iatm
+    end if
+end do
+call arr2str_2(idxarr(1:icen),c2000tmp)
+write(*,*) "Atoms in the central molecule:"
+write(*,"(a)") trim(c2000tmp)
+
+!Finalize
+deallocate(fragatm)
+allocate(fragatm(ncenter))
+nfragatm=ncenter
+forall (i=1:nfragatm) fragatm(i)=i
 end subroutine
 
 

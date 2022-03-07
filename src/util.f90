@@ -138,7 +138,7 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !===============================================================!
 
-!!---------- Get angle (degree) between two vectors
+!!---------- Get angle (degree) between two vectors in Degree
 real*8 function vecang(vec1x,vec1y,vec1z,vec2x,vec2y,vec2z)
 real*8 vec1x,vec1y,vec1z,vec2x,vec2y,vec2z
 pi=3.141592653589793D0
@@ -268,7 +268,7 @@ v34y=y3-y4
 v34z=z3-z4
 call vecprod(v12x,v12y,v12z,v23x,v23y,v23z,p1x,p1y,p1z)
 call vecprod(v23x,v23y,v23z,v34x,v34y,v34z,p2x,p2y,p2z)
-!a¡¤b=|a||b|cos¦È, so ¦È=acos[a¡¤b/(|a||b|)]
+!aÂ·b=|a||b|cosÎ¸, so Î¸=acos[aÂ·b/(|a||b|)]
 tmp=(p1x*p2x+p1y*p2y+p1z*p2z)/(sqrt(p1x*p1x+p1y*p1y+p1z*p1z)*sqrt(p2x*p2x+p2y*p2y+p2z*p2z))
 if (tmp>1D0) tmp=1D0 !acos(x) should <1 and >-1, the x may marginally violate this condition due to numerical reason, making acos return NaN, so fix it
 if (tmp<-1D0) tmp=-1D0 
@@ -304,6 +304,37 @@ if (tmp<0) xyz2dih_sign=-xyz2dih_sign
 end function
 
 
+
+!!-------- Return distance between two atoms in Bohr
+real*8 function atomdist(iatm,jatm)
+use defvar
+integer iatm,jatm
+atomdist=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)
+end function
+!!-------- Return distance between two atoms in Angstrom
+real*8 function atomdistA(iatm,jatm)
+use defvar
+integer iatm,jatm
+atomdistA=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)*b2a
+end function
+
+
+!!-------- Return angle (Degree) between three atoms
+real*8 function atomang(iatm,jatm,katm)
+use defvar
+integer iatm,jatm,katm
+atomang=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z)
+end function
+
+
+!!-------- Return dihedral between four atoms
+real*8 function atomdih(iatm,jatm,katm,latm)
+use defvar
+integer iatm,jatm,katm,latm
+atomdih=xyz2dih_sign(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z,a(latm)%x,a(latm)%y,a(latm)%z)
+end function
+
+
 !!--------------- Get area of a triangle, need input coordinates of three points
 function gettriangarea(pax,pay,paz,pbx,pby,pbz,pcx,pcy,pcz)
 implicit real*8 (a-h,o-z)
@@ -318,7 +349,7 @@ va3=pbz-paz
 vb1=pcx-pax
 vb2=pcy-pay
 vb3=pcz-paz
-call vecprod(va1,va2,va3,vb1,vb2,vb3,vc1,vc2,vc3)  !vc=va¡Ávb=|va||vb|sin¦È*i  where i is unit vector perpendicular to va and vb
+call vecprod(va1,va2,va3,vb1,vb2,vb3,vc1,vc2,vc3)  !vc=vaÃ—vb=|va||vb|sinÎ¸*i  where i is unit vector perpendicular to va and vb
 absvc=dsqrt(vc1**2+vc2**2+vc3**2)
 gettriangarea=0.5D0*absvc
 end function
@@ -335,7 +366,7 @@ real*8 pax,pay,paz,pbx,pby,pbz,pcx,pcy,pcz,pdx,pdy,pdz
 ! volmat(:,4)=1D0
 ! gettetravol=abs(detmat(volmat))/6D0
 ! call showmatgau(volmat)
-!vol=abs( (a-d)¡¤((b-d)¡Á(c-d)) )/6,  see http://en.wikipedia.org/wiki/Tetrahedron
+!vol=abs( (a-d)Â·((b-d)Ã—(c-d)) )/6,  see http://en.wikipedia.org/wiki/Tetrahedron
 vec1x=pax-pdx
 vec1y=pay-pdy
 vec1z=paz-pdz
@@ -462,7 +493,7 @@ end subroutine
 !!---------- Input a set of atoms to fit a best plane. Return A, B, C, D of plane equation A*x+B*y+C*z+D=0
 !"atmarr" with size of "natm" is the array containing atom indices in the ring. rmsfit measures RMS fitting error in Bohr
 !  Based on joriki's answer: https://math.stackexchange.com/questions/99299/best-fitting-plane-given-a-set-of-points
-!  "Subtract out the centroid, form a 3¡ÁN matrix X out of the resulting coordinates and calculate its singular value decomposition. &
+!  "Subtract out the centroid, form a 3Ã—N matrix X out of the resulting coordinates and calculate its singular value decomposition. &
 !The normal vector of the best-fitting plane is the left singular vector corresponding to the least singular value"
 subroutine ptsfitplane(atmarr,natm,planeA,planeB,planeC,planeD,rmsfit)
 use defvar
@@ -679,6 +710,31 @@ end if
 end subroutine
 
 
+!-------- Sort an index array, namely array(1:nslot,1:nmember). For example, array(:,1)=1,3,9  array(:,2)=2,6,4  etc.
+!Sort from left to right (1->nslot); for each slot, arrays are reordered so that the index of this slot is from small to large 
+subroutine sortidxlist(array,nslot,nmember)
+integer nslot,nmember
+integer array(nslot,nmember),arrtmp(nslot)
+do islot=1,nslot
+	do imember=1,nmember
+cycjmem:do jmember=imember+1,nmember
+			if (array(islot,imember)>array(islot,jmember)) then
+                !If changing order of islot will reverse order of islot-1, then do not change order
+                if (islot>=2) then
+                    do itest=1,islot-1
+					    if (array(itest,imember)<array(itest,jmember)) cycle cycjmem
+                    end do
+                end if
+				arrtmp(:)=array(:,imember)
+				array(:,imember)=array(:,jmember)
+				array(:,jmember)=arrtmp(:)
+            end if
+        end do cycjmem
+    end do
+end do
+end subroutine
+
+
 !!--------- Evaluate standard deviation of array elements
 real*8 function stddevarray(array)
 real*8 array(:),avg
@@ -705,6 +761,65 @@ real*8 x1,y1,z1,x2,y2,z2,x,y,z
 x=  y1*z2-z1*y2
 y=-(x1*z2-z1*x2)
 z=  x1*y2-y1*x2
+end subroutine
+
+
+!--- The same as vecprod, but input and output are vectors
+subroutine vecprodv(vec1,vec2,newvec)
+real*8 x1,y1,z1,x2,y2,z2
+real*8 vec1(3),vec2(3),newvec(3)
+x1=vec1(1)
+y1=vec1(2)
+z1=vec1(3)
+x2=vec2(1)
+y2=vec2(2)
+z2=vec2(3)
+newvec(1)=  y1*z2-z1*y2
+newvec(2)=-(x1*z2-z1*x2)
+newvec(3)=  x1*y2-y1*x2
+end subroutine
+
+
+!--- Cross product of two vectors, return a new vector (x,y,z)
+!Unlike vecprodv, this take care of special case when the two vectors are collinear with each other
+subroutine crossprod(vec1,vec2,newvec)
+implicit real*8 (a-h,o-z)
+real*8 vec1(3),vec2(3),newvec(3),vect(3)
+call test_vec_parallel(vec1,vec2,istat)
+if (istat/=0) then !Collinear
+	vect=(/ 1D0,-1D0,1D0 /) !An arbitrary vector
+    call test_vec_parallel(vec1,vect,istat)
+    if (istat/=0) then !Collinear
+		vect=(/ -1D0,1D0,1D0 /) !Another arbitrary vector
+		call vecprodv(vec1,vect,newvec)
+	else !Not collinear
+		call vecprodv(vec1,vect,newvec)
+	end if
+else !Not collinear
+	call vecprodv(vec1,vec2,newvec)
+end if
+end subroutine
+
+
+!-------- Test if two vectors are parallel or antiparallel
+!istat=0: Not parallel or antiparallel
+!istat=1: Nearly parallel
+!istat=2: Nearly antiparallel
+!ref.: https://stackoverflow.com/questions/7572640/how-do-i-know-if-two-vectors-are-near-parallel
+subroutine test_vec_parallel(vec1,vec2,istat)
+real*8 vec1(3),vec2(3),norm1,norm2,crit
+integer istat
+norm1=dsqrt(sum(vec1**2))
+norm2=dsqrt(sum(vec2**2))
+cosang=sum(vec1*vec2)/norm1/norm2
+crit=1D-5
+if (cosang>1D0-crit) then
+	istat=1
+else if (cosang<-1D0+crit) then
+	istat=2
+else
+	istat=0
+end if
 end subroutine
 
 
@@ -898,7 +1013,7 @@ end subroutine
 
 !!--------- Convert a character to lower case
 subroutine uc2lc(inc)
-character*1 inc
+character inc
 itmp=ichar(inc)
 if (itmp>=65.and.itmp<=90) itmp=itmp+32
 inc=char(itmp)
@@ -907,7 +1022,7 @@ end subroutine
 
 !!--------- Convert a character to upper case
 subroutine lc2uc(inc)
-character*1 inc
+character inc
 itmp=ichar(inc)
 if (itmp>=97.and.itmp<=122) itmp=itmp-32
 inc=char(itmp)
@@ -1033,10 +1148,31 @@ end if
 end subroutine
 
 
-!!------- Determine how many data (integer or float) in the given string. Maximally test 1000
+!!-------- Locate to the line containing given "label" in "ifileid" file, return the string ready for loading data via read(str,*)
+!For example, call get_option_str(ifileid,"graph2Dsize=",str), will locate to the following line
+!   graph2Dsize= 1500,1200 // Width and height...
+!Then "str" will be 1500,1200
+!If str=" ", that means the line was not found
+subroutine get_option_str(ifileid,label,str)
+integer ifileid
+character(len=*) label,str
+character c200tmp*200
+str=" "
+call loclabel(ifileid,label,ifound)
+if (ifound==1) then
+	read(ifileid,"(a)") c200tmp
+	ibeg=index(c200tmp,'=')
+    iend=index(c200tmp,'//')
+    if (iend==0) iend=len_trim(c200tmp)+1
+    str=adjustl(c200tmp(ibeg+1:iend-1))
+end if
+end subroutine
+
+
+!!------- Determine how many data in the given string. Maximally test 1000
 subroutine numdatastr(str,ndata)
 character(len=*) str
-real*8 arr(1000)
+character(len=100) arr(1000)
 integer ndata
 do i=1,1000
 	read(str,*,iostat=ierror) arr(1:i)
@@ -1245,6 +1381,7 @@ end subroutine
 !The inputted A will not be rewritten. singval is diagonal terms of SIGMA, sorted in descending order
 !If A is a m*n matrix, then inputted U should be m*m and V should be n*n
 !If info=0, that means the calculation is successfully finished
+!Note that the returned matV is exactly V, rather than tranpose(V)
 subroutine SVDmat(imethod,matA,matU,matV,singval,info)
 real*8 matA(:,:),matU(:,:),matV(:,:),singval(:)
 real*8,allocatable :: matAbk(:,:),workarr(:)
@@ -1264,7 +1401,7 @@ end if
 lwork=nint(workarr(1))
 deallocate(workarr)
 allocate(workarr(lwork))
-!Below routines return transpose(V) and destory A
+!Below routines return transpose(V) and destory A. Note that dgesvd returns transpose(V), while current routine returns V, so final we do matV=transpose(matV)
 if (imethod==1) then
 	call dgesvd('A','A',mdim,ndim,matA,mdim,singval,matU,mdim,matV,ndim,workarr,lwork,info) !Standard algorithm
 else
@@ -1273,6 +1410,28 @@ else
 end if
 matA=matAbk
 matV=transpose(matV)
+end subroutine
+
+
+!!----------- Pseudo inversion (Mooreâ€“Penrose inverse) for an inputted matrix (mat) and returns matinv
+!If mat has dimension of n*m, then matinv has dimension of m*n
+!Realized based on singular value decomposition (SVD), ref.: https://en.wikipedia.org/wiki/Moore%E2%80%93Penrose_inverse
+!The matrix is assumed to be real
+subroutine pseudoinverse(mat,matinv)
+implicit real*8 (a-h,o-z)
+real*8 mat(:,:),matinv(:,:)
+real*8,allocatable :: singval(:),matU(:,:),matV(:,:),matSiginv(:,:)
+n1=size(mat,1)
+n2=size(mat,2)
+nmin=min(n1,n2)
+allocate(singval(nmin),matU(n1,n1),matV(n2,n2),matSiginv(n2,n1))
+call SVDmat(1,mat,matU,matV,singval,info) !info=0: Successful
+if (idebug==1.and.info/=0) write(*,*) "Warning: Singular value decomposition (SVD) is failed!"
+matSiginv=0
+do i=1,nmin
+    if (abs(singval(i))>1D-10) matSiginv(i,i)=1/singval(i)
+end do
+matinv=matmul(matmul(matV,matSiginv),transpose(matU))
 end subroutine
 
 
@@ -1515,7 +1674,7 @@ end subroutine
 
 
 !------- Calculate how much is a matrix deviates from identity matrix
-!error=¡Æ[i,j]abs( abs(mat(i,j))-¦Ä(i,j) )
+!error=âˆ‘[i,j]abs( abs(mat(i,j))-Î´(i,j) )
 real*8 function identmaterr(mat)
 implicit real*8 (a-h,o-z)
 real*8 mat(:,:)
@@ -1664,7 +1823,7 @@ end subroutine
 !  Below are optional
 !Label: The title information. If the content is empty, title will not be printed
 !insemi: If 1, print as lower trigonal matrix. Default is 0 (full matrix)
-!form: Format to print, total width must be 14 characters. Default is 1PE14.6
+!form: Format to print, total width must be 14 characters. Default is 1PE14.5E3
 !fildid: Output destination, 6 corresponds to outputting to screen
 !usern1 and usern2: Dimensions of the matrix, default or -1 means determining automatically
 !inncol: seems controls spacing between number labels of each frame
@@ -1746,7 +1905,7 @@ subroutine readmatgau(fileid,mat,insemi,inform,inskipcol,inncol,innspace,iostat)
 !innspace: Number of useless lines in between each frame, default is 1
 !iostat: Returned reading status. /=0 means error occurs
 
-!Before use, loclabel should be used to move reading position to title line of the matrix£¬namely move to "*** Overlap ***"
+!Before use, loclabel should be used to move reading position to title line of the matrixï¼Œnamely move to "*** Overlap ***"
 ! *** Overlap ***
 !                 1             2             3             4             5
 !       1  0.100000D+01
@@ -1831,7 +1990,7 @@ end subroutine
 !If imode==1, space line will be regarded as the sign of end of file. If imode==2, will count actual number of lines in the file
 integer function totlinenum(fileid,imode)
 integer fileid,ierror,imode
-character*80 c80
+character c80*80
 totlinenum=0
 rewind(fileid)
 do while(.true.)
@@ -1855,7 +2014,7 @@ end function
 subroutine loclabel(fileid,label,ifound,irewind,maxline)
 integer fileid,ierror
 integer,optional :: ifound,irewind,maxline
-character*200 c200
+character c200*200
 CHARACTER(LEN=*) label
 if ((.not.present(irewind)).or.(present(irewind).and.irewind==1)) rewind(fileid)
 if (.not.present(maxline)) then
@@ -1998,36 +2157,44 @@ end subroutine
 
 !--------- Determine the present file is output file of which code
 !The file must has been opended as "ifileid"
-!1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 5=CP2K, 0=Undetermined
-subroutine outputprog(ifileid,iprog)
+!iprog: 1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 5=CP2K, 0=Undetermined
+!info (optional): 1 means output the type of this file
+subroutine outputprog(ifileid,iprog,info)
 integer ifileid,iprog
-call loclabel(ifileid,"Gaussian, Inc",ifound,maxline=300)
+integer,optional :: info
+call loclabel(ifileid,"Gaussian, Inc",ifound,maxline=500)
 if (ifound==0) call loclabel(ifileid,"Entering Gaussian System",ifound,maxline=200)
 if (ifound==1) then
     iprog=1
+    if (present(info)) write(*,*) "Note: This file is recognized as a Gaussian output file"
     return
 end if
-call loclabel(ifileid,"O   R   C   A",ifound,maxline=300)
+call loclabel(ifileid,"O   R   C   A",ifound,maxline=500)
 if (ifound==1) then
     iprog=2
+    if (present(info)) write(*,*) "Note: This file is recognized as an ORCA output file"
     return
 end if
-call loclabel(ifileid,"GAMESS VERSION =",ifound,maxline=300)
+call loclabel(ifileid,"GAMESS VERSION =",ifound,maxline=500)
 if (ifound==1) then
     iprog=3
+    if (present(info)) write(*,*) "Note: This file is recognized as a GAMESS-US output file"
     return
 end if
-call loclabel(ifileid,"Firefly Project",ifound,maxline=300)
+call loclabel(ifileid,"Firefly Project",ifound,maxline=500)
 if (ifound==1) then
     iprog=4
+    if (present(info)) write(*,*) "Note: This file is recognized as a Firefly output file"
     return
 end if
-call loclabel(10,"CP2K|",ifound,maxline=300)
+call loclabel(10,"CP2K|",ifound,maxline=500)
 if (ifound==1) then
     iprog=5
+    if (present(info)) write(*,*) "Note: This file is recognized as a CP2K output file"
     return
 end if
 iprog=0
+if (present(info)) write(*,*) "Note: This file is treated as a plain text file"
 end subroutine
 
 !--------- Determine the present file is input file of which code when the answer cannot be determined from file extension
@@ -2066,6 +2233,7 @@ else if (ifuncsel==100) then
     if (iuserfunc==101) ifdoESP=.true.
     if (iuserfunc==102) ifdoESP=.true.
     if (iuserfunc==103) ifdoESP=.true.
+    if (iuserfunc==999) ifdoESP=.true.
     if (iuserfunc==110) ifdoESP=.true.
     if (iuserfunc==111) ifdoESP=.true.
 end if
@@ -2080,8 +2248,8 @@ end function
 subroutine showorbinfo1(id)
 use defvar
 integer,intent (in) :: id
-character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
-character*6 :: symstr
+character(len=3) :: orbtype(0:2)=(/ "A+B"," A "," B " /)
+character :: symstr*6
 symstr=" "
 naorb=count(MOtype==1)
 write(*,*) "Orbital list:"
@@ -2108,8 +2276,8 @@ end subroutine
 subroutine showorbinfo2(id)
 use defvar
 integer,intent (in) :: id
-character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
-character*6 :: symstr
+character(len=3) :: orbtype(0:2)=(/ "A+B"," A "," B " /)
+character :: symstr*6
 symstr=" "
 naorb=count(MOtype==1)
 if (wfntype==0.or.wfntype==2) then
@@ -2160,8 +2328,8 @@ end subroutine
 subroutine showorbinfo3(id)
 use defvar
 integer,intent (in) :: id
-character*3 :: orbtype(0:2)=(/ "A+B"," A"," B" /)
-character*6 :: symstr
+character(len=3) :: orbtype(0:2)=(/ "A+B"," A "," B " /)
+character symstr*6
 symstr=" "
 naorb=count(MOtype==1)
 write(*,*) "Orbital list:"

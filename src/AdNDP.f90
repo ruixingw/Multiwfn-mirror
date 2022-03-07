@@ -678,7 +678,7 @@ do while(.true.)
 			write(*,*) "Note: If the suffix is .47, the Fock matrix will be directly loaded from it"
 			read(*,"(a)") c200tmp
 			inquire(file=c200tmp,exist=alive)
-			if (alive==.false.) then
+			if (.not.alive) then
 				write(*,*) "Error: Unable to find this file!"
 				cycle
 			end if
@@ -835,17 +835,9 @@ do while(.true.)
 		write(*,*) "Done!"
 	else if (cmd(1:2)=='ae'.or.cmd(1:2)=='de') then
 			elename=cmd(4:5)
-			call lc2uc(elename(1:1)) !Convert to upper case
-			call uc2lc(elename(2:2)) !Convert to lower case
-			icog=0
-			do iele=1,nelesupp !Find corresponding atom index in periodic table
-				if (elename==ind2name(iele)) then
-					icog=1
-					exit
-				end if
-			end do
-			if (icog==1) then
-				if (cmd(1:2)=='ae') then !add atom
+            call elename2idx(elename,iele)
+			if (iele/=0) then
+				if (cmd(1:2)=='ae') then !Add atom
 					do icyclist=1,ncenter !Scan and find out corresponding atom from entire system
 						if (a(icyclist)%index==iele) then
 							if (any(searchlisttmp(1:lensearchlisttmp)==icyclist)) cycle !Check if it has presented in search list
@@ -867,7 +859,7 @@ do while(.true.)
 				end if
 				write(*,*) "Done!"
 			else
-				write(*,*) "Error: Unrecognizable element name"
+				write(*,*) "Error: Unrecognizable element name "//elename
 			end if
 	else if (cmd(1:2)=='a '.or.cmd(1:2)=='d ') then
 		if (index(cmd,'-')==0) then !Doesn't use range select for atoms

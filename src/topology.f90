@@ -21,7 +21,8 @@ real*8 :: hesstmp(3,3),gradtmp(3) !Temporarily used for calculating curvature
 integer :: ishowsearchpath=0
 
 !Don't need virtual orbitals (though some real space functions do need virtual orbitals), delete them for faster calculation
-call delvirorb(1)
+if (iuserfunc/=27) call delvirorb(1) !Local electron affinity is related to virtual orbitals
+call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
 
 !Initialize searching and plotting parameters
 toposphrad=3D0 !Radius of searching sphere is 3 Bohr
@@ -30,7 +31,7 @@ sphcenx=0D0 !Position of the sphere center
 sphceny=0D0
 sphcenz=0D0
 !Initialize plot parameter
-ZVU=5.0D0 !Closer than other case
+ZVU=5D0 !Closer than other case
 idrawisosur=0
 ishow3n3=1
 ishow3n1=1
@@ -46,6 +47,7 @@ ishowpathlab=0
 ishowsearchlevel=0
 
 call deallo_basinana(1) !If basin analysis has been performed, information should be dellocated otherwise attractors will be shown when visualizing CPs
+write(*,*)
 write(*,*) "         !!! Note: All length units in this module are Bohr !!!"
 
 do while(.true.)
@@ -135,6 +137,7 @@ do while(.true.)
 		end if
         
 	else if (isel==-10) then
+		call del_GTFuniq !Destory unique GTF informtaion
         call delvirorb_back(1)
 		exit
 !-9 -9 -9 -9 -9 -9 -9
@@ -513,7 +516,7 @@ do while(.true.)
 				write(*,*) "Input file path, e.g. C:\ltwd\CPs.txt"
 				write(*,"(a)") " (The format of the file must be identical to the one outputted by option 4)"
 				if (numcp>0) write(*,*) "Note: After loading the file, all found CPs will be cleaned"
-                write(*,*) "Note: If press ENTER directly, CPs.txt in current folder will be loaded"
+                write(*,"(a)") " Note: If pressing ENTER button directly, CPs.txt in current folder will be loaded"
 				read(*,"(a)") c200
                 if (c200==" ") c200="CPs.txt"
 				inquire(file=c200,exist=alive)
@@ -652,7 +655,7 @@ do while(.true.)
 			else if (isearch==1) then
 				write(*,"(a,i5,a)") " 10 Set the atoms to be considered in searching modes 2, 3, 4, 5, current: Within",nsearchlist," atoms"
 			else if (isearch==2) then
-				write(*,"(a,i5,a,i5,a)") " 10 Set the atoms to be considered in searching modes 2, 3, 4, 5, current: Betweem",count(inlist1==.true.)," atoms and",count(inlist2==.true.)," atoms"
+				write(*,"(a,i5,a,i5,a)") " 10 Set the atoms to be considered in searching modes 2, 3, 4, 5, current: Betweem",count(inlist1.eqv..true.)," atoms and",count(inlist2.eqv..true.)," atoms"
 			end if
             if (topotrustrad==0) then
                 write(*,*) "11 Set trust radius of searching, current: Undefined"
@@ -2033,10 +2036,10 @@ do i=1,topomaxcyc
 		    exit
 	    end if
 	    disp=-matmul(invmat(hess,3),grad)
-    else if (itopomethod==2) then !Barzilai¨CBorwein steep descent to determine displacement vector
+    else if (itopomethod==2) then !Barzilaiâ€“Borwein steep descent to determine displacement vector
         gvec_old=gvec
         call gencalchessmat(1,ifunc,coord(1,1),coord(2,1),coord(3,1),value,gvec(:),hess) !Obtain gradient
-        if (i>1) then !Use BB2 (see "STABILIZED BARZILAI-BORWEIN METHOD") to determine stepsize, corresponding to Barzilai¨CBorwein in https://en.wikipedia.org/wiki/Gradient_descent
+        if (i>1) then !Use BB2 (see "STABILIZED BARZILAI-BORWEIN METHOD") to determine stepsize, corresponding to Barzilaiâ€“Borwein in https://en.wikipedia.org/wiki/Gradient_descent
             dvec(:)=disp(:,1)
             val1=sum(dvec(:)*(gvec-gvec_old))
             val2=sum((gvec-gvec_old)**2)
@@ -2046,7 +2049,7 @@ do i=1,topomaxcyc
             disp(:,1)=-gvec(:)*stepinit/dsqrt(sum(gvec(:)**2))
         end if
         grad(:,1)=gvec(:)
-    else if (itopomethod==3) then !Barzilai¨CBorwein steep ascent to determine displacement vector, proposed by Tian Lu by modifying BB2
+    else if (itopomethod==3) then !Barzilaiâ€“Borwein steep ascent to determine displacement vector, proposed by Tian Lu by modifying BB2
         gvec_old=gvec
         call gencalchessmat(1,ifunc,coord(1,1),coord(2,1),coord(3,1),value,gvec(:),hess) !Obtain gradient
         if (i>1) then

@@ -3,7 +3,7 @@ subroutine otherfunc2_main
 implicit real*8 (a-h,o-z)
 do while(.true.)
 	write(*,*)
-	write(*,*) "              ============ Other functions (Part 2) ============ "
+	write(*,*) "              ============ Other functions (Part 2) ============"
 	write(*,*) "0 Return"
 	write(*,*) "1 Calculate core-valence bifurcation (CVB) index and related quantities"
 	write(*,*) "2 Calculate atomic and bond dipole moments in Hilbert space"
@@ -1028,167 +1028,6 @@ end subroutine
 
 
 
-!!----------- Calculate center, first/second moments, radius of gyration, and <r^2> of a function
-subroutine funcmoment
-use defvar
-use util
-use function
-implicit real*8 (a-h,o-z)
-real*8 intval,moment1(3),moment2(3,3),moment2nuc(3,3),funcval(radpot*sphpot),beckeweigrid(radpot*sphpot),eigvecmat(3,3),eigval(3)
-type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
-character selectyn
-ifunc=1
-cenx=0
-ceny=0
-cenz=0
-do while(.true.)
-	write(*,*)
-	write(*,*) "0 Return"
-	write(*,*) "1 Calculate various quantities of the selected function"
-	write(*,*) "2 Calculate center and integral of the selected function"
-	write(*,"(a,i5)") " 3 Select the function to be studied, current:",ifunc
-	write(*,"(a,3f11.5,' Ang')") " 4 Set the center for option 1, current:",cenx*b2a,ceny*b2a,cenz*b2a
-	write(*,*) "5 Calculate center and integral of the absolute of the selected function"
-	read(*,*) isel
-	
-	if (isel==0) then
-		return
-	else if (isel==3) then
-		call selfunc_interface(1,ifunc)
-		cycle
-	else if (isel==4) then
-		write(*,*) "Input X,Y,Z of the center in Angstrom, e.g. 2.0,0,1.5"
-		read(*,*) cenx,ceny,cenz
-		cenx=cenx/b2a !To Bohr
-		ceny=ceny/b2a
-		cenz=cenz/b2a
-		cycle
-	end if
-
-	write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
-	call gen1cintgrid(gridatmorg,iradcut)
-
-	call walltime(iwalltime1)
-
-	intval=0
-	moment1=0
-	moment2=0
-	realcenx=0
-	realceny=0
-	realcenz=0
-	do iatm=1,ncenter
-		write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
-		gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
-		gridatm%y=gridatmorg%y+a(iatm)%y
-		gridatm%z=gridatmorg%z+a(iatm)%z
-		!$OMP parallel do shared(funcval) private(i) num_threads(nthreads)
-		do i=1+iradcut*sphpot,radpot*sphpot
-			funcval(i)=calcfuncall(ifunc,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
-		end do
-		!$OMP end parallel do
-		call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
-		do i=1+iradcut*sphpot,radpot*sphpot
-			tmpval=funcval(i)*gridatmorg(i)%value*beckeweigrid(i)
-			xtmp=gridatm(i)%x-cenx
-			ytmp=gridatm(i)%y-ceny
-			ztmp=gridatm(i)%z-cenz
-            if (isel==5) tmpval=abs(tmpval)
-			intval=intval+tmpval
-			moment1(1)=moment1(1)+xtmp*tmpval
-			moment1(2)=moment1(2)+ytmp*tmpval
-			moment1(3)=moment1(3)+ztmp*tmpval
-			moment2(1,1)=moment2(1,1)+xtmp*xtmp*tmpval
-			moment2(2,2)=moment2(2,2)+ytmp*ytmp*tmpval
-			moment2(3,3)=moment2(3,3)+ztmp*ztmp*tmpval
-			moment2(1,2)=moment2(1,2)+xtmp*ytmp*tmpval
-			moment2(2,3)=moment2(2,3)+ytmp*ztmp*tmpval
-			moment2(1,3)=moment2(1,3)+xtmp*ztmp*tmpval
-			realcenx=realcenx+gridatm(i)%x*tmpval
-			realceny=realceny+gridatm(i)%y*tmpval
-			realcenz=realcenz+gridatm(i)%z*tmpval
-		end do
-	end do
-	call walltime(iwalltime2)
-	write(*,"(' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
-	
-	if (isel==1) then
-		moment2(3,1)=moment2(1,3)
-		moment2(2,1)=moment2(1,2)
-		moment2(3,2)=moment2(2,3)
-		write(*,*) "Note: All data shown below are in a.u."
-		write(*,"(/,' Integral over whole space:',1PE16.8,/)") intval
-		write(*,"(' The first moment:')")
-		write(*,"(' X= ',1PE16.8,'   Y= ',1PE16.8,'   Z= ',1PE16.8)") moment1
-		write(*,"(' Norm= ',1PE16.8,/)") sum(moment1**2)
-		write(*,"(' The second moment:')")
-		write(*,"(' XX=',1PE16.8,'   XY=',1PE16.8,'   XZ=',1PE16.8)") moment2(1,:)
-		write(*,"(' YX=',1PE16.8,'   YY=',1PE16.8,'   YZ=',1PE16.8)") moment2(2,:)
-		write(*,"(' ZX=',1PE16.8,'   ZY=',1PE16.8,'   ZZ=',1PE16.8)") moment2(3,:)
-
-		call diagmat(moment2,eigvecmat,eigval,300,1D-10)
-		call sort(eigval)
-		write(*,"(a,3(1PE16.8))") ' Eigenvalues:',eigval
-        write(*,"(a,1PE16.8)") " Sum of eigenvalues (trace of the second moment tensor):",sum(eigval)
-		write(*,"(' Anisotropy:',1PE16.8,/)") eigval(3)-(eigval(1)+eigval(2))/2D0
-		write(*,"(' Radius of gyration:',1PE16.8)") dsqrt((moment2(1,1)+moment2(2,2)+moment2(3,3))/intval)
-        write(*,"(/,a,f16.6)") " Spatial extent of the function <r^2>:",sum(eigval)
-
-		if (ifunc==1) then
-			moment2nuc=0
-			do iatm=1,ncenter
-				xtmp=a(iatm)%x-cenx
-				ytmp=a(iatm)%y-ceny
-				ztmp=a(iatm)%z-cenz
-				tmpval=a(iatm)%charge
-				moment2nuc(1,1)=moment2nuc(1,1)+xtmp*xtmp*tmpval
-				moment2nuc(2,2)=moment2nuc(2,2)+ytmp*ytmp*tmpval
-				moment2nuc(3,3)=moment2nuc(3,3)+ztmp*ztmp*tmpval
-				moment2nuc(1,2)=moment2nuc(1,2)+xtmp*ytmp*tmpval
-				moment2nuc(2,3)=moment2nuc(2,3)+ytmp*ztmp*tmpval
-				moment2nuc(1,3)=moment2nuc(1,3)+xtmp*ztmp*tmpval
-			end do
-			moment2nuc(3,1)=moment2nuc(1,3)
-			moment2nuc(2,1)=moment2nuc(1,2)
-			moment2nuc(3,2)=moment2nuc(2,3)
-			write(*,*)
-			write(*,"(' The quadrupole moment of nuclear charges:')")
-			write(*,"(' XX=',f16.8,'   XY=',f16.8,'   XZ=',f16.8)") moment2nuc(1,:)
-			write(*,"(' YX=',f16.8,'   YY=',f16.8,'   YZ=',f16.8)") moment2nuc(2,:)
-			write(*,"(' ZX=',f16.8,'   ZY=',f16.8,'   ZZ=',f16.8)") moment2nuc(3,:)
-			write(*,*)
-			write(*,"(' The quadrupole moment of the system:')")
-			write(*,"(' XX=',f16.8,'   XY=',f16.8,'   XZ=',f16.8)") moment2nuc(1,:)-moment2(1,:)
-			write(*,"(' YX=',f16.8,'   YY=',f16.8,'   YZ=',f16.8)") moment2nuc(2,:)-moment2(2,:)
-			write(*,"(' ZX=',f16.8,'   ZY=',f16.8,'   ZZ=',f16.8)") moment2nuc(3,:)-moment2(3,:)
-		end if
-		
-	else if (isel==2.or.isel==5) then
-		realcenx=realcenx/intval
-		realceny=realceny/intval
-		realcenz=realcenz/intval
-        if (isel==2) then
-			write(*,"(' Integral of the function:',1PE16.8,' a.u.')") intval
-			write(*,"(/,' Center of the function:')")
-        else
-			write(*,"(' Integral of the absolute of the function:',1PE16.8,' a.u.')") intval
-			write(*,"(/,' Center of the absolute of the function:')")
-        end if
-		write(*,"(' X=',f16.8,' Y=',f16.8,' Z=',f16.8,' Angstrom',/)") realcenx*b2a,realceny*b2a,realcenz*b2a
-		write(*,*) "Use this center for subsequent calculations? (y/n)"
-		read(*,*) selectyn
-		if (selectyn=='y') then
-			cenx=realcenx
-			ceny=realceny
-			cenz=realcenz
-		end if
-	end if
-end do
-end subroutine
-
-
-
-
-
 !!----------- Calculate energy index (EI) or bond polarity index (BPI)
 !!J. Phys. Chem., 94, 5602-5607 and J. Phys. Chem.,96, 157-164
 subroutine calcEIBPI
@@ -1256,13 +1095,15 @@ implicit real*8 (a-h,o-z)
 integer :: ifunciso=13,ifuncint=1
 integer,allocatable :: mergelist(:),grididx(:,:,:),dogrid(:,:)
 logical,allocatable :: boundgrid(:)
-character :: defdomain*20="<0.5",c1000tmp*1000
+character :: defdomain*20="<0.5",c80tmp*80,c1000tmp*1000,c2000tmp*2000
+integer,allocatable :: tmparr(:)
 
 if (allocated(gridxyz)) deallocate(gridxyz)
 if (allocated(domainsize)) deallocate(domainsize)
 if (allocated(domaingrid)) deallocate(domaingrid)
 do while(.true.)
 	write(*,*)
+    write(*,*) "  ---------------------------- Domain analysis ----------------------------"
 	if (allocated(cubmat)) write(*,*) "-1 Yield domains based on the grid data in memory"
 	write(*,*) "0 Return"
 	write(*,*) "1 Calculate grid data and yield domains"
@@ -1425,16 +1266,24 @@ end do
 
 do while(.true.)
 	write(*,*)
+    write(*,*) " ----------------- Post-processing menu of domain analysis -----------------"
 	write(*,*) "-1 Merge specific domains"
 	write(*,*) "0 Exit"
 	write(*,*) "1 Perform integration for a domain"
 	write(*,*) "2 Perform integration for all domains"
+	write(*,"(a)") " 2b Perform integration for subregion of some domains according to range of sign(lambda)*rho"
 	write(*,*) "3 Visualize domains"
 	write(*,"(a,i5)") " 4 Select the real space function to be integrated, current:",ifuncint
 	write(*,*) "5 Calculate q_bind index for a domain"
 	write(*,*) "10 Export a domain as domain.cub file in current folder"
 	write(*,*) "11 Export boundary grids of a domain to domain.pdb file in current folder"
-	read(*,*) isel2
+    read(*,"(a)") c80tmp
+    if (index(c80tmp,'b')/=0) then
+		isel2=-2
+    else
+		read(c80tmp,*) isel2
+    end if
+    
 	if (isel2==0) then
 		return
 	else if (isel2==-1) then
@@ -1467,7 +1316,7 @@ do while(.true.)
 		do idom=1,ndomain
 			write(*,"(' Domain:',i6,'     Grids:',i8)") idom,domainsize(idom)
 		end do
-	else if (isel2==1) then
+	else if (isel2==1) then !Perform integration for a domain
 		write(*,*) "Input the index of the domain to be integrated, e.g. 3"
 		read(*,*) intdom
 		if (intdom<1.or.intdom>ndomain) then
@@ -1509,7 +1358,7 @@ do while(.true.)
 		write(*,"(' X minimum:',f10.4,'  X maximum:',f10.4,'  Span:',f10.4)") xmin*b2a,xmax*b2a,(xmax-xmin)*b2a
 		write(*,"(' Y minimum:',f10.4,'  Y maximum:',f10.4,'  Span:',f10.4)") ymin*b2a,ymax*b2a,(ymax-ymin)*b2a
 		write(*,"(' Z minimum:',f10.4,'  Z maximum:',f10.4,'  Span:',f10.4)") zmin*b2a,zmax*b2a,(zmax-zmin)*b2a
-	else if (isel2==2) then
+	else if (isel2==2) then !Perform integration for all domains
 		write(*,*) "Select the real space function to be integrated, e.g. 1"
 		call selfunc_interface(1,ifuncint)
 		write(*,*) "Domain    Integral (a.u.)     Volume (Bohr^3)      Average"
@@ -1532,23 +1381,111 @@ do while(.true.)
 		end do
 		write(*,"(' Integration result of all domains:',E20.10,' a.u.')") valinttot
 		write(*,"(' Volume of all domains:',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volinttot,volinttot*b2a**3
-	else if (isel2==3) then
+	else if (isel2==-2) then !Perform integration for subregion of some domains according to sign(lambda)*rho
+		write(*,*) "Input indices of the domains you want to integrate, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, all domains will be selected"
+		read(*,"(a)") c2000tmp
+        if (c2000tmp==" ") then
+			ntmp=ndomain
+			allocate(tmparr(ntmp))
+            forall(i=1:ntmp) tmparr(i)=i
+        else
+			call str2arr(c2000tmp,ntmp)
+			allocate(tmparr(ntmp))
+			call str2arr(c2000tmp,ntmp,tmparr)
+        end if
+        write(*,"(a)") " Integrate which part of the selected domains?"
+        write(*,*) "0 All region"
+        write(*,*) "1 Subregion with positive sign(lambda_2)*rho"
+        write(*,*) "2 Subregion with negative sign(lambda_2)*rho"
+        write(*,*) "3 Subregion within specific range of sign(lambda_2)*rho"
+        read(*,*) iregion
+        if (iregion==0) then
+			rlow=-1D200
+            rhigh=1D200
+        else if (iregion==1) then
+			rlow=0
+            rhigh=1D200
+        else if (iregion==2) then
+			rlow=-1D200
+            rhigh=0
+        else if (iregion==3) then
+			write(*,*) "Please input lower and upper limits of sign(lambda_2)*rho in a.u."
+            write(*,*) "For example, -0.03,0.02"
+            read(*,*) rlow,rhigh
+        end if
+		write(*,*) "Select the real space function to be integrated, e.g. 3"
+		call selfunc_interface(1,ifuncint)
+        write(*,*)
+        write(*,*) "Meaning of outputted terms:"
+        write(*,*) "int(tot): Total integral in specific subregion of selected domains, in a.u."
+        write(*,*) "vol(tot): Total volume in specific subregion of selected domains, in Bohr"
+        write(*,"(a)") " int(pos) and int(neg): The integrals where lambda_2 is positive and negative in the subregion, respectively. They sum to int(tot)"
+        write(*,"(a)") " vol(pos) and vol(neg): The volumes where lambda_2 is positive and negative in the subregion, respectively. They sum to vol(tot)"
+        write(*,"(/,a)") " Domain     int(tot)    vol(tot)    int(pos)    vol(pos)    int(neg)    vol(neg)"
+        sum_rintneg=0
+        sum_rintpos=0
+        sum_volneg=0
+        sum_volpos=0
+		do itmp=1,ntmp !Loops all selected domains
+			intdom=tmparr(itmp)
+			rintneg=0
+			rintpos=0
+			volneg=0
+			volpos=0
+			do igrd=1,domainsize(intdom) !Loops all grid of this domain
+				idx=domaingrid(intdom,igrd)
+                xnow=gridxyz(idx,1)
+                ynow=gridxyz(idx,2)
+                znow=gridxyz(idx,3)
+				call signlambda2rho_RDG(xnow,ynow,znow,sl2r,RDG,rho)
+                if (sl2r>=rlow.and.sl2r<=rhigh) then
+					valint=calcfuncall(ifuncint,xnow,ynow,znow)
+					if (sl2r<0) then
+						rintneg=rintneg+valint
+						volneg=volneg+1
+					else
+						rintpos=rintpos+valint
+						volpos=volpos+1
+					end if
+                end if
+			end do
+			rintneg=rintneg*dvol
+			rintpos=rintpos*dvol
+			volneg=volneg*dvol
+			volpos=volpos*dvol
+            write(*,"(i6,1x,E15.6,f9.3,E15.6,f9.3,E15.6,f9.3)") intdom,rintneg+rintpos,volneg+volpos,rintpos,volpos,rintneg,volneg
+            sum_rintneg=sum_rintneg+rintneg
+            sum_rintpos=sum_rintpos+rintpos
+            sum_volneg=sum_volneg+volneg
+            sum_volpos=sum_volpos+volpos
+		end do
+        write(*,"('  sum  ',E15.6,f9.3,E15.6,f9.3,E15.6,f9.3)") sum_rintneg+sum_rintpos,sum_volneg+sum_volpos,sum_rintpos,sum_volpos,sum_rintneg,sum_volneg
+        deallocate(tmparr)
+	else if (isel2==3) then !Visualize domains
 		idrawdomain=1
 		aug3Dold=aug3D
 		if (aug3D<3) aug3D=3 !Often we set extension distance to zero, e.g. RDG, in this case the molecule will be truncated, therefore here temporarily augment it
 		call drawdomaingui
 		aug3D=aug3Dold
 		idrawdomain=0
-	else if (isel2==5) then
+	else if (isel2==5) then !Calculate q_bind index for a domain
 		write(*,*) "Input the index of the domain to be integrated, e.g. 3"
 		read(*,*) intdom
 		if (intdom<1.or.intdom>ndomain) then
 			write(*,"(a)") " Error: The index of the domain to be integrated is incorrect"
 			cycle
 		end if
+        write(*,"(a)") "Input exponent of electron density. For example, if you input 1.1, then rho^1.1 will be taken as the integrand"
+        write(*,*) "If pressing ENTER button directly, then 4/3 will be used"
+        read(*,"(a)") c80tmp
+        if (c80tmp==" ") then
+			expfac=4D0/3D0
+		else
+			read(c80tmp,*) expfac
+        end if
 		qatt=0
 		qrep=0
-		expfac=4D0/3D0
 		volneg=0
 		volpos=0
 		do igrd=1,domainsize(intdom)
@@ -1573,7 +1510,7 @@ do while(.true.)
 		write(*,"(' Volume (lambda2<0):',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volneg
 		write(*,"(' Volume (lambda2>0):',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volpos
 		write(*,"(' Volume (Total):    ',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volneg+volpos
-	else if (isel2==10) then
+	else if (isel2==10) then !Export a domain as domain.cub file in current folder
 		write(*,*) "Input the index of the domain to be exported, e.g. 4"
 		read(*,*) idomain
 		write(*,*) "Outputting domain.cub..."
@@ -1609,14 +1546,14 @@ do while(.true.)
 		close(10)
 		write(*,"(a)") " Done! domain.cub has been outputted to current folder. &
 		The grids belonging and not belonging the domain have value of 1 and 0, respectively"
-	else if (isel2==11) then
+	else if (isel2==11) then !Export boundary grids of a domain to domain.pdb file in current folder
 		write(*,*) "Input index of the domain, e.g. 4"
 		read(*,*) idomain
 		write(*,*) "Outputting domain.pdb..."
 		open(10,file="domain.pdb",status="replace")
 		do igrd=1,domainsize(idomain)
 			idx=domaingrid(idomain,igrd)
-			if (boundgrid(idx)==.true.) then
+			if (boundgrid(idx)) then
 				xnow=gridxyz(idx,1)
 				ynow=gridxyz(idx,2)
 				znow=gridxyz(idx,3)
@@ -2024,7 +1961,7 @@ do while(.true.)
     else if (isel==0) then !Start analysis!
         write(*,*)
         write(*,*) "Input index of the orbitals to be taken into account, e.g. 2,3,7-10"
-        write(*,*) "If pressing ENTER directly, all orbitals will be taken into account"
+        write(*,*) "If pressing ENTER button directly, all orbitals will be taken into account"
         write(*,"(a)") " If inputting ""o"", all orbitals with non-zero occupation will be taken into account"
         read(*,"(a)") c2000tmp
         if (c2000tmp==" ") then
@@ -2302,20 +2239,23 @@ do while(.true.)
         call walltime(iwalltime1)
         coulene=0
         excene=0
-        do i=1,nx
+        do k=1,nz
+			cubzk=cubz(k)
 	        do j=1,ny
-		        do k=1,nz
+				cubyj=cuby(j)
+		        do i=1,nx
+					cubxi=cubx(i)
                     if (isel==1) then !Coulomb integral
 			            if (rhoii(i,j,k)>Coulcrit) then
 			                !$OMP parallel shared(coulene) private(ii,jj,kk,distx2,disty2,distz2,dist,coulenetmp) num_threads(nthreads)
 			                coulenetmp=0
 			                !$OMP do schedule(DYNAMIC)
 					        do kk=1,nz
-						        distz2=(cubz(k)-cubz(kk))**2
+						        distz2=(cubzk-cubz(kk))**2
 				                do jj=1,ny
-					                disty2=(cuby(j)-cuby(jj))**2
+					                disty2=(cubyj-cuby(jj))**2
 			                        do ii=1,nx
-				                        distx2=(cubx(i)-cubx(ii))**2
+				                        distx2=(cubxi-cubx(ii))**2
                                         dist=dsqrt(distx2+disty2+distz2)
                                         if (dist==0) cycle
 						                coulenetmp=coulenetmp + rhojj(ii,jj,kk) /dist
@@ -2355,7 +2295,7 @@ do while(.true.)
                     
 		        end do
 	        end do
-	        call showprog(i,nx)
+	        call showprog(k,nz)
         end do
         
         coulene=coulene*dvol*dvol

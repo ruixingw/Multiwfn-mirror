@@ -171,7 +171,7 @@ subroutine mayerbndord
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-real*8 :: bndmata(ncenter,ncenter),bndmatb(ncenter,ncenter),bndmattot(ncenter,ncenter),&
+real*8 bndmata(ncenter,ncenter),bndmatb(ncenter,ncenter),bndmattot(ncenter,ncenter),&
 PSmata(nbasis,nbasis),PSmatb(nbasis,nbasis),PSmattot(nbasis,nbasis)
 character selectyn
 
@@ -315,8 +315,7 @@ subroutine mullikenbndord
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-real*8 :: PSmata(nbasis,nbasis),PSmatb(nbasis,nbasis)
-real*8 :: bndmattot(ncenter,ncenter),bndmatb(ncenter,ncenter),bndmata(ncenter,ncenter)
+real*8 PSmata(nbasis,nbasis),PSmatb(nbasis,nbasis),bndmattot(ncenter,ncenter),bndmatb(ncenter,ncenter),bndmata(ncenter,ncenter)
 character selectyn
 bndmattot=0D0
 if (wfntype==0.or.wfntype==3) then
@@ -462,7 +461,7 @@ subroutine OrbPertMayer
 use defvar
 implicit real*8 (a-h,o-z)
 character orbtypechar*2
-real*8 :: bndmata(ncenter,ncenter),bndmatb(ncenter,ncenter),bndmattot(ncenter,ncenter)
+real*8 bndmata(ncenter,ncenter),bndmatb(ncenter,ncenter),bndmattot(ncenter,ncenter)
 real*8,allocatable :: PSmattot(:,:),Ptottmp(:,:)
 real*8,allocatable :: PSmata(:,:),PSmatb(:,:),Palphatmp(:,:),Pbetatmp(:,:)
 bndmata=0D0
@@ -590,13 +589,13 @@ use defvar
 use NAOmod
 use util
 implicit real*8 (a-h,o-z)
-character*3 :: icenshname(100),jcenshname(100) !Record all shell type names in centers i and j
+character(len=3) icenshname(100),jcenshname(100) !Record all shell type names in centers i and j
 character c80tmp*80,c2000tmp*2000
 real*8,allocatable :: shcontri(:,:),shcontrib(:,:) !alpha/total part, beta part
 integer NAOfrag1(ncenter),NAOfrag2(ncenter)
 integer nNAOfrag1,nNAOfrag2
 !Arrays for unique shells. Each unique shell corresponds to a unique kind of NAO shell in present system
-character*3 uniqsh_name(100) !Name of unique shells
+character(len=3) uniqsh_name(100) !Name of unique shells
 integer numuniqsh !Number of unique shells
 real*8 uniqsh_val(100,100),uniqsh_valb(100,100) !uniqsh_val(i,j) is contribution to bond order due to interaction of unique shell i in fragment 1 and unique shell j in fragment 2 
 
@@ -797,8 +796,7 @@ subroutine IBSI
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-integer atmlist(ncenter)
-integer :: iIGMtype
+integer atmlist(ncenter),iIGMtype
 real*8 atmpairdg(ncenter,ncenter),IBSImat(ncenter,ncenter),IBSIfrag
 real*8 :: refval_IGM=0.410297D0,refval_IGMH=0.500791D0 !They were calculated under perfect grid by setting reference value as 1.0
 real*8 :: distprintthres=3.5D0

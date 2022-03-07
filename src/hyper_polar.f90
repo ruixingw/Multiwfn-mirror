@@ -55,8 +55,8 @@ implicit real*8 (a-h,o-z)
 real*8 dipole(3),alpha(3,3),beta(3,3,3),gamma(3,3,3,3)
 real*8 alpha_org(3,3),beta_org(3,3,3),gamma_org(3,3,3,3) !The (hyper)polarizability tensor may be modified during processing, store the original ones in a.u.
 real*8 eigvecmat(3,3),eigval(3),freqval(100000)
-character :: c200tmp*200,sepchar,c210tmp*210,selectyn,lb(3)=(/"X","Y","Z"/)
-character*20 :: form,formau="(a,f17.5)",formother="(a,1PE16.6)"
+character :: c200tmp*200,sepchar,c210tmp*210,selectyn,lb(3)=(/ "X","Y","Z" /)
+character(len=20) :: form,formau="(a,f17.5)",formother="(a,1PE16.6)"
 integer :: irdfreq=0,ides=6,iunit=1,ioutpol=0
 write(*,*) "Note: This function only works for ""polar"" tasks of Gaussian with #P"
 10 continue
@@ -544,7 +544,7 @@ if (isel==1.or.isel==3.or.isel==5) then
         !Beta(-2w;w,w) as been parsed before, in this case we also output HRS related quantites
         if (ibeta==2) then
             !Calculate <beta_ZZZ^2> and <beta_XZZ^2>, without Kleinman condition approximation
-            !Below, the Eqs. 4 and 5 in Phys. Chem. Chem. Phys., 10, 6223¨C6232 (2008) are employed
+            !Below, the Eqs. 4 and 5 in Phys. Chem. Chem. Phys., 10, 6223â€“6232 (2008) are employed
             !Note that <beta_xzz^2> is equivalent to the <beta_zxx^2> occured in many literatures
             u1=0;u2=0;u3=0;u4=0;u5=0;u6=0;u7=0;u8=0;u9=0;u10=0;u11=0
             t1=0;t2=0;t3=0;t4=0;t5=0;t6=0;t7=0;t8=0;t9=0;t10=0;t11=0
@@ -1069,7 +1069,7 @@ character transmodestr*80,c80tmp*80,c200tmp*80
 character :: dirlab(3)=(/ "X","Y","Z" /)
 real*8,allocatable :: trandip(:,:,:) !Transition dipole moment between i and j in X,Y,Z. 0 corresponds to ground state
 real*8,allocatable :: excene(:) !Excitation energy
-real*8 :: alpha(3,3),beta(3,3,3),gamma(3,3,3,3),gamma1(3,3,3,3),gamma2(3,3,3,3),delta(3,3,3,3,3)
+real*8 alpha(3,3),beta(3,3,3),gamma(3,3,3,3),gamma1(3,3,3,3),gamma2(3,3,3,3),delta(3,3,3,3,3)
 real*8 eigval(3),eigvecmat(3,3),tmpw(5)
 real*8,allocatable :: freqlist(:,:) !Store the frequency to be calculated for beta and gamma
 integer tmpdir(5),arrb(6,3),arrg(24,4),arrd(120,5),dir1,dir2,dir3,dir4,dir5

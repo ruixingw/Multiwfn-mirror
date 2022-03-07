@@ -14,7 +14,7 @@ do while(.true.)
 	write(*,*) "6 Visualization of van der Waals potential (JMM, 26, 315)"
 	write(*,*) "9 Becke/Hirshfeld surface analysis (CrystEngComm, 11, 19)"
 	write(*,*) "10 IGM analysis based on promolecular density (PCCP, 19, 17928)"
-	write(*,"(a)") " 11 IGM analysis based on Hirshfeld partition of molecular density (IGMH) (DOI: 10.26434/chemrxiv-2021-628vh)"
+	write(*,"(a)") " 11 IGM analysis based on Hirshfeld partition of molecular density (IGMH) (JCC, 43, 539)"
 	write(*,*) "12 Averaged IGM analysis (aIGM)"
 	read(*,*) isel
 	if (isel==0) then
@@ -129,11 +129,21 @@ do while (.true.)
 		write(*,*) "Input lower limit and upper limit of Y axis e.g. 0,1.5"
 		read(*,*) ymin,ymax
 	else if (isel==5) then
-		open(10,file="output.txt",status="replace")
 		write(*,*) "Outputting output.txt in current folder..."
-		write(10,"(3f11.6,2E16.8)") ((( (orgx+(i-1)*dx),(orgy+(j-1)*dy),(orgz+(k-1)*dz),avgsl2r(i,j,k),avgRDG(i,j,k),i=1,nx),j=1,ny),k=1,nz)
+		open(10,file="output.txt",status="replace")
+        do k=1,nz
+			do j=1,ny
+				do i=1,nx
+					call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+					write(10,"(3f12.6,2E16.8)") tmpx*b2a,tmpy*b2a,tmpz*b2a,avgsl2r(i,j,k),avgRDG(i,j,k)
+				end do
+			end do
+			call showprog(k,nz)
+		end do
 		close(10)
-		write(*,"(a)") " Finished! Column 1/2/3/4/5 = X/Y/Z/averaged sign(lambda2)*rho/averaged RDG, unit is Bohr"
+		write(*,*) "Finished!"
+        write(*,*) "Column 1/2/3: X/Y/Z in Angstrom"
+        write(*,*) "Column 4/5: Averaged sign(lambda2)*rho in a.u. and averaged RDG"
 	else if (isel==6) then
 		write(*,*) "Outputting averaged reduced density gradient to avgRDG.cub in current folder"
 		open(10,file="avgRDG.cub",status="replace")
@@ -312,8 +322,8 @@ end subroutine
 !!------------------------------------------------------------------------------------------------
 !! ----------- Independent Gradient Model (IGM) analysis based on promolecular density -----------
 !!------------------------------------------------------------------------------------------------
-!iIGMtype=1: Based on promolecular approximation
-!iIGMtype=2: Based on Hirshfeld partition of actual density
+!iIGMtype=1: Based on promolecular approximation (original IGM)
+!iIGMtype=2: Based on Hirshfeld partition of actual density (IGMH)
 subroutine IGM(iIGMtype)
 use function
 use util
@@ -323,7 +333,7 @@ implicit real*8 (a-h,o-z)
 character c2000tmp*2000,selectyn
 real*8 grad(3),IGM_gradnorm,IGM_gradnorm_inter,gradtmp(3)
 integer iIGMtype
-integer,allocatable :: IGMfrag(:,:),IGMfragsize(:) !Definition of each fragment used in IGM, and the number of atoms in each fragment\
+integer,allocatable :: IGMfrag(:,:),IGMfragsize(:) !Definition of each fragment used in IGM, and the number of atoms in each fragment
 real*8,allocatable :: dg_intra(:,:,:) !delta-g_intra of fragments
 real*8,allocatable :: dg_inter(:,:,:) !delta-g_inter between fragment 1 and 2
 real*8,allocatable :: dg(:,:,:) !delta-g
@@ -337,10 +347,15 @@ real*8,allocatable :: IBSIWmat(:,:)
 !write(*,*) "Citation: Phys. Chem. Chem. Phys., 19, 17928 (2017)"
 write(*,*) "Note: Atomic unit is used for all outputs of this function"
 
-if (iIGMtype==2) then
+
+if (iIGMtype==1) then
+	write(*,*) "***** Please cite following papers in your work: *****"
+    write(*,*) "Phys. Chem. Chem. Phys., 19, 17928 (2017)"
+    write(*,*) "J. Comput. Chem., 43, 539 (2022) DOI: 10.1002/jcc.26812"
+else if (iIGMtype==2) then
 	write(*,*)
-	write(*,*) "Please cite introductory paper of IGMH:"
-    write(*,*) "Tian Lu, Qinxue Chen, ChemRxiv (2021) DOI: 10.26434/chemrxiv-2021-628vh"
+	write(*,*) "***** Please cite this introductory paper of IGMH: *****"
+    write(*,*) "Tian Lu, Qinxue Chen, J. Comput. Chem., 43, 539 (2022) DOI: 10.1002/jcc.26812"
 end if
 
 !----- Define fragments
@@ -414,6 +429,7 @@ if (iIGMtype==2) allocate(rhogrid(nx,ny,nz),gradgrid(3,nx,ny,nz))
 
 !----- Calculate grid data
 call delvirorb(1)
+call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
 call walltime(iwalltime1)
 write(*,*) "Calculating sign(lambda2)rho..."
 ifinish=0
@@ -479,6 +495,7 @@ end do
 
 dg_intra=dg-dg_inter
 
+call del_GTFuniq !Destory unique GTF informtaion
 call delvirorb_back(1)
 call walltime(iwalltime2)
 write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
@@ -502,7 +519,7 @@ do while (.true.)
 	write(*,*) "             -------------- Post-processing menu --------------"
 	write(*,"(' -3 Change range of Y-axis of scatter graph, current:',f11.6,' to',f11.6)") ymin,ymax
 	write(*,"(' -2 Change range of X-axis of scatter graph, current:',f11.6,' to',f11.6)") xmin,xmax
-	write(*,*) "-1 Draw scatter graph    1 Save the scatter graph to file"
+	write(*,*) "-1 Draw scatter graph           1 Save the scatter graph to file"
 	write(*,*) "0 Exit"
 	write(*,*) "2 Output scatter points to output.txt in current folder"
 	write(*,*) "3 Output cube files to current folder"
@@ -1211,12 +1228,7 @@ Potential in Studying Intermolecular Interactions. J. Mol. Model., 26, 315 (2020
 if (ivdwprobe==0) then
     write(*,*) "Input name of probe atom, e.g. Ar"
     read(*,*) c80tmp
-    do iele=1,nelesupp
-        if (ind2name(iele)==c80tmp(1:2)) then
-            ivdwprobe=iele
-            exit
-        end if
-    end do
+    call elename2idx(c80tmp,ivdwprobe)
 end if
 
 write(*,*) "Parameters of UFF forcefield are used in this module"
@@ -1232,7 +1244,6 @@ parmAj=UFF_A(ivdwprobe)
 parmBj=UFF_B(ivdwprobe)
 write(*,"(' UFF atomic well depth:',f10.3,' kcal/mol')") parmAj
 write(*,"(' UFF atomic radius:    ',f10.3,' Angstrom')") parmBj/2
-write(*,*)
 
 aug3D=8 !Use 8 Bohr as extension distance because vdW potential largely spread
 call setgrid(1,igridsel)

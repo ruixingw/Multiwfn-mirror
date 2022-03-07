@@ -40,7 +40,7 @@ character clegend*960 !Legend strings. (10+2) lines * 80 character per line
 integer :: legendx=400,legendy=160
 integer :: ticksize=45,height_axis=45,legtextsize=42
 character :: TDOSstring*80="TDOS",OPDOSstring*80="OPDOS",graphformat_old*4
-character :: PDOSstring(nfragmax)*80=(/"PDOS frag.1","PDOS frag.2","PDOS frag.3","PDOS frag.4","PDOS frag.5","PDOS frag.6","PDOS frag.7","PDOS frag.8","PDOS frag.9","PDOS frag.10"/)
+character :: PDOSstring(nfragmax)*80=(/ character(len=80) :: "PDOS frag.1","PDOS frag.2","PDOS frag.3","PDOS frag.4","PDOS frag.5","PDOS frag.6","PDOS frag.7","PDOS frag.8","PDOS frag.9","PDOS frag.10"/)
 integer :: ishowPDOSline(nfragmax),ishowPDOScurve(nfragmax),icurvewidth=3,ilinewidth=2,intarr(2)
 integer :: iclrPDOS(nfragmax)=(/ 1,3,10,14,12,9,13,11,6,7 /)
 !Below are used for defining fragments. For Mulliken/SCPA, they correspond to basis function, while for Hirshfeld/Becke, they correspond to atom indices
@@ -342,7 +342,7 @@ else if (index(c80tmp,'l')/=0) then
     read(*,"(a)") c200tmp
     if (c200tmp==" ") c200tmp="DOS.dat"
 	inquire(file=c200tmp,exist=alive)
-	if (alive==.false.) then
+	if (.not.alive) then
 	    write(*,*) "Error: Cannot find the file! Press ENTER button to return"
         read(*,*)
         cycle

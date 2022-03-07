@@ -22,7 +22,7 @@ real*8 covr_becke(0:nelesupp) !covalent radii used for Becke partition
 type(content) gridatm(radpot*sphpot)
 real*8 potx(sphpot),poty(sphpot),potz(sphpot),potw(sphpot)
 real*8 arrtmp(nfunc),arrtmp2(nfunc),gradrho(3)
-character*40 functionname(0:nfunc),quantityname(0:nquant)
+character(len=40) functionname(0:nfunc),quantityname(0:nquant)
 
 if (ifiletype/=2.and.ifiletype/=3) then
 	write(*,*) "Note: Using .wfn or .wfx file will make calculation much faster"
@@ -565,7 +565,7 @@ integer att2atm(numrealatt) !The attractor corresponds to which atom. If =0, mea
 integer walltime1,walltime2,radpotAIM,sphpotAIM
 integer,parameter :: nfunc=8,nquant=7 !The number of real space function, the number of quantities to be calculated
 real*8 arrtmp(nfunc),arrtmp2(nfunc),gradrho(3)
-character*40 functionname(0:nfunc),quantityname(0:nquant)
+character(len=40) functionname(0:nfunc),quantityname(0:nquant)
 real*8 atmcontri(ncenter,0:nfunc,0:nquant)
 real*8,allocatable :: promol(:),promolgrad(:,:),atomdens(:),atomgrad(:,:),funcval(:,:),funcgrdn(:,:),funcref(:,:)
 integer,allocatable :: grdidx(:),grdidy(:),grdidz(:) !Record x,y,z index of all the grids belonging to an attractor
@@ -842,7 +842,7 @@ if (itype==2.or.itype==3) then
 			rnowy=yarr(iy)
 			do ix=2,nx-1
 				rnowx=xarr(ix)
-				if (interbasgrid(ix,iy,iz)==.false.) cycle
+				if (.not.interbasgrid(ix,iy,iz)) cycle
  				nrefine=1
 				ndiv=nrefine**3
 				orgxref=rnowx-dx/2 !Take corner position as original point of microcycle

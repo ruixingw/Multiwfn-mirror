@@ -18,7 +18,7 @@ implicit real*8 (a-h,o-z)
 character c80tmp*80,c200tmp*200,c2000tmp*200
 integer :: nfrag=0 !Number of fragments
 integer :: igridstat=0 !State of defining grid for visualization. 0/1 = Undefined/defined
-character*200,allocatable :: fragfilename(:) !Filename of each fragment
+character(len=200),allocatable :: fragfilename(:) !Filename of each fragment
 real*8,allocatable :: tmpmat(:,:) !Temporary use
 real*8 NOCVorb(nbasis,nbasis),NOCVeig(nbasis) !For backing up NOCV orbitals
 real*8,allocatable :: NOCVorbB(:,:),NOCVeigB(:) !Same as above, for beta spin. Used only for open-shell case

@@ -2,13 +2,13 @@ program multiwfn
 use defvar
 use util
 use GUI
+!use libreta
 !use function
 implicit real*8(a-h,o-z)
 character nowdate*20,nowtime*20,c200tmp*200,c2000tmp*2000,lovername*80,settingpath*200,strtmp*3
 real*8,allocatable :: tmparr(:),tmparr2(:),tmpmat(:,:),tmpmat2(:,:),tmpmat3D(:,:,:) !For debug purpose
 integer,allocatable :: tmparri(:),tmparr2i(:),tmpmati(:,:),tmpmat2i(:,:)
 real*8 tmpv1(3),tmpv2(3)
-
 
 call kmp_set_warnings_off() !In rare case, "Cannot open message catalog "1041\libiomp5ui.dll"" may occurs, this calling avoid this problem, or user should set KMP_WARNINGS environment variable to 0
 
@@ -27,7 +27,7 @@ end if
 
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.8(dev), release date: 2021-Dec-27"
+write(*,*) "Version 3.8(dev), release date: 2022-Mar-6"
 write(*,"(a)") " Developer: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
@@ -50,12 +50,12 @@ end if
 !write(*,"(' OpenMP stacksize for each thread: ',f10.2,' MB')") dfloat(KMP_GET_STACKSIZE_S())/1024/1024
 call mkl_set_num_threads(nthreads) !Use this to set number of cores used in MKL library (e.g. function matmul_blas)
 
+!!-------- Load input file
 write(*,*)
-
 if (trim(filename)==" ") then !Haven't defined filename variable
 	call mylover(lovername)
 	write(*,"(a,a,a)") " Input file path, for example E:\",trim(lovername),".wfn"
-	write(*,*) "(Supported: .mwfn/wfn/wfx/fch/molden/31/chg/pdb/xyz/mol/mol2/cub/grd, etc.)"
+	write(*,*) "(Supported: .mwfn/wfn/wfx/fch/molden/31/chg/pdb/xyz/mol/mol2/cif/cub, etc.)"
 	write(*,"(a)") " Hint: Press ENTER button directly can select file in a GUI window. To reload the file last time used, simply input the letter ""o"". &
 	Input such as ?miku.fch can open the miku.fch in the same folder as the file last time used."
 	do while(.true.)
@@ -89,9 +89,9 @@ if (trim(filename)==" ") then !Haven't defined filename variable
 	end do
 	!Write current opened file to "lastfile" in settings.ini
 	inquire(file="settings.ini",exist=alive)
-	if (alive==.true.) then
+	if (alive) then
 		settingpath="settings.ini"
-	else if (alive==.false.) then
+	else if (.not.alive) then
 		call getenv("Multiwfnpath",c200tmp)
 		if (isys==1) then
 			settingpath=trim(c200tmp)//"\settings.ini"
@@ -103,7 +103,7 @@ if (trim(filename)==" ") then !Haven't defined filename variable
 	if (alive) then
 		open(20,file=settingpath,status="old")
 		call loclabel(20,"lastfile")
-		write(20,"(a)") "lastfile= "//trim(filename)
+		write(20,"(a)") "lastfile= """//trim(filename)//""""
 		close(20)
 	end if
 else
@@ -114,10 +114,11 @@ else
 		stop
 	end if
 end if
+
 call readinfile(filename,0)
 write(*,"(/,3a)") " Loaded ",trim(filename)," successfully!"
 
-!!-- Backup various information of first loaded (meanwhile unmodified) molecule
+!!-------- Backup various information of first loaded (meanwhile unmodified) molecule
 firstfilename=filename
 if (allocated(a)) then
 	allocate(a_org(ncenter))
@@ -141,12 +142,12 @@ cellv1_org=cellv1
 cellv2_org=cellv2
 cellv3_org=cellv3
 
-!!-- Generate backed up fragment
+!!-------- Generate backed up fragment
 nfragatm_org=ncenter
 allocate(fragatm_org(nfragatm_org))
 forall (i=1:nfragatm_org) fragatm_org(i)=i
 
-!!-- Call some routines only once
+!!-------- Call some routines only once
 if (allocated(a)) then
 	if (ncenter>15000) then
         !For huge system, generation of distance matrix is not only quite time consuming but take huge memory
@@ -179,10 +180,10 @@ if (itransparent==1) then
     CALL GIFMOD("ON",'TRANSPARENCY')
 end if
 
-!-- Show cell information
+!!-------- Show cell information
 call showcellinfo
 
-!-- Show basic molecular information
+!!-------- Show basic molecular information
 if (allocated(a)) then
 	write(*,*)
 	call showformula
@@ -219,10 +220,6 @@ if (allocated(a)) then
 end if
 
 !Special treatment
-!call generate_promolwfn
-!do i=1,ncenter
-!	write(*,"(i5,3E16.8)") i,a(i)%x,a(i)%y,a(i)%z
-!end do
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
@@ -284,6 +281,7 @@ do while(.true.) !Main loop
     else if (c200tmp=="iu") then
         write(*,*) "Input the index of the user-defined function you want to use, e.g. 5"
         read(*,*) iuserfunc
+        call init_func
         write(*,*) "Done!"
     else if (c200tmp=="geomparm") then
 		write(*,*) "Input path of the file to be exported, e.g. /sob/geomparm.txt"
@@ -305,10 +303,15 @@ do while(.true.) !Main loop
 			    cycle
 		    end if
 		    if (ncenter>0) then
-				write(*,*) "Atom list:"
-				do i=1,ncenter
-					write(*,"(i5,'(',a2,')',' --> Charge:',f10.6,'  x,y,z(Bohr):',3f11.6)") i,a(i)%name,a(i)%charge,a(i)%x,a(i)%y,a(i)%z
-				end do
+				if (ncenter<=300) then
+					write(*,*) "Atom list:"
+					do i=1,ncenter
+						write(*,"(i5,'(',a2,')',' --> Charge:',f10.6,'  x,y,z(Bohr):',3f11.6)") i,a(i)%name,a(i)%charge,a(i)%x,a(i)%y,a(i)%z
+					end do
+                else
+					write(*,"(a)") " Note: There are more than 300 atoms, so their information are not shown here now. &
+                    To print, in the manu bar please select ""Tools"" - ""Print XYZ coordinates"""
+				end if
             end if
 		    if (allocated(CObasa).and.imodwfn==0) then !fch and occupation number hasn't been modified
 			    if (wfntype==0) then
@@ -334,6 +337,7 @@ do while(.true.) !Main loop
 				    write(*,"(' Index of SOMO orbitals:',10i6)") (i,i=nint(nbelec+1),nint(naelec))
 			    end if
 		    end if
+			call gen_GTFuniq(1) !Generate unique GTF information, for faster evaluation in orbderv
 		    if (ifiletype==7.or.ifiletype==8) then !Visualize grid data
 			    if (isilent==0) call drawisosurgui(1)
 		    else
@@ -341,6 +345,7 @@ do while(.true.) !Main loop
 		    end if
             iorbvis=0 !Recover its status. iorbvis=0 makes saved image file has DISLIN prefix
             ishowdatarange=0 !Do not show data range if showing it
+            call del_GTFuniq !Destory unique GTF information
             call setfil("dislin."//trim(graphformat)) !The file name of saved image file may have been modified, recover to default one
 
 	    !!!-------------------------------------------------
@@ -371,7 +376,7 @@ do while(.true.) !Main loop
 	    else if (isel==5) then
 		    call study3dim
 
-	    !!!---------------------------------------
+	    !!!--------------------------------------------------------------------------------
 	    !6!!------------------- Check & Modify wavefunction or show GTF/Orbital information
 	    else if (isel==6) then
 		    call modwfn
@@ -383,30 +388,30 @@ do while(.true.) !Main loop
 		    call population_main
 
 
-	    !!!---------------------------------------
+	    !!!-------------------------------------------------
 	    !8!!------------------- Orbital composition analysis
 	    else if (isel==8) then
 		    call orbcomp_main
 
 
-	    !!!---------------------------------------
+	    !!!----------------------------------------
 	    !9!!------------------- Bond order analysis
 	    else if (isel==9) then
 		    call bondorder_main
 
 
-	    !!!---------------------------------------
+	    !!!------------------------------
 	    !10!!------------------- Plot DOS
 	    else if (isel==10) then
 		    call DOS
 		
-	    !!!---------------------------------------
-	    !11!!------------------- Plot spectrums
+	    !!!----------------------------------
+	    !11!!------------------- Plot spectra
 	    else if (isel==11) then
 		    call plotspectrum
 
 
-	    !!!---------------------------------------
+	    !!!------------------------------------------------
 	    !12!!------------------- Molecular surface analysis
 	    else if (isel==12) then
 		    call surfana
@@ -418,13 +423,13 @@ do while(.true.) !Main loop
 		    call procgriddata
 
 
-	    !!!---------------------------------------
+	    !!!-------------------------------------------------------------------
 	    !14!!------------------- Adaptive natural density partitioning (AdNDP)
 	    else if (isel==14) then
 		    call AdNDP
 		
 		
-	    !!!---------------------------------------
+	    !!!--------------------------------------------------
 	    !15!!------------------- Integrate fuzzy atomic space
 	    else if (isel==15) then
 		    call intatomspace(0)
@@ -432,7 +437,7 @@ do while(.true.) !Main loop
 		    call fuzzySBL	
 
 
-	    !!!---------------------------------------
+	    !!!---------------------------------------------------
 	    !16!!------------------- Charge decomposition analysis
 	    else if (isel==16) then
 		    call CDA
@@ -444,73 +449,73 @@ do while(.true.) !Main loop
 		    call basinana
 
 
-	    !!!---------------------------------------
+	    !!!--------------------------------------------------
 	    !18!!------------------- Electron excitation analysis
 	    else if (isel==18) then
 		    call excittrans_main
 
 
-	    !!!---------------------------------------
+	    !!!---------------------------------------------------
 	    !19!!------------------- Orbital localization analysis
 	    else if (isel==19) then
 		    call orbloc
 		
 		
-	    !!!---------------------------------------
+	    !!!------------------------------------------------------
 	    !20!!------------------- Visual study of weak interaction
 	    else if (isel==20) then
 		    call visweak_main
 		
 		
-	    !!!---------------------------------------
+	    !!!---------------------------------------------------
 	    !21!!------------------- Energy decomposition analysis
 	    else if (isel==21) then
 		    call EDA_main
 		
 		
-	    !!!---------------------------------------
+	    !!!---------------------------------------------
 	    !22!!------------------- Conceptual DFT analysis
 	    else if (isel==22) then
 		    call CDFT
 		
 		
-	    !!!---------------------------------------
+	    !!!-----------------------------------
 	    !23!!------------------- NOCV analysis
 	    else if (isel==23) then
 		    call ETS_NOCV
 		
 		
-	    !!!---------------------------------------
+	    !!!----------------------------------------------------
 	    !24!!------------------- (Hyper)polarizability analyses
 	    else if (isel==24) then
 		    call hyper_polarizability
 
             
-	    !!!---------------------------------------
+	    !!!-------------------------------------------------------------
 	    !25!!------------------- Delocalization and aromaticity analyses
 	    else if (isel==25) then
 		    call deloc_aromat
 		
 
-	    !!!---------------------------------------
+	    !!!------------------------------------------------------------------
 	    !100!!------------------- Misc and some unimportant functions, Part 1
 	    else if (isel==100) then
 		    call otherfunc_main
 		
 		
-	    !!!---------------------------------------
+	    !!!------------------------------------------------------------------
 	    !200!!------------------- Misc and some unimportant functions, Part 2
 	    else if (isel==200) then
 		    call otherfunc2_main
 		
 		
-	    !!!---------------------------------------
+	    !!!------------------------------------------------------------------
 	    !200!!------------------- Misc and some unimportant functions, Part 3
 	    else if (isel==300) then
 		    call otherfunc3_main
 
 
-	    !!!---------------------------------------
+	    !!!-----------------------------------------
 	    !1000!!------------------- Special functions
 	    else if (isel==1000) then
 		    write(*,*)
@@ -546,8 +551,9 @@ do while(.true.) !Main loop
 			    read(*,*) refx,refy,refz
 			    write(*,*) "Done!"
 		    else if (i==2) then
-			    write(*,*) "Input an integer, e.g. 24"
+			    write(*,*) "Input index of the user-defined function, e.g. 24"
 			    read(*,*) iuserfunc
+				call init_func
 			    write(*,*) "Done!"
 		    else if (i==3) then
 			    write(*,*) "Input the index of the nucleus, e.g. 24"
@@ -599,7 +605,7 @@ do while(.true.) !Main loop
 		    else if (i==13) then
                 allocate(tmpmat(ncenter,ncenter))
                 inquire(file="bndmat.txt",exist=alive)
-	            if (alive==.false.) then
+	            if (.not.alive) then
 	                write(*,*) "Error: Cannot find the bndmat.txt in current folder!"
                     write(*,*) "Press ENTER button to return"
                     read(*,*)

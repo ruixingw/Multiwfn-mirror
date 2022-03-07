@@ -32,7 +32,7 @@ integer :: nbeckeiter=3
 integer :: cenind(10) !Record atom index for multicenter DI
 real*8 hess(3,3),rhogradw(3)
 character :: radfilename*200,selectyn,c80inp*80,specatmfilename*80,c200tmp*200,c2000tmp*2000
-character*200 :: atmvolwfn(nelesupp)=" " !Record the wavefunction file path of each element for evaluating atomic volume
+character(len=200) :: atmvolwfn(nelesupp)=" " !Record the wavefunction file path of each element for evaluating atomic volume
 real*8,external :: fdens_rad
 integer,allocatable :: aromatatm(:)
 real*8 atmpol(ncenter) !Atomic polarizability estimated by TS method
@@ -1028,7 +1028,7 @@ end if
 		write(*,*) "Press ENTER button to continue"
 		read(*,*)
 	end if
-	!RHF,R-post-HF, DI_A,B=2¡Æ[i,j]dsqrt(n_i*n_j)*S_i,j_A * S_i,j_B     where i and j are non-spin orbitals
+	!RHF,R-post-HF, DI_A,B=2âˆ‘[i,j]dsqrt(n_i*n_j)*S_i,j_A * S_i,j_B     where i and j are non-spin orbitals
 	if (wfntype==0.or.wfntype==3) then
 		DI=0D0
 		do iatm=1,ncenter
@@ -1085,7 +1085,7 @@ end if
 		!Combine alpha and Beta to total
 		DI=DIa+DIb
 		LI=LIa+LIb
-	!UHF,U-post-HF   DI(A,B)=2¡Æ[i,j]dsqrt(n_i*n_j)*S_i,j_A * S_i,j_B   where i and j are spin orbitals
+	!UHF,U-post-HF   DI(A,B)=2âˆ‘[i,j]dsqrt(n_i*n_j)*S_i,j_A * S_i,j_B   where i and j are spin orbitals
 	else if (wfntype==1.or.wfntype==4) then
 		!Alpha
 		DIa=0D0
@@ -1163,10 +1163,10 @@ if (isel==1) then
 	write(*,*) "  Atomic space        Value                % of sum            % of sum abs"
 	if (any(abs(rintval(:,1))>1D9).or.all(abs(rintval(:,1))<1D-7)) then
 		do iatm=1,ncenter
-			write(*,"(i6,'(',a2,')  ',D20.10,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
+			write(*,"(i6,'(',a2,')  ',E20.10,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
 		end do
-		write(*,"(' Summing up above values:',D20.10)") sumval
-		write(*,"(' Summing up absolute value of above values:',D20.10)") sumabsval
+		write(*,"(' Summing up above values:',E20.10)") sumval
+		write(*,"(' Summing up absolute value of above values:',E20.10)") sumabsval
     else
 		do iatm=1,ncenter
 			write(*,"(i6,'(',a2,')  ',f20.8,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
@@ -1541,7 +1541,7 @@ else if (isel==7) then !FLU-pi
 	write(*,*) "Which occupied orbitals are pi orbitals? Input their indices, e.g. 17,20,21"
 	read(*,"(a)") c80inp
 	call str2arr(c80inp,nFLUorb,FLUorb)
-	!Generate DI for pi orbitals. DI_A,B=2¡Æ[i,j]dsqrt(n_i*n_j)*S_i,j_A * S_i,j_B     where i and j are non-spin orbital
+	!Generate DI for pi orbitals. DI_A,B=2âˆ‘[i,j]dsqrt(n_i*n_j)*S_i,j_A * S_i,j_B     where i and j are non-spin orbital
 	DI=0D0
 	do iatm=1,ncenter
 		do jatm=iatm+1,ncenter

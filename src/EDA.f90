@@ -56,7 +56,7 @@ integer,allocatable :: frag(:,:),fragnatm(:)
 real*8,allocatable :: elemat(:,:),repmat(:,:),dispmat(:,:),totmat(:,:) !Interfragment interaction matrix of electrostatic, repulsive, dispersion and total interaction
 real*8 eleatm(ncenter),repatm(ncenter),dispatm(ncenter),totatm(ncenter)
 !vdW parameter of each atom, for UFF they are well depths and vdW distance; For AMBER/GAFF they are well depths and vdW radii
-character*2 c2tmp,FFtype(ncenter) !Force field atom types, only needed by AMBER and GAFF
+character(len=2) c2tmp,FFtype(ncenter) !Force field atom types, only needed by AMBER and GAFF
 
 FFtype="?"
 if (ifiletype/=4) a%charge=0 !If the input file is not chg or pqr format, assume atomic charges to be zero
@@ -135,7 +135,7 @@ allocate(parmA(ncenter),parmB(ncenter))
 		read(*,*) nfrag
 		if (nfrag==0) then
 			write(*,*) "Input the file containing fragment definition, e.g. C:\fragdef.txt"
-			write(*,*) "Note: If press ENTER directly, fragdef.txt in current folder will be used"
+			write(*,"(a)") " Note: If pressing ENTER button directly, fragdef.txt in current folder will be used"
 			do while(.true.)
 				read(*,"(a)") c200tmp
 				if (c200tmp==" ") c200tmp="fragdef.txt"
@@ -175,7 +175,7 @@ allocate(parmA(ncenter),parmB(ncenter))
 	else if (isel==3) then !Load atomic charges and types
 		write(*,*) "Input the path of the file containing list of molecule data"
 		write(*,*) "e.g. C:\hanoko\water2_ethanol3.txt"
-		write(*,*) "Note: If press ENTER directly, mollist.txt in current folder will be loaded"
+		write(*,"(a)") " Note: If pressing ENTER button directly, mollist.txt in current folder will be loaded"
 		do while(.true.)
 			read(*,"(a)") c200tmp
 			if (c200tmp==" ") c200tmp="mollist.txt"
@@ -423,6 +423,7 @@ end subroutine
 !!----- Calculate atom-atom electrostatic interaction using forcefield
 subroutine calcAAele(iatm,jatm,eleval)
 use defvar
+use util
 use EDA_FF_mod
 implicit real*8 (a-h,o-z)
 integer iatm,jatm
@@ -438,6 +439,7 @@ end subroutine
 !!----- Calculate atom-atom exchange-repulsion (repval) and dispersion interaction (dispval) using forcefield
 subroutine calcAAvdW(iatm,jatm,repval,dispval)
 use defvar
+use util
 use EDA_FF_mod
 implicit real*8 (a-h,o-z)
 integer iatm,jatm
@@ -495,13 +497,13 @@ use util
 implicit real*8 (a-h,o-z)
 integer ivdwmode,istatus
 real*8 parmA(ncenter),parmB(ncenter)
-character*2 FFtype(ncenter)
+character(len=2) FFtype(ncenter)
 real*8 :: UFF_A(103),UFF_B(103)
 
 !AMBER99 atomic information is taken from parm99.dat of AMBERtools package, the lone pair (LP) type is not taken into account
 !OM is not standard AMBER atomic type, however gview assigns carboxyl oxygen as OM, while in standard AMBER naming it should be O
 integer,parameter :: nAMBERtype=62
-character*2 :: AMBERname(nAMBERtype)=(/ "H ","HO","HS","HC","H1","H2","H3","HP","HA",&
+character(len=2) :: AMBERname(nAMBERtype)=(/ "H ","HO","HS","HC","H1","H2","H3","HP","HA",&
 "H4","H5","HW","HZ","O ","O2","OW","OH","OS","C*","CT","C ","N ","N3","S ","SH",&
 "P ","IM","Li","IP","Na","K ","Rb","Cs","MG","C0","Zn","F ","Cl","Br","I ","IB",&
 "NA","N2","N*","NC","NB","NT","NY",&  !7 types equivalent to "N "
@@ -526,14 +528,14 @@ real*8 :: AMBER_B(nAMBERtype)=(/ & !AMBER vdW radii in Angstrom
 
 !GAFF atomic information is taken from gaff.dat of AMBERtools package
 integer,parameter :: nGAFFtype=83
-character*2 :: GAFFname(nGAFFtype)=(/ &
+character(len=2) :: GAFFname(nGAFFtype)=(/ &
 "h1","h2","h3","h4","h5","ha","hc","hn","ho","hp","hs","hw","hx","o ",&
 "oh","os","op","oq","ow","c ","c1","c2","c3","ca","cc","cd","ce","cf",&
 "cg","ch","cp","cq","cu","cv","cx","cy","cz","n ","ni","nj","n1","n2",&
 "n3","np","nq","n4","nk","nl","na","nb","nc","nd","ne","nf","nh","nm",&
 "nn","no","s ","s2","s4","s6","sx","sy","sh","ss","sp","sq","p2","p3",&
 "p4","p5","pb","pc","pd","pe","pf","px","py","f ","cl","br","i " /)
-character*2 c2tmp
+character(len=2) c2tmp
 real*8 :: GAFF_A(nGAFFtype)=(/ & !GAFF well depth in kcal/mol
 0.0157D0,0.0157D0,0.0157D0,0.0150D0,0.0150D0,0.0150D0,0.0157D0,0.0157D0,&
 0.0000D0,0.0157D0,0.0157D0,0.0000D0,0.0157D0,0.2100D0,0.2104D0,0.1700D0,&

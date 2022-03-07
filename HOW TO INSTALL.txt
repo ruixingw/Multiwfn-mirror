@@ -1,0 +1,2 @@
+Please carefully check Section 2.1.2 of Multiwfn manual on how to correctly install Multiwfn under Linux.
+If you do not properly configurate your system as mentioned in the manual, Multiwfn may crash during loading file or analysis, or unable to load information from settings.ini.

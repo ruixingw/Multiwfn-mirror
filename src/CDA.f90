@@ -1146,7 +1146,7 @@ end subroutine
 !--Read occupation number of natural orbitals from pop=full output. Assume that nbasis=nmo. Must use loclabel to locate to title line first
 !ispace=0 used to read natural orbital occupation numbers; ispace=1 is used to read MO energies
 subroutine readgauorbeig(eigvec,ndim,ispace)
-character*80 c80tmp
+character c80tmp*80
 integer ipos
 real*8 eigvec(ndim)
 read(10,*)
@@ -1328,7 +1328,7 @@ do iorb=1,nmo1
 		ilastplotted=0
 		cycle
 	end if
-	if ((idrawMObar==2.or.idrawMObar==3).and.FO1involveconn(iorb)==.false.) cycle
+	if ((idrawMObar==2.or.idrawMObar==3).and.(.not.FO1involveconn(iorb))) cycle
 	call solid !Use solid line to plot occupied orbital bars, use dashed line to plot virtual orbital bars
 	if (occ1(iorb)==0) call dash
 	call rline(xlow1,eneval,xhigh1,eneval)
@@ -1356,7 +1356,7 @@ do iorb=1,nmo2
 		ilastplotted=0
 		cycle
 	end if
-	if ((idrawMObar==2.or.idrawMObar==3).and.FO2involveconn(iorb)==.false.) cycle
+	if ((idrawMObar==2.or.idrawMObar==3).and.(.not.FO2involveconn(iorb))) cycle
 	call solid
 	if (occ2(iorb)==0) call dash
 	call rline(xlow2,eneval,xhigh2,eneval)

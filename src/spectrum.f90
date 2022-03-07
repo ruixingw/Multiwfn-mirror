@@ -2,6 +2,9 @@
 !multiple.txt can records input file of multiple systems, but the system with the maximum number of transitions must be presented as the first entry
 !If all(weight=1), then it is assumed that multiple.txt is not oriented for plotting weighted spectrum along with individual spectrum for each system, &
 !but only for the latter, and in this case custom legend is allowed, which can be written in multiple.txt as the second column
+!
+!For single system, data is dataxall(1,1:numdata), nsystem=1, and numdataall(1)=numdata
+!For n systems, nsystem=n, data of system i is dataxall(i,1:numdataall(i)), and in this case numdata is maximum length of numdataall
 subroutine plotspectrum
 use defvar
 use dislin_d
@@ -10,8 +13,8 @@ use util
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: weight(:) !Weight of various system for plotting mixed spectrum
 real*8,allocatable :: dataxall(:,:),dataxall_org(:,:),strall(:,:),FWHMall(:,:) !Transition data loaded from multiple files. The first index corresponds to system index
-integer,allocatable :: numdataall(:) !numdata is maximum length of numdataall
-character*80,allocatable :: mollegend(:)
+integer,allocatable :: numdataall(:) !numdata is number of data, while for multiple system case, 
+character(len=80),allocatable :: mollegend(:)
 real*8,allocatable :: linexall(:,:),lineyall(:,:) !Array used to draw discrete lines for all systems. The first index corresponds to system index
 real*8,allocatable :: curveyall(:,:) !The first index corresponds to system index. curvey in global array is used to record weighted curve
 integer,allocatable :: tmparr(:),tmparr2(:)
@@ -28,6 +31,7 @@ integer :: height_axis=36,ticksize=36,legtextsize=36,labtype_Yleft=1,ilegendpos=
 integer,parameter :: ncurrclr=15 !At most 15 individual colors. For more curves/lines, always use color of last one (8)
 integer :: currclr(ncurrclr)=(/ 12,3,10,1,14,5,9,13,11,6,7,15,16,2,8 /) !Color index of current curve/line colors
 integer :: iYeq0=1 !If drawing line corresponding to Y=0
+real*8 :: degencrit=0.05D0,xlow=0,xhigh=1000,stepx=100
 !Used for drawing spikes for indicating position of levels
 integer,parameter :: maxspike=10
 real*8,allocatable :: spikey(:) !Temporarily used for plotting spikes
@@ -129,7 +133,7 @@ if (index(filename,"multiple.txt")/=0) then !Multiple file list with weights is 
 		nsystem=nsystem+1
         
 		inquire(file=c200tmp,exist=alive)
-		if (alive==.false.) then
+		if (.not.alive) then
 			write(*,"(' Error: Cannot find ',a)") trim(c200tmp)
 			if (index(c200tmp,'/')/=0) then
 				write(*,*) "Reminder: Since the file path contains / symbol, you should add "" at the two ends of the path, so that the file can be properly loaded"
@@ -138,7 +142,7 @@ if (index(filename,"multiple.txt")/=0) then !Multiple file list with weights is 
 			read(*,*)
 			stop
         else !Obtain number of data
-    		call loadtransdata(1,ispectrum,trim(c200tmp),numdata)
+    			call loadtransdata(1,ispectrum,trim(c200tmp),numdata)
             if (numdata>maxdata) maxdata=numdata
 		end if
 	end do
@@ -377,7 +381,7 @@ do while(.true.)
         read(*,"(a)") c200tmp
         if (c200tmp==" ") c200tmp="spectrum.dat"
 	    inquire(file=c200tmp,exist=alive)
-	    if (alive==.false.) then
+	    if (.not.alive) then
 	        write(*,*) "Error: Cannot find the file! Press ENTER button to return"
             read(*,*)
             cycle
@@ -739,40 +743,61 @@ do while(.true.)
 		if (ispectrum==1.or.ispectrum==2.or.ispectrum==5.or.ispectrum==6) then !Vibrational spectra, mode selection is viable
 			write(*,*) "Input the index range of the transitions you want to scaled"
 			write(*,*) "e.g. 1,3-6,22 means selecting transitions 1,3,4,5,6,22"
+            write(*,*) "If you want to select transitions according to frequency range, input ""f"" now"
 			write(*,"(a)") " Note: Press ENTER button directly can select all modes. Input 0 can return"
-            write(*,"(a,i6,a)") " Note: There are",numdata, " data in total"
+            if (nsystem==1) write(*,"(a,i6,a)") " Note: There are",numdata," frequencies in total"
 			read(*,"(a)") c200tmp
-			if (c200tmp(1:1)=='0') then
-				cycle
-			else if (c200tmp==' '.or.index(c200tmp,"all")/=0) then !Selected all modes
-				nmode=numdata
-				allocate(tmparr(numdata))
-				forall(itmp=1:numdata) tmparr(itmp)=itmp
-			else
-				call str2arr(c200tmp,nmode)
-				allocate(tmparr(nmode))
-				call str2arr(c200tmp,nmode,tmparr)
-			end if
-			write(*,"(i6,' frequencies were selected')") nmode
-			write(*,"(a)") " Input the scale factor, e.g. 0.97"
-			write(*,"(a)") " Note: If pressing ENTER button directly, 0.9614 will be used, which is recommended for B3LYP/6-31G* level. &
-            If inputting 1.0, frequencies will correspond to the ones originally loaded from input file"
-			read(*,"(a)") c200tmp
-			if (c200tmp==" ") then
-				tmpval=0.9614D0
-			else
-				read(c200tmp,*) tmpval
-			end if
-			do idx=1,nmode
-				dataxall(:,tmparr(idx))=dataxall(:,tmparr(idx))*tmpval
-			end do
-			deallocate(tmparr)
+            if (index(c200tmp,'f')/=0) then !Select according to frequency, applied to all systems
+				write(*,*) "Input lower limit of frequency in cm^-1, e.g. 1500"
+                read(*,*) flow
+				write(*,*) "Input upper limit of frequency in cm^-1, e.g. 4000"
+                read(*,*) fup
+				write(*,*) "Input scale factor, e.g. 0.97"
+                read(*,*) tmpval
+                nscl=0
+                do isystem=1,nsystem
+					do imode=1,numdataall(isystem)
+						if (dataxall(isystem,imode)>=flow.and.dataxall(isystem,imode)<=fup) then
+							dataxall(isystem,imode)=dataxall(isystem,imode)*tmpval
+                            nscl=nscl+1
+                        end if
+					end do
+                end do
+                write(*,"(' Done!',i8,' frequencies have been scaled')") nsclall
+			else if (c200tmp(1:1)=='0') then
+                cycle
+            else !Select according to index, or select 
+				if (c200tmp==' '.or.index(c200tmp,"all")/=0) then !Selected all modes
+					nmode=numdata
+					allocate(tmparr(numdata))
+					forall(itmp=1:numdata) tmparr(itmp)=itmp
+				else
+					call str2arr(c200tmp,nmode)
+					allocate(tmparr(nmode))
+					call str2arr(c200tmp,nmode,tmparr)
+				end if
+				write(*,"(i6,' frequencies are selected')") nmode
+				write(*,"(/,a)") " Input scale factor, e.g. 0.97"
+				write(*,"(a)") " Note: If pressing ENTER button directly, 0.9614 will be used, which is recommended for B3LYP/6-31G* level. &
+				If inputting 1.0, frequencies will correspond to the ones originally loaded from input file"
+				read(*,"(a)") c200tmp
+				if (c200tmp==" ") then
+					tmpval=0.9614D0
+				else
+					read(c200tmp,*) tmpval
+				end if
+				do idx=1,nmode
+					dataxall(:,tmparr(idx))=dataxall(:,tmparr(idx))*tmpval
+				end do
+				deallocate(tmparr)
+                write(*,*) "Done! Frequencies have been scaled"
+            end if
 		else !Electronic spectra, use universal scaling
 			write(*,*) "Input the scale factor, e.g. 0.92"
 			read(*,*) tmpval
 			dataxall=dataxall*tmpval
+			write(*,*) "Done! Transition energies have been scaled"
 		end if
-		write(*,*) "Done! Transition energies have been scaled"
     
     else if (isel==16) then !Set showing method of extrema labels
         do while(.true.)
@@ -1385,23 +1410,45 @@ do while(.true.)
 		!Explain meaning of each column
 		if (ispectrum==1) then !IR
 			write(*,*) "Column 1: Wavenumber (cm^-1)"
-			write(*,*) "Column 2: Molar absorption coefficient (L/mol/cm)"
+            if (nsystem==1) then
+				write(*,*) "Column 2: Molar absorption coefficient (L/mol/cm)"
+            else
+				write(*,*) "Other columns: Molar absorption coefficient (L/mol/cm) of each curve"
+            end if
 		else if (ispectrum==2) then !Raman
 			write(*,*) "Column 1: Wavenumber (cm^-1)"
-			write(*,*) "Column 2: Relative Raman intensity"
+            if (nsystem==1) then
+				write(*,*) "Column 2: Relative Raman intensity"
+            else
+				write(*,*) "Other columns: Relative Raman intensity of each curve"
+            end if
 		else if (ispectrum==3.or.ispectrum==4) then !UV-Vis, ECD
 			if (iunitx==1) write(*,*) "Column 1: Excitation energy (eV)"
 			if (iunitx==2) write(*,*) "Column 1: Wavelength (nm)"
 			if (iunitx==3) write(*,*) "Column 1: Wavenumber (1000 cm^-1)"
-			if (ispectrum==3) write(*,*) "Column 2: Molar absorption coefficient (L/mol/cm)"
-			if (ispectrum==4) write(*,*) "Column 2: Delta molar absorption coefficient (arb.)"
+            if (nsystem==1) then
+				if (ispectrum==3) write(*,*) "Column 2: Molar absorption coefficient (L/mol/cm)"
+				if (ispectrum==4) write(*,*) "Column 2: Delta molar absorption coefficient (arb.)"
+            else
+				if (ispectrum==3) write(*,*) "Other columns: Molar absorption coefficient (L/mol/cm) of each curve"
+				if (ispectrum==4) write(*,*) "Other columns: Delta molar absorption coefficient (arb.) of each curve"
+            end if
 		else if (ispectrum==5) then !VCD
 			write(*,*) "Column 1: Wavenumber (cm^-1)"
-			write(*,*) "Column 2: Delta molar absorption coefficient (L/mol/cm)"
+            if (nsystem==1) then
+				write(*,*) "Column 2: Delta molar absorption coefficient (L/mol/cm)"
+            else
+				write(*,*) "Other columns: Delta molar absorption coefficient (L/mol/cm) of each curve"
+            end if
 		else if (ispectrum==6) then !ROA
 			write(*,*) "Column 1: Wavenumber (cm^-1)"
-			if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) write(*,*) "Column 2: IR+IL"
-			if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) write(*,*) "Column 2: IR-IL"
+            if (nsystem==1) then
+				if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) write(*,*) "Column 2: IR+IL"
+				if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) write(*,*) "Column 2: IR-IL"
+            else
+				if (iROAtype==1.or.iROAtype==3.or.iROAtype==5) write(*,*) "Other columns: IR+IL of each curve"
+				if (iROAtype==2.or.iROAtype==4.or.iROAtype==6) write(*,*) "Other columns: IR-IL of each curve"
+            end if
 		end if
 		if (isel==15) then
 			write(*,*) "Correspondence between the columns and individual transitions in the file:"
@@ -1454,33 +1501,33 @@ do while(.true.)
 	end if	
 	
     !Find and print minimum/maximum positions
-    if (isel==0) then
-        if (nsystem==1.or.any(weight/=1)) then !If simply plot multiple systems, extrema are meaningless
-            write(*,*) "Extrema on the spectrum curve:"
-	        numlocmax=0
-	        do ipoint=2,num1Dpoints-1
-		        gradold=curvey(ipoint)-curvey(ipoint-1)
-		        gradnew=curvey(ipoint+1)-curvey(ipoint)
-		        if (gradold*gradnew<0D0.and.gradold>gradnew) then
-			        numlocmax=numlocmax+1
-                    maxlabX(numlocmax)=ipoint
-			        write(*,"(' Maximum',i5,'   X:',f15.4,'   Value:',f15.4)") numlocmax,curvex(ipoint),curvey(ipoint)
-		        end if
-	        end do
-	        numlocmin=0
-	        do ipoint=2,num1Dpoints-1
-		        gradold=curvey(ipoint)-curvey(ipoint-1)
-		        gradnew=curvey(ipoint+1)-curvey(ipoint)
-		        if (gradold*gradnew<0D0.and.gradold<gradnew) then
-			        numlocmin=numlocmin+1
-                    minlabX(numlocmin)=ipoint
-                    if (ispectrum>2) then !UV-Vis, ECD, VCD, ROA
-			            write(*,"(' Minimum',i5,'   X:',f15.3,'   Value:',f15.4)") numlocmin,curvex(ipoint),curvey(ipoint)
-                    end if
-		        end if
-	        end do
-            if (ispectrum<=2) write(*,"(a)") " Position of minima are not reported since they are commonly not of interest for this kind of spectrum"
-	        if (nsystem>1) write(*,*) "Note: The extrema reported above correspond to weighted spectrum"
+    if (nsystem==1.or.any(weight/=1)) then !If simply plot multiple systems, extrema are meaningless
+        if (isel==0) write(*,*) "Extrema on the spectrum curve:"
+	    numlocmax=0
+	    do ipoint=2,num1Dpoints-1
+		    gradold=curvey(ipoint)-curvey(ipoint-1)
+		    gradnew=curvey(ipoint+1)-curvey(ipoint)
+		    if (gradold*gradnew<0D0.and.gradold>gradnew) then
+			    numlocmax=numlocmax+1
+                maxlabX(numlocmax)=ipoint
+			    if (isel==0) write(*,"(' Maximum',i5,'   X:',f15.4,'   Value:',f15.4)") numlocmax,curvex(ipoint),curvey(ipoint)
+		    end if
+	    end do
+	    numlocmin=0
+	    do ipoint=2,num1Dpoints-1
+		    gradold=curvey(ipoint)-curvey(ipoint-1)
+		    gradnew=curvey(ipoint+1)-curvey(ipoint)
+		    if (gradold*gradnew<0D0.and.gradold<gradnew) then
+			    numlocmin=numlocmin+1
+                minlabX(numlocmin)=ipoint
+                if (ispectrum>2.and.isel==0) then !UV-Vis, ECD, VCD, ROA
+			        write(*,"(' Minimum',i5,'   X:',f15.3,'   Value:',f15.4)") numlocmin,curvex(ipoint),curvey(ipoint)
+                end if
+		    end if
+	    end do
+        if (isel==0) then
+			if (ispectrum<=2) write(*,"(a)") " Position of minima are not reported since they are commonly not of interest for this kind of spectrum"
+			if (nsystem>1) write(*,*) "Note: The extrema reported above correspond to weighted spectrum"
         end if
     end if
     
@@ -2448,7 +2495,7 @@ if (ixtb==1) then
     !Since xtb 6.4, the unit has been given in km/mol
 	write(*,*)
 	write(*,"(a)") " xtb program outputs all frequencies including overall rotation and translation modes. Now remove how many lowest modes to discard these modes? e.g. 6"
-	write(*,*) "If press ENTER directly, 6 lowest modes will be discarded"
+	write(*,*) "If pressing ENTER button directly, 6 lowest modes will be discarded"
 	read(*,"(a)") c80tmp
 	if (c80tmp==" ") then
 		nremove=6
@@ -2480,56 +2527,88 @@ if (iCP2K==1) then
 	    write(*,*) "Recognized as a CP2K output file"
 	    write(*,*)
     end if
-    !Find how many frequencies in the file
     rewind(10)
-    i1=0
-    i2=0
-    i3=0
-    do while(.true.)
-	    call loclabel(10,"VIB|Frequency (cm^-1)",ifound,0)
-	    if (ifound==1) then
-		    i1=0;i2=0;i3=0
-		    backspace(10)
-            read(10,"(a)") c200tmp
-		    read(c200tmp(10:),*,iostat=ierror) i1,i2,i3
-		    if (ierror/=0) then
-			    read(c200tmp(10:),*,iostat=ierror) i1,i2
-			    if (ierror/=0) then
-				    read(c200tmp(10:),*,iostat=ierror) i1
-			    end if
-		    end if
-		    read(10,*);read(10,*)
-		    if (i1==0.or.i2==0.or.i3==0) exit
-	    else
-		    exit
-	    end if
-    end do
-    rewind(10)
-    numdata=max(i1,i2,i3)
+    
+    if (ispectrum==3) then !UV-Vis
+		call loclabelfinal(10,"number   energy (eV)",ifound)
+        if (ifound==0) then
+			write(*,*) "Error: Unable to find electronic excitation information!"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            return
+        end if
+        read(10,*)
+        read(10,*)
+		numdata=0
+		do while(.true.)
+			read(10,"(a)") c80tmp
+            if (c80tmp==" ") exit
+			numdata=numdata+1
+		end do
+        if (imode==1) then !Have obtained number of data, return
+            close(10)
+            return
+        end if
+		allocate(datax(numdata),str(numdata),FWHM(numdata))
+		FWHM=2/3D0
+		do i=1,numdata+1
+			backspace(10)
+        end do
+		do i=1,numdata !Read excitation energy (eV) and oscillator strength
+			read(10,*) c80tmp,c80tmp,datax(i),c80tmp,c80tmp,c80tmp,str(i)
+		end do
+    
+    else if (ispectrum==1) then !IR
+		!Find how many frequencies in the file
+		i1=0
+		i2=0
+		i3=0
+		do while(.true.)
+			call loclabel(10,"VIB|Frequency (cm^-1)",ifound,0)
+			if (ifound==1) then
+				i1=0;i2=0;i3=0
+				backspace(10)
+				read(10,"(a)") c200tmp
+				read(c200tmp(10:),*,iostat=ierror) i1,i2,i3
+				if (ierror/=0) then
+					read(c200tmp(10:),*,iostat=ierror) i1,i2
+					if (ierror/=0) then
+						read(c200tmp(10:),*,iostat=ierror) i1
+					end if
+				end if
+				read(10,*);read(10,*)
+				if (i1==0.or.i2==0.or.i3==0) exit
+			else
+				exit
+			end if
+		end do
+		rewind(10)
+		numdata=max(i1,i2,i3)
 
-	allocate(datax(numdata),str(numdata),FWHM(numdata))
-	FWHM=8D0
-    ilackdata=numdata
-    inow=1
-    do while(.true.)
-	    if (ilackdata>3) then
-		    iread=3
-	    else
-		    iread=ilackdata
-	    end if
-	    call loclabel(10,"VIB|Frequency (cm^-1)",ifound,0)
-	    read(10,"(22x)",advance="no")
-	    if (iread==1) read(10,*) datax(inow)
-	    if (iread==2) read(10,*) datax(inow),datax(inow+1)
-	    if (iread==3) read(10,*) datax(inow),datax(inow+1),datax(inow+2)
-	    read(10,"(22x)",advance="no")
-	    if (iread==1) read(10,*) str(inow)
-	    if (iread==2) read(10,*) str(inow),str(inow+1)
-	    if (iread==3) read(10,*) str(inow),str(inow+1),str(inow+2)
-	    if (ilackdata<=3) exit
-	    ilackdata=ilackdata-3
-	    inow=inow+3
-    end do
+		allocate(datax(numdata),str(numdata),FWHM(numdata))
+		FWHM=8D0
+		ilackdata=numdata
+		inow=1
+		do while(.true.)
+			if (ilackdata>3) then
+				iread=3
+			else
+				iread=ilackdata
+			end if
+			call loclabel(10,"VIB|Frequency (cm^-1)",ifound,0)
+			read(10,"(22x)",advance="no")
+			if (iread==1) read(10,*) datax(inow)
+			if (iread==2) read(10,*) datax(inow),datax(inow+1)
+			if (iread==3) read(10,*) datax(inow),datax(inow+1),datax(inow+2)
+			read(10,"(22x)",advance="no")
+			if (iread==1) read(10,*) str(inow)
+			if (iread==2) read(10,*) str(inow),str(inow+1)
+			if (iread==3) read(10,*) str(inow),str(inow+1),str(inow+2)
+			if (ilackdata<=3) exit
+			ilackdata=ilackdata-3
+			inow=inow+3
+		end do
+    end if
 	close(10)
     return
 end if
@@ -2580,7 +2659,7 @@ use plot
 use util
 implicit real*8 (a-h,o-z)
 !Plotting settings
-character*3 :: elemplot="all" !The element to be plotted. "all" means all elements
+character(len=3) :: elemplot="all" !The element to be plotted. "all" means all elements
 integer :: igetshift=0 !The way of determining chemical shift. =0: None (only show shielding), =1: Use specific reference value, =2: Scaling method
 real*8 :: NMRref=0 !Reference value of NMR in ppm, used for igetshift=1
 real*8 :: NMRslope=1,NMRinter=0 !Slope and intercept of scaling method, used for igetshift=2
@@ -2597,7 +2676,7 @@ integer :: ishowlabel=1,ilabelele=0,labelsize=50,legendsize=40,ilabelclr=3,label
 integer :: ishowdataright=1 !If show number on the Y-axis corresponding to NMR signal strength
 !System information
 real*8,allocatable :: weight(:) !Weight of various system for plotting mixed spectrum
-character*80,allocatable :: mollegend(:) !Legends for multiple systems
+character(len=80),allocatable :: mollegend(:) !Legends for multiple systems
 real*8,allocatable :: atmshdall_org(:,:) !atmshdall will be converted to chemical shift before plotting, atmshdall_org backs up original values
 !Data for final plotting. The "term" denotes the spike with degeneracy of 1 or more
 integer,allocatable :: shdnum(:) !shdnum(r) is number of terms of system r
@@ -2650,7 +2729,7 @@ if (index(filename,"multiple.txt")/=0) then !Load multiple systems
 			if (mollegend(i)(1:1)=='$') mollegend(i)=mollegend(i)(2:)
 		end if
 		inquire(file=c200tmp,exist=alive)
-		if (alive==.false.) then
+		if (.not.alive) then
 			write(*,"(' Error: Cannot find ',a)") trim(c200tmp)
 			if (index(c200tmp,'/')/=0) then
 				write(*,*) "Reminder: Since the file path contains / symbol, you should add "" at the two ends of the path, so that the file can be properly loaded"
@@ -2855,7 +2934,7 @@ do while(.true.)
         read(*,"(a)") c200tmp
         if (c200tmp==" ") c200tmp="NMR.dat"
 	    inquire(file=c200tmp,exist=alive)
-	    if (alive==.false.) then
+	    if (.not.alive) then
 	        write(*,*) "Error: Cannot find the file! Press ENTER button to return"
             read(*,*)
             cycle
