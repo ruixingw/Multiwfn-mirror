@@ -10,7 +10,7 @@ do while(.true.)
     write(*,*) "3 Visualize (hyper)polarizability via unit sphere and vector representations"
     write(*,*) "4 Simulating scanning tunneling microscope (STM) image"
     write(*,*) "5 Calculate electric dipole/multipole moments and electronic spatial extent"
-    write(*,*) "6 Calculate energies of the present orbitals"
+    write(*,*) "6 Calculate energies of present orbitals by inputting Fock matrix"
     write(*,*) "7 Geometry operation on the present system"
     write(*,*) "8 Plot surface distance projection map"
     
@@ -359,7 +359,7 @@ end module
 subroutine fitatmdens
 use defvar
 use fitatmdens_mod
-use function
+use functions
 use util
 use plot
 implicit real*8 (a-h,o-z)
@@ -1054,7 +1054,7 @@ end function
 subroutine STM
 use defvar
 use GUI
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 integer :: imode=2
@@ -1074,34 +1074,36 @@ endz=orgz+1.8D0/b2a
 
 if (.not.allocated(b)) then
     write(*,"(a)") " Error: In order to use this function, the input file must at least contain GTF information! See Section 2.5 of manual for detail."
-    write(*,*) "Input ENTER button to return"
-    read(*,*)
-    return
-end if
-if (wfntype==3.or.wfntype==4) then
-    write(*,"(a)") " Error: This function does not support multiconfiguration state wavefunction!"
-    write(*,*) "Input ENTER button to return"
+    write(*,*) "Press ENTER button to return"
     read(*,*)
     return
 end if
 
-if (allocated(CObasa)) then
-    call getHOMOidx
-    Ef=(MOene(idxHOMO)+MOene(idxHOMO+1))/2
-    bias=MOene(idxHOMO)-Ef
+if (wfntype==3.or.wfntype==4) then
+    write(*,"(a)") " Warning: This function does not formally support wavefunction with non-integer orbital occupancy!"
+    write(*,"(a)") " However, if your wavefunction indeed recorded correct orbital energy information, you may still use this function, &
+    but you need to manually specify a proper Fermi level via option 3 and set a bias voltage via option 2"
+    write(*,*) "Press ENTER button to continue"
+    read(*,*)
+else !Single-determinant wavefunction
+    if (allocated(CObasa)) then
+        call getHOMOidx
+        Ef=(MOene(idxHOMO)+MOene(idxHOMO+1))/2
+        bias=MOene(idxHOMO)-Ef
     
-    if (wfntype==0) then
-        write(*,*) "Note: The default Fermi level has been set to average of E(HOMO) and E(LUMO)"
+        if (wfntype==0) then
+            write(*,*) "Note: The default Fermi level has been set to average of E(HOMO) and E(LUMO)"
+        else
+            write(*,*) "Note: The default Fermi level has been set to average of E(HOMO) and E(LUMO) of alpha spin. In this case, &
+            the result will be problematic if bias voltage is set to positive value (electron flows from tip to sample)"
+        end if
+        write(*,"(a)") " The default bias voltage has been set to the difference between E(HOMO) and Fermi level, &
+        therefore under default setting only HOMO will be imaged"
     else
-        write(*,*) "Note: The default Fermi level has been set to average of E(HOMO) and E(LUMO) of alpha spin. In this case, &
-        the result will be problematic if bias voltage is set to positive value (electron flows from tip to sample)"
+        Ef=maxval(MOene)
+        write(*,*) "Note: The default Fermi level has been set to HOMO"
+        write(*,"(a)") " Note: Since there is no unoccupied MO, the bias voltage must be set to negative value (electron flows from sample to tip)"
     end if
-    write(*,"(a)") " The default bias voltage has been set to the difference between E(HOMO) and Fermi level, &
-    therefore under default setting only HOMO will be imaged"
-else
-    Ef=maxval(MOene)
-    write(*,*) "Note: The default Fermi level has been set to HOMO"
-    write(*,"(a)") " Note: Since there is no unoccupied MO, the bias voltage must be set to negative value (electron flows from sample to tip)"
 end if
 
 do while(.true.)
@@ -1234,7 +1236,7 @@ do while(.true.)
             write(*,*) "None. Therefore the calculation is canceled"
             cycle
         else
-            write(*,"(' Totally',i4,' MOs are taken into account',/)") nconsider
+            write(*,"(' Totally',i5,' MOs are taken into account',/)") nconsider
         end if
         
         dx=(endx-orgx)/(nx-1)
@@ -1264,17 +1266,15 @@ do while(.true.)
             call walltime(iwalltime1)
             ifinish=0
             !$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(ix,xpos,iy,ypos,iz,zpos) schedule(dynamic) NUM_THREADS(nthreads)
-            do ix=1,nx
-                xpos=orgx+(ix-1)*dx
+            do iz=1,nz
                 do iy=1,ny
-                    ypos=orgy+(iy-1)*dy
-                    do iz=1,nz
-                        zpos=orgz+(iz-1)*dz
+                    do ix=1,nx
+                        call getgridxyz(ix,iy,iz,xpos,ypos,zpos)
                         cubmat(ix,iy,iz)=LDOS_STM(xpos,ypos,zpos,Ef,bias)
                     end do
                 end do
                 ifinish=ifinish+1
-                call showprog(ifinish,nx)
+                call showprog(ifinish,nz)
             end do
             !$OMP END PARALLEL DO
             call walltime(iwalltime2)
@@ -1308,13 +1308,11 @@ do while(.true.)
                     write(*,*) "Calculating constant current map, please wait..."
                     allocate(planemat(nx,ny))
                     ifinish=0
-                    do ix=1,nx
-                        xpos=orgx+(ix-1)*dx
-                        do iy=1,ny
-                            ypos=orgy+(iy-1)*dy
+                    do iy=1,ny
+                        do ix=1,nx
                             !Gradually decrease tip from high z to low z, until isosurface is encountered, and using linear interpolation to determine its position
                             do iz=nz,2,-1
-                                zpos=orgz+(iz-1)*dz
+                                call getgridxyz(ix,iy,iz,xpos,ypos,zpos)
                                 zposnext=orgz+(iz-2)*dz
                                 val=cubmat(ix,iy,iz)
                                 valnext=cubmat(ix,iy,iz-1)
@@ -1346,9 +1344,9 @@ do while(.true.)
             write(*,*) "Calculating, please wait..."
             allocate(planemat(nx,ny))
             !$OMP PARALLEL DO SHARED(planemat) PRIVATE(ix,xpos,iy,ypos) schedule(dynamic) NUM_THREADS(nthreads)
-            do ix=1,nx
-                xpos=orgx+(ix-1)*dx
-                do iy=1,ny
+            do iy=1,ny
+                do ix=1,nx
+                    xpos=orgx+(ix-1)*dx
                     ypos=orgy+(iy-1)*dy
                     planemat(ix,iy)=LDOS_STM(xpos,ypos,orgz,Ef,bias)
                 end do
@@ -1374,7 +1372,7 @@ end subroutine
 !!-------- Return LDOS for MOs from Ef-bias to Ef at x,y,z (Bohr). Invoked by subroutine STM
 real*8 function LDOS_STM(x,y,z,Ef,bias)
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 x,y,z,Ef,bias,wfnval(nmo)
 
@@ -1657,12 +1655,13 @@ end subroutine
 
 
 
-    
+
 !!------------ A general routine for obtaining energies of present orbitals in memory based on loaded Fock matrix    
 subroutine calc_orb_energy
 use defvar
+use util
 implicit real*8 (a-h,o-z)
-real*8 orbene(nmo),Emat(nbasis,nbasis)
+real*8 orbene(nmo),Emat(nbasis,nbasis),tmpmat(nbasis,nbasis)
 
 if (.not.allocated(CObasa)) then
     write(*,"(a)") " Error: To use this function, the input file must contain basis function information! See Section 2.5 of Multiwfn manual for detail"
@@ -1674,12 +1673,17 @@ call loadFockfile(istat)
 if (istat==1) then
 	write(*,*) "Error: Unable to evaluate orbital energies!"
 else
-	Emat=matmul(matmul(transpose(CObasa),FmatA),CObasa)
+    write(*,*) "Evaluating orbital energies..."
+	!Emat=matmul(matmul(transpose(CObasa),FmatA),CObasa)
+    tmpmat=matmul_blas(CObasa,FmatA,nbasis,nbasis,1,0)
+    Emat=matmul_blas(tmpmat,CObasa,nbasis,nbasis)
 	do iorb=1,nbasis
 		orbene(iorb)=Emat(iorb,iorb)
 	end do
     if (allocated(CObasb)) then
-	    Emat=matmul(matmul(transpose(CObasb),FmatB),CObasb)
+	    !Emat=matmul(matmul(transpose(CObasb),FmatB),CObasb)
+        tmpmat=matmul_blas(CObasb,FmatB,nbasis,nbasis,1,0)
+        Emat=matmul_blas(tmpmat,CObasb,nbasis,nbasis)
 	    do iorb=1,nbasis
 		    orbene(nbasis+iorb)=Emat(iorb,iorb)
 	    end do
@@ -1727,16 +1731,16 @@ subroutine displace_geom
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-character c2000tmp*2000
+character c2000tmp*2000,c80tmp*80
 integer atmlist(ncenter)
 
 write(*,*)
 write(*,*) " ------------------ Generate randomly displaced geometries ------------------"
 write(*,*) "Input index of the atoms that you want to randomly displace, e.g. 2,3,7-10"
-write(*,*) "To choose the whole system, input ""a"""
+write(*,*) "To choose the whole system, press ENTER button directly"
 write(*,*) "To exit, input ""q"""
 read(*,"(a)") c2000tmp
-if (index(c2000tmp,'a')/=0) then
+if (c2000tmp==" ".or.index(c2000tmp,'a')/=0) then
     nsel=ncenter
     forall(i=1:nsel) atmlist(i)=i
 else if (c2000tmp=='q') then
@@ -1756,11 +1760,23 @@ write(*,*) "7 X, Y and Z coordinates"
 read(*,*) itype
 
 write(*,*) "Input standard variation of displacement in Angstrom, e.g. 0.01"
-read(*,*) stdvar
+write(*,*) "If you press ENTER button directly, 0.03 Angstrom will be used"
+read(*,"(a)") c80tmp
+if (c80tmp==" ") then
+    stdvar=0.03D0
+else
+    read(c80tmp,*) stdvar
+end if
 stdvar=stdvar/b2a
 
 write(*,*) "Generate how many geometries? e.g. 4"
-read(*,*) numgen
+write(*,*) "If you press ENTER button directly, only one geometry will be generated"
+read(*,"(a)") c80tmp
+if (c80tmp==" ") then
+    numgen=1
+else
+    read(c80tmp,*) numgen
+end if
 
 open(10,file="new.xyz",status="replace")
 do igen=1,numgen
@@ -1822,6 +1838,7 @@ type(atomtype) atmp
 real*8 inertia(3,3),eigvecmat(3,3),eigvalarr(3)
 real*8 rcoord(3),fcoord(3)
 integer,allocatable :: tmparr(:)
+real*8,allocatable :: fcoordall(:,:)
 
 if (allocated(b)) then
     write(*,"(/,a)") " NOTE: This function only changes geometry, the wavefunction will not be correspondingly affected!"
@@ -1860,12 +1877,14 @@ do while(.true.)
     write(*,*) "23 Translate system along cell axes by given distances"
     write(*,*) "24 Translate system to center selected part in the cell"
     write(*,*) "25 Extract a molecular cluster (central molecule + neighbouring ones)"
+    write(*,*) "26 Set cell information      27 Add boundary atoms     28 Axes interconversion"
     read(*,*) isel
     
     if (isel==-10) then
         return
     else if (isel==-9) then
         deallocate(a)
+        if (allocated(connmat)) deallocate(connmat)
         ncenter=ncenter_org
         allocate(a(ncenter))
         a=a_org
@@ -2398,7 +2417,7 @@ do while(.true.)
                 read(*,"(a)") c200tmp
 	            inquire(file=c200tmp,exist=alive)
 	            if (alive) exit
-	            write(*,*) "Cannot find the file, input again!"
+	            write(*,*) "Error: Cannot find the file, input again!"
             end do
             open(10,file=c200tmp,status="old")
             ncenter=0
@@ -2696,10 +2715,17 @@ do while(.true.)
     
     else if (isel==24) then !Translate system to center selected part in the cell
         write(*,"(a)") " Input indices of the atoms, whose geometry center will be centered in the cell by translating the whole system. e.g. 1,3,7-10"
+        write(*,*) "If you press ENTER button directly, all atoms will be selected"
         read(*,"(a)") c2000tmp
-        call str2arr(c2000tmp,ntmp)
-        allocate(tmparr(ntmp))
-        call str2arr(c2000tmp,ntmp,tmparr)
+        if (c2000tmp==" ") then
+            allocate(tmparr(ncenter))
+            ntmp=ncenter
+            forall(i=1:ncenter) tmparr(i)=i
+        else
+            call str2arr(c2000tmp,ntmp)
+            allocate(tmparr(ntmp))
+            call str2arr(c2000tmp,ntmp,tmparr)
+        end if
         fcoord(:)=0.5D0
         call fract2Cart(fcoord,rcoord)
         xcencell=rcoord(1)
@@ -2730,6 +2756,170 @@ do while(.true.)
     else if (isel==25) then !Extract a molecular cluster (central molecule + neighbouring ones)
         call extract_molclus
         
+    else if (isel==26) then !Set cell information
+        do while(.true.)
+            write(*,*)
+            call getcellabc(asize,bsize,csize,alpha,beta,gamma) !The returned a/b/csize are in Angstrom
+            write(*,*) "Current cell information:"
+            write(*,"(' Cell vector 1,  X=',f11.5,'  Y=',f11.5,'  Z=',f11.5,'  Angstrom')") cellv1*b2a
+            if (ifPBC>1) then
+                write(*,"(' Cell vector 2,  X=',f11.5,'  Y=',f11.5,'  Z=',f11.5,'  Angstrom')") cellv2*b2a
+                if (ifPBC>2) write(*,"(' Cell vector 3,  X=',f11.5,'  Y=',f11.5,'  Z=',f11.5,'  Angstrom')") cellv3*b2a
+            end if
+            if (ifPBC==3) then
+                write(*,"(' Cell angles:  Alpha=',f9.4,'  Beta=',f9.4,'  Gamma=',f9.4,' degree')") alpha,beta,gamma
+                write(*,"(' Cell size:        a=',f9.4,'     b=',f9.4,'      c=',f9.4,' Angstrom')") dsqrt(sum(cellv1**2))*b2a,dsqrt(sum(cellv2**2))*b2a,dsqrt(sum(cellv3**2))*b2a
+                call calc_cellvol(cellvol)
+                write(*,"(' Cell volume:',f12.3,' Angstrom^3')") cellvol*b2a**3
+            end if
+            write(*,*)
+            write(*,*) "-1 Restore to original cell information"
+            write(*,*) "0 Return"
+            if (ifPBC==3) then
+                write(*,*) "1 Set length of a"
+                write(*,*) "2 Set length of b"
+                write(*,*) "3 Set length of c"
+                write(*,*) "4 Set angle of alpha (angle between b and c)"
+                write(*,*) "5 Set angle of beta (angle between a and c)"
+                write(*,*) "6 Set angle of gamma (angle between a and b)"
+            end if
+            write(*,*) "7 Set cell vector 1"
+            if (ifPBC>1) then
+                write(*,*) "8 Set cell vector 2"
+                if (ifPBC>2) then
+                    write(*,*) "9 Set cell vector 3"
+                end if
+            end if
+            if (ifPBC==3) write(*,*) "10 Align cell (make ""a"" along X-axis, and make ""ab"" parallel to XY plane)"
+            !if (ifPBC==3) write(*,*) "11 Transform to orthogonal cell"
+            read(*,*) isel2
+            if (isel2==-1) then
+                cellv1=cellv1_org
+                cellv2=cellv2_org
+                cellv3=cellv3_org
+            else if (isel2==0) then
+                exit
+            end if
+            if (isel2>=1.and.isel2<=6) then
+                if (isel2==1) then
+                    write(*,*) "Input the length of a in Angstrom, e.g. 8.32"
+                    read(*,*) asize
+                else if (isel2==2) then
+                    write(*,*) "Input the length of b in Angstrom, e.g. 8.32"
+                    read(*,*) bsize
+                else if (isel2==3) then
+                    write(*,*) "Input the length of c in Angstrom, e.g. 8.32"
+                    read(*,*) csize
+                else if (isel2==4) then
+                    write(*,*) "Input angle of alpha, e.g. 84.5"
+                    read(*,*) alpha
+                else if (isel2==5) then
+                    write(*,*) "Input angle of beta, e.g. 84.5"
+                    read(*,*) beta
+                else if (isel2==6) then
+                    write(*,*) "Input angle of gamma, e.g. 84.5"
+                    read(*,*) gamma
+                end if
+                call abc2cellv(asize/b2a,bsize/b2a,csize/b2a,alpha,beta,gamma)
+            end if
+            if (isel2==7) then
+                write(*,*) "Input X/Y/Z of cell vector 1 in Angstrom, e.g. 0.84,0.2,0"
+                read(*,*) cellv1
+                cellv1=cellv1/b2a
+            else if (isel2==8) then
+                write(*,*) "Input X/Y/Z of cell vector 2 in Angstrom, e.g. 0.2,0.84,0"
+                read(*,*) cellv2
+                cellv2=cellv2/b2a
+            else if (isel2==9) then
+                write(*,*) "Input X/Y/Z of cell vector 3 in Angstrom, e.g. 0,0.2,0.84"
+                read(*,*) cellv3
+                cellv3=cellv3/b2a
+            else if (isel2==10) then
+                call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+                asize=asize/b2a
+                bsize=bsize/b2a
+                csize=csize/b2a
+                call abc2cellv(asize,bsize,csize,alpha,beta,gamma)
+                write(*,*) "Done!"
+            else if (isel2==11) then !Transform to orthogonal cell. This is useless, because although the volume will be unchanged, the translation symmetry will be broken
+                !Make b point to Y axis
+                cellv2(1)=0
+                cellv2(3)=0
+                !Make c point to Z axis
+                cellv3(1:2)=0
+                write(*,*) "Done!"
+            end if
+        end do
+        
+    else if (isel==27) then !Add boundary atoms
+        ncenter_old=ncenter
+        call construct_atmp_withbound(ncenter_tmp)
+        deallocate(a)
+        ncenter=ncenter_tmp
+        allocate(a(ncenter))
+        a=a_tmp
+        deallocate(a_tmp)
+        ntmp=ncenter-ncenter_old
+        if (ntmp==0) then
+            write(*,*) "No new boundary atoms were added"
+        else
+            write(*,"(a,i6,a)") " Done!",ntmp," boundary atoms have been added to present system"
+        end if
+        
+    else if (isel==28) then !Axes interconversion
+        write(*,"(a)") " Note: Selected two components of atomic fractional coordinates and cell vector lengths will be exchanged"
+        write(*,*)
+        write(*,*) "0 Return"
+        write(*,*) "1 a<-->b interconversion"
+        write(*,*) "2 a<-->c interconversion"
+        write(*,*) "3 b<-->c interconversion"
+        read(*,*) idir
+        if (idir==0) cycle
+        !Exchange fractional coordinates
+        allocate(fcoordall(3,ncenter))
+        do iatm=1,ncenter
+            rcoord(1)=a(iatm)%x
+            rcoord(2)=a(iatm)%y
+            rcoord(3)=a(iatm)%z
+            call Cart2fract(rcoord,fcoord)
+            if (idir==1) then
+                tmpval=fcoord(1)
+                fcoord(1)=fcoord(2)
+                fcoord(2)=tmpval
+            else if (idir==2) then
+                tmpval=fcoord(1)
+                fcoord(1)=fcoord(3)
+                fcoord(3)=tmpval
+            else if (idir==3) then
+                tmpval=fcoord(2)
+                fcoord(2)=fcoord(3)
+                fcoord(3)=tmpval
+            end if
+            fcoordall(:,iatm)=fcoord(:)
+        end do
+        !Exchange cell lengths
+        anorm=dsqrt(sum(cellv1**2))
+        bnorm=dsqrt(sum(cellv2**2))
+        cnorm=dsqrt(sum(cellv3**2))
+        if (idir==1) then
+            cellv1=cellv1/anorm*bnorm
+            cellv2=cellv2/bnorm*anorm
+        else if (idir==2) then
+            cellv1=cellv1/anorm*cnorm
+            cellv3=cellv3/cnorm*anorm
+        else if (idir==3) then
+            cellv2=cellv2/bnorm*cnorm
+            cellv3=cellv3/cnorm*bnorm
+        end if
+        !Obtain new atomic coordinates
+        do iatm=1,ncenter
+            call fract2Cart(fcoordall(:,iatm),rcoord)
+            a(iatm)%x=rcoord(1)
+            a(iatm)%y=rcoord(2)
+            a(iatm)%z=rcoord(3)
+        end do
+        deallocate(fcoordall)
+        write(*,*) "Done!"
     end if
 end do
     
@@ -2824,7 +3014,7 @@ do iatm=1,ncenter
     do idx=1,ncenidx !Cycle atoms in central molecule
         jatm=cenidx(idx)
         sumvdwrad=vdwr_i+vdwr(a(jatm)%index)
-        if (atomdist(iatm,jatm)<sumvdwrad*crit) then !If an atom is close enough to an atom in central molecule, all atoms having the same fragment index as it will be extracted
+        if (atomdist(iatm,jatm,0)<sumvdwrad*crit) then !If an atom is close enough to an atom in central molecule, all atoms having the same fragment index as it will be extracted
             iatmfrg=atmfrg(iatm)
             do katm=1,ncenter
                 if (atmfrg(katm)==iatmfrg) iext(katm)=1
@@ -2879,7 +3069,7 @@ end subroutine
 !!----------- Plot surface distance projection map
 subroutine molsurf_distmap
 use defvar
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 real*8 :: rhoiso=0.05D0,zstep=0.05D0/b2a

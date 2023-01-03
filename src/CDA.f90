@@ -153,7 +153,7 @@ do ifrag=0,nCDAfrag !Here we first gather basic informations of complex(ifrag=0)
 		
 	else !The input file contains basis function information
 		if (ifrag>0) then
-			call dealloall
+			call dealloall(0)
 			call readinfile(fragfilename(ifrag),1)
 		end if
 		natmCDA(ifrag)=ncenter
@@ -282,7 +282,7 @@ do ifrag=0,nCDAfrag
 	if (igauout==1) then
 		open(10,file=fragfilename(ifrag),status="old")
 	else
-		call dealloall
+		call dealloall(0)
 		call readinfile(fragfilename(ifrag),1)
 ! 		if (nmo==2*nbasis) nmo=nbasis !The nmo used in present module is the number of either alpha or beta MOs rather than their sum as in other modules
 	end if
@@ -386,7 +386,7 @@ do ifrag=0,nCDAfrag
 	if (igauout==1) then
 		close(10)
 	else
-		call dealloall
+		call dealloall(0)
 		if (ifrag==nCDAfrag) then
 			write(*,"(/,a,a)") " Reloading ",trim(firstfilename)
 			call readinfile(firstfilename,1) !Recover to the first file
@@ -945,7 +945,7 @@ do while(.true.)
 				eneCDAb(:,0)+eneshiftcomp,eneCDAb(:,ifrag)+eneshiftA,eneCDAb(:,jfrag)+eneshiftB,eneplotlow,eneplothigh,eneintv,conncritleft,conncritright,&
 				idrawMObar,iconnlogi,ilabelorbidx,ilabelcomp,labsize,complabshift,degencrit,eneshiftA,eneshiftB,eneshiftcomp)
 				if (isel2==2) then
-                    write(*,*) "Done! The graph has been saved to current folder with ""DISLIN"" prefix"
+                    write(*,*) "Done! The graph has been saved to current folder with ""dislin"" prefix"
                     graphformat=c80tmp2
                 end if
 			else if (isel2==3) then
@@ -1261,11 +1261,11 @@ do iorb0=1,nmo0
 		end if
 		involveconn=1
 		FO1involveconn(iorb1)=.true.
-		CALL SETRGB(1D0,0.0D0,0.0D0)
+		CALL SETRGB(1D0,0D0,0D0)
 		call rline(xlow0-barsep,eneval,xhigh1+barsep,ene1(iorb1))
 		!Label orbital composition
 		if (ilabelcomp==1) then
-			CALL SETRGB(0.6D0,0.0D0,0.0D0)
+			CALL SETRGB(0.6D0,0D0,0D0)
 			write(c80tmp,"(i3)") nint(FOcp(iorb1act,iorb0)*100)
 			call rlmess(trim(adjustl(c80tmp))//'%',xlow0*(1-complabshift)+xhigh1*complabshift-movetextx,eneval*(1-complabshift)+ene1(iorb1)*complabshift+movetexty)
 		end if
@@ -1284,10 +1284,10 @@ do iorb0=1,nmo0
 		end if
 		involveconn=1
 		FO2involveconn(iorb2)=.true.
-		CALL SETRGB(1D0,0.0D0,0.0D0)
+		CALL SETRGB(1D0,0D0,0D0)
 		call rline(xhigh0+barsep,eneval,xlow2-barsep,ene2(iorb2))
 		if (ilabelcomp==1) then
-			CALL SETRGB(0.6D0,0.0D0,0.0D0)
+			CALL SETRGB(0.6D0,0D0,0D0)
 			write(c80tmp,"(i3)") nint(FOcp(iorb2act,iorb0)*100) 
 			call rlmess(trim(adjustl(c80tmp))//'%',xlow2*complabshift+xhigh0*(1-complabshift)-movetextx,eneval*(1-complabshift)+ene2(iorb2)*complabshift+movetexty)
 		end if
@@ -1299,12 +1299,12 @@ do iorb0=1,nmo0
 		cycle
 	end if
 	call height(labsize)
-	CALL SETRGB(0.0D0,0.0D0,0.0D0)
+	CALL SETRGB(0D0,0D0,0D0)
 	call solid
 	if (occ0(iorb0)==0) call dash
 	call rline(xlow0,eneval,xhigh0,eneval)
 	if (ilabelorbidx==1) then
-		CALL SETRGB(0.0D0,0.0D0,1.0D0)
+		CALL SETRGB(0D0,0D0,1D0)
 		write(c80tmp,*) iorb0
 		if (iorb0>=2) then !When near degenerate, several labels will superposition, so slightly shift text by degenmovex to avoid this problem
 			if (abs(eneval-ene0(iorb0-1))<degencrit.and.ilastplotted==1) then
@@ -1322,7 +1322,7 @@ end do
 call height(labsize)
 degenmovex=0
 do iorb=1,nmo1
-	CALL SETRGB(0.0D0,0.0D0,0.0D0)
+	CALL SETRGB(0D0,0D0,0D0)
 	eneval=ene1(iorb)
 	if (eneval<eneplotlow.or.eneval>eneplothigh) then
 		ilastplotted=0
@@ -1333,7 +1333,7 @@ do iorb=1,nmo1
 	if (occ1(iorb)==0) call dash
 	call rline(xlow1,eneval,xhigh1,eneval)
 	if (ilabelorbidx==1) then
-		CALL SETRGB(0.0D0,0.0D0,1.0D0)
+		CALL SETRGB(0D0,0D0,1D0)
 		write(c80tmp,*) iorb
 		if (iorb>=2) then !When near degenerate, several labels will superposition, so slightly shift text by degenmovex to avoid this circumstance
 			if (abs(eneval-ene1(iorb-1))<degencrit.and.ilastplotted==1) then
@@ -1350,7 +1350,7 @@ end do
 !Plot FOs of fragment 2
 degenmovex=0
 do iorb=1,nmo2
-	CALL SETRGB(0.0D0,0.0D0,0.0D0)
+	CALL SETRGB(0D0,0D0,0D0)
 	eneval=ene2(iorb)
 	if (eneval<eneplotlow.or.eneval>eneplothigh) then
 		ilastplotted=0
@@ -1361,7 +1361,7 @@ do iorb=1,nmo2
 	if (occ2(iorb)==0) call dash
 	call rline(xlow2,eneval,xhigh2,eneval)
 	if (ilabelorbidx==1) then
-		CALL SETRGB(0.0D0,0.0D0,1.0D0)
+		CALL SETRGB(0D0,0D0,1D0)
 		write(c80tmp,*) iorb
 		if (iorb>=2) then !When near degenerate, several labels will superposition, so slightly shift text by degenmovex to avoid this circumstance
 			if (abs(eneval-ene2(iorb-1))<degencrit.and.ilastplotted==1) then

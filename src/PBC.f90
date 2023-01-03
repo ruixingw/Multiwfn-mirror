@@ -3,6 +3,7 @@ subroutine showcellinfo
 use defvar
 implicit real*8 (a-h,o-z)
 character c200tmp*200
+
 if (ifPBC>0) then
 	write(*,*)
     write(*,*) "Cell information"
@@ -56,13 +57,16 @@ if (ifPBC==0) then !Isolated system
 else if (ifPBC==1) then !1D system
     ifdoPBCy=0
     ifdoPBCz=0
-    !Set temporary cellv2 and cellv3 orthogonal to v1, otherwise e.g. fractional coordinate cannot be generated
-    call vecprod(cellv1(1),cellv1(2),cellv1(3),5D0,7D0,-4D0,cellv2(1),cellv2(2),cellv2(3)) !(5,7,-4) is arbitrarily selected vector
+    !Set temporary cellv2 and cellv3 orthogonal to v1, otherwise fractional coordinate cannot be generated from Cartesian coordinate
+    call vecprod(cellv1(1),cellv1(2),cellv1(3),5D0,7D0,-4D0,cellv2(1),cellv2(2),cellv2(3)) !(5,7,-4) is an arbitrarily selected vector
     call vecprod(cellv1(1),cellv1(2),cellv1(3),cellv2(1),cellv2(2),cellv2(3),cellv3(1),cellv3(2),cellv3(3))
+    cellv2=cellv2/dsqrt(sum(cellv2**2))
+    cellv3=cellv3/dsqrt(sum(cellv3**2))
 else if (ifPBC==2) then !2D system
     ifdoPBCz=0
-    !Set temporary cellv3 orthogonal to v1 and v2, otherwise e.g. fractional coordinate cannot be generated
+    !Set temporary cellv3 orthogonal to v1 and v2, otherwise fractional coordinate cannot be generated from Cartesian coordinate
     call vecprod(cellv1(1),cellv1(2),cellv1(3),cellv2(1),cellv2(2),cellv2(3),cellv3(1),cellv3(2),cellv3(3))
+    cellv3=cellv3/dsqrt(sum(cellv3**2))
 end if
 !When PBC is not considered in a direction, PBCnx/y/z should be set to 0 to avoid consider neighbouring cells in corresponding direction
 if (ifdoPBCx==0) PBCnx=0
@@ -124,18 +128,18 @@ rcoord=matmul(Amat,Fcoord)
 xyzout(:)=rcoord(:,1)
 end subroutine
 
-!!!------- Used to test "move_to_cell" in interactive interface
-!subroutine test_PBC
-!use defvar
-!real*8 xyzin(3),xyzout(3)
-!do while(.true.)
-!    write(*,*) "Input x,y,z in Bohr for test"
-!    read(*,*) xyzin
-!    call move_to_cell(xyzin,xyzout)
-!    write(*,*) "x,y,z of new coordinate:"
-!    write(*,"(3f12.6,' Bohr')") xyzout
-!end do
-!end subroutine
+
+!!!------- The same as move_to_cell, but input x,y,z component, then they will be updated
+subroutine move_to_cell_scalar(xin,yin,zin)
+real*8 xin,yin,zin,xyzin(3),xyzout(3)
+xyzin(1)=xin
+xyzin(2)=yin
+xyzin(3)=zin
+call move_to_cell(xyzin,xyzout)
+xin=xyzout(1)
+yin=xyzout(2)
+zin=xyzout(3)
+end subroutine
 
 
 
@@ -191,6 +195,7 @@ end subroutine
 
 
 !!!-------- Input indices of atoms A and B, return their nearest distance, and coordinate of B closest to A
+!For isolated system, the B closest to A is still the inputted B
 subroutine nearest_atmdistxyz(iatm,jatm,dist,atmx,atmy,atmz)
 use defvar
 integer iatm,jatm
@@ -202,11 +207,18 @@ xyzA(3)=a(iatm)%z
 xyzB(1)=a(jatm)%x
 xyzB(2)=a(jatm)%y
 xyzB(3)=a(jatm)%z
-call nearest_mirror(xyzA,xyzB,xyzB2)
-atmx=xyzB2(1)
-atmy=xyzB2(2)
-atmz=xyzB2(3)
-dist=dsqrt(sum((xyzA-xyzB2)**2))
+if (ifPBC==0) then
+    atmx=xyzB(1)
+    atmy=xyzB(2)
+    atmz=xyzB(3)
+    dist=dsqrt(sum((xyzA-xyzB)**2))
+else
+    call nearest_mirror(xyzA,xyzB,xyzB2)
+    atmx=xyzB2(1)
+    atmy=xyzB2(2)
+    atmz=xyzB2(3)
+    dist=dsqrt(sum((xyzA-xyzB2)**2))
+end if
 end subroutine
 
 
@@ -216,6 +228,12 @@ subroutine nearest_dist(xyzA,xyzB,dist)
 real*8 xyzA(3),xyzB(3),xyzB2(3),dist
 call nearest_mirror(xyzA,xyzB,xyzB2)
 dist=dsqrt(sum((xyzA-xyzB2)**2))
+end subroutine
+!!!-------- The same as above, but return vector A->B
+subroutine nearest_distvec(xyzA,xyzB,distvec)
+real*8 xyzA(3),xyzB(3),xyzB2(3),distvec(3)
+call nearest_mirror(xyzA,xyzB,xyzB2)
+distvec(:)=xyzB2(:)-xyzA(:)
 end subroutine
 
 
@@ -323,6 +341,18 @@ end do
 end subroutine
 
 
+!!!------- Return size of x,y,z of current box
+subroutine cellxyzsize(xsize,ysize,zsize)
+implicit real*8 (a-h,o-z)
+real*8 xsize,ysize,zsize
+call cellminxyz(xmin,ymin,zmin)
+call cellmaxxyz(xmax,ymax,zmax)
+xsize=xmax-xmin
+ysize=ymax-ymin
+zsize=zmax-zmin
+end subroutine
+
+
 
 !!!----- Return cell volume according to cell information
 subroutine calc_cellvol(cellvol)
@@ -342,7 +372,7 @@ end subroutine
 
 
 
-!!!------ Calculate cell vectors cellv1/2/3 based on inputted a,b,c,alpha,beta,gamma, reference: http://gisaxs.com/index.php/Unit_cell
+!!!------ Calculate cell vectors cellv1/2/3 based on inputted a,b,c (in Bohr) and alpha,beta,gamma (in degree), reference: http://gisaxs.com/index.php/Unit_cell
 subroutine abc2cellv(asize,bsize,csize,alpha,beta,gamma)
 use defvar
 implicit real*8 (a-h,o-z)
@@ -476,324 +506,77 @@ end subroutine
 
 
 
-!!!------ Ask user to set up grid and generate Sbas for wavefunction analysis 
-subroutine ask_Sbas_PBC
-use defvar
-implicit real*8 (a-h,o-z)
-character selectyn
-if (ifPBC>0) then
-    if (allocated(Sbas_PBC)) then
-        write(*,"(a)") " Overlap matrix for PBC has already been generated, generate again? (y/n)"
-        read(*,*) selectyn
-        if (selectyn=='n'.or.selectyn=='N') return
-    else
-        write(*,"(a)") " Overlap matrix between basis functions is needed to be generated for subsequent analysis"
-        allocate(Sbas_PBC(nbasis,nbasis))
-    end if
-    !call setgrid(0,igridsel)
-    write(*,*) "Now input grid spacing used to calculate overlap matrix in Bohr, e.g. 0.25"
-    write(*,"(a)") " Note: The smaller the spacing, the more accurate the result, but the higher the cost. &
-    Usually 0.25 is good balance between accuracy and cost."
-    read(*,*) grdspc
-    v1len=dsqrt(sum(cellv1**2))
-    v2len=dsqrt(sum(cellv2**2))
-    v3len=dsqrt(sum(cellv3**2))
-    nx=nint(v1len/grdspc)
-    gridv1(:)=cellv1(:)/nx
-    ny=nint(v2len/grdspc)
-    gridv2(:)=cellv2(:)/ny
-    nz=nint(v3len/grdspc)
-    gridv3(:)=cellv3(:)/nz
-    dx=gridv1(1) !Only for compatibility with old codes
-    dy=gridv2(2)
-    dz=gridv3(3)
-    write(*,"(a,3i5)") " Number of grids in the three directions:",nx,ny,nz
-    call genSbas_PBC
-end if
-end subroutine
-
-
-
-!!!--------- Generate overlap matrix between all current basis functions based on uniform grids
-!The integral is limited to current cell
-subroutine genSbas_PBC
-use defvar
-use function
-use util
-implicit real*8 (a-h,o-z)
-!real*8 Sbas_PBC_cart(nbasisCar,nbasisCar),basCar(nbasisCar)
-real*8 Sbas_tmp(nbasis,nbasis),basval(nmo)
-
-!Not Finished. This part of code will calculate values of all Cartesian basis functions at every point and then evaluate Sbas_PBC
-!Sbas_PBC_cart=0
-!Sbas_PBC=0
-!do k=1,nz
-!    do j=1,ny
-!        do i=1,nx
-!            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
-!            call calcbasCar_PBC(tmpx,tmpy,tmpz,basCar)
-!            do ibas=1,nbasisCar
-!	            do jbas=ibas,nbasisCar
-!                    Sbas_PBC_cart(ibas,jbas)=Sbas_PBC_cart(ibas,jbas)+basCar(ibas)*basCar(jbas)
-!	            end do
-!            end do
-!        end do
-!    end do
-!end do
-!do ibas=1,nbasisCar
-!	do jbas=ibas+1,nbasisCar
-!        Sbas_PBC_cart(jbas,ibas)=Sbas_PBC_cart(ibas,jbas)
-!	end do
-!end do
-!call matCar2curr(Sbas_PBC_cart,Sbas_PBC)
-
-!After using following code, value of orbitals will correspond to value of basis functions
-if (.not.allocated(CObasa_org)) allocate(CObasa_org(nbasis,nbasis))
-if (.not.allocated(CO_org)) allocate(CO_org(nmo,nprims))
-CObasa_org=CObasa
-CObasa=0
-do ibas=1,nbasis
-    CObasa(ibas,ibas)=1
-end do
-call CObas2CO(1)
-
-!Generate unique GTFs, for faster evaluation in orbderv
-call gen_GTFuniq(0)
-
-call walltime(iwalltime1)
-Sbas_PBC=0
-ifinish=0
-if (expcutoff_PBC<0) write(*,"(' Note: All exponential functions exp(x) with x<',f8.3,' will be ignored')") expcutoff_PBC
-call showprog(0,nz)
-!$OMP PARALLEL SHARED(Sbas_PBC,ifinish) PRIVATE(Sbas_tmp,i,j,k,tmpx,tmpy,tmpz,basval,ibas,jbas,basi) NUM_THREADS(nthreads)
-Sbas_tmp=0
-!$OMP do schedule(dynamic)
-do k=1,nz
-    do j=1,ny
-        do i=1,nx
-            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
-            call orbderv_PBC(1,1,nbasis,tmpx,tmpy,tmpz,basval)
-            !Cycle rows, and fill lower-triangular part
-            do ibas=1,nbasis
-                basi=basval(ibas)
-	            do jbas=ibas,nbasis
-                    Sbas_tmp(jbas,ibas)=Sbas_tmp(jbas,ibas)+basval(jbas)*basi
-	            end do
-            end do
-        end do
-    end do
-    ifinish=ifinish+1
-    call showprog(ifinish,nz)
-end do
-!$OMP END DO
-!$OMP CRITICAL
-Sbas_PBC=Sbas_PBC+Sbas_tmp
-!$OMP END CRITICAL
-!$OMP END PARALLEL
-!Fill upper-triangular part
-do ibas=2,nbasis
-	do jbas=1,ibas-1
-        Sbas_PBC(jbas,ibas)=Sbas_PBC(ibas,jbas)
-	end do
-end do
-call calc_dvol(dvol)
-Sbas_PBC=Sbas_PBC*dvol
-Sbas=Sbas_PBC !Usually Sbas_PBC is not directly involved in practical analysis
-
-call del_GTFuniq !Destory unique GTF informtaion
-
-CObasa=CObasa_org
-CO=CO_org
-deallocate(CObasa_org,CO_org)
-
-write(*,"(' Quality test, Tr(P*S):',f14.8,' (In principle it should be equal to actual number of electrons. &
-The larger the deviation to integer, the larger the integration error of current overlap matrix (S))')") sum(Ptot*Sbas)
-call walltime(iwalltime2)
-write(*,"(' Generation of overlap matrix took up',i8,' seconds wall clock time')") iwalltime2-iwalltime1
-!open(10,file="ovlpmat.txt",status="replace")
-!call showmatgau(Sbas,"Overlap matrix",0,fileid=10)
-!close(10)
-end subroutine
-
-!---- Load overlap matrix from .csr file exported by CP2K, however I found the matrix is meaningless, it is neither identical to genSbas or to genSbas_PBC
-subroutine loadSbas_csr
-use defvar
-integer ibas,jbas
-open(10,file="a.csr",status="old")
-do ibas=1,nbasis
-    do jbas=1,nbasis
-        read(10,*) itmp,jtmp,Sbas(ibas,jbas)
-        write(*,*) itmp,jtmp,Sbas(ibas,jbas)
-        pause
-    end do
-end do
-close(10)
-end subroutine
-
-
-
-!!!----------- Calculate wavefunction value of all basis functions at a point for PBC case (not done for PBC now)
-!Clone and adapted from "calcbasval", which is used for isolated systems
-!The global COtr matrix must have been allocated and filled by using COtr=transpose(CO)
-!Before using this, one should make CO correspond to basis function expressions, namely:
-!  CObasa_org=CObasa
-!  CObasa=0
-!  do ibas=1,nbasis
-!      CObasa(ibas,ibas)=1
-!  end do
-!  call CObas2CO(1)
-!    Then after using this routine, recover to original coefficients:
-!  CObasa=CObasa_org
-!  CO=CO_org
-!In fact, using below code can realize identical purpose, but slower because not optimized for present purpose
-!  call orbderv(1,1,nbasis,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,basval), where basval has length of nmo
-!subroutine calcbasval_PBC(x,y,z,basval)
-!use defvar
-!implicit real*8 (a-h,o-z)
-!real*8 x,y,z,basval(nbasis),GTFvalarr(nprims)
-!
-!lastcen=-1
-!GTFvalarr=0D0
-!do j=1,nprims
-!	ix=type2ix(b(j)%type)
-!	iy=type2iy(b(j)%type)
-!	iz=type2iz(b(j)%type)
-!	ep=b(j)%exp
-!	
-!	if (b(j)%center/=lastcen) then
-!		sftx=x-a(b(j)%center)%x
-!		sfty=y-a(b(j)%center)%y
-!		sftz=z-a(b(j)%center)%z
-!		sftx2=sftx*sftx
-!		sfty2=sfty*sfty
-!		sftz2=sftz*sftz
-!		rr=sftx2+sfty2+sftz2
-!	end if
-!	if (expcutoff>0.or.-ep*rr>expcutoff) then
-!		expterm=exp(-ep*rr)
-!	else
-!		expterm=0D0
-!	end if
-!	lastcen=b(j)%center
-!	if (expterm==0D0) cycle
-!	
-!	if (b(j)%type==1) then
-!	GTFval=expterm
-!	else if (b(j)%type==2) then
-!	GTFval=sftx*expterm
-!	else if (b(j)%type==3) then
-!	GTFval=sfty*expterm
-!	else if (b(j)%type==4) then
-!	GTFval=sftz*expterm
-!	else if (b(j)%type==5) then
-!	GTFval=sftx2*expterm
-!	else if (b(j)%type==6) then
-!	GTFval=sfty2*expterm
-!	else if (b(j)%type==7) then
-!	GTFval=sftz2*expterm
-!	else
-!	GTFval=sftx**ix *sfty**iy *sftz**iz *expterm
-!	end if
-!    GTFvalarr(j)=GTFval
-!end do
-!
-!if (isphergau==1) then !For each basis function, only loops GTFs in the same shell for reducing cost
-!    ibas=0
-!    iGTF=0
-!    do ish=1,nshell
-!        nshbas=shtype2nbas(shtype(ish))
-!        nshbasCar=shtype2nbas(shtypeCar(ish))
-!        nshGTF=nshbasCar*shcon(ish)
-!        is=iGTF+1
-!        ie=iGTF+nshGTF
-!        do jbas=ibas+1,ibas+nshbas
-!            !basval(jbas)=sum( GTFvalarr(is:ie)*CO(jbas,is:ie) )
-!            basval(jbas)=sum( GTFvalarr(is:ie)*COtr(is:ie,jbas) )
-!        end do
-!        ibas=ibas+nshbas
-!        iGTF=iGTF+nshGTF
-!    end do
-!else !All basis functions are Cartesian, below code is faster than the above general code
-!    do ibas=1,nbasisCar
-!        is=primstart(ibas)
-!        ie=primend(ibas)
-!        basval(ibas)=sum( GTFvalarr(is:ie)*COtr(is:ie,ibas) )
-!    end do
-!end if
-!
-!end subroutine
-
-
-
 
 !!!--------- Construct global array a_tmp, which contains real atoms and replicated boundary atoms
 !ncenter_tmp is returned variable containing number of all atoms including the replicated boundary ones
 subroutine construct_atmp_withbound(ncenter_tmp)
 use defvar
 implicit real*8 (a-h,o-z)
-real*8 Cart(3),fract(3),fracttmp(3)
+real*8 Cart(3),fract(3),ftest(3)
 integer ncenter_tmp
+
 call getcellabc(asize,bsize,csize,alpha,beta,gamma)
 devthres=1D-3 !If distance to cell boundary is less than 0.001 Bohr, then it will be regarded as boundary atom
-nadd=0
-do iatm=1,ncenter
-    Cart(1)=a(iatm)%x
-    Cart(2)=a(iatm)%y
-    Cart(3)=a(iatm)%z
-    call Cart2fract(Cart,fract)
-    naddold=nadd
-    do ix=-1,1
-        fracta=fract(1)+ix
-        do iy=-1,1
-            fractb=fract(2)+iy
-            do iz=-1,1
-                if (ix==0.and.iy==0.and.iz==0) cycle
-                fractc=fract(3)+iz
-                !write(*,"(i5,3i3,6f11.6)") iatm,ix,iy,iz,fracta,fractb,fractc,fracta*asize,fractb*bsize,fractc*csize
-                if (fracta*asize>-devthres.and.(fracta-1)*asize<devthres.and.&
-                    fractb*bsize>-devthres.and.(fractb-1)*bsize<devthres.and.&
-                    fractc*csize>-devthres.and.(fractc-1)*csize<devthres) then
-                    nadd=nadd+1
-                end if
+fdeva=devthres/asize
+fdevb=devthres/bsize
+fdevc=devthres/csize
+
+!itime=1: Test how many atoms to be added, =2: Actual constract a_tmp
+do itime=1,2
+    nadd=0
+    do iatm=1,ncenter
+        Cart(1)=a(iatm)%x
+        Cart(2)=a(iatm)%y
+        Cart(3)=a(iatm)%z
+        call Cart2fract(Cart,fract)
+        xdiff=asize*abs(fract(1)-nint(fract(1)))
+        ydiff=bsize*abs(fract(2)-nint(fract(2)))
+        zdiff=csize*abs(fract(3)-nint(fract(3)))
+        if (xdiff<devthres.or.ydiff<devthres.or.zdiff<devthres) then !Existing boundary atom is at least very close to one of cell walls
+            !Try to replicate the existing boundary atom to all possible neighbouring mirror sites
+            do ix=-1,1
+                do iy=-1,1
+                    do iz=-1,1
+                        if (ix==0.and.iy==0.and.iz==0) cycle
+                        ftest(1)=fract(1)+ix
+                        ftest(2)=fract(2)+iy
+                        ftest(3)=fract(3)+iz
+                        !Mirror boundary must be within or quasi within current cell
+                        if (ftest(1)>-fdeva.and.ftest(1)<1+fdeva.and.ftest(2)>-fdevb.and.ftest(2)<1+fdevb.and.ftest(3)>-fdevc.and.ftest(3)<1+fdevc) then
+                            call fract2Cart(ftest,Cart)
+                            !Check if the mirror boundary atom is too close to existing atoms
+                            iadd=1
+                            do jatm=1,ncenter
+                                if (jatm==iatm) cycle
+                                dist=dsqrt( (Cart(1)-a(jatm)%x)**2 + (Cart(2)-a(jatm)%y)**2 + (Cart(3)-a(jatm)%z)**2 )
+                                if (dist<devthres) then !Too close, skip it
+                                    iadd=0
+                                    exit
+                                end if
+                            end do
+                            if (iadd==1) then
+                                nadd=nadd+1
+                                if (itime==2) then
+                                    a_tmp(ncenter+nadd)=a(iatm)
+                                    a_tmp(ncenter+nadd)%x=Cart(1)
+                                    a_tmp(ncenter+nadd)%y=Cart(2)
+                                    a_tmp(ncenter+nadd)%z=Cart(3)
+                                end if
+                            end if
+                        end if
+                    end do
+                end do
             end do
-        end do
+        end if
     end do
-    !write(*,"(i5,1x,a,3f10.6,' added',i5)") iatm,a(iatm)%name,fract(:),nadd-naddold
+    if (itime==1) then
+        ncenter_tmp=ncenter+nadd
+        if (allocated(a_tmp)) deallocate(a_tmp)
+        allocate(a_tmp(ncenter_tmp))
+        a_tmp(1:ncenter)=a(1:ncenter)
+    end if
 end do
-ncenter_tmp=ncenter+nadd
-if (allocated(a_tmp)) deallocate(a_tmp)
-allocate(a_tmp(ncenter_tmp))
-a_tmp(1:ncenter)=a(1:ncenter)
-iadd=0
-do iatm=1,ncenter
-    Cart(1)=a(iatm)%x
-    Cart(2)=a(iatm)%y
-    Cart(3)=a(iatm)%z
-    call Cart2fract(Cart,fract)
-    do ix=-1,1
-        fracta=fract(1)+ix
-        do iy=-1,1
-            fractb=fract(2)+iy
-            do iz=-1,1
-                if (ix==0.and.iy==0.and.iz==0) cycle
-                fractc=fract(3)+iz
-                if (fracta*asize>-devthres.and.(fracta-1)*asize<devthres.and.&
-                    fractb*bsize>-devthres.and.(fractb-1)*bsize<devthres.and.&
-                    fractc*csize>-devthres.and.(fractc-1)*csize<devthres) then
-                    iadd=iadd+1
-                    a_tmp(ncenter+iadd)=a(iatm)
-                    fracttmp(1)=fracta
-                    fracttmp(2)=fractb
-                    fracttmp(3)=fractc
-                    call fract2Cart(fracttmp,Cart)
-                    a_tmp(ncenter+iadd)%x=Cart(1)
-                    a_tmp(ncenter+iadd)%y=Cart(2)
-                    a_tmp(ncenter+iadd)%z=Cart(3)
-                end if
-            end do
-        end do
-    end do
-end do
+
 !do iatm=1,ncenter_tmp
 !    write(*,"(i5,1x,a,3f12.6)") iatm,a_tmp(iatm)%name,a_tmp(iatm)%x,a_tmp(iatm)%y,a_tmp(iatm)%z
 !end do
@@ -801,7 +584,7 @@ end subroutine
 
 
 
-!!!-------- Save current PBC information to memory
+!!!-------- Back up current PBC information to memory
 subroutine savePBCinfo
 use defvar
 ifPBC_bk=ifPBC
@@ -810,7 +593,9 @@ cellv2_bk=cellv2
 cellv3_bk=cellv3
 end subroutine
 
-!!!-------- Load saved PBC information
+
+
+!!!-------- Restore backed up PBC information
 subroutine loadPBCinfo
 use defvar
 ifPBC=ifPBC_bk
@@ -818,4 +603,79 @@ cellv1=cellv1_bk
 cellv2=cellv2_bk
 cellv3=cellv3_bk
 call init_PBC
+end subroutine
+
+
+
+!!!-------- Convert index of a grid outside the cell into intracell index
+!Note that grid index starts from 1, so 0 in X direction should be treated as nx
+subroutine PBCgrididx(ix,iy,iz)
+use defvar
+integer ix,iy,iz
+ix=ix-floor(float(ix-1)/nx)*nx
+iy=iy-floor(float(iy-1)/ny)*ny
+iz=iz-floor(float(iz-1)/nz)*nz
+end subroutine
+!!!-------- Wrap index of a grid in direction 1 into intracell index
+subroutine PBCgrididx1(ix)
+use defvar
+integer ix
+ix=ix-floor(float(ix-1)/nx)*nx
+end subroutine
+!!!-------- Wrap index of a grid in direction 2 into intracell index
+subroutine PBCgrididx2(iy)
+use defvar
+integer iy
+iy=iy-floor(float(iy-1)/ny)*ny
+end subroutine
+!!!-------- Wrap index of a grid in direction 3 into intracell index
+subroutine PBCgrididx3(iz)
+use defvar
+integer iz
+iz=iz-floor(float(iz-1)/nz)*nz
+end subroutine
+
+
+
+!!!-------- Load cell information from [Cell].txt in current folder if available
+!The format of this file should be identical to content below [Cell] field of .molden file
+subroutine loadcellinfo_txt
+use defvar
+implicit real*8 (a-h,o-z)
+character selectyn,c80tmp*80
+
+ifileid=11
+inquire(file="[Cell].txt",exist=alive)
+if (alive) then
+    write(*,"(a)") " Cell information is not defined in input file, but [Cell].txt is found in current folder, do you want to load cell information from it? (y/n)"
+    read(*,*) selectyn
+    if (selectyn=='y'.or.selectyn=='Y') then
+        open(ifileid,file="[Cell].txt",status="old")
+        read(ifileid,"(a)") c80tmp
+        read(c80tmp,*,iostat=ierror) alen,blen,clen,anga,angb,angc
+        if (ierror==0) then !Load as cell parameters
+            call abc2cellv(alen/b2a,blen/b2a,clen/b2a,anga,angb,angc)
+            ifPBC=3
+        else !Load as cell vectors
+            read(c80tmp,*) cellv1
+            ifPBC=1
+            read(ifileid,*,iostat=ierror) cellv2
+            if (ierror/=0) then
+                cellv2=0
+            else
+                ifPBC=ifPBC+1
+                read(ifileid,*,iostat=ierror) cellv3
+                if (ierror/=0) then
+                    cellv3=0
+                else
+                    ifPBC=ifPBC+1
+                end if
+            end if
+            cellv1=cellv1/b2a
+            cellv2=cellv2/b2a
+            cellv3=cellv3/b2a
+        end if
+        close(ifileid)
+    end if
+end if
 end subroutine

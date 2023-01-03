@@ -92,7 +92,7 @@ end subroutine
 !======================================================================================
 subroutine study1dim
 use defvar
-use function
+use functions
 use plot
 use util
 implicit real*8 (a-h,o-z)
@@ -319,7 +319,7 @@ else !Common case
 			    icustom=icustom+1
 			    filename=custommapname(icustom)
                 call savePBCinfo
-			    call dealloall
+			    call dealloall(0)
 			    write(*,"(' Loading: ',a)") trim(filename)
 			    call readinfile(filename,1)
                 call loadPBCinfo
@@ -330,7 +330,7 @@ else !Common case
 			    end if
 		    else !Last time
 			    curvey=curveytmp
-			    call dealloall
+			    call dealloall(0)
 			    write(*,"(' Reloading: ',a)") trim(firstfilename)
 			    call readinfile(firstfilename,1)
 			    exit
@@ -359,6 +359,7 @@ do while(.true.)
 		end if
 	end if
     write(*,*)
+    call menutitle("Post-processing menu",10,1)
 	write(*,*) "-2 Set format of exported image file, current: "//graphformat
 	write(*,*) "-1 Show the graph again"
 	write(*,*) "0 Return to main menu"
@@ -373,8 +374,8 @@ do while(.true.)
 	if (ilog10y==0) write(*,*) "8 Use logarithmic scaling of Y axis"
 	if (ilog10y==1) write(*,*) "8 Use linear scaling of Y axis"
 	write(*,"(a,a)") " 9 Change the line color, current: ",trim(colorname(iclrcurve))
-	if (ilog10y==0) write(*,"(a,f8.3,1PE14.5)") " 10 Set stepsize in X and Y axes, current:",steplabx,steplaby
-	if (ilog10y==1) write(*,"(a,f8.3)") " 10 Set the stepsize in X axis, current:",steplabx
+	if (ilog10y==0) write(*,"(a,f8.3,1PE14.5)") " 10 Set label intervals in X and Y axes, current:",steplabx,steplaby
+	if (ilog10y==1) write(*,"(a,f8.3)") " 10 Set label interval in X axis, current:",steplabx
 	if (ilenunit1D==1) write(*,*) "11 Change length unit of the graph to Angstrom"
 	if (ilenunit1D==2) write(*,*) "11 Change length unit of the graph to Bohr"
 	write(*,"(a,i3)") " 12 Set width of curve line, current:",icurvethick
@@ -393,7 +394,7 @@ do while(.true.)
 		else
 			call drawcurve(curvex,curvey,npointcurve,0D0,maxval(curvex),steplabx,curveymin,curveymax,steplaby,"save",atomr1,atomr2)
 		end if
-		write(*,"(a,a,a)") " The graph have been saved to ",trim(graphformat)," format file with ""DISLIN"" prefix in current directory"
+		write(*,"(a,a,a)") " The graph have been saved to ",trim(graphformat)," format file with ""dislin"" prefix in current directory"
 	else if (isel==2) then
         c200tmp="line.txt"
         if (iaddprefix==1) call addprefix(c200tmp)
@@ -518,7 +519,7 @@ subroutine study2dim
 use defvar
 use util
 use topo
-use function
+use functions
 use GUI
 implicit real*8 (a-h,o-z)
 integer,allocatable :: tmparrint(:)
@@ -542,7 +543,6 @@ do while(.true.)
 		write(*,*) "0 Set custom operation"
 	end if
 	call selfunc_interface(2,ifuncsel) !Interface of selecting real space function
-	
 	if (ifuncsel==-10) then
 		return
 	else if (ifuncsel==-2) then
@@ -617,7 +617,7 @@ if (idrawtype==1.or.idrawtype==2.or.idrawtype==6.or.idrawtype==7) then  !Initial
 	if (idrawtype==1.or.idrawtype==7) idrawcontour=0
 	if (idrawtype/=1) iatom_on_plane=1
 	ilabel_on_contour=0
-	if (ifuncsel==9.or.ifuncsel==10) then  !A special contour setting suitable for ELF and LOL
+	if (ifuncsel==9.or.ifuncsel==10) then !A special contour setting suitable for ELF and LOL
         call gencontour(1,0D0,0D0,0)
 	else !General contour setting for other real space functions
         call gencontour(0,0D0,0D0,0)
@@ -642,7 +642,7 @@ end if
 write(*,*) "Hint: You can press ENTER button directly to use recommended value"
 read(*,"(a)") c200tmp
 
-if (c200tmp==' ') then !Pressing enter button directly
+if (c200tmp==' ') then !Pressing ENTER button directly
 	if (idrawtype==1.or.idrawtype==2.or.idrawtype==6) then
 		if (ifdoESP(ifuncsel)) then
 			ngridnum1=100
@@ -1057,7 +1057,7 @@ if (iplaneextdata==1) then !Export plane data to external file, and then load da
 	
 else !Start calculation of plane data
 	if (ifuncsel/=4) call delvirorb(1) !Delete high-lying virtual orbitals for faster calculation, but don't do this when analyzing MO
-	call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+	call gen_GTFuniq(1) !Generate unique GTFs, for faster evaluation in orbderv
 	write(*,*) "Calculating plane data, please wait..."	
 	if (ifuncsel/=12) then
         if (ifPBC>0) then
@@ -1112,7 +1112,8 @@ else !Start calculation of plane data
             call doinitlibreta(1)
             if (isys==1.and.nthreads>10) nthreads=10
         end if
-	    !$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planemat,d1add,d1min,d2add,d2min) schedule(dynamic) NUM_THREADS(nthreads)
+        iprog=0
+	    !$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(iprog,planemat,d1add,d1min,d2add,d2min) schedule(dynamic) NUM_THREADS(nthreads)
 		do i=1,ngridnum1
 			do j=1,ngridnum2
 				rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
@@ -1131,6 +1132,10 @@ else !Start calculation of plane data
 					d2min(i,j)=calcfuncall(ifuncsel,rnowx-diffv2x,rnowy-diffv2y,rnowz-diffv2z)
 				end if
 			end do
+			!$OMP CRITICAL
+            iprog=iprog+1
+			call showprog(iprog,ngridnum1)
+            !$OMP END CRITICAL
 		end do
 	    !$OMP END PARALLEL DO
         nthreads=nthreads_old
@@ -1184,12 +1189,12 @@ else !Start calculation of plane data
 			icustom=icustom+1
 			filename=custommapname(icustom)
             call savePBCinfo
-			call dealloall
-			write(*,"(' Loading: ',a)") trim(filename)
+			call dealloall(0)
+			write(*,"(' Calculating: ',a)") trim(filename)
 			call readinfile(filename,1)
             call loadPBCinfo
 			if (ifuncsel/=4) call delvirorb(0)
-			call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+			call gen_GTFuniq(1) !Generate unique GTFs, for faster evaluation in orbderv
 			!Input the MO index for current file. Since the MO index may be not the same as the first loaded one
 			if (ifuncsel==4) then
 				write(*,"(' Input index of the orbital to be calculated for ',a,', e.g. 3')") trim(filename)
@@ -1204,7 +1209,7 @@ else !Start calculation of plane data
 				d2add=d2addtmp
 				d2min=d2mintmp
 			end if
-			call dealloall
+			call dealloall(0)
 			write(*,"(' Reloading: ',a)") trim(firstfilename)
 			call readinfile(firstfilename,1)
 		end if
@@ -1220,22 +1225,26 @@ else !Start calculation of plane data
 	call walltime(iwalltime2)
 	write(*,"(/,' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
 end if
-	
-write(*,*) "The minimum of data:",minval(planemat)
-write(*,*) "The maximum of data:",maxval(planemat)
 
-!! Set default lower and upper of Z for plot
+valmin=minval(planemat)
+valmax=maxval(planemat)
+write(*,*) "The minimum of data:",valmin
+write(*,*) "The maximum of data:",valmax
+
+! Set default lower and upper of color scale (Z-axis) for plot
 surcolorzmin=-3
 surcolorzmax=3
+drawlowlim=valmin
+drawuplim=valmax
 if (ifuncsel==1) then
-	drawlowlim=0.0D0
+	drawlowlim=0D0
 	drawuplim=0.65D0
 else if (ifuncsel==2) then
-	drawlowlim=0.0D0
+	drawlowlim=0D0
 	drawuplim=0.65D0
 else if (ifuncsel==3) then 
-	drawlowlim=-8.0D0
-	drawuplim=15.0D0
+	drawlowlim=-8D0
+	drawuplim=15D0
 else if (ifuncsel==4) then
 	drawlowlim=-0.8D0
 	drawuplim=0.8D0
@@ -1247,19 +1256,19 @@ else if (ifuncsel==8) then !Nuclear ESP
 		drawlowlim=-0.4D0
 		drawuplim=0.4D0
 	else
-		drawlowlim=0.0D0
+		drawlowlim=0D0
 		drawuplim=50D0
 		surcolorzmin=0
 		surcolorzmax=50
 	end if
 else if (ifuncsel==9) then
-	drawlowlim=0.0D0
-	drawuplim=1.0D0
+	drawlowlim=0D0
+	drawuplim=1D0
 else if (ifuncsel==10) then
-	drawlowlim=0.0D0
+	drawlowlim=0D0
 	drawuplim=0.8D0
 else if (ifuncsel==11) then
-	drawlowlim=0.0D0
+	drawlowlim=0D0
 	drawuplim=0.1D0
 else if (ifuncsel==12) then
 	drawlowlim=-0.1D0
@@ -1279,15 +1288,23 @@ else if (ifuncsel==18) then
 else if (ifuncsel==22.or.ifuncsel==23) then !delta-g
 	drawlowlim=0D0
 	drawuplim=0.5D0
+else if (ifuncsel==24) then !IRI
+	drawlowlim=0D0
+	drawuplim=2D0
+else if (ifuncsel==25) then !vdW potential
+	drawlowlim=-1D0
+	drawuplim=1D0
 else if (ifuncsel==111.or.ifuncsel==112) then !Becke/Hirshfeld weight
 	drawlowlim=0D0
 	drawuplim=1D0
-else if (ifuncsel==100.and.(iuserfunc==20.or.iuserfunc==99)) then !DORI/IRI
-	drawlowlim=0D0
-	drawuplim=1D00
-else !Including ifuncsel==100
-	drawlowlim=0.0D0
-	drawuplim=5.0D0
+else if (ifuncsel==100) then
+	if (iuserfunc==20.or.iuserfunc==99) then !DORI/IRI
+		drawlowlim=0D0
+		drawuplim=2D0
+	else if (iuserfunc>=910.and.iuserfunc<=914) then !Atomic weighting functions
+		drawlowlim=0D0
+		drawuplim=1.000001D0
+    end if
 end if
 !Set up range of X and Y axes
 if (plesel==1) then
@@ -1316,9 +1333,9 @@ planestpx=(axhigh1-axlow1)/7
 planestpy=(axhigh2-axlow2)/7
 planestpz=(drawuplim-drawlowlim)/10
 
-XVU=150.0D0 !Reinitialize view
-YVU=30.0D0
-ZVU=7.0D0 !More suitable than 6.0D0 for drawing plane
+XVU=150D0 !Reinitialize view
+YVU=30D0
+ZVU=7D0 !More suitable than 6D0 for drawing plane
 iatmcontri=0 !=0 means haven't define atomic contribution
 idrawintbasple=0 !Refresh (3,-1) information
 nple3n1path=0
@@ -1340,13 +1357,14 @@ do while(.true.)
 		else
 			call drawplane(axlow1,axhigh1,axlow2,axhigh2,drawlowlim,drawuplim,idrawtype)
 		end if
-		if (isavepic==1) write(*,"(a,a,a)") " Graph have been saved as ",trim(graphformat)," format with ""DISLIN"" prefix in current directory"
+		if (isavepic==1) write(*,"(a,a,a)") " Graph have been saved as ",trim(graphformat)," format with ""dislin"" prefix in current directory"
 		isavepic=0
 	end if
 	
 	!! After show the plot once, ask user what to do next. 0 and negative options are general options
 	write(*,*)
-! 		write(*,*) "-10 Multiply data by the data in a plane text file"
+    call menutitle("Post-processing menu of plotting plane map",8,1)
+! 	write(*,*) "-10 Multiply data by the data in a plane text file"
 	if (iatmcontri==0) write(*,*) "-9 Only plot the data around certain atoms"
 	if (iatmcontri==1) write(*,*) "-9 Recover original plane data"
 	if (ilenunit2D==1) write(*,*) "-8 Change length unit of the graph to Angstrom"
@@ -1357,9 +1375,9 @@ do while(.true.)
     write(*,*) "-4 Save (load) all plotting settings to (from) an external file"
 	write(*,*) "-3 Change other plotting settings"
 	if (idrawtype==1.or.idrawtype==4.or.idrawtype==5) then
-		write(*,"(a,2f7.3,f12.6)") " -2 Set stepsize in X,Y,Z axes, current:",planestpx,planestpy,planestpz
+		write(*,"(a,2f7.3,f12.6)") " -2 Set label intervals in X, Y and color scale axes, current:",planestpx,planestpy,planestpz
 	else
-		write(*,"(a,2f7.3)") " -2 Set stepsize in X and Y axes, current:",planestpx,planestpy
+		write(*,"(a,2f7.3)") " -2 Set label intervals in X and Y axes, current:",planestpx,planestpy
 	end if
 	write(*,*) "-1 Show the graph again"
 	write(*,*) "0 Save the graph to a graphical file in current folder"
@@ -1577,10 +1595,10 @@ do while(.true.)
         end if
 	else if (i==-2) then
 		if (idrawtype==1.or.idrawtype==4.or.idrawtype==5) then
-			write(*,"(a)") " Input the stepsize between the labels in X,Y,Z axes, e.g. 1.5,2.0,0.1"
+			write(*,"(a)") " Input interval between the labels in X, Y and color scale axes, e.g. 1.5,2.0,0.1"
 			read(*,*) planestpx,planestpy,planestpz
 		else
-			write(*,"(a)") " Input the stepsize between the labels in X and Y axes, e.g. 1.5,2.0"
+			write(*,"(a)") " Input interval between the labels in X and Y axes, e.g. 1.5,2.0"
 			read(*,*) planestpx,planestpy
 		end if
 	else if (i==-1) then
@@ -1656,7 +1674,7 @@ do while(.true.)
 		!Options only for idrawtype 1 =====================
 		if (idrawtype==1) then 
 			if (i==1) then
-				write(*,*) "Input lower & upper limit of Z (e.g. -0.3,0.3)"
+				write(*,*) "Input lower & upper limit of Z, e.g. -0.3,0.5"
 				read(*,*) drawlowlim,drawuplim
 			else if (i==2) then
 				if (idrawcontour==1) then
@@ -1751,7 +1769,7 @@ do while(.true.)
 					if (allocated(ple3n1path)) deallocate(ple3n1path)
 				end if
 			else if (i==7) then
-				write(*,*) "Input stepsize (Bohr) and maximal iterations, e.g. 0.01, 200"
+				write(*,*) "Input stepsize (Bohr) and maximal iterations, e.g. 0.01,200"
 				write(*,"(a,f8.5,',',i6)") " Current values:",ple3n1pathstpsiz,n3n1plept
 				read(*,*) ple3n1pathstpsiz,n3n1plept
             else if (i==9) then
@@ -1766,7 +1784,7 @@ do while(.true.)
                         write(*,"(a,a)") " 3 Set color transition, current: ",trim(clrtransname(iclrtrans))
                         if (ishowclrfill_bar==1) write(*,*) "4 Toggle showing color bar, current: Yes"
                         if (ishowclrfill_bar==0) write(*,*) "4 Toggle showing color bar, current: No"
-                        if (ishowclrfill_bar==1) write(*,*) "5 Set stepsize of color bar"
+                        if (ishowclrfill_bar==1) write(*,*) "5 Set label interval of color bar"
                         read(*,*) itmp
                         if (itmp==0) then
                             exit
@@ -1784,7 +1802,7 @@ do while(.true.)
                                 ishowclrfill_bar=1
                             end if
                         else if (itmp==5) then
-                            write(*,*) "Input stepsize, e.g. 0.2"
+                            write(*,*) "Input label interval, e.g. 0.2"
                             read(*,*) planestpz
                         end if
                     end do
@@ -1921,6 +1939,10 @@ do while(.true.)
     write(*,"(a,i3)") " 9 Set thick of bonds, current:",bondthick2D
 	write(*,*) "10 Set format of exporting image file, current: "//graphformat
 	if (idrawtype==2) write(*,"(a,i3)") " 11 Set number of decimal places of isovalue labels on contours, current:",numdigctr
+    if (idrawtype==1.and.idrawcontour==1) then
+    		if (ilabel_on_contour==0) write(*,*) "12 Enable showing isovalue on contour lines"
+		if (ilabel_on_contour==1) write(*,*) "12 Disable showing isovalue on contour lines"
+    end if
     read(*,*) isel2
     
     if (isel2==0) then
@@ -1992,6 +2014,15 @@ do while(.true.)
         write(*,"(' Current value:',i3)") numdigctr
         write(*,*) "Note: The default value can be set by ""numdigctr"" parameter in settings.ini"
         read(*,*) numdigctr
+    else if (isel2==12) then
+		if (ilabel_on_contour==0) then
+			ilabel_on_contour=1
+			write(*,*) "Input label size, e.g. 30"
+			read(*,*) ictrlabsize
+			write(*,"(a)") " Note: The number of decimal places of labels on contour lines can be set by ""numdigctr"" in settings.ini"
+        else
+			ilabel_on_contour=0
+        end if
     end if
 end do
 end subroutine
@@ -2009,12 +2040,13 @@ end subroutine
 subroutine study3dim
 use defvar
 use util
-use function
+use functions
 use GUI
 implicit real*8 (a-h,o-z)
 character c200tmp*200,c2000tmp*2000,outcubfile*200
 real*8 :: tmpvec(3)
 integer,allocatable :: tmparrint(:)
+real*8,allocatable :: cubmat_bk(:,:,:)
 
 ncustommap=0 !Clean custom operation setting that possibly defined by other modules
 if (allocated(custommapname)) deallocate(custommapname)
@@ -2094,7 +2126,7 @@ if (igridsel==100) then !Calculate value on a set of points loaded from external
 			icustom=icustom+1
 			filename=custommapname(icustom)
             call savePBCinfo
-			call dealloall
+			call dealloall(0)
 			write(*,"(' Loading:  ',a)") trim(filename)
 			call readinfile(filename,1)
             call loadPBCinfo
@@ -2107,7 +2139,7 @@ if (igridsel==100) then !Calculate value on a set of points loaded from external
 			goto 500
 		else if (icustom==ncustommap) then !last time
 			extpt(:,4)=extpttmp(:)
-			call dealloall
+			call dealloall(0)
 			write(*,"(' Reloading:  ',a)") trim(firstfilename)
 			call readinfile(firstfilename,1)
 		end if
@@ -2140,7 +2172,6 @@ else !Calculate grid data
 				do i=1,nx
                     call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 					cubmat(i,j,k)=beckewei(tmpx,tmpy,tmpz,iatmbecke1,iatmbecke2)
-					!cubmat(i,j,k)=beckewei(tmpx,tmpy,tmpz,iatmbecke1,iatmbecke2)*ELF_LOL(tmpx,tmpy,tmpz,"ELF")  !Becke's weight multiplied by ELF
 				end do
 			end do
 		end do
@@ -2190,7 +2221,7 @@ else !Calculate grid data
 				icustom=icustom+1
 				filename=custommapname(icustom)
                 call savePBCinfo !In order to keep PBC status of atom identical to the whole system, saving PBC of the whole system, and then apply to atom after loading atomic wfn file
-				call dealloall
+				call dealloall(0)
 				write(*,"(' Loading:  ',a)") trim(filename)
 				call readinfile(filename,1)
                 call loadPBCinfo
@@ -2203,7 +2234,7 @@ else !Calculate grid data
 				goto 510
 			else if (icustom==ncustommap) then !last time
 				cubmat=cubmattmp
-				call dealloall
+				call dealloall(0)
 				write(*,"(' Reloading:  ',a)") trim(firstfilename)
 				call readinfile(firstfilename,1)
 			end if
@@ -2288,6 +2319,12 @@ else !Calculate grid data
 		outcubfile="EDRDmax.cub"
 	else if (ifuncsel==22) then
 		outcubfile="Delta_g.cub"
+	else if (ifuncsel==24) then
+		sur_value=1D0
+		outcubfile="IRI.cub"
+	else if (ifuncsel==25) then
+		sur_value=1D0
+		outcubfile="vdWpot.cub"
 	else if (ifuncsel==100) then
 		outcubfile="userfunc.cub"
 	else if (ifuncsel==111) then
@@ -2313,8 +2350,8 @@ else !Calculate grid data
 
 	!Reinitialize plot parameter
 	bondcrit=1.15D0
-	textheigh=38.0D0
-	ratioatmsphere=1.0D0
+	textheigh=38D0
+	ratioatmsphere=1D0
 	bondradius=0.2D0
 	ishowatmlab=1
 	ishowaxis=1
@@ -2324,6 +2361,7 @@ else !Calculate grid data
 	
 	do while(.true.)
 		write(*,*)
+        call menutitle("Post-processing menu",10,1)
 		write(*,*) "-1 Show isosurface graph"
 		write(*,*) "0 Return to main menu"
 		write(*,*) "1 Save graph of isosurface to file in current folder"
@@ -2334,19 +2372,25 @@ else !Calculate grid data
 		write(*,*) "6 Divide all grid data by a factor"
 		write(*,*) "7 Add a value to all grid data"
 		write(*,*) "8 Substract a value from all grid data"
+		write(*,"(a)") " 9 Multiply all grid data by Hirshfeld weights of a fragment (can be used to only make isosurface around interested fragment visible)"
+        if (allocated(cubmat_bk)) write(*,*) "10 Restore original grid data"
 		read(*,*) i
 		
 		if (i==-1) then
 			call drawisosurgui(1)
+            
 		else if (i==0) then
 			exit
+            
 		else if (i==1) then
 			idrawisosur=1
 			isavepic=1
 			call drawmol
 			isavepic=0
-			write(*,*) "Graphical file has been saved to current folder with ""DISLIN"" prefix"
+			write(*,*) "Graphical file has been saved to current folder with ""dislin"" prefix"
+            
 		else if (i==2) then
+			write(*,*) "Exporting cube file, please wait..."
             if (iaddprefix==1) call addprefix(outcubfile)
 			open(10,file=outcubfile,status="replace")
 			call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
@@ -2354,6 +2398,7 @@ else !Calculate grid data
 			write(*,"(' Done! Grid data has been exported to ',a,' in current folder')") trim(outcubfile)
             if (iaddprefix==0) write(*,"(a)") " Hint: If you want to add input file name as prefix of the outputted &
             cube file, you can set ""iaddprefix"" in settings.ini to 1"
+            
 		else if (i==3) then
             c200tmp="output.txt"
             if (iaddprefix==1) call addprefix(c200tmp)
@@ -2370,25 +2415,72 @@ else !Calculate grid data
 			end do
 			close(10)
 			write(*,"(a)") " Output finished, column 1/2/3/4 correspond to X/Y/Z/value. The coordinate unit is Angstrom, the unit of the calculated function is a.u."
-		else if (i==4) then
+		
+        else if (i==4) then
 			write(*,*) "Input the value of isosurface, e.g. 0.02"
 			read(*,*) sur_value
-		else if (i==5) then
+            
+		else if (i==5.or.i==6.or.i==7.or.i==8) then
+            allocate(cubmat_bk(nx,ny,nz))
+            cubmat_bk=cubmat
 			write(*,*) "Input a value, e.g. 1.5"
 			read(*,*) tmpval
-			cubmat=cubmat*tmpval
-		else if (i==6) then
-			write(*,*) "Input a value, e.g. 1.5"
-			read(*,*) tmpval
-			cubmat=cubmat/tmpval
-		else if (i==7) then
-			write(*,*) "Input a value, e.g. 1.5"
-			read(*,*) tmpval
-			cubmat=cubmat+tmpval
-		else if (i==8) then
-			write(*,*) "Input a value, e.g. 1.5"
-			read(*,*) tmpval
-			cubmat=cubmat-tmpval
+            if (i==5) then
+				cubmat=cubmat*tmpval
+            else if (i==6) then
+				cubmat=cubmat/tmpval
+            else if (i==7) then
+				cubmat=cubmat+tmpval
+            else if (i==8) then
+				cubmat=cubmat-tmpval
+            end if
+			write(*,*) "Done! Grid data has been updated"
+            
+        else if (i==9) then
+            allocate(cubmat_bk(nx,ny,nz))
+            cubmat_bk=cubmat
+			write(*,*) "Input index of the atoms in the fragment to calculate Hirshfeld weight"
+			write(*,*) "e.g. 2,3,7-10,19"
+			read(*,"(a)") c2000tmp
+			call str2arr(c2000tmp,ntmp)
+            if (allocated(tmparrint)) deallocate(tmparrint)
+			allocate(tmparrint(ntmp))
+			call str2arr(c2000tmp,ntmp,tmparrint)            
+            
+            write(*,*) "Calculating Hirshfeld weight at grid points..."
+            iprog=0
+			!$OMP PARALLEL DO SHARED(iprog,cubmat) PRIVATE(i,j,k,tmpx,tmpy,tmpz,promol,fragdens,tmpdens,weight) schedule(dynamic) NUM_THREADS(nthreads)
+			do k=1,nz
+				do j=1,ny
+					do i=1,nx
+						call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+						promol=0
+                        fragdens=0
+						do iatm=1,ncenter
+							tmpdens=calcatmdens(iatm,tmpx,tmpy,tmpz,0)
+							promol=promol+tmpdens
+							if (any(tmparrint(1:ntmp)==iatm)) fragdens=fragdens+tmpdens
+						end do
+						if (promol==0) then
+							weight=0
+						else
+							weight=fragdens/promol
+						end if
+                        cubmat(i,j,k)=cubmat(i,j,k)*weight
+					end do
+				end do
+				!$OMP CRITICAL
+                iprog=iprog+1
+				call showprog(iprog,nz)
+                !$OMP END CRITICAL
+			end do
+			!$OMP END PARALLEL DO
+			write(*,*) "Done! Grid data has been updated"
+            
+        else if (i==10) then
+			cubmat=cubmat_bk
+			deallocate(cubmat_bk)
+			write(*,*) "Original grid data has been restored"
 		end if
 	end do
 end if
@@ -2418,7 +2510,7 @@ do while(.true.)
 		if (mod(ncontour,3)/=0) write(*,*)
 	end if
 	if (allocated(boldlinelist)) then
-		write(*,*) "Bolded line indics:"
+		write(*,*) "Indices of bolded lines:"
 		write(*,"(15i5)") boldlinelist
 	end if
 	write(*,*) "1 Save setting and return"
@@ -2460,21 +2552,26 @@ do while(.true.)
 		end if
 	else if (isel==4) then
 		write(*,*) "Input index of the contour lines you want to delete, e.g. 2,3,7-10"
+        write(*,*) "If press ENTER button directly, then all contour lines will be deleted"
 		read(*,"(a)") c2000tmp
-		call str2arr(c2000tmp,ntmp)
-		if (allocated(tmparr)) deallocate(tmparr)
-		allocate(tmparr(ntmp))
-		call str2arr(c2000tmp,ntmp,tmparr)
-		if (any(tmparr<1).or.any(tmparr>ncontour)) then
-			write(*,*) "Some indices you inputted exceeded valid range!"
-		else
-			do idx=1,ntmp
-				ictr=tmparr(idx)
-				ncontour=ncontour-1
-				ctrval(ictr:ncontour)=ctrval(ictr+1:ncontour+1)
-				where(tmparr>ictr) tmparr=tmparr-1
-			end do
-		end if
+        if (c2000tmp==" ") then
+			ncontour=0
+        else
+			call str2arr(c2000tmp,ntmp)
+			if (allocated(tmparr)) deallocate(tmparr)
+			allocate(tmparr(ntmp))
+			call str2arr(c2000tmp,ntmp,tmparr)
+			if (any(tmparr<1).or.any(tmparr>ncontour)) then
+				write(*,*) "Some indices you inputted exceeded valid range!"
+			else
+				do idx=1,ntmp
+					ictr=tmparr(idx)
+					ncontour=ncontour-1
+					ctrval(ictr:ncontour)=ctrval(ictr+1:ncontour+1)
+					where(tmparr>ictr) tmparr=tmparr-1
+				end do
+			end if
+        end if
 	else if (isel==5) then
 		write(*,*) "Use which built-in contour line values?"
         write(*,*) "-1 Default contour line values"
@@ -2548,7 +2645,7 @@ do while(.true.)
 		if (isel==8) write(*,*) "e.g. 0.4,0.1,10 generates 0.4,0.5,0.6,0.7 ... 1.3"
 		if (isel==9) write(*,*) "e.g. 2,3,10 generates 2,6,18,54 ... 39366"
 		read(*,*) ctrgenstrval,ctrgenstep,igennum
-		write(*,*) "If remove existing contour lines? (y/n)"
+		write(*,*) "If removing existing contour lines? (y/n)"
 		read(*,*) selectyn
 		if (selectyn=='y'.or.selectyn=='Y') then
 			ncontour=0
@@ -2730,8 +2827,8 @@ end subroutine
 !!!--------------------------  Set content of custom plot
 subroutine customplotsetup
 use defvar 
-implicit real*8(a-h,o-z)
-write(*,*) "How many files to deal with? (Excluding the file that has been loaded)"
+implicit real*8 (a-h,o-z)
+write(*,*) "How many files to deal with? e.g. 3 (Excluding the already loaded file)"
 read(*,*) ncustommap
 if (allocated(custommapname)) deallocate(custommapname)
 if (allocated(customop)) deallocate(customop)
@@ -2811,7 +2908,7 @@ end subroutine
 !  ngridnum1 and ngridnum2: Number of grids of planemat
 !  plesel: Type of plane (XY, YZ...), like usual plane map in main function 4
 !  Contour lines should be initialized by subroutine "gencontour"
-!  planestpx,planestpy,planestpz: Stepsize in X,Y,Z
+!  planestpx,planestpy,planestpz: Label intervals in X,Y,Z
 !  orgx2D,orgy2D,orgz2D: X, Y, Z of origin of the plane in molecular Cartesian space, used to determine if showing atomic labels, etc.
 !  idrawtype and idrawcontour should be properly set, see code of this routine
 subroutine planemap_interface(mapname,outfilename,xlow,xhigh,ylow,yhigh,zlow,zhigh)
@@ -2855,9 +2952,9 @@ do while(.true.)
 	if (ilenunit2D==1) write(*,*) "6 Change length unit of the graph to Angstrom"
 	if (ilenunit2D==2) write(*,*) "6 Change length unit of the graph to Bohr"
 	if (idrawtype==1) then
-		write(*,"(a,2f7.3,f12.6)") " 7 Set stepsize in X,Y,Z axes, current:",planestpx,planestpy,planestpz
+		write(*,"(a,2f7.3,f12.6)") " 7 Set label intervals in X, Y and color scale axes, current:",planestpx,planestpy,planestpz
 	else
-		write(*,"(a,2f7.3)") " 7 Set stepsize in X and Y axes, current:",planestpx,planestpy
+		write(*,"(a,2f7.3)") " 7 Set label intervals in X and Y axes, current:",planestpx,planestpy
 	end if
     !Options specific for color-filled map
     if (idrawtype==1) then
@@ -2910,7 +3007,7 @@ do while(.true.)
 		call drawplane(xlow,xhigh,ylow,yhigh,zlow,zhigh,idrawtype)
         if (isel==1) then
             isavepic=0
-            write(*,"(a,a,a)") " The map have been saved as ",trim(graphformat)," format with ""DISLIN"" prefix in current folder"
+            write(*,"(a,a,a)") " The map have been saved as ",trim(graphformat)," format with ""dislin"" prefix in current folder"
         end if
     else if (isel==2) then
         write(*,*) "Choose map type"
@@ -2965,10 +3062,10 @@ do while(.true.)
 		end if
     else if (isel==7) then
 		if (idrawtype==1) then
-			write(*,"(a)") " Input the stepsize between the labels in X,Y,Z axes, e.g. 1.5,2.0,0.1"
+			write(*,"(a)") " Input interval between the labels in X, Y and color scale axes, e.g. 1.5,2.0,0.1"
 			read(*,*) planestpx,planestpy,planestpz
 		else if (idrawtype==2) then
-			write(*,"(a)") " Input the stepsize between the labels in X and Y axes, e.g. 1.5,2.0"
+			write(*,"(a)") " Input interval between the labels in X and Y axes, e.g. 1.5,2.0"
 			read(*,*) planestpx,planestpy
 		end if
     else if (isel==8) then

@@ -5,7 +5,7 @@
 
 #!/bin/bash
 echo Calculating RESP charge for $1 ...
-Multiwfn $1 << EOF > /dev/null
+Multiwfn $1 -ispecial 1 << EOF > /dev/null
 7
 18
 1
@@ -20,7 +20,7 @@ echo RESP charges for $1 has been exported to $chgfile in current folder
 if [ $2 ];then
 echo
 echo Calculating RESP charge for $2 ...
-Multiwfn $2 << EOF > /dev/null
+Multiwfn $2 -ispecial 1 << EOF > /dev/null
 7
 18
 1

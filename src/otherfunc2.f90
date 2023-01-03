@@ -23,6 +23,7 @@ do while(.true.)
 	write(*,*) "16 Generate natural orbitals based on the density matrix in .fch/.fchk file"
     write(*,*) "17 Calculate Coulomb and exchange integrals between two orbitals"
     write(*,*) "18 Calculate bond length/order alternation (BLA/BOA)"
+    write(*,*) "19 Calculate spatial delocalization index (SDI) for orbitals or a function"
     write(*,*) "20 Bond order density (BOD) and natural adaptive orbital (NAdO) analyses"
 	read(*,*) isel
 	if (isel==0) then
@@ -63,6 +64,8 @@ do while(.true.)
         call orb_coulexcint
     else if (isel==18) then
         call BLABOA
+    else if (isel==19) then
+		call SDI
     else if (isel==20) then
         call BOD
 	end if
@@ -142,6 +145,7 @@ do while(.true.)
 				iatmend=isel2
 			end if
 			do iatm=iatmstart,iatmend
+				if (basstart(iatm)==0) cycle
 				write(*,"(' Result of atom',i8,' (',a2,')')") iatm,a(iatm)%name
 				istart=basstart(iatm)
 				iend=basend(iatm)
@@ -172,7 +176,7 @@ do while(.true.)
 		end do
 	else if (isel==2) then
 		do while(.true.)
-			write(*,*) "Input the index of two atoms, e.g. 5,8"
+			write(*,*) "Input index of two atoms, e.g. 5,8"
 			write(*,*) "Note: Input q can return. Input b can output result for all bonds"
 			read(*,"(a)") c80tmp
 			if (index(c80tmp,'q')/=0) then
@@ -194,7 +198,9 @@ do while(.true.)
 				end if
 			end if
 			do iatm=1,ncenter
+				if (basstart(iatm)==0) cycle
 				do jatm=iatm+1,ncenter
+					if (basstart(jatm)==0) cycle
 					bonddist=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)
 					if (index(c80tmp,'b')/=0) then
 						if (bonddist>( covr(a(iatm)%index)+covr(a(jatm)%index) )*bondcritval) cycle
@@ -244,6 +250,7 @@ do while(.true.)
 				iatmend=isel2
 			end if
 			do iatm=iatmstart,iatmend
+				if (basstart(iatm)==0) cycle
 				write(*,"(' Result of atom',i8,' (',a2,')')") iatm,a(iatm)%name
 				atmelepop=0D0
 				xatmelediptot=0D0
@@ -252,6 +259,7 @@ do while(.true.)
 				istart=basstart(iatm)
 				iend=basend(iatm)
 				do jatm=1,ncenter
+					if (basstart(jatm)==0) cycle
 					jstart=basstart(jatm)
 					jend=basend(jatm)
 					atmelepop=atmelepop+sum(Ptot(istart:iend,jstart:jend)*Sbas(istart:iend,jstart:jend))
@@ -405,7 +413,7 @@ end subroutine
 !!----- Plot radial distribution function for a real space function
 subroutine plotraddis
 use defvar
-use function
+use functions
 use GUI
 use util
 implicit real*8 (a-h,o-z)
@@ -520,7 +528,7 @@ do while(.true.)
 					call drawcurve(radpos,radval,nradpt,rlow,rhigh,(rhigh-rlow)/10,ylow,yhigh,(yhigh-ylow)/10,"show")
 				else
 					call drawcurve(radpos,radval,nradpt,rlow,rhigh,(rhigh-rlow)/10,ylow,yhigh,(yhigh-ylow)/10,"save")
-					write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""DISLIN"" prefix in current directory"
+					write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""dislin"" prefix in current directory"
 				end if
 			else if (isel==2.or.isel==4) then
 				ylow=minval(intradval)-0.1D0*valrangeint
@@ -529,7 +537,7 @@ do while(.true.)
 					call drawcurve(radpos,intradval,nradpt,rlow,rhigh,(rhigh-rlow)/10,ylow,yhigh,(yhigh-ylow)/10,"show")
 				else if (isel==4) then
 					call drawcurve(radpos,intradval,nradpt,rlow,rhigh,(rhigh-rlow)/10,ylow,yhigh,(yhigh-ylow)/10,"save")
-					write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""DISLIN"" prefix in current directory"
+					write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""dislin"" prefix in current directory"
 				end if
 			else if (isel==5) then
 				open(10,file="RDF.txt",status="replace")
@@ -567,7 +575,7 @@ end subroutine
 !!--------- Analyze correspondence between orbitals in two wavefunctions
 subroutine orbcorres
 use defvar
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: convmat(:,:) !(i,j) is the coefficient of j MO of the second wavefunction in i MO of current wavefunction
@@ -610,7 +618,7 @@ do while(.true.)
 	if (alive) exit
 	write(*,*) "Cannot find the file, input again"
 end do
-call dealloall
+call dealloall(0)
 call readinfile(filename2,1) !Get some knowledge about the second wavefunction
 nmo2=nmo !The number of MOs in the wfn2
 iwfntype2=wfntype
@@ -629,7 +637,7 @@ else
 	read(c80tmp,*) istart2,iend2
 end if
 
-call dealloall
+call dealloall(0)
 call readinfile(firstfilename,1)
 allocate(MOvalgrd(radpot*sphpot,nmo),MOvalgrd2(radpot*sphpot,nmo2),convmat(nmo,nmo2),Snormmat(nmo,nmo2),Snorm2mat(nmo,nmo2))
 convmat=0D0
@@ -649,14 +657,14 @@ do iatm=1,ncenter
 	gridatm%z=gridatmorg%z+a(iatm)%z
 	
 	!Calculate value of all MOs of the first and second wavefunction at all grids
-	call dealloall
+	call dealloall(0)
 	call readinfile(filename2,1) !Load wfn2
 	!$OMP parallel do shared(MOvalgrd2) private(ipt) num_threads(nthreads) schedule(dynamic)
 	do ipt=1+iradcut*sphpot,radpot*sphpot
 		call orbderv(1,istart2,iend2,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,MOvalgrd2(ipt,:))
 	end do
 	!$OMP end parallel do
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1) !Retrieve to wfn1
 	!$OMP parallel do shared(MOvalgrd) private(ipt) num_threads(nthreads) schedule(dynamic)
 	do ipt=1+iradcut*sphpot,radpot*sphpot
@@ -665,7 +673,7 @@ do iatm=1,ncenter
 	!$OMP end parallel do
 
 	!Calculate Becke weight at all grids
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
 	
 	!$OMP parallel do shared(convmat,Snormmat,Snorm2mat) private(imo,jmo,tmpval,tmpval2,tmpval2sqr,ipt) num_threads(nthreads) schedule(dynamic)
 	do imo=istart1,iend1
@@ -822,7 +830,6 @@ write(*,*) "Input distance cutoff in Angstrom, e.g. 3.2"
 read(*,*) discrit
 discrit=discrit/b2a
 
-call gendistmat
 avgdist=0
 iwithin=0
 distmax=0
@@ -830,7 +837,7 @@ distmin=1000000
 do iatm=1,ncenter
 	do jatm=iatm+1,ncenter
 		if ((a(iatm)%name==elesel1.and.a(jatm)%name==elesel2).or.(a(jatm)%name==elesel1.and.a(iatm)%name==elesel2)) then
-			dist=distmat(iatm,jatm)
+			dist=atomdist(iatm,jatm,1)
 			if (dist<=discrit) then
 				iwithin=iwithin+1
 				write(*,"(i6,'#   ',i6,'(',a')   --',i6,'(',a,')    Length:',f12.6,' Angstrom')") iwithin,iatm,a(iatm)%name,jatm,a(jatm)%name,dist*b2a
@@ -869,7 +876,7 @@ if (selectyn=='y'.or.selectyn=='Y') then
 		ncoord=0
 		do jatm=1,ncenter
 			if (iatm==jatm.or.a(jatm)%name/=elesel2) cycle
-			if (distmat(iatm,jatm)<=discrit) ncoord=ncoord+1
+			if (atomdist(iatm,jatm,1)<=discrit) ncoord=ncoord+1
 		end do
 		write(*,"(' The coordinate number of',i6,'(',a,') due to ',a,' - ',a,' bond:',i5)") iatm,elesel1,elesel1,elesel2,ncoord
 		ncoordtot=ncoordtot+ncoord
@@ -1089,10 +1096,10 @@ subroutine domainana
 use defvar
 use GUI
 use util
-use function
+use functions
 use basinintmod !Use its vec26 array
 implicit real*8 (a-h,o-z)
-integer :: ifunciso=13,ifuncint=1
+integer :: ifunciso=13,ifPBCgrid=0
 integer,allocatable :: mergelist(:),grididx(:,:,:),dogrid(:,:)
 logical,allocatable :: boundgrid(:)
 character :: defdomain*20="<0.5",c80tmp*80,c1000tmp*1000,c2000tmp*2000
@@ -1101,6 +1108,8 @@ integer,allocatable :: tmparr(:)
 if (allocated(gridxyz)) deallocate(gridxyz)
 if (allocated(domainsize)) deallocate(domainsize)
 if (allocated(domaingrid)) deallocate(domaingrid)
+if (ifPBC>0) ifPBCgrid=1
+
 do while(.true.)
 	write(*,*)
     write(*,*) "  ---------------------------- Domain analysis ----------------------------"
@@ -1109,6 +1118,8 @@ do while(.true.)
 	write(*,*) "1 Calculate grid data and yield domains"
 	write(*,"(a,i5)") " 2 Select real space function to be calculated for option 1, current:",ifunciso
 	write(*,"(a,a)") " 3 Set criterion for defining domain, current: ",trim(defdomain)
+    if (ifPBCgrid==0) write(*,*) "4 Toggle considering periodicity during domain analysis, current: No"
+    if (ifPBCgrid==1) write(*,*) "4 Toggle considering periodicity during domain analysis, current: Yes"
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -1120,6 +1131,12 @@ do while(.true.)
 		write(*,*) "Input the definition, e.g. <0.05"
 		write(*,*) "Note: The first character must be < or >"
 		read(*,"(a)") defdomain
+	else if (isel==4) then
+		if (ifPBCgrid==0) then
+			ifPBCgrid=1
+        else
+			ifPBCgrid=0
+        end if
 	end if
 end do
 
@@ -1142,7 +1159,7 @@ else
 	write(*,*) "Error: Parsing of the domain definition failed!"
 	return
 end if
-write(*,"(/,' The number of grids satisfied the criterion:',i10)") ngrid
+write(*,"(/,' The number of grids satisfying the criterion:',i10)") ngrid
 
 !Clustering grids that satisfied criterion to domain
 !The idea is very clever:
@@ -1153,12 +1170,13 @@ write(*,*) "Clustering domains..."
 call walltime(iwalltime1)
 !dogrid: ix/iy/iz index of grids satisfying condition
 !gridxyz: XYZ coordinate of grids satisfying condition
-!grididx: currently records initial index of grids satisfying condition
-!boundgrid: If the grid is boundary grid
-allocate(dogrid(ngrid,3),grididx(nx,ny,nz),gridxyz(ngrid,3),boundgrid(ngrid))
+!grididx: Firstly, records initial index of grids satisfying condition; then update so that grids in each domain share identical index; at final stage, it records domain index
+!boundgrid: If the grid is boundary grid (grids around isosurfaces, or at cell boundary)
+allocate(dogrid(3,ngrid),grididx(nx,ny,nz),gridxyz(3,ngrid),boundgrid(ngrid))
 boundgrid=.false.
 
-!Initialize grid indices
+!Initialize grid indices. Make each grid statisfying the condition have unique index, and build gridxyz
+write(*,*) "Initializing grid indices..."
 grididx=-1 !Irrelevant grids have very small value
 idx=0
 do iz=1,nz
@@ -1166,13 +1184,11 @@ do iz=1,nz
 		do ix=1,nx
 			if ((defdomain(1:1)=='<'.and.cubmat(ix,iy,iz)<valiso).or.(defdomain(1:1)=='>'.and.cubmat(ix,iy,iz)>valiso)) then
 				idx=idx+1
-				dogrid(idx,1)=ix
-				dogrid(idx,2)=iy
-				dogrid(idx,3)=iz
+				dogrid(1,idx)=ix
+				dogrid(2,idx)=iy
+				dogrid(3,idx)=iz
 				grididx(ix,iy,iz)=idx
-				gridxyz(idx,1)=orgx+(ix-1)*dx
-				gridxyz(idx,2)=orgy+(iy-1)*dy
-				gridxyz(idx,3)=orgz+(iz-1)*dz
+                call getgridxyz(ix,iy,iz,gridxyz(1,idx),gridxyz(2,idx),gridxyz(3,idx))
 			end if
 		end do
 	end do
@@ -1181,13 +1197,16 @@ end do
 call setupmovevec
 
 !Determine if grid is boundary grid
+write(*,*) "Determining which grids are boundary grids..."
 do igrid=1,ngrid !Loop each grid statisfying condition
-	ix=dogrid(igrid,1);iy=dogrid(igrid,2);iz=dogrid(igrid,3) !ix,iy,iz index of current grid
+	ix=dogrid(1,igrid)
+	iy=dogrid(2,igrid)
+	iz=dogrid(3,igrid)
 	if (ix==1.or.ix==nx.or.iy==1.or.iy==ny.or.iz==1.or.iz==nz) then !If current grid is at box boundary, it will be regarded as boundary grid
 		boundgrid(igrid)=.true.
 		cycle
 	end if
-	do imove=1,26 !Check each neighbouring grid. If function value of any neighbouring grid does not meed condition, present grid should be boundary grid
+	do imove=1,26 !Check each neighbouring grid. If function value of any neighbouring grid does not meet condition, present grid should be boundary grid
 		ixtmp=ix+vec26x(imove);iytmp=iy+vec26y(imove);iztmp=iz+vec26z(imove) !ix,iy,iz index of neighbouring grid
 		if (ixtmp<1.or.ixtmp>nx.or.iytmp<1.or.iytmp>ny.or.iztmp<1.or.iztmp>nz) cycle !Skip grids out of box boundary
 		valtmp=cubmat(ixtmp,iytmp,iztmp)
@@ -1199,19 +1218,22 @@ do igrid=1,ngrid !Loop each grid statisfying condition
 end do
 
 !Iteration to make indices of grids in each domain are identical
-icyc=0
+write(*,*) "Iteratively updating indices of grids in each domain..."
 do while(.true.)
 	iupdate=0 !If there are grids updated index in this cycle
-	icyc=icyc+1
-	do itmp=1,ngrid
-		ix=dogrid(itmp,1)
-		iy=dogrid(itmp,2)
-		iz=dogrid(itmp,3)
-		do imove=1,26
+	do itmp=1,ngrid !Cycle all grids that satisify condition
+		ix=dogrid(1,itmp)
+		iy=dogrid(2,itmp)
+		iz=dogrid(3,itmp)
+		do imove=1,26 !Cycle neighbouring grids
 			ixtmp=ix+vec26x(imove)
 			iytmp=iy+vec26y(imove)
 			iztmp=iz+vec26z(imove)
-			if (ixtmp<1.or.ixtmp>nx.or.iytmp<1.or.iytmp>ny.or.iztmp<1.or.iztmp>nz) cycle !Skip grids at box boundary
+            if (ifPBCgrid==0) then
+				if (ixtmp<1.or.ixtmp>nx.or.iytmp<1.or.iytmp>ny.or.iztmp<1.or.iztmp>nz) cycle !Skip grids at box boundary
+            else if (ifPBCgrid==1) then
+				call PBCgrididx(ixtmp,iytmp,iztmp) !If neighbouring grid is outside cell, wrap its index into the cell
+            end if
 			if (grididx(ix,iy,iz)<grididx(ixtmp,iytmp,iztmp)) then
 				grididx(ix,iy,iz)=grididx(ixtmp,iytmp,iztmp)
 				iupdate=1
@@ -1219,24 +1241,25 @@ do while(.true.)
 			end if
 		end do
 	end do
-	if (iupdate==0) exit
+	if (iupdate==0) exit !This iteration does not update any index of the grids to be considered, so finished
 end do
 
-!After below step, grididx will records domain index of each grid that satisfies condition
+!After below step, grididx will record domain index of each grid that satisfies condition
+write(*,*) "Building the array recording domain index of each grid..."
 ndone=0
 ndomain=0
 do while(.true.)
 	ndomain=ndomain+1
-	mintmp=1000000
+	mintmp=2147483647 !Largest value can be recorded by integer*4
 	do itmp=1,ngrid
-		idxtmp=grididx(dogrid(itmp,1),dogrid(itmp,2),dogrid(itmp,3))
+		idxtmp=grididx(dogrid(1,itmp),dogrid(2,itmp),dogrid(3,itmp))
 		if (idxtmp<ndomain) cycle
 		if (idxtmp<mintmp) mintmp=idxtmp
 	end do
 	do itmp=1,ngrid
-		idxtmp=grididx(dogrid(itmp,1),dogrid(itmp,2),dogrid(itmp,3))
+		idxtmp=grididx(dogrid(1,itmp),dogrid(2,itmp),dogrid(3,itmp))
 		if (idxtmp==mintmp) then
-			grididx(dogrid(itmp,1),dogrid(itmp,2),dogrid(itmp,3))=ndomain
+			grididx(dogrid(1,itmp),dogrid(2,itmp),dogrid(3,itmp))=ndomain
 			ndone=ndone+1
 		end if
 	end do
@@ -1244,13 +1267,14 @@ do while(.true.)
 end do
 
 !Generate domainsize and domaingrid (grid index that contained in each domain)
-allocate(domainsize(ndomain),domaingrid(ndomain,ngrid))
+write(*,"(a)") " Counting number of grids in each domain and building list of grids in each domain..."
+allocate(domainsize(ndomain),domaingrid(ngrid,ndomain))
 do idom=1,ndomain
 	j=0
 	do itmp=1,ngrid
-		if (grididx(dogrid(itmp,1),dogrid(itmp,2),dogrid(itmp,3))==idom) then
+		if (grididx(dogrid(1,itmp),dogrid(2,itmp),dogrid(3,itmp))==idom) then
 			j=j+1
-			domaingrid(idom,j)=itmp
+			domaingrid(j,idom)=itmp
 		end if
 	end do
 	domainsize(idom)=j
@@ -1261,7 +1285,7 @@ call walltime(iwalltime2)
 write(*,"(' Clustering took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 
 do idom=1,ndomain
-	write(*,"(' Domain:',i6,'    Grids:',i8,'    Volume:',f10.3,' Angstrom^3')") idom,domainsize(idom),domainsize(idom)*dvol*b2a**3
+	write(*,"(' Domain:',i7,'    Grids:',i9,'    Volume:',f11.4,' Angstrom^3')") idom,domainsize(idom),domainsize(idom)*dvol*b2a**3
 end do
 
 do while(.true.)
@@ -1273,10 +1297,11 @@ do while(.true.)
 	write(*,*) "2 Perform integration for all domains"
 	write(*,"(a)") " 2b Perform integration for subregion of some domains according to range of sign(lambda)*rho"
 	write(*,*) "3 Visualize domains"
-	write(*,"(a,i5)") " 4 Select the real space function to be integrated, current:",ifuncint
+    write(*,*) "4 Sort indices of domains according to their domain volumes"
 	write(*,*) "5 Calculate q_bind index for a domain"
 	write(*,*) "10 Export a domain as domain.cub file in current folder"
 	write(*,*) "11 Export boundary grids of a domain to domain.pdb file in current folder"
+    write(*,"(a)") " 12 Export X,Y,Z coordinates and value of all grids in each domain to domain.txt in current folder"
     read(*,"(a)") c80tmp
     if (index(c80tmp,'b')/=0) then
 		isel2=-2
@@ -1303,10 +1328,10 @@ do while(.true.)
 			nsizei=domainsize(idom)
 			nsizej=domainsize(jdom)
 			domainsize(idom)=nsizei+nsizej
-			domaingrid(idom,nsizei+1:nsizei+nsizej)=domaingrid(jdom,1:nsizej)
+			domaingrid(nsizei+1:nsizei+nsizej,idom)=domaingrid(1:nsizej,jdom)
 			ndomain=ndomain-1
 			domainsize(jdom:ndomain)=domainsize(jdom+1:ndomain+1) !Move all after jdom (disappeared) forward
-			domaingrid(jdom:ndomain,:)=domaingrid(jdom+1:ndomain+1,:)
+			domaingrid(:,jdom:ndomain)=domaingrid(:,jdom+1:ndomain+1)
 			where (grididx(:,:,:)==jdom) grididx=idom
 		end do
 		deallocate(mergelist)
@@ -1316,6 +1341,7 @@ do while(.true.)
 		do idom=1,ndomain
 			write(*,"(' Domain:',i6,'     Grids:',i8)") idom,domainsize(idom)
 		end do
+        
 	else if (isel2==1) then !Perform integration for a domain
 		write(*,*) "Input the index of the domain to be integrated, e.g. 3"
 		read(*,*) intdom
@@ -1323,19 +1349,29 @@ do while(.true.)
 			write(*,"(a)") " Error: The index of the domain to be integrated is incorrect"
 			cycle
 		end if
-		write(*,*) "Select the real space function to be integrated, e.g. 1"
-		call selfunc_interface(1,ifuncint)
+        write(*,*) "Which data will be integrated in the selected domain?"
+        write(*,*) "1 The grid data in memory"
+        write(*,*) "2 Choose a real space function"
+        read(*,*) inttype
+        if (inttype==2) then
+			write(*,*) "Select the real space function to be integrated, e.g. 1"
+			call selfunc_interface(1,ifuncint)
+        end if
 		valint=0
 		volint=0
 		valmin=1D100
 		valmax=-1D100
 		xmin=1D100;xmax=-1D100;ymin=1D100;ymax=-1D100;zmin=1D100;zmax=-1D100
 		do igrd=1,domainsize(intdom)
-			idx=domaingrid(intdom,igrd)
-			xnow=gridxyz(idx,1)
-			ynow=gridxyz(idx,2)
-			znow=gridxyz(idx,3)
-			tmpval=calcfuncall(ifuncint,xnow,ynow,znow)
+			idx=domaingrid(igrd,intdom)
+			xnow=gridxyz(1,idx)
+			ynow=gridxyz(2,idx)
+			znow=gridxyz(3,idx)
+            if (inttype==1) then
+				tmpval=cubmat(dogrid(1,idx),dogrid(2,idx),dogrid(3,idx))
+            else if (inttype==2) then
+				tmpval=calcfuncall(ifuncint,xnow,ynow,znow)
+            end if
 			valint=valint+tmpval
 			volint=volint+1
 			if (tmpval<valmin) valmin=tmpval
@@ -1358,9 +1394,16 @@ do while(.true.)
 		write(*,"(' X minimum:',f10.4,'  X maximum:',f10.4,'  Span:',f10.4)") xmin*b2a,xmax*b2a,(xmax-xmin)*b2a
 		write(*,"(' Y minimum:',f10.4,'  Y maximum:',f10.4,'  Span:',f10.4)") ymin*b2a,ymax*b2a,(ymax-ymin)*b2a
 		write(*,"(' Z minimum:',f10.4,'  Z maximum:',f10.4,'  Span:',f10.4)") zmin*b2a,zmax*b2a,(zmax-zmin)*b2a
+        
 	else if (isel2==2) then !Perform integration for all domains
-		write(*,*) "Select the real space function to be integrated, e.g. 1"
-		call selfunc_interface(1,ifuncint)
+        write(*,*) "Which data will be integrated in the selected domain?"
+        write(*,*) "1 The grid data in memory"
+        write(*,*) "2 Choose a real space function"
+        read(*,*) inttype
+        if (inttype==2) then
+			write(*,*) "Select the real space function to be integrated, e.g. 1"
+			call selfunc_interface(1,ifuncint)
+        end if
 		write(*,*) "Domain    Integral (a.u.)     Volume (Bohr^3)      Average"
 		valinttot=0
 		volinttot=0
@@ -1368,8 +1411,13 @@ do while(.true.)
 			valint=0
 			volint=0
 			do igrd=1,domainsize(intdom)
-				idx=domaingrid(intdom,igrd)
-				valint=valint+calcfuncall(ifuncint,gridxyz(idx,1),gridxyz(idx,2),gridxyz(idx,3))
+				idx=domaingrid(igrd,intdom)
+				if (inttype==1) then
+					tmpval=cubmat(dogrid(1,idx),dogrid(2,idx),dogrid(3,idx))
+                else if (inttype==2) then
+					tmpval=calcfuncall(ifuncint,gridxyz(1,idx),gridxyz(2,idx),gridxyz(3,idx))
+                end if
+				valint=valint+tmpval
 				volint=volint+1
 			end do
 			avgval=valint/domainsize(intdom)
@@ -1381,6 +1429,7 @@ do while(.true.)
 		end do
 		write(*,"(' Integration result of all domains:',E20.10,' a.u.')") valinttot
 		write(*,"(' Volume of all domains:',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volinttot,volinttot*b2a**3
+        
 	else if (isel2==-2) then !Perform integration for subregion of some domains according to sign(lambda)*rho
 		write(*,*) "Input indices of the domains you want to integrate, e.g. 2,3,7-10"
         write(*,*) "If press ENTER button directly, all domains will be selected"
@@ -1434,10 +1483,10 @@ do while(.true.)
 			volneg=0
 			volpos=0
 			do igrd=1,domainsize(intdom) !Loops all grid of this domain
-				idx=domaingrid(intdom,igrd)
-                xnow=gridxyz(idx,1)
-                ynow=gridxyz(idx,2)
-                znow=gridxyz(idx,3)
+				idx=domaingrid(igrd,intdom)
+                xnow=gridxyz(1,idx)
+                ynow=gridxyz(2,idx)
+                znow=gridxyz(3,idx)
 				call signlambda2rho_RDG(xnow,ynow,znow,sl2r,RDG,rho)
                 if (sl2r>=rlow.and.sl2r<=rhigh) then
 					valint=calcfuncall(ifuncint,xnow,ynow,znow)
@@ -1462,6 +1511,7 @@ do while(.true.)
 		end do
         write(*,"('  sum  ',E15.6,f9.3,E15.6,f9.3,E15.6,f9.3)") sum_rintneg+sum_rintpos,sum_volneg+sum_volpos,sum_rintpos,sum_volpos,sum_rintneg,sum_volneg
         deallocate(tmparr)
+        
 	else if (isel2==3) then !Visualize domains
 		idrawdomain=1
 		aug3Dold=aug3D
@@ -1469,6 +1519,31 @@ do while(.true.)
 		call drawdomaingui
 		aug3D=aug3Dold
 		idrawdomain=0
+        
+	else if (isel2==4) then !Sort domains according to volumes from large to small
+		write(*,*) "Sorting, please wait..."
+		allocate(tmparr(ngrid))
+		do idom=1,ndomain
+			do jdom=1,ndomain-idom
+				if (domainsize(jdom)<domainsize(jdom+1)) then
+					tmp=domainsize(jdom)
+                    domainsize(jdom)=domainsize(jdom+1)
+                    domainsize(jdom+1)=tmp
+                    tmparr(:)=domaingrid(:,jdom+1)
+                    domaingrid(:,jdom+1)=domaingrid(:,jdom)
+                    domaingrid(:,jdom)=tmparr(:)
+                    where(grididx==jdom+1) grididx=-1
+                    where(grididx==jdom) grididx=jdom+1
+                    where(grididx==-1) grididx=jdom
+                end if
+            end do
+        end do
+		deallocate(tmparr)
+		write(*,*) "Domain information after sorting:"
+		do idom=1,ndomain
+			write(*,"(' Domain:',i7,'    Grids:',i9,'    Volume:',f11.4,' Angstrom^3')") idom,domainsize(idom),domainsize(idom)*dvol*b2a**3
+		end do
+        
 	else if (isel2==5) then !Calculate q_bind index for a domain
 		write(*,*) "Input the index of the domain to be integrated, e.g. 3"
 		read(*,*) intdom
@@ -1489,8 +1564,8 @@ do while(.true.)
 		volneg=0
 		volpos=0
 		do igrd=1,domainsize(intdom)
-			idx=domaingrid(intdom,igrd)
-			call signlambda2rho_RDG(gridxyz(idx,1),gridxyz(idx,2),gridxyz(idx,3),sl2r,RDG,rho)
+			idx=domaingrid(igrd,intdom)
+			call signlambda2rho_RDG(gridxyz(1,idx),gridxyz(2,idx),gridxyz(3,idx),sl2r,RDG,rho)
 			if (sl2r<0) then
 				qatt=qatt+rho**expfac
 				volneg=volneg+1
@@ -1510,6 +1585,7 @@ do while(.true.)
 		write(*,"(' Volume (lambda2<0):',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volneg
 		write(*,"(' Volume (lambda2>0):',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volpos
 		write(*,"(' Volume (Total):    ',f13.6,' Bohr^3  ',f13.6,' Angstrom^3')") volneg+volpos
+        
 	else if (isel2==10) then !Export a domain as domain.cub file in current folder
 		write(*,*) "Input the index of the domain to be exported, e.g. 4"
 		read(*,*) idomain
@@ -1546,22 +1622,42 @@ do while(.true.)
 		close(10)
 		write(*,"(a)") " Done! domain.cub has been outputted to current folder. &
 		The grids belonging and not belonging the domain have value of 1 and 0, respectively"
+        
 	else if (isel2==11) then !Export boundary grids of a domain to domain.pdb file in current folder
 		write(*,*) "Input index of the domain, e.g. 4"
 		read(*,*) idomain
 		write(*,*) "Outputting domain.pdb..."
 		open(10,file="domain.pdb",status="replace")
+		if (ifPBC>0) then
+			call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+			write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+		end if
 		do igrd=1,domainsize(idomain)
-			idx=domaingrid(idomain,igrd)
+			idx=domaingrid(igrd,idomain)
 			if (boundgrid(idx)) then
-				xnow=gridxyz(idx,1)
-				ynow=gridxyz(idx,2)
-				znow=gridxyz(idx,3)
-				write(10,"(a,i5,1x,a4,14x,3f8.3)") "HETATM",igrd," C  ",xnow*b2a,ynow*b2a,znow*b2a
+				write(10,"(a,i5,1x,a4,14x,3f8.3)") "HETATM",igrd," C  ",gridxyz(1,idx)*b2a,gridxyz(2,idx)*b2a,gridxyz(3,idx)*b2a
 			end if
 		end do
 		close(10)
 		write(*,"(a)") " Done! domain.pdb has been outputted to current folder"
+        
+    else if (isel2==12) then !Export X,Y,Z coordinates and value of all grids in each domain
+		write(*,*) "Input index of the domain, e.g. 4"
+		read(*,*) idomain
+		write(*,*) "Outputting domain.txt..."
+		open(10,file="domain.txt",status="replace")
+		do igrd=1,domainsize(idomain)
+			idx=domaingrid(igrd,idomain)
+            ix=dogrid(1,idx)
+			iy=dogrid(2,idx)
+			iz=dogrid(3,idx)
+            write(10,"(3f11.5,1PE16.8)") gridxyz(1,idx)*b2a,gridxyz(2,idx)*b2a,gridxyz(3,idx)*b2a,cubmat(ix,iy,iz)
+		end do
+		close(10)
+		write(*,"(a)") " Done! domain.txt has been outputted to current folder"
+        write(*,*) "Column 1,2,3: X,Y,Z (in Angstrom) of grids in this domain"
+        write(*,*) "Column 4: Value of the grid data recorded in memory at corresponding grids"
+        write(*,"(a,f10.5,' Bohr^3 (',f10.5,' Angstrom^3)')") " Note: Volume of each grid is",dvol,dvol*b2a**3
 	end if
 end do
 end subroutine
@@ -1639,10 +1735,10 @@ if (ifoundDM==0) then
 end if
 iNOtype=1
 if (wfntype==1.or.wfntype==2.or.wfntype==4) then
-	write(*,*) "Select natural orbitals you want to obtain"
-	write(*,*) "1 Spatial natural orbitals (diagonalization of total density matrix)"
-	write(*,*) "2 Alpha and beta natural orbitals (diagonalization of respective DM)"
-	write(*,*) "3 Spin natural orbitals (diagonalization of spin density matrix)"
+	write(*,*) "Select the type of natural orbitals you want to obtain"
+	write(*,*) "1 Spatial natural orbitals (diagonalizing total density matrix)"
+	write(*,*) "2 Alpha and beta natural orbitals (diagonalizing respective density matrix)"
+	write(*,*) "3 Spin natural orbitals (diagonalizing spin density matrix)"
 	read(*,*) iNOtype
 end if
 
@@ -1682,7 +1778,7 @@ read(*,*) selectyn
 if (selectyn=='y') then
     call outmwfn("new.mwfn",10,0)
 	write(*,*) "The NOs have been exported to new.mwfn in current folder"
-	call dealloall
+	call dealloall(0)
 	write(*,*) "Loading new.mwfn..."
 	call readinfile("new.mwfn",1)
 	write(*,"(a)") " Loading finished, now you can use main function 0 to visualize NOs as isosurfaces, or perform various wavefunction analyses based on the NOs"
@@ -1700,7 +1796,7 @@ use defvar
 implicit real*8 (a-h,o-z)
 integer iNOtype
 real*8,allocatable :: tmparr(:),Pspin(:,:)
-real*8 Xmat(nbasis,nbasis),Xmatinv(nbasis,nbasis)
+real*8 Xmat(nbasis,nbasis),Xmatinv(nbasis,nbasis),tmpmat(nbasis,nbasis)
 
 !To produce natural orbitals, we need to convert P to orthogonalized basis and then diagonalize it
 allocate(tmparr(nbasis))
@@ -1709,16 +1805,22 @@ if (iNOtype==1.or.iNOtype==3) then
 	if (iNOtype==1) then
 		if (ioutmode==1) write(*,*) "Generating NOs, please wait..."
 		call symmorthomat(Sbas,Xmat,Xmatinv)
-		call diagsymat(matmul(matmul(transpose(Xmat),Ptot),Xmat),CObasa,MOocc,ierror) !CObasa now is NOs in orthogonalized basis
+		!call diagsymat(matmul(matmul(transpose(Xmat),Ptot),Xmat),CObasa,MOocc,ierror) !CObasa now is NOs in orthogonalized basis
+        tmpmat=matmul_blas(Xmat,Ptot,nbasis,nbasis,1,0)
+        tmpmat=matmul_blas(tmpmat,Xmat,nbasis,nbasis)
+		call diagsymat(tmpmat,CObasa,MOocc,ierror) !CObasa now is NOs in orthogonalized basis
 	else
 		allocate(Pspin(nbasis,nbasis))
 		Pspin=Palpha-Pbeta !Construct spin density matrix
 		if (ioutmode==1) write(*,*) "Generating SNOs, please wait..."
 		call symmorthomat(Sbas,Xmat,Xmatinv)
-		call diagsymat(matmul(matmul(transpose(Xmat),Pspin),Xmat),CObasa,MOocc,ierror) !CObasa now is SNOs in orthogonalized basis
+		!call diagsymat(matmul(matmul(transpose(Xmat),Pspin),Xmat),CObasa,MOocc,ierror) !CObasa now is SNOs in orthogonalized basis
+        tmpmat=matmul_blas(Xmat,Pspin,nbasis,nbasis,1,0)
+        tmpmat=matmul_blas(tmpmat,Xmat,nbasis,nbasis)
+		call diagsymat(tmpmat,CObasa,MOocc,ierror) !CObasa now is NOs in orthogonalized basis
 	end if
 	MOene=0
-	CObasa=matmul(Xmatinv,CObasa) !Back convert CObasa to original basis
+	CObasa=matmul_blas(Xmatinv,CObasa,nbasis,nbasis) !Back convert CObasa to original basis
 	!Sort NOs according to occupation number
 	do i=1,nbasis
 		do j=i+1,nbasis
@@ -1743,14 +1845,19 @@ if (iNOtype==1.or.iNOtype==3) then
 		MOocc=tmparr(1:nbasis)
 		nmo=nbasis
 	end if
-	if (ioutmode==1) write(*,*) "Occupation numbers:"
-	if (ioutmode==1) write(*,"(6f12.6)") MOocc
+	if (ioutmode==1) then
+		write(*,*) "Occupation numbers:"
+		write(*,"(6f12.6)") MOocc
+    end if
 	wfntype=3
 else if (iNOtype==2) then
 	if (ioutmode==1) write(*,*) "Generating alpha and beta NOs, please wait..."
 	call symmorthomat(Sbas,Xmat,Xmatinv)
-	call diagsymat(matmul(matmul(transpose(Xmat),Palpha),Xmat),CObasa,MOocc(1:nbasis),ierror)
-	CObasa=matmul(Xmatinv,CObasa) !Back convert CObasa to original basis
+	!call diagsymat(matmul(matmul(transpose(Xmat),Palpha),Xmat),CObasa,MOocc(1:nbasis),ierror)
+    tmpmat=matmul_blas(Xmat,Palpha,nbasis,nbasis,1,0)
+    tmpmat=matmul_blas(tmpmat,Xmat,nbasis,nbasis)
+	call diagsymat(tmpmat,CObasa,MOocc(1:nbasis),ierror)
+    CObasa=matmul_blas(Xmatinv,CObasa,nbasis,nbasis) !Back convert CObasa to original basis
 	MOene(1:nbasis)=0
 	do i=1,nbasis
 		do j=i+1,nbasis
@@ -1764,12 +1871,17 @@ else if (iNOtype==2) then
 			end if
 		end do
 	end do
-	if (ioutmode==1) write(*,*) "Occupation numbers of Alpha NOs:"
-	if (ioutmode==1) write(*,"(6f12.6)") MOocc(1:nbasis)
-	if (ioutmode==1) write(*,*)
+	if (ioutmode==1) then
+		write(*,*) "Occupation numbers of alpha NOs:"
+		write(*,"(6f12.6)") MOocc(1:nbasis)
+		write(*,*)
+    end if
 	call symmorthomat(Sbas,Xmat,Xmatinv)
-	call diagsymat(matmul(matmul(transpose(Xmat),Pbeta),Xmat),CObasb,MOocc(nbasis+1:nmo),ierror)
-	CObasb=matmul(Xmatinv,CObasb)
+	!call diagsymat(matmul(matmul(transpose(Xmat),Pbeta),Xmat),CObasb,MOocc(nbasis+1:nmo),ierror)
+    tmpmat=matmul_blas(Xmat,Pbeta,nbasis,nbasis,1,0)
+    tmpmat=matmul_blas(tmpmat,Xmat,nbasis,nbasis)
+	call diagsymat(tmpmat,CObasb,MOocc(nbasis+1:nmo),ierror)
+    CObasb=matmul_blas(Xmatinv,CObasb,nbasis,nbasis) !Back convert CObasb to original basis
 	MOene(nbasis+1:nmo)=0
 	do i=1,nbasis
 		ii=i+nbasis
@@ -1785,9 +1897,11 @@ else if (iNOtype==2) then
 			end if
 		end do
 	end do
-	if (ioutmode==1) write(*,*) "Occupation numbers of Beta NOs:"
-	if (ioutmode==1) write(*,"(6f12.6)") MOocc(nbasis+1:nmo)
-	if (ioutmode==1) write(*,*)
+	if (ioutmode==1) then
+		write(*,*) "Occupation numbers of beta NOs:"
+		write(*,"(6f12.6)") MOocc(nbasis+1:nmo)
+		write(*,*)
+    end if
 	wfntype=4
 end if
 
@@ -1797,17 +1911,17 @@ end subroutine
 
 
 
-!!--------- Calculate core-valence bifurcation (CVB) index and related quantities
+!!--------- Calculate core-valence bifurcation (CVB) index and related quantities
 subroutine CVB_index
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer,parameter :: nptELFcurve=6000 !The number of points comprising the ELF curve,it is adequate to find exact ELF_CV and ELF_DHA
 real*8 ELF_x(nptELFcurve),ELF_y(nptELFcurve)
 
 write(*,*) "Original paper of CVB index: Theor. Chem. Acc., 104, 13 (2000)"
 write(*,*)
-write(*,*) "------ Calculating core-valence bifurcation (CVB) and related quantities -----"
+write(*,*) "------ Calculating core-valence bifurcation (CVB) and related quantities -----"
 write(*,*) "Input index of donor atom, hydrogen and acceptor atom in the H-bond (D-H...A)"
 write(*,*) "For example: 1,3,4"
 read(*,*) iD,iH,iA
@@ -1899,7 +2013,7 @@ subroutine orbfitEDD
 use defvar
 use util
 use GUI
-use function
+use functions
 implicit real*8 (a-h,o-z)
 character c200tmp*200,c2000tmp*2000,selectyn
 integer,allocatable :: orbidx(:)
@@ -2328,10 +2442,17 @@ integer :: cenind(2000)
 
 write(*,*) "Input atom indices in the chain (the sequence is arbitrary)"
 write(*,*) "e.g. 2,14,16-17,19,21,23-24"
+write(*,*) "If pressing enter button directly, all atoms will be selected"
 read(*,"(a)") c2000tmp
-call str2arr(c2000tmp,nchainatm)
-allocate(chainatm(nchainatm),atmseq(nchainatm),atmtmp(ncenter))
-call str2arr(c2000tmp,nchainatm,chainatm)
+if (c2000tmp==" ") then
+	nchainatm=ncenter
+	allocate(chainatm(nchainatm),atmseq(nchainatm),atmtmp(ncenter))
+    forall(i=1:ncenter) chainatm(i)=i
+else
+	call str2arr(c2000tmp,nchainatm)
+	allocate(chainatm(nchainatm),atmseq(nchainatm),atmtmp(ncenter))
+	call str2arr(c2000tmp,nchainatm,chainatm)
+end if
 
 write(*,*) "Input index of the two atoms at the two ends of the path, e.g. 13,24"
 write(*,"(a)") " If the path is a closed path (e.g. a ring), input twice of starting atom index, e.g. 5,5"
@@ -2373,6 +2494,7 @@ open(10,file="bondalter.txt",status="replace")
 
 write(*,*)
 if (allocated(CObasa)) then
+	call ask_Sbas_PBC
     iBO=1
     if (wfntype==0.or.wfntype==3) then !Closed-shell
         allocate(PSmat(nbasis,nbasis))
@@ -2407,11 +2529,11 @@ do idx=1,idxend
             jatm=atmseq(1)
         end if
     end if
-    dist=distmat(iatm,jatm)*b2a
+    dist=atomdist(iatm,jatm,1)*b2a
     if (mod(idx,2)==1) then !odd
         avglen_odd=avglen_odd+dist
         n_odd=n_odd+1
-    else
+    else !even
         avglen_even=avglen_even+dist
         n_even=n_even+1
     end if
@@ -2463,9 +2585,16 @@ read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
     write(*,*) "Note The unit of printed values is degree"
     write(*,*)
+    !Angles
+	avgang_even=0
+	avgang_odd=0
+	n_even=0
+	n_odd=0
+    iangle=0
     idxend=nchainatm
     if (ibeg==iend) idxend=nchainatm+2
     do itmp=3,idxend
+		iangle=iangle+1
         idx=itmp-2
         iatm=atmseq(idx)
         jdx=itmp-1
@@ -2475,11 +2604,28 @@ if (selectyn=='y'.or.selectyn=='Y') then
         if (kdx>nchainatm) kdx=kdx-nchainatm
         katm=atmseq(kdx)
         angle=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z)
-        write(*,"(' Atoms:',3i6,'  Angle:',f10.3)") iatm,jatm,katm,angle
+        write(*,"(' #',i5,'  Atoms:',3i6,'  Angle:',f10.3)") iangle,iatm,jatm,katm,angle
+		if (mod(iangle,2)==1) then !odd
+			avgang_odd=avgang_odd+angle
+			n_odd=n_odd+1
+		else !even
+			avgang_even=avgang_even+angle
+			n_even=n_even+1
+		end if
     end do
+	write(*,"(a,i6)") " The number of even angles:",n_even
+	write(*,"(a,i6)") " The number of odd angles: ",n_odd
+	avgang_even=avgang_even/n_even
+	avgang_odd=avgang_odd/n_odd
+	write(*,"(a,f12.4)") " Average degree of even angles: ",avgang_even
+	write(*,"(a,f12.4)") " Average degree of odd angles:  ",avgang_odd
+    
+    !Dihedral
     write(*,*)
+    idih=0
     if (ibeg==iend) idxend=nchainatm+3
     do itmp=4,idxend
+		idih=idih+1
         idx=itmp-3
         iatm=atmseq(idx)
         jdx=itmp-2
@@ -2491,11 +2637,10 @@ if (selectyn=='y'.or.selectyn=='Y') then
         ldx=itmp
         if (ldx>nchainatm) ldx=ldx-nchainatm
         latm=atmseq(ldx)
-        dih=xyz2dih(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z,a(latm)%x,a(latm)%y,a(latm)%z)
-        !Note that the return value of xyz2dih is [0,180]
+        dih=abs(atomdih(iatm,jatm,katm,latm,1)) !Note that the returned value of is [0,180]
         dev=dih
         if (dih>90) dev=180-dih
-        write(*,"(' Atoms:',4i6,'  Dihedral:',f7.2,', deviation to planar:',f7.2)") iatm,jatm,katm,latm,dih,dev
+        write(*,"(' #',i5,'  Atoms:',4i6,'  Dih.:',f7.2,', dev. to planar:',f7.2)") idih,iatm,jatm,katm,latm,dih,dev
     end do
 end if
 
@@ -2535,7 +2680,7 @@ end if
 !User may use basin analysis module before, which called "delvirorb" routine and some arrays were modified
 if (imodwfn==1) then
     write(*,"(a)") " The wavefunction has been modified previously. Reloading "//trim(filename)//" to recover initial status..."
-    call dealloall
+    call dealloall(0)
     call readinfile(filename,1)
 end if
 call getHOMOidx
@@ -2795,7 +2940,7 @@ call outmwfn("NAdOs.mwfn",10,0)
 write(*,"(/,a)") " All NAdO orbitals has been exported to NAdOs.mwfn in current folder"
 write(*,*) "Do you want to load it now so that you can visualize NAdOs? (y/n)"
 read(*,*) selectyn
-call dealloall
+call dealloall(0)
 if (selectyn=='y'.or.selectyn=='Y') then
     write(*,*) "Loading NAdOs.mwfn..."
     call readinfile("NAdOs.mwfn",1)
@@ -2804,6 +2949,333 @@ else
     write(*,"(a)") " Reloading "//trim(filename)//" to recover initial status..."
     call readinfile(filename,1)
     write(*,*) "Loading finished!"
+end if
+
+end subroutine
+
+
+
+!!----------- Calculate center, first/second moments, radius of gyration, and <r^2> of a function
+subroutine funcmoment
+use defvar
+use util
+use functions
+implicit real*8 (a-h,o-z)
+real*8 intval,moment1(3),moment2(3,3),moment2nuc(3,3),funcval(radpot*sphpot),beckeweigrid(radpot*sphpot),eigvecmat(3,3),eigval(3)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+character selectyn
+ifunc=1
+cenx=0
+ceny=0
+cenz=0
+do while(.true.)
+	write(*,*)
+	write(*,*) "0 Return"
+	write(*,*) "1 Calculate various quantities of the selected function"
+	write(*,*) "2 Calculate center and integral of the selected function"
+	write(*,"(a,i5)") " 3 Select the function to be studied, current:",ifunc
+	write(*,"(a,3f11.5,' Ang')") " 4 Set the center for option 1, current:",cenx*b2a,ceny*b2a,cenz*b2a
+	write(*,*) "5 Calculate center and integral of the absolute of the selected function"
+	read(*,*) isel
+	
+	if (isel==0) then
+		return
+	else if (isel==3) then
+		call selfunc_interface(1,ifunc)
+		cycle
+	else if (isel==4) then
+		write(*,*) "Input X,Y,Z of the center in Angstrom, e.g. 2.0,0,1.5"
+		read(*,*) cenx,ceny,cenz
+		cenx=cenx/b2a !To Bohr
+		ceny=ceny/b2a
+		cenz=cenz/b2a
+		cycle
+	end if
+
+	write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+	call gen1cintgrid(gridatmorg,iradcut)
+
+	call walltime(iwalltime1)
+
+	intval=0
+	moment1=0
+	moment2=0
+	realcenx=0
+	realceny=0
+	realcenz=0
+	do iatm=1,ncenter
+		write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+		gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+		gridatm%y=gridatmorg%y+a(iatm)%y
+		gridatm%z=gridatmorg%z+a(iatm)%z
+		!$OMP parallel do shared(funcval) private(i) num_threads(nthreads)
+		do i=1+iradcut*sphpot,radpot*sphpot
+			funcval(i)=calcfuncall(ifunc,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
+		end do
+		!$OMP end parallel do
+		call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+        
+        !The following code doesn't work normally if using ifort 19 with -O2 under Linux, see http://sobereva.com/wfnbbs/viewtopic.php?id=669
+		!do i=1+iradcut*sphpot,radpot*sphpot
+		!	tmpval=funcval(i)*gridatmorg(i)%value*beckeweigrid(i)
+		!	xtmp=gridatm(i)%x-cenx
+		!	ytmp=gridatm(i)%y-ceny
+		!	ztmp=gridatm(i)%z-cenz
+  !          if (isel==5) tmpval=abs(tmpval)
+		!	intval=intval+tmpval
+		!	moment1(1)=moment1(1)+xtmp*tmpval
+		!	moment1(2)=moment1(2)+ytmp*tmpval
+		!	moment1(3)=moment1(3)+ztmp*tmpval
+		!	moment2(1,1)=moment2(1,1)+xtmp*xtmp*tmpval
+		!	moment2(2,2)=moment2(2,2)+ytmp*ytmp*tmpval
+		!	moment2(3,3)=moment2(3,3)+ztmp*ztmp*tmpval
+		!	moment2(1,2)=moment2(1,2)+xtmp*ytmp*tmpval
+		!	moment2(2,3)=moment2(2,3)+ytmp*ztmp*tmpval
+		!	moment2(1,3)=moment2(1,3)+xtmp*ztmp*tmpval
+		!	realcenx=realcenx+gridatm(i)%x*tmpval
+		!	realceny=realceny+gridatm(i)%y*tmpval
+		!	realcenz=realcenz+gridatm(i)%z*tmpval
+		!end do
+        
+        !Contributed by i.s.ger:
+        !$OMP parallel do num_threads(nthreads) &
+        !$OMP default(none) &
+        !$OMP private(i, xtmp, ytmp, ztmp, tmpval) &
+        !$OMP shared(iradcut, radpot, sphpot, isel, funcval, gridatm, gridatmorg, beckeweigrid, cenx, ceny, cenz) &
+        !$OMP reduction(+:intval, moment1, moment2, realcenx, realceny, realcenz)
+        do i = 1 + iradcut*sphpot, radpot*sphpot
+            tmpval = funcval(i)*gridatmorg(i)%value*beckeweigrid(i)
+            xtmp = gridatm(i)%x - cenx
+            ytmp = gridatm(i)%y - ceny
+            ztmp = gridatm(i)%z - cenz
+            if (isel == 5) tmpval = abs(tmpval)
+            intval = intval + tmpval
+            moment1(1) = moment1(1) + xtmp*tmpval
+            moment1(2) = moment1(2) + ytmp*tmpval
+            moment1(3) = moment1(3) + ztmp*tmpval
+            moment2(1, 1) = moment2(1, 1) + xtmp*xtmp*tmpval
+            moment2(2, 2) = moment2(2, 2) + ytmp*ytmp*tmpval
+            moment2(3, 3) = moment2(3, 3) + ztmp*ztmp*tmpval
+            moment2(1, 2) = moment2(1, 2) + xtmp*ytmp*tmpval
+            moment2(2, 3) = moment2(2, 3) + ytmp*ztmp*tmpval
+            moment2(1, 3) = moment2(1, 3) + xtmp*ztmp*tmpval
+            realcenx = realcenx + gridatm(i)%x*tmpval
+            realceny = realceny + gridatm(i)%y*tmpval
+            realcenz = realcenz + gridatm(i)%z*tmpval
+        end do
+        !$OMP end parallel do
+         
+	end do
+	call walltime(iwalltime2)
+	write(*,"(' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
+	
+	if (isel==1) then
+		moment2(3,1)=moment2(1,3)
+		moment2(2,1)=moment2(1,2)
+		moment2(3,2)=moment2(2,3)
+		write(*,*) "Note: All data shown below are in a.u."
+		write(*,"(/,' Integral over whole space:',1PE16.8,/)") intval
+		write(*,"(' The first moment:')")
+		write(*,"(' X= ',1PE16.8,'   Y= ',1PE16.8,'   Z= ',1PE16.8)") moment1
+		write(*,"(' Norm= ',1PE16.8,/)") sum(moment1**2)
+		write(*,"(' The second moment:')")
+		write(*,"(' XX=',1PE16.8,'   XY=',1PE16.8,'   XZ=',1PE16.8)") moment2(1,:)
+		write(*,"(' YX=',1PE16.8,'   YY=',1PE16.8,'   YZ=',1PE16.8)") moment2(2,:)
+		write(*,"(' ZX=',1PE16.8,'   ZY=',1PE16.8,'   ZZ=',1PE16.8)") moment2(3,:)
+
+		call diagmat(moment2,eigvecmat,eigval,300,1D-10)
+		call sort(eigval)
+		write(*,"(a,3(1PE16.8))") ' Eigenvalues:',eigval
+        write(*,"(a,1PE16.8)") " Sum of eigenvalues (trace of the second moment tensor):",sum(eigval)
+		write(*,"(' Anisotropy:',1PE16.8,/)") eigval(3)-(eigval(1)+eigval(2))/2D0
+		write(*,"(' Radius of gyration:',1PE16.8)") dsqrt((moment2(1,1)+moment2(2,2)+moment2(3,3))/intval)
+        write(*,"(/,a,f16.6)") " Spatial extent of the function <r^2>:",sum(eigval)
+
+		if (ifunc==1) then
+			moment2nuc=0
+			do iatm=1,ncenter
+				xtmp=a(iatm)%x-cenx
+				ytmp=a(iatm)%y-ceny
+				ztmp=a(iatm)%z-cenz
+				tmpval=a(iatm)%charge
+				moment2nuc(1,1)=moment2nuc(1,1)+xtmp*xtmp*tmpval
+				moment2nuc(2,2)=moment2nuc(2,2)+ytmp*ytmp*tmpval
+				moment2nuc(3,3)=moment2nuc(3,3)+ztmp*ztmp*tmpval
+				moment2nuc(1,2)=moment2nuc(1,2)+xtmp*ytmp*tmpval
+				moment2nuc(2,3)=moment2nuc(2,3)+ytmp*ztmp*tmpval
+				moment2nuc(1,3)=moment2nuc(1,3)+xtmp*ztmp*tmpval
+			end do
+			moment2nuc(3,1)=moment2nuc(1,3)
+			moment2nuc(2,1)=moment2nuc(1,2)
+			moment2nuc(3,2)=moment2nuc(2,3)
+			write(*,*)
+			write(*,"(' The quadrupole moment of nuclear charges:')")
+			write(*,"(' XX=',f16.8,'   XY=',f16.8,'   XZ=',f16.8)") moment2nuc(1,:)
+			write(*,"(' YX=',f16.8,'   YY=',f16.8,'   YZ=',f16.8)") moment2nuc(2,:)
+			write(*,"(' ZX=',f16.8,'   ZY=',f16.8,'   ZZ=',f16.8)") moment2nuc(3,:)
+			write(*,*)
+			write(*,"(' The quadrupole moment of the system:')")
+			write(*,"(' XX=',f16.8,'   XY=',f16.8,'   XZ=',f16.8)") moment2nuc(1,:)-moment2(1,:)
+			write(*,"(' YX=',f16.8,'   YY=',f16.8,'   YZ=',f16.8)") moment2nuc(2,:)-moment2(2,:)
+			write(*,"(' ZX=',f16.8,'   ZY=',f16.8,'   ZZ=',f16.8)") moment2nuc(3,:)-moment2(3,:)
+		end if
+		
+	else if (isel==2.or.isel==5) then
+		realcenx=realcenx/intval
+		realceny=realceny/intval
+		realcenz=realcenz/intval
+        if (isel==2) then
+			write(*,"(' Integral of the function:',1PE16.8,' a.u.')") intval
+			write(*,"(/,' Center of the function:')")
+        else
+			write(*,"(' Integral of the absolute of the function:',1PE16.8,' a.u.')") intval
+			write(*,"(/,' Center of the absolute of the function:')")
+        end if
+		write(*,"(' X=',f16.8,' Y=',f16.8,' Z=',f16.8,' Angstrom',/)") realcenx*b2a,realceny*b2a,realcenz*b2a
+		write(*,*) "Use this center for subsequent calculations? (y/n)"
+		read(*,*) selectyn
+		if (selectyn=='y') then
+			cenx=realcenx
+			ceny=realceny
+			cenz=realcenz
+		end if
+	end if
+end do
+end subroutine
+
+
+
+
+!!----------- Calculate spatial delocalization index (SDI)
+subroutine SDI
+use defvar
+use util
+use functions
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+real*8 :: expfac=2D0
+integer,allocatable :: tmparr(:)
+real*8,allocatable :: SDIarr(:),densarr(:,:)
+real*8 funcval(radpot*sphpot),beckeweigrid(radpot*sphpot),wfnval(nmo)
+type(content) gridatmorg(radpot*sphpot),gridatm(radpot*sphpot)
+
+if (ifPBC/=0) then
+    write(*,*) "Error: PBC has not been supported by this function yet!"
+    return
+end if
+
+do while(.true.)
+	write(*,*)
+	call menutitle("Calculate spatial delocalization index (SDI)",10,1)
+	write(*,"(a,f8.4)") " -1 Set exponent factor, current:",expfac
+	write(*,*) "0 Return"
+	write(*,*) "1 Calcluate SDI for a real space function"
+	write(*,*) "2 Calculate SDI for density of orbital wavefunctions"
+	if (allocated(cubmat)) write(*,*) "3 Calculate SDI based on the grid data in memory"
+	read(*,*) icalctype
+	if (icalctype==0) then
+		return
+	else if (icalctype==-1) then
+		write(*,*) "Input exponent factor, e.g. 1.5"
+        read(*,*) expfac
+	else
+		exit
+	end if
+end do
+
+if (icalctype==1) then !Calculate for real space function
+    call selfunc_interface(1,ifunc)
+	write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+	call gen1cintgrid(gridatmorg,iradcut)
+	call walltime(iwalltime1)
+	valintabs=0
+	valint2=0
+	do iatm=1,ncenter
+		write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+		gridatm%x=gridatmorg%x+a(iatm)%x
+		gridatm%y=gridatmorg%y+a(iatm)%y
+		gridatm%z=gridatmorg%z+a(iatm)%z
+		!$OMP parallel do shared(funcval) private(ipt) num_threads(nthreads)
+		do ipt=1+iradcut*sphpot,radpot*sphpot
+			funcval(ipt)=calcfuncall(ifunc,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
+		end do
+		!$OMP end parallel do
+		call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+		do ipt=1+iradcut*sphpot,radpot*sphpot
+			valintabs=valintabs+abs(funcval(ipt))*gridatmorg(ipt)%value*beckeweigrid(ipt)
+			valint2=valint2+abs(funcval(ipt))**expfac *gridatmorg(ipt)%value*beckeweigrid(ipt)
+		end do
+	end do
+    valint2=valint2/valintabs**expfac
+	call walltime(iwalltime2)
+	write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+    SDIval=1D0/dsqrt(valint2)
+    write(*,"(/,' Spatial delocalization index is',f12.6)") SDIval
+
+else if (icalctype==2) then !Calculate based on orbital density
+    write(*,*) "Input indices of the orbitals to calculate SDI, e.g. 2,3,7-10"
+    read(*,"(a)") c2000tmp
+    call str2arr(c2000tmp,ntmp)
+    allocate(tmparr(ntmp),SDIarr(ntmp))
+    call str2arr(c2000tmp,ntmp,tmparr)
+    if (iautointgrid==1) then
+        nradpotold=radpot
+        nsphpotold=sphpot
+        radcutold=radcut
+        radpot=30
+        sphpot=302
+        radcut=15
+    end if
+    allocate(densarr(nmo,radpot*sphpot))
+    write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+    call gen1cintgrid(gridatmorg,iradcut)
+    call walltime(iwalltime1)
+    densarr=0
+    do iatm=1,ncenter
+	    write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+	    gridatm%x=gridatmorg%x+a(iatm)%x
+	    gridatm%y=gridatmorg%y+a(iatm)%y
+	    gridatm%z=gridatmorg%z+a(iatm)%z
+	    !$OMP parallel do shared(densarr) private(ipt,wfnval) num_threads(nthreads)
+	    do ipt=1+iradcut*sphpot,radpot*sphpot
+            call orbderv(1,1,nmo,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,wfnval(:))
+		    densarr(:,ipt)=wfnval(:)**2
+	    end do
+	    !$OMP end parallel do
+	    call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+	    do ipt=1+iradcut*sphpot,radpot*sphpot
+		    SDIarr(:)=SDIarr(:)+densarr(:,ipt)**expfac *gridatmorg(ipt)%value*beckeweigrid(ipt)
+	    end do
+    end do
+    SDIarr(:)=1D0/dsqrt(SDIarr(:))
+    call walltime(iwalltime2)
+    write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+    write(*,*)
+    do itmp=1,ntmp
+        iorb=tmparr(itmp)
+        write(*,"(' SDI of orbital',i6,':',f10.4)") iorb,SDIarr(iorb)
+    end do
+    write(*,*)
+    write(*,*) "Note: The unit of SDI of orbital density is a.u."
+    if (iautointgrid==1) then
+	    radpot=nradpotold
+	    sphpot=nsphpotold
+        radcut=radcutold
+    end if
+    
+else if (icalctype==3) then !Calculate based on grid data
+    call calc_dvol(dvol)
+    sumall=sum(abs(cubmat(:,:,:)))
+    valint=sumall*dvol
+    write(*,"(' Differential element:',f15.10,' Bohr^3')") dvol
+	write(*,"(' Sum of all values of grid data:',1PE16.8)") sumall
+	write(*,"(' Integral of absolute value of grid data:',1PE16.8)") valint
+    if (allocated(cubmattmp)) deallocate(cubmattmp)
+    allocate(cubmattmp(nx,ny,nz))
+    cubmattmp=cubmat/valint
+    SDIval=1/dsqrt(sum(abs(cubmattmp(:,:,:))**expfac)*dvol)
+    write(*,"(/,' Spatial delocalization index is',f12.6)") SDIval
+    deallocate(cubmattmp)
 end if
 
 end subroutine

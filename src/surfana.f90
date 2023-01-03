@@ -3,9 +3,9 @@ subroutine surfana
 use defvar
 use surfvertex
 use util
-use function
+use functions
 use GUI
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer*2,allocatable :: corpos(:,:,:) !corner position
 logical,allocatable :: ifbndcub(:,:,:) !if true, means this is a boundary cub
 integer,allocatable :: mergerelat(:),HirBecatm(:)
@@ -18,7 +18,7 @@ integer surfrag(ncenter),ifatmfrag(ncenter) !User-defined fragment contain which
 integer,allocatable :: surtrifrag(:) !Each surface triangle belongs to which fragment
 real*8 nucchgbackup(ncenter) !Backup nuclear charge, because which may be flushed by .chg file
 integer isurftype !How to define the surface. 1=Isosurface of electron density, 2=A certain real space function, 5/6=Hirshfeld/Becke surface, 10=Isosurface of existing grid data
-real*8 smat(ncenter,ncenter),Pvec(ncenter),tmprarr(ncenter)
+real*8 Pvec(ncenter)
 integer,allocatable :: tmpintarr(:)
 
 isurftype=1
@@ -436,7 +436,7 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 		else if (ihirshmode==2) then
 			call setpromol
 			do iatm=1,ncenter_org
-				call dealloall
+				call dealloall(0)
 				call readwfn(custommapname(iatm),1)
 				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
 				do k=1,nz
@@ -452,7 +452,7 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 				!$OMP END PARALLEL DO
 				call showprog(iatm,ncenter_org)
 			end do
-			call dealloall
+			call dealloall(0)
 			write(*,"(' Reloading ',a)") trim(firstfilename)
 			call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule)
 		end if
@@ -464,38 +464,13 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 		cubmat=0D0
 		ifinish=0
 		!We calculate Becke weight for all atoms, but only summing up the value of we selected atoms to cubmat
-		!$OMP PARALLEL DO SHARED(cubmat) PRIVATE(i,j,k,rnowx,rnowy,rnowz,smat,ii,jj,tmprarr,rmiu,chi,uij,aij,tmps,iter,Pvec) schedule(dynamic) NUM_THREADS(nthreads)
+		!$OMP PARALLEL DO SHARED(cubmat) PRIVATE(i,j,k,rnowx,rnowy,rnowz,Pvec) schedule(dynamic) NUM_THREADS(nthreads)
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
                     call getgridxyz(i,j,k,rnowx,rnowy,rnowz)
-					!Calculate Becke weight with modified CSD radii, by using Eq. 11,21,13,22 in Becke's paper (JCP 88,15)
-					smat=1D0
-					do ii=1,ncenter
-						tmprarr(ii)=dsqrt( (rnowx-a(ii)%x)**2+(rnowy-a(ii)%y)**2+(rnowz-a(ii)%z)**2 )
-					end do
-					do ii=1,ncenter
-						do jj=1,ncenter
-							if (ii==jj) cycle
-							rmiu=(tmprarr(ii)-tmprarr(jj))/distmat(ii,jj)
-							chi=vdwr_tianlu(a(ii)%index)/vdwr_tianlu(a(jj)%index)
-							uij=(chi-1)/(chi+1)
-							aij=uij/(uij**2-1)
-							if (aij>0.5D0) aij=0.5D0
-							if (aij<-0.5D0) aij=-0.5D0
-							rmiu=rmiu+aij*(1-rmiu**2)
-							tmps=rmiu
-							do iter=1,3
-								tmps=1.5D0*(tmps)-0.5D0*(tmps)**3
-							end do
-							smat(ii,jj)=0.5D0*(1-tmps)
-						end do
-					end do
-					Pvec=1.0D0
-					do ii=1,ncenter
-						Pvec=Pvec*smat(:,ii)
-					end do
-					Pvec=Pvec/sum(Pvec) !Normalized Pvec, Pvec contain partition weight of each atom in current point
+                    !Calculate Becke weight of all atoms (Pvec) at current point
+					call BeckePvec(rnowx,rnowy,rnowz,Pvec,vdwr_tianlu,3)
 					cubmat(i,j,k)=cubmat(i,j,k)+sum(Pvec(HirBecatm(:)))
 				end do
 			end do
@@ -949,7 +924,7 @@ if (ireadextmapval==0) then !Directly calculate
 				write(*,*) "Doing Focal-point approximation for evaluating ESP..."
 				write(*,"(a)") " Loading "//trim(FPAfile1)
 				write(*,*) "Calculating ESP..."
-				call dealloall
+				call dealloall(0)
                 call readinfile(FPAfile1,1)
         			!$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
 				do icyc=1,nsurvtx
@@ -959,7 +934,7 @@ if (ireadextmapval==0) then !Directly calculate
 				!$OMP END PARALLEL DO
 				write(*,"(a)") " Loading "//trim(FPAfile2)
 				write(*,*) "Calculating ESP..."
-				call dealloall
+				call dealloall(0)
                 call readinfile(FPAfile2,1)
         			!$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
 				do icyc=1,nsurvtx
@@ -967,7 +942,7 @@ if (ireadextmapval==0) then !Directly calculate
 					survtx(icyc)%value=survtx(icyc)%value + calcmapfunc(imapfunc,survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z,nHirBecatm,HirBecatm)
 				end do
 				!$OMP END PARALLEL DO
-				call dealloall
+				call dealloall(0)
                 write(*,*) "Using focal-point approximation to evaluate ESP has been finished"
                 write(*,"(a)") " Reloading "//trim(firstfilename)
                 call readinfile(firstfilename,1)
@@ -1302,8 +1277,8 @@ if (imapfunc==1.or.imapfunc==3) then
 	iESPev=0
 	if (survtx(indsurfmin)%value*au2kcal<=-99.99D0.or.survtx(indsurfmax)%value*au2kcal>999.99D0) iESPev=1
 end if
-20 textheigh=30.0D0
-ratioatmsphere=1.0D0
+20 textheigh=30D0
+ratioatmsphere=1D0
 bondradius=0.2D0
 ishowatmlab=1
 ishowaxis=1
@@ -1318,8 +1293,8 @@ do while(.true.)
 	write(*,*) "-2 Export the grid data to surf.cub in current folder"
 	write(*,*) "-1 Return to upper level menu"
 	write(*,*) "0 View molecular structure, surface minima and maxima"
-	write(*,*) "1 Export surface extrema as plain text file"
-	write(*,*) "2 Export surface extrema as pdb file"
+	write(*,*) "1 Export surface extrema as surfanalysis.txt in current folder"
+	write(*,*) "2 Export surface extrema as surfanalysis.pdb in current folder"
 	write(*,*) "3 Discard surface minima in certain value range"
 	write(*,*) "4 Discard surface maxima in certain value range"
 	write(*,*) "5 Export molecule as pdb format file"
@@ -1331,7 +1306,7 @@ do while(.true.)
 	write(*,*) "11 Output surface properties of each atom"
 	write(*,*) "12 Output surface properties of specific fragment"
 	write(*,*) "13 Calculate grid data of mapped function and export it to mapfunc.cub"
-    write(*,*) "14 Calculate area of the region around a specific surface extreme"
+    write(*,*) "14 Calculate area and function average in a region around a surface extreme"
     write(*,*) "15 Basin-like partition of surface and calculate areas"
 ! 	write(*,*) "16 Export center of surface facets as pdb file" !Can also output to xyz file
     write(*,*) "18 Discard some surface extrema by inputting their indices"
@@ -1406,6 +1381,10 @@ do while(.true.)
 	else if (isel==2) then
 		!Output positions of local maximum (as carbon) and local minimum (as oxygen) to pdb file
 		open(10,file="surfanalysis.pdb",status="replace")
+		if (ifPBC>0) then
+			call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+			write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+		end if
 		if (imapfunc==1.or.imapfunc==3) then
 			if (iESPev==0) then
 				write(10,"(a)") "REMARK   Unit of B-factor field (i.e. ESP) is kcal/mol"
@@ -1413,6 +1392,7 @@ do while(.true.)
 				write(10,"(a)") "REMARK   Unit of B-factor field (i.e. ESP) is eV"
 			end if
 		end if
+        write(10,"(a)") "REMARK   Carbon: Surface maximum    Oxygen: surface minimum"
 		do i=1,nsurlocmax
 			idx=surlocmaxidx(i)
 			if (idx==0) cycle
@@ -1450,7 +1430,7 @@ do while(.true.)
 		write(10,"('END')")
 		close(10)
 		write(*,"(a)") " Results have been outputted to surfanalysis.pdb in current folder"
-		write(*,"(a)",advance='no') " Carbons and oxygens correspond to local maximum and minimum points respectively. "
+		write(*,"(a)",advance='no') " Carbons and oxygens correspond to local maximum and minimum points respectively."
 		if (imapfunc==1.or.imapfunc==3) then
 			if (iESPev==0) then
 				write(*,"(a)") " B-factor field records mapped function value in kcal/mol"
@@ -1524,6 +1504,10 @@ do while(.true.)
 		end if
 		open(10,file="vtx.pdb",status="replace")
 		write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface vertices')") nsurvtx
+		if (ifPBC>0) then
+			call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+			write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+		end if
 		if (imapfunc==1.or.imapfunc==3) then
 			if (iESPev==0) then
 				write(10,"(a)") "REMARK   Unit of B-factor field (i.e. ESP) is kcal/mol"
@@ -1693,9 +1677,9 @@ do while(.true.)
 			    surtrifrag(itri)=ifatmfrag(surtrifrag(itri)) ! Then surtrifrag(itri)=1/0 means this itri belongs / doesn't belong to user-defined fragment
 		    end do
 	    end if
-		write(*,*) "Input range of mapped function value, e.g. -45,50.5"
+		write(*,"(a)") " Input lower and upper limits of the mapped function for statistical analysis (unit will be selected later), e.g. -45,50.5"
 		read(*,*) rangelow,rangehigh
-		write(*,*) "Input the number of intervals, e.g. 5"
+		write(*,*) "Input the number of statistical intervals, e.g. 5"
 		read(*,*) nintval
 		convunit=1D0
 		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
@@ -1724,8 +1708,11 @@ do while(.true.)
 		end do
 		write(*,"(' Sum:',31x,2f12.4)") areatmptot,areatmptot/(surfareaall*b2a**2)*100
         write(*,*)
-        write(*,"(a)") " Citing below paper is recommended, in which the surface area analysis for mapped function was used for the first time"
+        write(*,"(a)") " Citing below paper is highly suggested, in which the surface area analysis for mapped function was proposed and employed for the first time"
         write(*,*) "Sergio Manzetti, Tian Lu, J. Phys. Org. Chem., 26, 473 (2013)"
+        write(*,*) "  More examples of this kind of analysis you may also cite:"
+        write(*,*) "Struct. Chem., 25, 1521¨C1533 (2014)"
+        write(*,*) "Carbon, 171, 514-523 (2021)"
 		
 	else if (isel==10) then
 		write(*,*) "Input XYZ coordinate of the point (in Angstrom), e.g. 0.2,-4.3,1.66"
@@ -1996,6 +1983,10 @@ do while(.true.)
 		if (selectyn=='y'.or.selectyn=='Y') then
 			open(10,file="locsurf.pdb",status="replace")
 			write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface triangles')") nsurtri
+			if (ifPBC>0) then
+				call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+				write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+			end if
 			do itri=1,nsurtri
 				if (elimtri(itri)==1) cycle
 				surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
@@ -2056,6 +2047,10 @@ do while(.true.)
 
 		open(10,file="tri.pdb",status="replace")
 		write(10,"('REMARK   Generated by Multiwfn, totally',i10,' surface triangles')") nsurtri
+		if (ifPBC>0) then
+			call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+			write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+		end if
 		do itri=1,nsurtri
 			if (elimtri(itri)/=0) cycle
 			surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
@@ -2149,13 +2144,13 @@ subroutine fingerprt(HirBecatm,nHirBecatm)
 use plot
 use surfvertex
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer nHirBecatm,HirBecatm(nHirBecatm),tmparr(ncenter),ifcontactvtx(nsurvtx)
 real*8 dens(nsurvtx)
 real*8 vtxdnorm(nsurvtx),d_i(nsurvtx),d_e(nsurvtx) !In Angstrom
 real*8 :: rlow=0.6D0,rhigh=2.6D0,rstep=0.2D0
-integer :: ptsize=10
+integer :: ptsize=15
 integer,allocatable :: inarr(:),outarr(:),notHirBecatm(:)
 real*8,allocatable :: xarr(:),yarr(:)
 character c2000tmp*2000,c2tmp*2
@@ -2447,6 +2442,10 @@ do while(.true.)
 			else if (isel3==4) then
 				open(10,file="finger.pdb",status="replace")
 				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' points on the surface')") ncontactvtx
+				if (ifPBC>0) then
+					call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+					write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+				end if
 				do ivtx=1,nsurvtx
 					if (ifcontactvtx(ivtx)==0) cycle
                     idx=ivtx
@@ -2459,6 +2458,10 @@ do while(.true.)
 				write(*,"(a)") " The points on the current contact surface have been outputted to finger.pdb in current folder"
 				open(10,file="finger_all.pdb",status="replace")
 				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' points on the surface')") ncurrvtx
+				if (ifPBC>0) then
+					call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+					write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+				end if
 				do ivtx=1,nsurvtx
 					if (elimvtx(ivtx)==1) cycle
                     idx=ivtx
@@ -2496,7 +2499,7 @@ end subroutine
 
 !!-------- Use Marching Tetrahedra algorithem, decompose cube to several tetrahedra
 subroutine marchtetra(ix,iy,iz)
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer ix,iy,iz
 !    7-------8
 !   /|      /|
@@ -2540,7 +2543,7 @@ end subroutine
 ! subroutine marchcube(ix,iy,iz)
 ! use surfvertex
 ! use defvar
-! implicit real*8(a-h,o-z)
+! implicit real*8 (a-h,o-z)
 ! integer ix,iy,iz
 ! itestc1=0
 ! itestc2=0
@@ -2583,7 +2586,7 @@ subroutine genvertex(baseix,baseiy,baseiz,inum1,inum2,inum3,inum4)
 use util
 use defvar
 use surfvertex
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer baseix,baseiy,baseiz,inum1,inum2,inum3,inum4
 integer itestv(4),vix(4),viy(4),viz(4),newvtxind(4) !1~4 is the four vertices index within current tetrahedron. newvtxind is absolute surface vertex index
 real*8 vtxval(4)
@@ -2774,7 +2777,7 @@ end subroutine
 
 !!--------- Convert numbering of each vertex of tetrahedron to absolute corner-index
 subroutine getvertind(indx,indy,indz,baseix,baseiy,baseiz,inum)
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer indx,indy,indz,baseix,baseiy,baseiz,inum
 indx=baseix
 indy=baseiy
@@ -2809,8 +2812,8 @@ end subroutine
 subroutine vertexinterpolate(iax,iay,iaz,ibx,iby,ibz,newind)
 use defvar
 use surfvertex
-use function
-implicit real*8(a-h,o-z)
+use functions
+implicit real*8 (a-h,o-z)
 integer iax,iay,iaz,ibx,iby,ibz,newind
 icora=abs2suridx(iax,iay,iaz)
 icorb=abs2suridx(ibx,iby,ibz)
@@ -2881,7 +2884,7 @@ end subroutine
 !!----------Add a connection between two surface vertices
 subroutine addvtxconn(ind1,ind2)
 use surfvertex
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer ind1,ind2
 do i=1,vtxconnpos(ind1)
 	if (vtxconn(ind1,i)==ind2) return !Have already existed this connection entry
@@ -2896,7 +2899,7 @@ end subroutine
 !!---------- Calculate mapped function value
 real*8 function calcmapfunc(imapfunc,x,y,z,nHirBecatm,HirBecatm)
 use defvar
-use function
+use functions
 integer imapfunc,nHirBecatm,HirBecatm(nHirBecatm)
 real*8 x,y,z
 if (imapfunc==1) then
@@ -3221,6 +3224,10 @@ end do
 
 open(10,file="surfbasin.pdb",status="replace")
 write(10,"('REMARK   Generated by Multiwfn')")
+if (ifPBC>0) then
+	call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+	write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+end if
 do i=1,nsurvtx
 	if (elimvtx(i)==0) then !Output as carbon atoms
         betaval=vtxatt(i)

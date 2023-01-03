@@ -487,7 +487,7 @@ do while(.true.)
             write(*,*)
             
 		else if (isel==14) then !Output all saved AdNDP orbitals as .mwfn file
-			call dealloall
+			call dealloall(0)
 			call readfch(fchfilename,1)
 			wfntype=3
 			CObasa=0

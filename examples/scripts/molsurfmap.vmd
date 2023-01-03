@@ -1,0 +1,33 @@
+#Plotting molecular surface (isosurface of electron density) colored by mapped function
+#Written by Tian Lu (sobereva@sina.com), last update: 2022-Oct-10
+# Usage:
+#density.cub and mapped.cub in current folder should record electron density and mapped function, respectively
+#If surfanalysis.pdb is available in current folder, extrema recorded in this file will also be shown
+
+color Display Background white
+axes location Off
+display depthcue off
+display rendermode GLSL
+display projection Orthographic
+material change diffuse Transparent 0.8
+material change opacity Transparent 0.8
+material change specular Transparent 0.0
+#color scale method BWR #By default, red-white-blue (RWB) is used
+
+#Lower and upper limit of color scale.
+set colorlow 0.0
+set colorhigh 0.002
+#Isovalue of electron density
+set isoval 0.01
+
+mol new density.cub
+mol addfile mapped.cub
+mol modstyle 0 0 CPK 1.000000 0.300000 22.000000 22.000000
+mol addrep 0
+mol modstyle 1 0 Isosurface $isoval 0 0 0 1 1
+mol modmaterial 1 0 Transparent
+mol modcolor 1 0 Volume 1
+mol scaleminmax 0 1 $colorlow $colorhigh
+
+mol new surfanalysis.pdb
+mol modstyle 0 1 VDW 0.07 12.000000

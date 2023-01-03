@@ -59,20 +59,20 @@ subroutine excittrans_main
 implicit real*8 (a-h,o-z)
 do while(.true.)
 	write(*,*)
-	write(*,*) "          ============ Electronic excitation analyses ============ "
+	write(*,*) "           ============ Electronic excitation analyses ============ "
 	write(*,*) "-1 Check, modify and export configuration coefficients of an excitation"
 	write(*,*) "0 Return"
 	write(*,"(a)") " 1 Analyze and visualize hole&electron distribution, transition density, and transition electric/magnetic dipole moment density"
 	write(*,*) "2 Plot atom/fragment transition matrix of various kinds as heat map"
 	write(*,*) "3 Analyze charge-transfer based on density difference grid data (JCTC,7,2498)"
 	write(*,*) "4 Calculate delta_r index to measure charge-transfer length (JCTC,9,3118)"
-	write(*,"(a)") " 5 Calculate transition electric dipole moments between all states and electric dipole moment of each state"
+	write(*,"(a)") " 5 Calculate transition electric/magnetic dipole moments between all states and for each state"
 	write(*,*) "6 Generate natural transition orbitals (NTOs)"
 	write(*,*) "7 Calculate ghost-hunter index (JCC,38,2151)"
 	write(*,*) "8 Calculate interfragment charge transfer via IFCT method"
 	write(*,*) "9 Generate and export transition density matrix"
-	write(*,*) "10 Decompose transition dipole moment as molecular orbital pair contributions"
-	write(*,*) "11 Decompose transition dipole moment as basis function and atom contributions"
+	write(*,"(a)") " 10 Decompose transition electric/magnetic dipole moment as molecular orbital pair contributions"
+	write(*,"(a)") " 11 Decompose transition electric/magnetic dipole moment as basis function and atom contributions"
 	write(*,*) "12 Calculate Mulliken atomic transition charges"
 	write(*,*) "13 Generate natural orbitals of specific excited states"
 	write(*,*) "14 Calculate lambda index to characterize electron excitation (JCP,128,044118)"
@@ -197,6 +197,8 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		ifiletypeexc=4
     else if (iprog==5) then !CP2K output
 		ifiletypeexc=6
+    else if(iprog==7) then !BDF output
+        ifiletypeexc=7
     else if (iprog==0) then !Plain text file
 		ifiletypeexc=3
     end if
@@ -207,7 +209,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		if (ifiletypeexc==1) then !Gaussian output file
 			call loclabel(10,"Excitation energies and oscillator strengths:",ifound)
 			if (ifound==0) then
-				write(*,"(a)") "Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT task, &
+				write(*,"(a)") " Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT task, &
 				therefore cannot be used for present analysis. Please read Multiwfn manual Section 3.21 carefully"
 				write(*,*) "Press ENTER button to return"
 				read(*,*)
@@ -231,8 +233,8 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		do while(.true.)
 			call loclabel(10,"Excited State",ifound,0)
 			if (ifound==1) then
-				nstates=nstates+1
-				read(10,*)
+				read(10,"(a)") c80tmp
+                if (index(c80tmp,'f=')/=0) nstates=nstates+1
 			else
 				exit
 			end if
@@ -246,7 +248,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
                 read(10,*) nstates
                 iORCAsTD=1
             else
-			    write(*,"(a)") "Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT/sTDA/sTDDFT task, &
+			    write(*,"(a)") "Error: This file is not output file of CIS/TDHF/TDDFT/TDA-DFT/SF-TDDFT/sTDA/sTDDFT task, &
 			    therefore cannot be used for present analysis. Please read Multiwfn manual Section 3.21 carefully"
 			    write(*,*) "Press ENTER button to return"
 			    read(*,*)
@@ -296,6 +298,23 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
             if (c80tmp==" ") exit
 			nstates=nstates+1
 		end do
+    else if (ifiletypeexc==7) then !BDF output file. This part of code was contributed by Cong Wang, 2022-Dec-1
+        call loclabel(10,"D<Pab>",ifound)
+        if (ifound==0) then
+            write(*,"(a)") " Error: Unable to locate ""D<Pab>"" label"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            return
+        end if
+        do while(.true.)
+            call loclabel(10,"D<Pab>",ifound,0)
+            if (ifound==1) then
+                nstates=nstates+1
+                read(10,*)
+            else
+                exit
+            end if
+        end do
 	end if
 	if (nstates>1) then
         if (maxloadexc==0) then
@@ -310,7 +329,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 	allocate(allexcene(nstates),allexcf(nstates),allexcmulti(nstates),allexcnorb(nstates))
 	allexcnorb=0
 	
-	!Load excitation energy, multiplicity, the number of MO pairs of each excited state
+	!Load excitation energy, multiplicity, oscillator strength, the number of MO pairs of each excited state
 	if (ifiletypeexc==1) then !Gaussian output file
         rewind(10)
         do igeom=1,numexctime
@@ -347,9 +366,8 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		end do
         
 	else if (ifiletypeexc==2) then !ORCA output file
-        if (iORCAsTD==0) then !Regular case
+        if (iORCAsTD==0) then !Not sTD case
 		    imultisel=1
-		    allexcmulti=1 !Multiplicity of all excited states are firstly assumed to be singlet
 		    if (wfntype==0.or.wfntype==3) then
 			    call loclabel(10,"Generation of triplets") !When triplets=on, ORCA calculate both singlet and triplet excited state
 			    read(10,"(a)") c80tmp
@@ -358,7 +376,11 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 				    write(*,*) "1: Singlet   3: Triplet"
 				    read(*,*) imultisel
 				    allexcmulti=imultisel
+                else
+					allexcmulti=1 !Triplet excited states are not requested
 			    end if
+            else
+				allexcmulti=0 !Spin multiplicity is undefined due to unrestricted reference
 		    end if
             rewind(10)
             do igeom=1,numexctime
@@ -371,7 +393,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 			    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
 		    end if
 		    do iexc=1,nstates
-			    call loclabel(10,"STATE",ifound,0)
+			    call loclabel(10,"STATE ",ifound,0)
 			    read(10,"(a)") transmodestr
 			    do i=10,70
 				    if (transmodestr(i:i+1)=="eV") exit
@@ -394,8 +416,11 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
             else
                 call loclabel(10,"ABSORPTION SPECTRUM",ifound,0) !Load oscillator strengths
                 call skiplines(10,5)
+                allexcf=0
 		        do iexc=1,nstates
-                    read(10,*) rnouse,rnouse,rnouse,allexcf(iexc)
+                    read(10,*,iostat=ierror) itmp,rnouse,rnouse,tmpval
+                    if (ierror/=0) exit !For SF-TDDFT, number of states recorded in this field is less than nstates by 1, because one of SF-TDDFT states is viewed as ground state
+                    allexcf(itmp)=tmpval
                 end do
             end if
         else if (iORCAsTD==1) then !sTDA or sTDDFT
@@ -490,7 +515,48 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
                 allexcnorb(iexc)=allexcnorb(iexc)+1
 			end do
 		end do
-        
+
+    else if (ifiletypeexc==7) then !BDF output file. This part of code was contributed by Cong Wang, 2022-Dec-1
+        rewind(10)
+        isf=111
+        iexc=0
+        do while(.true.)
+            read(10,"(a)",iostat=ierror) c200tmp
+            if (ierror/=0) exit
+            if (index(c200tmp,"Start TD-DFT Calculations for isf")/=0) then
+                read(c200tmp(45:45),*) isf
+            else if (index(c200tmp,"D<Pab>")/=0) then
+                iexc=iexc+1
+                if(iexc>nstates) then
+                    write(*,*) "iexc>nstates"
+                    stop
+                end if
+                if (isf==0) then
+                    allexcmulti(iexc)=1
+                else if (isf==1) then
+                    allexcmulti(iexc)=3
+                else !May be unrestricted calculation, set as 0
+                    allexcmulti(iexc)=0
+                end if
+                do i=1,50
+                    if (c200tmp(i:i+1)=="eV") exit
+                end do
+                read(c200tmp(i-10:i-1),*) allexcene(iexc)
+                itmp=index(c200tmp,'f=')
+                read(c200tmp(itmp+6:),*) allexcf(iexc)
+                !Count how many orbital pairs are involved in this excitation
+                do while(.true.)
+                    read(10,"(a)") c200tmp
+                    if (index(c200tmp,'>')/=0) then
+                        allexcnorb(iexc)=allexcnorb(iexc)+1
+                    else if (index(c200tmp,'<')/=0) then
+                        allexcnorb(iexc)=allexcnorb(iexc)+1
+                    else
+                        exit
+                    end if
+                end do
+            end if
+        end do    
 	else if (ifiletypeexc==3) then !Plain text file
 		rewind(10)
 		do iexc=1,nstates
@@ -620,7 +686,7 @@ else
 			    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
 		    end if
 		    do iexc=1,nstates
-			    call loclabel(10,"STATE",ifound,0)
+			    call loclabel(10,"STATE ",ifound,0)
 			    read(10,*)
 			    do itmp=1,allexcnorb(iexc)
 				    read(10,"(a)") c80tmp
@@ -818,6 +884,53 @@ else
 		!Even for closed-shell reference state, CP2K still outputs coefficients as normalization to 1.0, &
 		!However, in order to follow the Gaussian convention, we change the coefficient as normalization to 0.5
 		if (wfntype==0.or.wfntype==3) allexccoeff=allexccoeff/dsqrt(2D0)
+
+    else if (ifiletypeexc==7) then !BDF output file. This part of code was contributed by Cong Wang, 2022-Dec-1
+        do iexc=1,nstates
+            call loclabel(10,"D<Pab>",ifound,0)
+            read(10,*)
+            do itmp=1,allexcnorb(iexc)
+                !Determine excitation direction
+                read(10,"(a)") c200tmp
+                ileft=index(c200tmp,"->")
+                allexcdir(itmp,iexc)=1 !means ->
+                isign=ileft
+                if (ileft==0) then
+                    iright=index(c200tmp,"<-")
+                    allexcdir(itmp,iexc)=2 !means <-
+                    isign=iright
+                end if
+                !Process left side
+                leftstr=c200tmp(:isign-1)
+                do ileft=len_trim(leftstr),1,-1
+                    if (leftstr(ileft:ileft)=="(") exit
+                end do
+                read(leftstr(ileft:len_trim(leftstr)-1),*) allorbleft(itmp,iexc)
+                !Process right side
+                rightstr=c200tmp(isign+2:)
+                ir1=0
+                ir2=0
+                do iright=1,len_trim(rightstr)
+                    if (rightstr(iright:iright)=="(") ir1=iright
+                    if (rightstr(iright:iright)==")") then
+                        ir2=iright
+                        exit
+                    end if
+                end do
+                read(rightstr(ir1+1:ir2-1),*) allorbright(itmp,iexc)
+                ir1=0
+                ir2=0
+                do iright=1,len_trim(rightstr)
+                    if (rightstr(iright:iright+3)=="Per:") ir1=iright
+                    if (rightstr(iright:iright)=="%") then
+                        ir2=iright
+                        exit
+                    end if
+                end do
+                read(rightstr(ir1+4:ir2-1),*) fper
+                allexccoeff(itmp,iexc) = sqrt(fper/200D0)
+            end do
+        end do
 	end if
 	
 	close(10)
@@ -936,7 +1049,7 @@ else if (ifiletypeexc==2) then !ORCA output file
 		    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
 	    end if
 	    do iexc=1,istate
-		    call loclabel(10,"STATE",ifound,0)
+		    call loclabel(10,"STATE ",ifound,0)
 		    read(10,*)
 		    if (iexc==istate) then
 			    do itmp=1,excnorb
@@ -1135,6 +1248,54 @@ else if (ifiletypeexc==6) then !ORCA output file
 	!Even for closed-shell reference state, CP2K still outputs coefficients as normalization to 1.0, &
 	!However, in order to follow the Gaussian convention, we change the coefficient as normalization to 0.5
 	if (wfntype==0.or.wfntype==3) exccoeff=exccoeff/dsqrt(2D0)
+
+else if (ifiletypeexc==7) then !BDF output file. This part of code was contributed by Cong Wang, 2022-Dec-1
+    rewind(10)
+    do iexc=1,istate
+        call loclabel(10,"D<Pab>",ifound,0)
+        read(10,*)
+    end do
+    do itmp=1,excnorb
+        !Determine excitation direction
+        read(10,"(a)") c200tmp
+        ileft=index(c200tmp,"->")
+        excdir(itmp)=1 !means ->
+        isign=ileft
+        if (ileft==0) then
+            iright=index(c200tmp,"<-")
+            excdir(itmp)=2 !means <-
+            isign=iright
+        end if
+        !Process left side
+        leftstr=c200tmp(:isign-1)
+        do ileft=len_trim(leftstr),1,-1
+            if (leftstr(ileft:ileft)=="(") exit
+        end do
+        read(leftstr(ileft:len_trim(leftstr)-1),*) orbleft(itmp)
+        !Process right side
+        rightstr=c200tmp(isign+2:)
+        ir1=0
+        ir2=0
+        do iright=1,len_trim(rightstr)
+            if (rightstr(iright:iright)=="(") ir1=iright
+            if (rightstr(iright:iright)==")") then
+                ir2=iright
+                exit
+            end if
+        end do
+        read(rightstr(ir1+1:ir2-1),*) orbright(itmp)
+        ir1=0
+        ir2=0
+        do iright=1,len_trim(rightstr)
+            if (rightstr(iright:iright+3)=="Per:") ir1=iright
+            if (rightstr(iright:iright)=="%") then
+                ir2=iright
+                exit
+            end if
+        end do
+        read(rightstr(ir1+4:ir2-1),*) fper
+        exccoeff(itmp) = sqrt(fper/200D0)
+    end do
 end if
 close(10)
 
@@ -1157,6 +1318,29 @@ if (ioutinfo==1) then
         dev=abs(sumsqrall-1D0)
         write(*,"(' Deviation to expected normalization value (1.0) is',f10.6)") dev
         if (dev>0.05D0) write(*,"(a)") " Warning: The deviation is too obvious, in this case the analysis result is not reliable or even fully misleading!"
+    end if
+    ihighvirMOA=0
+    ihighvirMOB=0
+    call getHOMOidx
+	do ipair=1,excnorb
+		iorb=orbright(ipair)
+		if (iorb<=nbasis.and.iorb>ihighvirMOA) then
+			ihighvirMOA=iorb
+        else if (iorb>nbasis.and.iorb>ihighvirMOB) then
+			ihighvirMOB=iorb
+        end if
+		iorb=orbleft(ipair)
+		if (iorb<=nbasis.and.iorb>ihighvirMOA) then
+			ihighvirMOA=iorb
+        else if (iorb>nbasis.and.iorb>ihighvirMOB) then
+			ihighvirMOB=iorb
+        end if
+	end do
+	if (wfntype==0.or.wfntype==3) then
+		write(*,"(' Involved highest unoccupied orbital:',i6,' (HOMO+',i6,')')") ihighvirMOA,ihighvirMOA-idxHOMO
+	else if (wfntype==1.or.wfntype==4) then
+		write(*,"(' Involved highest unoccupied alpha orbital:',i6,' (alpha HOMO+',i6,')')") ihighvirMOA,ihighvirMOA-idxHOMO
+		write(*,"(' Involved highest unoccupied beta orbital: ',i6,' (beta HOMO+ ',i6,')')") ihighvirMOB-nbasis,ihighvirMOB-idxHOMOb
     end if
 end if
 end subroutine
@@ -1200,7 +1384,7 @@ use excitinfo
 use defvar
 use GUI
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer :: idomag=0
 real*8 orbval(nmo),wfnderv(3,nmo)
@@ -1273,7 +1457,11 @@ if (idomag==1) then !Will also calculate transition magnetic dipole moment densi
 	allocate(magtrdens(nx,ny,nz,3))
 	magtrdens=0D0
 end if
-write(*,"(a)") " Note: During the calculation of cross term of hole and electron, the orbital pairs whose absolute value of coefficient <0.01 will be ignored to save time"
+
+if (cfgcrossthres/=0) then
+	write(*,"(/,a,f8.5,a)") " Note: When calculating cross term of hole and electron, configurations with absolute value of coefficient <",cfgcrossthres,&
+    " will be ignored to reduce cost. The threshold is determined by ""cfgcrossthres"" in settings.ini"
+end if
 allocate(skippair(excnorb))
 skippair=.false.
 do iexcitorb=1,excnorb
@@ -1298,14 +1486,15 @@ do k=1,nz
 				call orbderv(1,1,nmo,tmpx,tmpy,tmpz,orbval)
 			end if
 			!Calculate local term of hole and electron
+            !If i->l,i<-l should be taken into account is unclear, its is ignored currently
 			do iexcitorb=1,excnorb
 				imo=orbleft(iexcitorb)
 				jmo=orbright(iexcitorb)
 				excwei=exccoeff(iexcitorb)**2
-				if (excdir(iexcitorb)==1) then ! ->
+				if (excdir(iexcitorb)==1) then !Excitation
 					holegrid(i,j,k)=holegrid(i,j,k)+excwei*orbval(imo)**2
 					elegrid(i,j,k)=elegrid(i,j,k)+excwei*orbval(jmo)**2
-				else ! <-
+				else !De-excitation
 					holegrid(i,j,k)=holegrid(i,j,k)-excwei*orbval(imo)**2
 					elegrid(i,j,k)=elegrid(i,j,k)-excwei*orbval(jmo)**2
 				end if
@@ -1315,35 +1504,34 @@ do k=1,nz
 						magtrdens(i,j,k,1)=magtrdens(i,j,k,1)+exccoeff(iexcitorb)*orbval(imo)*(tmpy*wfnderv(3,jmo)-tmpz*wfnderv(2,jmo))
 						magtrdens(i,j,k,2)=magtrdens(i,j,k,2)+exccoeff(iexcitorb)*orbval(imo)*(tmpz*wfnderv(1,jmo)-tmpx*wfnderv(3,jmo))
 						magtrdens(i,j,k,3)=magtrdens(i,j,k,3)+exccoeff(iexcitorb)*orbval(imo)*(tmpx*wfnderv(2,jmo)-tmpy*wfnderv(1,jmo))
-					else !The de-excitation has important influence on the transition magnetic dipole moment density, so must be considered explicitly
+					else !De-excitation has important influence on the transition magnetic dipole moment density, so must be considered explicitly
 						magtrdens(i,j,k,1)=magtrdens(i,j,k,1)-exccoeff(iexcitorb)*orbval(imo)*(tmpy*wfnderv(3,jmo)-tmpz*wfnderv(2,jmo))
 						magtrdens(i,j,k,2)=magtrdens(i,j,k,2)-exccoeff(iexcitorb)*orbval(imo)*(tmpz*wfnderv(1,jmo)-tmpx*wfnderv(3,jmo))
 						magtrdens(i,j,k,3)=magtrdens(i,j,k,3)-exccoeff(iexcitorb)*orbval(imo)*(tmpx*wfnderv(2,jmo)-tmpy*wfnderv(1,jmo))
 					end if
 				end if
 			end do
-			!Calculate cross term of hole and electron, this part takes most computational time
+			!Calculate cross term of hole and electron. This part takes most majority of computational time
 			do iexcitorb=1,excnorb
+				!Currently only take below two cases into account:
+				! Cross term of hole (do <i|j>):     (i->l,j->l), substract (i<-l,j<-l)
+				! Cross term of electron (do <l|m>): (i->l,i->m), substract (i<-l,i<-m)
 				!Below cases are skipped:
-				!i->l,i->l and i->l,i<-l and i<-l,i<-l, since ileft==jleft.and.iright==jright
-				!i->l,j->m, since ileft/=jleft.and.iright/=jright
-				!i->l,i<-m and i<-l,j->l, since excdir(iexcitorb)/=excdir(jexcitorb)
-				!**If i->l,i<-l should be taken into account is unsolved
-				! Currently only take below cases into account:
-				! Cross term of hole (do <i|j>):     i->l,j->l substract i<-l,j<-l
-				! Cross term of electron (do <l|m>): i->l,i->m substract i<-l,i<-m
+				! i->l,i->l and i->l,i<-l and i<-l,i<-l, since they do not correspond to cross term
+				! i->l,j->m, since differ by two electrons, according to Slater-condon rule the result is zero
+				! i->l,i<-m and i<-l,j->l, since excitation directions are different
 				if (skippair(iexcitorb)) cycle
+				idir=excdir(iexcitorb)
 				ileft=orbleft(iexcitorb)
 				iright=orbright(iexcitorb)
 				tmpleft=exccoeff(iexcitorb)*orbval(ileft) !Use temporary variable to save the time for locating element
 				tmpright=exccoeff(iexcitorb)*orbval(iright)
-				idir=excdir(iexcitorb)
-				do jexcitorb=1,excnorb
+				do jexcitorb=iexcitorb+1,excnorb
 					if (skippair(jexcitorb)) cycle
-					jleft=orbleft(jexcitorb)
-					jright=orbright(jexcitorb)
 					jdir=excdir(jexcitorb)
 					if (idir/=jdir) cycle
+					jleft=orbleft(jexcitorb)
+					jright=orbright(jexcitorb)
 					if (ileft==jleft) then !do <l|m>
 						if (iright==jright) cycle
 						tmpval=tmpright*exccoeff(jexcitorb)*orbval(jright) !Originally virtual orbital
@@ -1368,6 +1556,8 @@ do k=1,nz
     call showprog(ifinish,nz)
 end do
 !$OMP END PARALLEL DO
+holecross=holecross*2 !Because "jexcitorb=iexcitorb+1,excnorb" does not considered duplicated cross terms
+elecross=elecross*2
 deallocate(skippair)
 call del_GTFuniq !Destory unique GTF informtaion
 
@@ -2008,7 +2198,7 @@ do while(.true.)
 	write(*,*) "1 Plot hole/electron composition as heat map"
 	write(*,*) "2 Export the data as he_atm.txt in current folder"
 	write(*,*) "3 Save the heat map as graphic file in current folder"
-	write(*,"(a,i3)") " 4 Set stepsize between labels in X axis, current:",nstepsize
+	write(*,"(a,i3)") " 4 Set interval between labels in X axis, current:",nstepsize
 	write(*,"(a,f7.3,a,f7.3)") " 5 Change lower and upper limit of color scale, current:",clrlimlow," to",clrlimhigh
 	write(*,"(' 6 Set ratio between X and Y axes, current:',f5.2)") xyratio
 	if (.not.allocated(frag)) then
@@ -2155,7 +2345,7 @@ do while(.true.)
 		call DISFIN
 		if (isel==3) then
 			isavepic=0
-			write(*,*) "Done, the picture has been saved to current folder with ""DISLIN"" prefix"
+			write(*,*) "Done, the picture has been saved to current folder with ""dislin"" prefix"
 		end if
 	else if (isel==2) then
 		if (allocated(frag)) then
@@ -2256,6 +2446,7 @@ do iexcitorb=1,excnorb
 			!$OMP PARALLEL DO SHARED(atmhole) PRIVATE(iatm,ibeg,iend,tmphole) schedule(dynamic) NUM_THREADS(nthreads)
 			do iatm=1,ncenter
 				ibeg=basstart(iatm)
+                if (ibeg==0) cycle
 				iend=basend(iatm)
 				tmphole=( sum(Tmat(ibeg:iend,:))+sum(Tmat(:,ibeg:iend)) )*coeffprod
 				if (idir==1) then ! ->
@@ -2278,6 +2469,7 @@ do iexcitorb=1,excnorb
 			!$OMP PARALLEL DO SHARED(atmele) PRIVATE(iatm,ibeg,iend,tmpele) schedule(dynamic) NUM_THREADS(nthreads)
 			do iatm=1,ncenter
 				ibeg=basstart(iatm)
+                if (ibeg==0) cycle
 				iend=basend(iatm)
 				tmpele=( sum(Tmat(ibeg:iend,:))+sum(Tmat(:,ibeg:iend)) )*coeffprod
 				if (idir==1) then ! ->
@@ -2313,7 +2505,7 @@ end subroutine
 subroutine atmcontri_holeele_Hirshfeld(atmhole,atmele,ioutinfo)
 use defvar
 use util
-use function
+use functions
 use excitinfo
 implicit real*8 (a-h,o-z)
 real*8 atmhole(ncenter),atmele(ncenter)
@@ -2390,9 +2582,9 @@ real*8 bashole(nbasis),basele(nbasis),Tmat(nbasis,nbasis)
 write(*,"(a)") " Input the printing criterion, e.g. 0.5 means only the basis functions having contribution >=0.5% will be printed"
 read(*,*) printcrit
 
-if (ifPBC==3) then !Generate Sbas for PBC case
-	call ask_Sbas_PBC
-end if
+!if (ifPBC==3) then !Generate Sbas for PBC case
+!	call ask_Sbas_PBC
+!end if
 
 call walltime(iwalltime1)
 write(*,*) "Evaluating basis function contributions..."
@@ -2498,7 +2690,7 @@ use defvar
 use util
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: exccoeffbackup(:) !Used to backup coefficient
-character c80tmp*80,strdir*3,strspin,strtmp1*10,strtmp2*10,c200tmp*200
+character c80tmp*80,strdir*3,strspini,strspinj,strtmp1*10,strtmp2*10,c200tmp*200
 integer,allocatable :: idxorder(:)
 
 call loadallexcinfo(1)
@@ -2532,14 +2724,18 @@ do idx=1,min(excnorb,10)
 		write(*,"(' #',i7,2x,i6,a,i6,'   Coeff.:',f10.5,'   Contri.:',f10.4,'%')") iexcitorb,imo,strdir,&
 		jmo,exccoeff(iexcitorb),contrisign*exccoeff(iexcitorb)**2/0.5D0*100
 	else
-		strspin="A"
+		strspini="A"
 		if (imo>nbasis) then
-			strspin="B"
+			strspini="B"
 			imo=imo-nbasis
+		end if
+		strspinj="A"
+		if (jmo>nbasis) then
+			strspinj="B"
 			jmo=jmo-nbasis
 		end if
-		write(*,"(' #',i7,2x,i5,a,a,i5,a,'   Coeff.:',f10.5,'   Contri.:',f10.4,'%')") iexcitorb,imo,strspin,strdir,&
-		jmo,strspin,exccoeff(iexcitorb),contrisign*exccoeff(iexcitorb)**2*100
+		write(*,"(' #',i7,2x,i5,a,a,i5,a,'   Coeff.:',f10.5,'   Contri.:',f10.4,'%')") iexcitorb,imo,strspini,strdir,&
+		jmo,strspinj,exccoeff(iexcitorb),contrisign*exccoeff(iexcitorb)**2*100
 	end if
 end do
 
@@ -2567,13 +2763,17 @@ do while(.true.)
 			if (wfntype==0.or.wfntype==3) then
 				write(10,"(i6,a,i6,f12.6)") imo,strdir,jmo,exccoeff(iexcitorb)
 			else
-				strspin="A"
+				strspini="A"
 				if (imo>nbasis) then
-					strspin="B"
+					strspini="B"
 					imo=imo-nbasis
+				end if
+				strspinj="A"
+				if (jmo>nbasis) then
+					strspinj="B"
 					jmo=jmo-nbasis
 				end if
-				write(10,"(i5,a,a,i5,a,f12.6)") imo,strspin,strdir,jmo,strspin,exccoeff(iexcitorb)
+				write(10,"(i5,a,a,i5,a,f12.6)") imo,strspini,strdir,jmo,strspinj,exccoeff(iexcitorb)
 			end if
 		end do
 		close(10)
@@ -2601,14 +2801,18 @@ do while(.true.)
 				write(*,"(' #',i7,2x,i6,a,i6,'   Coeff.:',f10.5,'   Contri.:',f10.4,'%')") iexcitorb,imo,strdir,&
 				jmo,exccoeff(iexcitorb),contrisign*exccoeff(iexcitorb)**2/0.5D0*100
 			else
-				strspin="A"
+				strspini="A"
 				if (imo>nbasis) then
-					strspin="B"
+					strspini="B"
 					imo=imo-nbasis
+				end if
+				strspinj="A"
+				if (jmo>nbasis) then
+					strspinj="B"
 					jmo=jmo-nbasis
 				end if
-				write(*,"(' #',i7,2x,i5,a,a,i5,a,'   Coeff.:',f10.5,'   Contri.:',f10.4,'%')") iexcitorb,imo,strspin,strdir,&
-				jmo,strspin,exccoeff(iexcitorb),contrisign*exccoeff(iexcitorb)**2*100
+				write(*,"(' #',i7,2x,i5,a,a,i5,a,'   Coeff.:',f10.5,'   Contri.:',f10.4,'%')") iexcitorb,imo,strspini,strdir,&
+				jmo,strspinj,exccoeff(iexcitorb),contrisign*exccoeff(iexcitorb)**2*100
 			end if
 			ntmp=ntmp+1
 		end do
@@ -2846,7 +3050,7 @@ do idx=1,nstatecalc
 	!Only selected on excited state, decompose result
 	if (nstatecalc==1) then
 		write(*,*)
-		write(*,*) "If print orbital pair contributions to delta_r? (y/n)"
+		write(*,*) "If printing orbital pair contributions to delta_r? (y/n)"
 		read(*,*) selectyn
 		if (selectyn=='y'.or.selectyn=='Y') then
 			write(*,*) "Input threshold for printing contribution (Angstrom), e.g. 0.05"
@@ -2903,7 +3107,7 @@ subroutine lambda_excit
 use excitinfo
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: exccoefftot(:) !Store the coefficient combined from excitation and de-excitation of the same pair
 integer,allocatable :: stateidx(:)
@@ -2943,7 +3147,7 @@ do iatm=1,ncenter
 	!$OMP end parallel do
 	orbval=abs(orbval)
 	
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
 	do ipt=1+iradcut*sphpot,radpot*sphpot
 		orbvalpt=orbval(:,ipt)
 		wei=gridatmorg(ipt)%value*beckeweigrid(ipt)
@@ -3024,7 +3228,7 @@ do while(.true.)
 		!Only selected on excited state, decompose result
 		if (nstatecalc==1) then
 			write(*,*)
-			write(*,*) "If print orbital pair contributions to lambda? (y/n)"
+			write(*,*) "If printing orbital pair contributions to lambda? (y/n)"
 			read(*,*) selectyn
 			if (selectyn=='y'.or.selectyn=='Y') then
 				write(*,*) "Input threshold for printing contribution"
@@ -3259,7 +3463,7 @@ end if
 write(*,"(a)") " Now you can load the newly generated file to visualize NTOs. Note that in this file the orbital energies correspond to NTO eigenvalues"
 write(*,*)
 write(*,"(a)") " Reloading "//trim(filename)//" to recover initial status..."
-call dealloall
+call dealloall(0)
 call readinfile(filename,1)
 write(*,*) "Loading finished!"
 end subroutine
@@ -3267,14 +3471,14 @@ end subroutine
 
 
 
-!!---------- Calculate all transition electric dipole moments between all states
+!!---------- Calculate all transition electric dipole moments between all states and for each state
 !Also, this function is able to produce electric dipole moment of each state
 !Note that this function cannot borrow the code in hole_electron for loading data, because this function &
 !need transition information of all states as well as excitation energies
 subroutine exctransdip
 use defvar
 use util
-use function
+use functions
 use excitinfo
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: GTFdipint(:,:) !Dipole moment integral between GTFs, use compressed index. The first index is x,y,z
@@ -3282,20 +3486,48 @@ real*8,allocatable :: MOdipint(:,:,:) !Dipole moment integral between all MOs. T
 !The tdvecmat(:,i,j) will record transition electric dipole moment between i and j states.&
 !i and j start from 0 and end at nstates. Only electronic contribution is taken into account
 real*8,allocatable :: tdvecmat(:,:,:),Xnorm(:)
-real*8 grounddip(3),eledip(3),nucdip(3) !Total ground state dipole moment, electronic contribution, nuclear contribution
+real*8 grounddip(3),statedip(3),nucdip(3) !Total ground state dipole moment, electronic contribution, nuclear contribution
 real*8 tdvec(3),tmpvec(3)
 character,allocatable :: allexclab(:)*5 !Label of each states
+integer :: idiptype=1 !1=Electric transition dipole moment, 2= Magnetic, 0=Both
+integer :: iGSESonly=0
 
 call loadallexcinfo(0)
 call loadallexccoeff(1)
 allocate(tdvecmat(3,0:nstates,0:nstates),Xnorm(nstates))
+tdvecmat=0
 
-write(*,*) "Please select a task:"
-write(*,*) "1 Output transition dipole moments to screen"
-write(*,*) "2 Output transition dipole moments to transdipmom.txt in current folder"
-write(*,*) "3 Generate input file of SOS module of Multiwfn as SOS.txt in current folder"
-write(*,"(a)") " 4 Output electric dipole moment of each excited state to dipmom.txt in current folder"
-read(*,*) isel
+do while(.true.)
+	write(*,*)
+    if (iGSESonly==0) write(*,*) "-1: Toggle if only calculating between ground and excited states, current: No"
+    if (iGSESonly==1) write(*,*) "-1: Toggle if only calculating between ground and excited states, current: Yes"
+	!if (idiptype==0) write(*,*) "0 Choose type of (transition) dipole moment, current: Electric & Magnetic"
+	if (idiptype==1) write(*,*) "0 Choose type of (transition) dipole moment, current: Electric"
+	if (idiptype==2) write(*,*) "0 Choose type of (transition) dipole moment, current: Magnetic"
+	write(*,*) "1 Output (transition) dipole moments to screen"
+	write(*,*) "2 Output (transition) dipole moments to transdipmom.txt in current folder"
+    if (idiptype==1) then
+		write(*,*) "3 Generate input file of SOS module of Multiwfn as SOS.txt in current folder"
+		write(*,"(a)") " 4 Output electric dipole moment (including both electron and nuclear contributions) of each excited state to dipmom.txt in current folder"
+    end if
+	read(*,*) isel
+    if (isel==0) then
+		write(*,*) "Calculate which type of (transition) dipole moment?"
+		!write(*,*) "0 Both electric and magnetic (transition) dipole moments"
+		write(*,*) "1 Electric"
+		write(*,*) "2 Magnetic"
+        read(*,*) idiptype
+    else if (isel==-1) then
+		if (iGSESonly==1) then
+			iGSESonly=0
+        else
+			iGSESonly=1
+        end if
+    else
+		exit
+    end if
+end do
+
 write(*,*)
 
 if (any(allexcmulti/=allexcmulti(1))) then
@@ -3312,35 +3544,60 @@ if (any(allexcmulti/=allexcmulti(1))) then
 	end if
 end if
 
+!Calculate dipole moment integral matrix between all MOs
 !If only GTF information is available, we calculate <MO|-r|MO> based on <GTF|-r|GTF>. While if basis function is available, &
-!we calculate MO dipole moment integral matrix by unitary transformation of Dbas, because this is much faster
+!we calculate MO dipole moment integral matrix by unitary transformation, which is much faster
 if (allocated(CObasa)) then
-    write(*,"(a)") " Stage 1: Generating dipole moment integral matrix..."
-    if (.not.allocated(Dbas)) then
+    write(*,"(a)") " Stage 1: Generating dipole moment integral matrix between basis functions..."
+    if (idiptype==1.and..not.allocated(Dbas)) then
         call genDbas_curr
+    else if (idiptype==2.and..not.allocated(Magbas)) then
+        call genMagbas_curr
     else
         write(*,*) "This stage is skipped since the matrix is already available"
     end if
+    
 	call walltime(iwalltime1)
 	write(*,*) "Stage 2: Calculating dipole moment integrals between all MOs..."
-	allocate(MOdipint(3,nmo,nmo),DorbA(3,nbasis,nbasis))
-	if (allocated(CObasb)) then
-		allocate(DorbB(3,nbasis,nbasis))
-		call genDorb
-		MOdipint=0
-		MOdipint(:,1:nbasis,1:nbasis)=DorbA
-		MOdipint(:,nbasis+1:nmo,nbasis+1:nmo)=DorbB
-		deallocate(DorbA,DorbB)
-	else
-		call genDorb
-		MOdipint=DorbA
-		deallocate(DorbA)
-	end if
+	allocate(MOdipint(3,nmo,nmo))
+    if (idiptype==1) then !Electric
+		allocate(DorbA(3,nbasis,nbasis))
+		if (allocated(CObasb)) then
+			allocate(DorbB(3,nbasis,nbasis))
+			call genDorb
+			MOdipint=0
+			MOdipint(:,1:nbasis,1:nbasis)=DorbA
+			MOdipint(:,nbasis+1:nmo,nbasis+1:nmo)=DorbB
+			deallocate(DorbA,DorbB)
+		else
+			call genDorb
+			MOdipint=DorbA
+			deallocate(DorbA)
+		end if
+    else if (idiptype==2) then !Magnetic
+		allocate(MagorbA(3,nbasis,nbasis))
+		if (allocated(CObasb)) then
+			allocate(MagorbB(3,nbasis,nbasis))
+			call genMagorb
+			MOdipint=0
+			MOdipint(:,1:nbasis,1:nbasis)=MagorbA
+			MOdipint(:,nbasis+1:nmo,nbasis+1:nmo)=MagorbB
+			deallocate(MagorbA,MagorbB)
+		else
+			call genMagorb
+			MOdipint=MagorbA
+			deallocate(MagorbA)
+		end if
+    end if
 else
 	write(*,*) "Stage 1: Calculating dipole moment integrals between all GTFs..."
 	nsize=nprims*(nprims+1)/2
 	allocate(GTFdipint(3,nsize))
-	call genGTFDmat(GTFdipint,nsize)
+	if (idiptype==1) then
+		call genGTFDmat(GTFdipint,nsize)
+	else if (idiptype==2) then
+		call genGTFMmat(GTFdipint,nsize)
+    end if
 	call walltime(iwalltime1)
 	write(*,*) "Stage 2: Calculating dipole moment integrals between all MOs..."
 	allocate(MOdipint(3,nmo,nmo))
@@ -3397,27 +3654,41 @@ end if
 fac=1
 if (wfntype==0.or.wfntype==3) fac=2
 
-!Dipole moment of ground state
-eledip=0
+!Calculate dipole moment of ground state
+statedip=0
 do imo=1,nmo
-	eledip=eledip+MOocc(imo)*MOdipint(:,imo,imo)
+	statedip(:)=statedip(:)+MOocc(imo)*MOdipint(:,imo,imo)
 end do
-tdvecmat(:,0,0)=eledip
-nucdip(1)=sum(a%charge*a%x)
-nucdip(2)=sum(a%charge*a%y)
-nucdip(3)=sum(a%charge*a%z)
-grounddip=eledip+nucdip
+tdvecmat(:,0,0)=statedip(:)
+
+!Calculate electric dipole moment of ground state
+if (idiptype==1) then
+	nucdip(1)=sum(a%charge*a%x)
+	nucdip(2)=sum(a%charge*a%y)
+	nucdip(3)=sum(a%charge*a%z)
+	grounddip(:)=statedip(:)+nucdip(:)
+end if
 
 !Transition dipole moment between ground state and excited states
+!Note that the formulae for electric and magnetic transition dipole moments are different, see Eqs. 22 and 24 in &
+!"Ab initio calculations of oscillator and rotatory strengths in the random-phase approximation"
 do iexc=1,nstates
 	tdvec=0
 	do ipair=1,allexcnorb(iexc)
 		imo=allorbleft(ipair,iexc)
 		lmo=allorbright(ipair,iexc)
 		wei=allexccoeff(ipair,iexc)
-		tdvec=tdvec+wei*MOdipint(:,imo,lmo)
+        if (idiptype==1) then !Electronic
+			tdvec(:)=tdvec(:)+wei*MOdipint(:,imo,lmo)
+        else if (idiptype==2) then !Magnetic
+			if (allexcdir(ipair,iexc)==1) then !Excitation
+				tdvec(:)=tdvec(:)+wei*MOdipint(:,imo,lmo)
+            else !De-excitation
+				tdvec(:)=tdvec(:)-wei*MOdipint(:,imo,lmo)
+            end if
+        end if
 	end do
-	tdvecmat(:,0,iexc)=tdvec*fac
+	tdvecmat(:,0,iexc)=tdvec(:)*fac
 end do
 
 !Write SOS.txt. Output index, excitation energies and transition dipole moment between &
@@ -3435,16 +3706,18 @@ end if
 if (isel<=3) then
 	write(*,*) "Stage 3: Calculating transition dipole moment between excited states..."
 else if (isel==4) then
-	write(*,*) "Stage 3: Calculating electric dipole moment of all excited states..."
+	write(*,*) "Stage 3: Calculating dipole moment of all excited states..."
 end if
-!Below code works for both R and U reference state, for the latter, the alpha MO---beta MO case is automatically avoided, because QC program never give such a orbital transition
+!Below code works for both R and U reference states; for the latter, the alpha MO---beta MO case is naturally avoided, because QC program never gives such a orbital transition
+!See comment in subroutine "genTDM_2exc" on how transition dipole moment between two TD excited states is calculated
 call walltime(iwalltime1)
 iprog=0
 !$OMP PARALLEL DO SHARED(tdvecmat,iprog) PRIVATE(iexc,jexc,tdvec,ipair,jpair,imo,lmo,jmo,kmo,wei) schedule(dynamic) NUM_THREADS(nthreads)
 do iexc=1,nstates
 	do jexc=iexc,nstates
+		if (iGSESonly==1) cycle
 		if (allexcmulti(iexc)/=allexcmulti(jexc)) cycle !For 50-50 calculation, only calculate same-spin case
-		if (isel==4.and.jexc/=iexc) cycle
+		if (isel==4.and.jexc/=iexc) cycle !Only calculate the moment between excited states with same index
 		tdvec=0
 		do ipair=1,allexcnorb(iexc)
 			imo=allorbleft(ipair,iexc)
@@ -3453,23 +3726,19 @@ do iexc=1,nstates
 				jmo=allorbleft(jpair,jexc)
 				kmo=allorbright(jpair,jexc)
 				wei=allexccoeff(ipair,iexc)*allexccoeff(jpair,jexc)
-				if (allexcdir(ipair,iexc)==allexcdir(jpair,jexc)) then !For two |X+Y> wavefunctions, X only acts with X, Y only acts with Y
-					!Assume what we calculated it <X-Y|-r|X+Y> = <X|-r|X> - <Y|-r|Y>. XX and YY are treated in the same way 
-					!For TDA case, Y is not existed, the result for the same two states is exactly identical to density=rhoci outputted by Gaussian,
-					!While for TD case, the wavefunction is not rigorously defined, and the result is not completely in line with Gaussian,
-					!but the difference is usually marginal (I am not sure which formula is employed by Gaussian)
+				if (allexcdir(ipair,iexc)==allexcdir(jpair,jexc)) then
 					if (allexcdir(ipair,iexc)==2) wei=-wei
 					if (imo==jmo.and.lmo/=kmo) then
-						tdvec=tdvec+wei*MOdipint(:,lmo,kmo)
+						tdvec(:)=tdvec(:)+wei*MOdipint(:,lmo,kmo)
 					else if (imo/=jmo.and.lmo==kmo) then
-						tdvec=tdvec-wei*MOdipint(:,jmo,imo)
+						tdvec(:)=tdvec(:)-wei*MOdipint(:,jmo,imo)
 					else if (imo==jmo.and.lmo==kmo) then
-						tdvec=tdvec+wei*(eledip-MOdipint(:,imo,imo)+MOdipint(:,lmo,lmo))
+						tdvec(:)=tdvec(:)+wei*(statedip(:)-MOdipint(:,imo,imo)+MOdipint(:,lmo,lmo))
 					end if
 				end if
 			end do
 		end do
-		tdvecmat(:,iexc,jexc)=tdvec*fac
+		tdvecmat(:,iexc,jexc)=tdvec(:)*fac
 	end do
 	
 	if (nprims>300) then
@@ -3482,43 +3751,64 @@ end do
 !$OMP END PARALLEL DO
 call walltime(iwalltime2)
 write(*,"(' (Stage 3 took up wall clock time',i10,' s)',/)") iwalltime2-iwalltime1
-write(*,"(a,/)") " Note: The transition dipole moments reported below only correspond to spatial part, the spin part is not taken into account"
+if (isel==1.or.isel==2) write(iout,"(a,/)") " Note: The transition dipole moments reported below only correspond to spatial part, the spin part is not taken into account"
 
-if (all(allexcmulti==allexcmulti(1))) then !All states have the same spin, in this case all options are available
-	if (isel==1.or.isel==2) then !Output transition dipole moment between various states
-		!The ground state dipole moment shown below include both nuclear charge and electronic contributions
-		write(iout,"(' Ground state dipole moment in X,Y,Z:',3f12.6,' a.u.',/)") grounddip
-		write(iout,"(' Transition dipole moment between ground state (0) and excited states (a.u.)')")
-		write(iout,*) "    i     j         X             Y             Z        Diff.(eV)   Oscil.str"
+if (all(allexcmulti==allexcmulti(1))) then !All states have same spin, in this case all options are available
+	if (idiptype==1) then !Electric
+		if (isel==1.or.isel==2) then !Output transition dipole moment between various states
+			!The ground state dipole moment shown below include both nuclear charge and electronic contributions
+			write(iout,"(' Ground state electric dipole moment in X,Y,Z:',3f12.6,' a.u.',/)") grounddip
+			write(iout,"(' Transition electric dipole moment between ground state (0) and excited states (a.u.)')")
+			write(iout,*) "    i     j         X             Y             Z        Diff.(eV)   Oscil.str"
+			do iexc=1,nstates
+				oscillstr=2D0/3D0*allexcene(iexc)/au2eV*sum(tdvecmat(:,0,iexc)**2)
+				write(iout,"(2i6,3f14.7,2f12.5)") 0,iexc,tdvecmat(:,0,iexc),allexcene(iexc),oscillstr
+			end do
+            if (iGSESonly==0) then
+				write(iout,*)
+				write(iout,"(' Note: In below output the case of i=j corresponds to contribution of electron to dipole moment of excited state i')")
+				write(iout,"(' Transition electric dipole moment between excited states (a.u.):')")
+				write(iout,*) "    i     j         X             Y             Z        Diff.(eV)   Oscil.str"
+            end if
+		else if (isel==4) then !Output dipole moment for each state
+			write(iout,"(a)") " Note: The electric dipole moments shown below include both nuclear charge and electronic contributions"
+			write(iout,"(' Ground state electric dipole moment in X,Y,Z:',3f12.6,' a.u.',/)") grounddip
+			write(iout,"(' Excited state electric dipole moments (a.u.):')")
+			write(iout,*) " State         X             Y             Z        exc.(eV)    exc.(nm)"
+		end if
 		do iexc=1,nstates
-			oscillstr=2D0/3D0*allexcene(iexc)/au2eV*sum(tdvecmat(:,0,iexc)**2)
-			write(iout,"(2i6,3f14.7,2f12.5)") 0,iexc,tdvecmat(:,0,iexc),allexcene(iexc),oscillstr
+			if (isel<=3.and.iGSESonly==0) then
+				do jexc=iexc,nstates
+					if (isel==1.or.isel==2) then
+						enediff=abs(allexcene(jexc)-allexcene(iexc))
+						oscillstr=2D0/3D0*enediff/au2eV*sum(tdvecmat(:,iexc,jexc)**2)
+						write(iout,"(2i6,3f14.7,2f12.5)") iexc,jexc,tdvecmat(:,iexc,jexc),enediff,oscillstr
+					else if (isel==3) then
+						write(iout,"(2i6,3(1PE15.6))") iexc,jexc,tdvecmat(:,iexc,jexc)
+					end if
+				end do
+			else if (isel==4) then
+				write(iout,"(i6,3f14.6,f12.4,f12.2)") iexc,tdvecmat(:,iexc,iexc)+nucdip(:),allexcene(iexc),1239.842D0/allexcene(iexc)
+			end if
+		end do
+	else if (idiptype==2) then !Magnetic
+		write(iout,"(' Transition magnetic dipole moment between ground state (0) and excited states (a.u.)')")
+		write(iout,*) "    i     j         X             Y             Z        Diff.(eV)"
+		do iexc=1,nstates
+			write(iout,"(2i6,3f14.7,2f12.5)") 0,iexc,tdvecmat(:,0,iexc),allexcene(iexc)
 		end do
 		write(iout,*)
-		write(iout,"(' Note: In below output the case of i=j corresponds to electronic contribution to dipole moment of excited state i')")
-		write(iout,"(' Transition dipole moment between excited states (a.u.):')")
-		write(iout,*) "    i     j         X             Y             Z        Diff.(eV)   Oscil.str"
-	else if (isel==4) then !Output dipole moment for each state
-		write(iout,"(a)") " Note: The dipole moments shown below include both nuclear charge and electronic contributions"
-		write(iout,"(' Ground state dipole moment in X,Y,Z:',3f12.6,' a.u.',/)") grounddip
-		write(iout,"(' Excited state dipole moments (a.u.):')")
-		write(iout,*) " State         X             Y             Z        exc.(eV)    exc.(nm)"
-	end if
-	do iexc=1,nstates
-        if (isel<=3) then
-		    do jexc=iexc,nstates
-			    if (isel==1.or.isel==2) then
-				    enediff=abs(allexcene(jexc)-allexcene(iexc))
-				    oscillstr=2D0/3D0*enediff/au2eV*sum(tdvecmat(:,iexc,jexc)**2)
-				    write(iout,"(2i6,3f14.7,2f12.5)") iexc,jexc,tdvecmat(:,iexc,jexc),enediff,oscillstr
-			    else if (isel==3) then
-				    write(iout,"(2i6,3(1PE15.6))") iexc,jexc,tdvecmat(:,iexc,jexc)
-			    end if
-		    end do
-        else if (isel==4) then
-			write(iout,"(i6,3f14.6,f12.4,f12.2)") iexc,tdvecmat(:,iexc,iexc)+nucdip(:),allexcene(iexc),1239.842D0/allexcene(iexc)
-        end if
-	end do
+		write(iout,"(' Transition magnetic dipole moment between excited states (a.u.):')")
+		write(iout,*) "    i     j         X             Y             Z        Diff.(eV)"
+		do iexc=1,nstates
+			do jexc=iexc,nstates
+				if (isel==1.or.isel==2) then
+					enediff=abs(allexcene(jexc)-allexcene(iexc))
+					write(iout,"(2i6,3f14.7,2f12.5)") iexc,jexc,tdvecmat(:,iexc,jexc),enediff
+				end if
+			end do
+		end do
+    end if
 else !Not all states have the same spin, 50-50 with singlet ground state is assumed. isel=3 and isel=4 are not available in this case
 	allocate(allexclab(0:2*nstates))
 	iS=0
@@ -3533,41 +3823,49 @@ else !Not all states have the same spin, 50-50 with singlet ground state is assu
 			write(allexclab(iexc),"(' T',i3)") iT
 		end if
 	end do
-	write(iout,"(' Note: In below output the case of i=j corresponds to electronic contribution to dipole moment of excited state i')")
-	write(iout,"(' Transition dipole moment between singlet states (a.u.):')")
+	write(iout,"(' Note: In below output the case of i=j corresponds to contribution of electron to dipole moment of excited state i')")
+    if (idiptype==1) then
+		write(iout,"(' Transition electric dipole moment between singlet states (a.u.):')")
+    else if (idiptype==2) then
+		write(iout,"(' Transition magnetic dipole moment between singlet states (a.u.):')")
+    end if
 	write(iout,*) "  i        j          X             Y             Z         Diff.(eV)"
-	write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(0),allexclab(0),grounddip,0D0 !<S0|-r|S0>
-	do iexc=1,nstates !<S0|-r|Si>
+    !Output S0 state
+    write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(0),allexclab(0),statedip(:),0D0
+    !Output between S0 and various singlet excited states
+	do iexc=1,nstates
 		if (allexcmulti(iexc)/=1) cycle
-		tmpvec=0
-		do ipair=1,allexcnorb(iexc)
-			imo=allorbleft(ipair,iexc)
-			lmo=allorbright(ipair,iexc)
-			tmpvec=tmpvec+allexccoeff(ipair,iexc)*MOdipint(:,imo,lmo)*fac
+		write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(0),allexclab(iexc),tdvecmat(:,0,iexc),allexcene(iexc)
+	end do
+    if (iGSESonly==0) then
+		!Output between various singlet excited states
+		do iexc=1,nstates
+			do jexc=iexc,nstates
+				if (allexcmulti(iexc)==1.and.allexcmulti(jexc)==1) &
+				write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(iexc),allexclab(jexc),tdvecmat(:,iexc,jexc),abs(allexcene(jexc)-allexcene(iexc))
+			end do
 		end do
-		write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(0),allexclab(iexc),tmpvec,allexcene(iexc)
-	end do
-	do iexc=1,nstates
-		do jexc=iexc,nstates
-			if (allexcmulti(iexc)==1.and.allexcmulti(jexc)==1) &
-			write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(iexc),allexclab(jexc),tdvecmat(:,iexc,jexc),abs(allexcene(jexc)-allexcene(iexc))
+		!Output between various triplet excited states
+		if (idiptype==1) then
+			write(iout,"(/,' Transition electric dipole moment between triplet states (a.u.):')")
+		else if (idiptype==2) then
+			write(iout,"(/,' Transition magnetic dipole moment between triplet states (a.u.):')")
+		end if
+		write(iout,*) "  i        j          X             Y             Z         Diff.(eV)"
+		do iexc=1,nstates
+			do jexc=iexc,nstates
+				if (allexcmulti(iexc)==3.and.allexcmulti(jexc)==3) &
+				write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(iexc),allexclab(jexc),tdvecmat(:,iexc,jexc),abs(allexcene(jexc)-allexcene(iexc))
+			end do
 		end do
-	end do
-	write(iout,"(/,' Transition dipole moment between triplet states (a.u.):')")
-	write(iout,*) "  i        j          X             Y             Z         Diff.(eV)"
-	do iexc=1,nstates
-		do jexc=iexc,nstates
-			if (allexcmulti(iexc)==3.and.allexcmulti(jexc)==3) &
-			write(iout,"(a,' -- ',a,3f14.7,f12.4)") allexclab(iexc),allexclab(jexc),tdvecmat(:,iexc,jexc),abs(allexcene(jexc)-allexcene(iexc))
+		write(iout,"(/,' Excitation energies (eV):')")
+		do iexc=1,nstates
+			if (allexcmulti(iexc)==1) write(iout,"(a,f12.4)") allexclab(iexc),allexcene(iexc)
 		end do
-	end do
-	write(iout,"(/,' Excitation energies (eV):')")
-	do iexc=1,nstates
-		if (allexcmulti(iexc)==1) write(iout,"(a,f12.4)") allexclab(iexc),allexcene(iexc)
-	end do
-	do iexc=1,nstates
-		if (allexcmulti(iexc)==3) write(iout,"(a,f12.4)") allexclab(iexc),allexcene(iexc)
-	end do
+		do iexc=1,nstates
+			if (allexcmulti(iexc)==3) write(iout,"(a,f12.4)") allexclab(iexc),allexcene(iexc)
+		end do
+    end if
 end if
 
 if (isel==2) then
@@ -3590,7 +3888,7 @@ end subroutine
 subroutine CTanalyze
 use GUI
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 real*8,allocatable :: Cpos(:,:,:),Cneg(:,:,:),tmpmat(:,:,:)
 
 if (.not.allocated(cubmat)) then
@@ -3886,7 +4184,9 @@ if (index(tdmatfilename,"AAtrdip")==0.and.index(tdmatfilename,"aatrdip")==0.and.
 	tmatatm=0D0
 	if (iatmTMtype==1.or.iatmTMtype==2.or.iatmTMtype==3) then !Contraction by summing up of square of elements
 		do iatm=1,ncenter
+            if (basstart(iatm)==0) cycle
 			do jatm=1,ncenter
+				if (basstart(jatm)==0) cycle
 				do ibas=basstart(iatm),basend(iatm)
 					do jbas=basstart(jatm),basend(jatm)
 						if (iatmTMtype==1.or.iatmTMtype==2) then
@@ -3902,13 +4202,16 @@ if (index(tdmatfilename,"AAtrdip")==0.and.index(tdmatfilename,"aatrdip")==0.and.
 	else if (iatmTMtype==4) then !Eqs 2.20, 2.21 in Chem. Rev., 102, 3171 (2002)
 		!Diagonal terms
 		do iatm=1,ncenter
+            if (basstart(iatm)==0) cycle
 			do ibas=basstart(iatm),basend(iatm)
 				tmatatm(iatm,iatm)=tmatatm(iatm,iatm)+abs(tdmatbas(ibas,ibas))
 			end do
 		end do
 		!Off-diagonal terms
 		do iatm=1,ncenter
+            if (basstart(iatm)==0) cycle
 			do jatm=1,ncenter
+				if (basstart(jatm)==0) cycle
 				do ibas=basstart(iatm),basend(iatm)
 					do jbas=basstart(jatm),basend(jatm)
 						tmatatm(iatm,jatm)=tmatatm(iatm,jatm)+tdmatbas(ibas,jbas)**2
@@ -3944,7 +4247,7 @@ clrlimlow=0 !minval(tmatatmnoh)
 clrlimhigh=maxval(tmatatmnoh)
 ifhydrogen=0
 ninterpo=10
-nstepsize=nint(dfloat(ncennoh)/10D0)
+nstepsize=ceiling(dfloat(ncennoh)/10D0)
 ifnormsum=0
 facnorm=1D0 !Normalization factor, default is 1, namely do not do normalization
 stepsizez=(clrlimhigh/facnorm-clrlimlow/facnorm)/10
@@ -3977,6 +4280,8 @@ do while(.true.)
 		write(*,"(a,i3,a,f9.5)") " 7 Set stepsize between labels, current:  X/Y is ",nstepsize,", Z is",stepsizez
 		if (ifnormsum==0) write(*,*) "8 Switch if normalizing the sum of all elements to unity, current: No"
 		if (ifnormsum==1) write(*,*) "8 Switch if normalizing the sum of all elements to unity, current: Yes"
+    else
+		write(*,"(a,f9.5)") " 7 Set stepsize between labels in Z axis, current:",stepsizez
 	end if
     write(*,"(a,a)") " 9 Set color transition, current: ",trim(clrtransname(iclrtrans))
     write(*,"(a,i4)") " 10 Set label size, current:",labsize
@@ -3993,6 +4298,7 @@ do while(.true.)
 			clrlimlow=0
 			clrlimhigh=maxval(tmatatmnoh)
 			ifhydrogen=0
+			stepsizez=(clrlimhigh-clrlimlow)/10 !Note that when entering fragment TDM mode, facnorm has been set to 1 and ifnormsum=0
 			cycle
 		else !Define fragments
 			write(*,*)
@@ -4058,6 +4364,7 @@ do while(.true.)
 			ninterpo=1
 			facnorm=1D0
 			ifnormsum=0
+			stepsizez=(clrlimhigh-clrlimlow)/10
 		end if
 		
 	else if (isel==1.or.isel==2) then
@@ -4076,7 +4383,7 @@ do while(.true.)
 		end if
 		if (isel==2) then
 			isavepic=0
-			write(*,*) "Done, the image has been saved to current folder with ""DISLIN"" prefix"
+			write(*,*) "Done, the image has been saved to current folder with ""dislin"" prefix"
 		end if
 	else if (isel==3) then
 		open(10,file="tmat.txt",status="replace")
@@ -4121,12 +4428,14 @@ do while(.true.)
         stepsizez=(clrlimhigh/facnorm-clrlimlow/facnorm)/10
 	else if (isel==6) then
 		write(*,*) "Please input interpolation steps between grids, e.g. 2"
-		write(*,"(a)") " Note: Larger value gives rise to more smooth graph, &
-		1 means do not do interpolation, in this case each grid in the map corresponds to a matrix element"
+		write(*,"(a)") " Note: Larger value gives rise to smoother graph, 1 &
+		means do not perform interpolation, in this case each grid in the map corresponds to a matrix element"
 		read(*,*) ninterpo
 	else if (isel==7) then
-		write(*,*) "Please input stepsize for X and Y axes, e.g. 4"
-		read(*,*) nstepsize
+		if (.not.allocated(frag)) then
+			write(*,*) "Please input stepsize for X and Y axes, e.g. 4"
+			read(*,*) nstepsize
+        end if
 		write(*,*) "Please input stepsize for Z axis, e.g. 0.05"
 		read(*,*) stepsizez
 	else if (isel==8) then
@@ -4267,12 +4576,20 @@ do while (.true.)
 	if (any(fraghole<0).or.any(fragele<0)) then
 		write(*,"(a)") " Warning: There are unphysical negative contributions, &
 		they are regarded as zero during the calculation of interfragment charger-transfer matrix"
+        if (icompmethod==1) write(*,"(a)") " Using Hirshfeld partition instead of Mulliken partition may be able to obtain more reliable result"
 		where (fraghole<0) fraghole=0
 		where (fragele<0) fragele=0
 	end if
+    totalLE_intrinsic=0
+    totalCT_intrinsic=0
 	do ifrag=1,nfrag
 		do jfrag=1,nfrag
 			CTmatfrag(ifrag,jfrag)=fraghole(ifrag)*fragele(jfrag)
+            if (ifrag==jfrag) then
+				totalLE_intrinsic=totalLE_intrinsic+CTmatfrag(ifrag,jfrag)
+            else
+				totalCT_intrinsic=totalCT_intrinsic+CTmatfrag(ifrag,jfrag)
+            end if
 		end do
 	end do
 	write(*,*) "Construction of interfragment charger-transfer matrix has finished!"
@@ -4281,6 +4598,7 @@ do while (.true.)
 	do ifrag=1,nfrag
 		varpop=sum(CTmatfrag(:,ifrag))-sum(CTmatfrag(ifrag,:))
 		write(*,"(' Variation of population number of fragment',i3,':',f10.5)") ifrag,varpop
+        if (ifrag==1) totalCT_apparent=abs(varpop)
 	end do
 	
 	write(*,*)
@@ -4297,6 +4615,14 @@ do while (.true.)
 		end do
 	end do
 	deallocate(CTmatfrag,fragele,fraghole)
+    write(*,*)
+    write(*,"(a,f10.3,' %')") " Intrinsic charge transfer percentage, CT(%): ",totalCT_intrinsic*100
+    write(*,"(a,f10.3,' %')") " Intrinsic local excitation percentage, LE(%):",totalLE_intrinsic*100
+    if (nfrag==2) then
+		write(*,"(a,f10.3,' %')") " Apparent charge transfer percentage, CT(%):  ",totalCT_apparent*100
+		write(*,"(a,f10.3,' %')") " Apparent local excitation percentage, LE(%): ",100-totalCT_apparent*100
+		write(*,*) "Note: See Section 3.21.8 of manual on the difference of the two types of CT(%)"
+    end if
 	
 	write(*,*)
 	write(*,*) "If you want to redefine fragments and recalculate data, input 1"
@@ -4325,27 +4651,46 @@ implicit real*8 (a-h,o-z)
 real*8,allocatable :: tmparr(:)
 integer,allocatable :: idxlist(:)
 real*8,allocatable :: dipcontri(:,:) !(1/2/3,iexc) contribution of orbital pairs "iexc" to transition dipole moment in X/Y/Z
-character strdir*3,strspin,c80tmp*80
+character strdir*3,strspini,strspinj,c80tmp*80
 
-if (.not.allocated(Dbas)) then
-	write(*,*) "Generating dipole moment integral matrix between basis functions..."
-    call genDbas_curr
+write(*,*) "Choose type of transition dipole moment to decompose:"
+write(*,*) "1 Electric"
+write(*,*) "2 Magnetic"
+read(*,*) idiptype
+
+if (idiptype==1) then
+	if (.not.allocated(Dbas)) then
+		write(*,*) "Generating electric dipole moment integral matrix between basis functions..."
+		call genDbas_curr
+	end if
+	if (.not.allocated(DorbA)) then
+		write(*,*) "Generating electric dipole moment integral matrix between MOs..."
+		allocate(DorbA(3,nbasis,nbasis))
+		if (allocated(CObasb)) allocate(DorbB(3,nbasis,nbasis))
+		call genDorb
+	end if
+else if (idiptype==2) then
+	if (.not.allocated(Magbas)) then
+		write(*,*) "Generating magnetic dipole moment integral matrix between basis functions..."
+		call genMagbas_curr
+	end if
+	if (.not.allocated(MagorbA)) then
+		write(*,*) "Generating magnetic dipole moment integral matrix between MOs..."
+		allocate(MagorbA(3,nbasis,nbasis))
+		if (allocated(CObasb)) allocate(MagorbB(3,nbasis,nbasis))
+		call genMagorb
+	end if
 end if
 
-if (.not.allocated(DorbA)) then
-	write(*,*) "Generating dipole moment integral matrix between MOs..."
-	allocate(DorbA(3,nbasis,nbasis))
-	if (allocated(CObasb)) allocate(DorbB(3,nbasis,nbasis))
-	call genDorb
-	write(*,*)
-end if
+write(*,*)
 
 !Load electronic excitation information
 call loadallexcinfo(1)
 call selexcit(istate)
 call loadexccoeff(istate,1)
 
-write(*,*) "Calculating orbital pair contribution to transition electric dipole moment..."
+if (idiptype==1) write(*,*) "Calculating orbital pair contributions to transition electric dipole moment..."
+if (idiptype==2) write(*,*) "Calculating orbital pair contributions to transition magnetic dipole moment..."
 allocate(dipcontri(3,excnorb)) ; dipcontri=0
 if (wfntype==0.or.wfntype==3) then
 	fac=2
@@ -4355,18 +4700,27 @@ end if
 do iexcitorb=1,excnorb
 	imo=orbleft(iexcitorb)
 	jmo=orbright(iexcitorb)
-	if (imo<=nbasis) then
-		dipcontri(:,iexcitorb)=DorbA(:,imo,jmo)*exccoeff(iexcitorb)*fac
-	else !beta->beta
-		dipcontri(:,iexcitorb)=DorbB(:,imo-nbasis,jmo-nbasis)*exccoeff(iexcitorb)*fac
-	end if
+    if (idiptype==1) then !Electric
+		if (imo<=nbasis) then
+			dipcontri(:,iexcitorb)=DorbA(:,imo,jmo)*exccoeff(iexcitorb)*fac
+		else !beta->beta
+			dipcontri(:,iexcitorb)=DorbB(:,imo-nbasis,jmo-nbasis)*exccoeff(iexcitorb)*fac
+		end if
+    else if (idiptype==2) then !Magnetic, see Eq 24 of "Abinitio calculations of oscillator and rotatory strengths in the random‐phase approximatio-Twisted mono‐olefins"
+		tmp=1
+        if (excdir(iexcitorb)==2) tmp=-1
+		if (imo<=nbasis) then
+            dipcontri(:,iexcitorb)=tmp*MagorbA(:,imo,jmo)*exccoeff(iexcitorb)*fac
+		else !beta->beta
+			dipcontri(:,iexcitorb)=tmp*MagorbB(:,imo-nbasis,jmo-nbasis)*exccoeff(iexcitorb)*fac
+		end if
+    end if
 end do
 
 xdipall=sum(dipcontri(1,:))
 ydipall=sum(dipcontri(2,:))
 zdipall=sum(dipcontri(3,:))
 dipallnorm=dsqrt(xdipall**2+ydipall**2+zdipall**2)
-oscillstr=2D0/3D0*excene/au2eV*(xdipall**2+ydipall**2+zdipall**2)
 write(*,*)
 write(*,"(a,/)") " Note: Carbon, 165, 461 (2020) employed this function to study the nature of very strong absorption of cyclo[18]carbon, &
 you are suggested to look at this paper and cite it along with Multiwfn original paper"
@@ -4374,15 +4728,20 @@ if ((naelec==nbelec).and.excmulti==3) write(*,"(a,/)") " Notice: Since the spin 
 is different (spin-forbidden), the transition dipole moment analyzed in this function only considers spatial part"
 write(*,"(' Transition dipole moment in X/Y/Z: ',3f11.6,' a.u.')") xdipall,ydipall,zdipall
 write(*,"(' Norm of transition dipole moment:  ',f11.6,' a.u.')") dipallnorm
-write(*,"(' Oscillator strength:',f12.7)") oscillstr
+if (idiptype==1) then
+	oscillstr=2D0/3D0*excene/au2eV*(xdipall**2+ydipall**2+zdipall**2)
+	write(*,"(' Oscillator strength:',f12.7)") oscillstr
+end if
 
 do while(.true.)
 	write(*,*)
+    call menutitle("Show orbital pair contributions",10,1)
 	write(*,*) "0 Return"
-	write(*,*) "1 Print orbital pairs having contribution to certain threshold"
-	write(*,*) "2 Print orbital pairs according to absolute contribution to X component"
-	write(*,*) "3 Print orbital pairs according to absolute contribution to Y component"
-	write(*,*) "4 Print orbital pairs according to absolute contribution to Z component"
+	write(*,*) "1 Print orbital pairs having contribution larger than a threshold"
+	write(*,*) "2 Print orbital pairs in the order of absolute contribution to X component"
+	write(*,*) "3 Print orbital pairs in the order of absolute contribution to Y component"
+	write(*,*) "4 Print orbital pairs in the order of absolute contribution to Z component"
+	write(*,*) "5 Print orbital pairs in the order of norm of contribution vector"
 	write(*,*) "10 Export contribution of all orbital pairs to transdip.txt in current folder"
 	read(*,*) isel
 	
@@ -4395,7 +4754,7 @@ do while(.true.)
 		xdipsum=0; ydipsum=0; zdipsum=0
 		nshownpair=0
 		if ( any(abs(dipcontri)>printthres) ) then
-			write(*,*) "  #Pair                   Coefficient     Transition dipole X/Y/Z (a.u.)"
+			write(*,*) " #Pair   Orbital trans. Coefficient      Transition dipole X/Y/Z   Norm (a.u.)"
 			do iexcitorb=1,excnorb
 				if ( any(abs(dipcontri(:,iexcitorb))>printthres) ) then
 					nshownpair=nshownpair+1
@@ -4407,39 +4766,49 @@ do while(.true.)
 					strdir=" ->"
 					if (excdir(iexcitorb)==2) strdir=" <-"
 					if (wfntype==0.or.wfntype==3) then
-						write(*,"(i8,i7,a,i7,f12.6,3x,3f11.6)") iexcitorb,imo,strdir,jmo,exccoeff(iexcitorb),dipcontri(:,iexcitorb)
+						write(*,"(i7,i7,a,i7,f11.6,4f11.6)") iexcitorb,imo,strdir,jmo,exccoeff(iexcitorb),dipcontri(:,iexcitorb),dsqrt(sum(dipcontri(:,iexcitorb)**2))
 					else
-						strspin="A"
+						strspini="A"
 						if (imo>nbasis) then
-							strspin="B"
+							strspini="B"
 							imo=imo-nbasis
+						end if
+						strspinj="A"
+						if (jmo>nbasis) then
+							strspinj="B"
 							jmo=jmo-nbasis
 						end if
-						write(*,"(i8,i6,a,a,i6,a,f12.6,3x,3f11.6)") iexcitorb,imo,strspin,strdir,jmo,strspin,exccoeff(iexcitorb),dipcontri(:,iexcitorb)
+						write(*,"(i7,i6,a,a,i6,a,f11.6,4f11.6)") iexcitorb,imo,strspini,strdir,jmo,strspinj,exccoeff(iexcitorb),dipcontri(:,iexcitorb),dsqrt(sum(dipcontri(:,iexcitorb)**2))
 					end if
 				end if
 			end do
-			write(*,"(' Sum of the',i8,' pairs shown above:  ',3f11.6)") nshownpair,xdipsum,ydipsum,zdipsum
+			write(*,"(' Sum of the above',i8,' pairs:   ',3f11.6)") nshownpair,xdipsum,ydipsum,zdipsum
 		else
 			write(*,*) "No orbital pair statisfying the condition was found!"
 		end if
 		
-	else if (isel==2.or.isel==3.or.isel==4) then
-		write(*,*) "Please wait..."
+	else if (isel==2.or.isel==3.or.isel==4.or.isel==5) then
+		write(*,*) "Sorting, please wait..."
 		allocate(tmparr(excnorb),idxlist(excnorb))
 		if (isel==2) tmparr=dipcontri(1,:)
 		if (isel==3) tmparr=dipcontri(2,:)
 		if (isel==4) tmparr=dipcontri(3,:)
+		if (isel==5) then
+			do iexcitorb=1,excnorb
+				tmparr(iexcitorb)=dsqrt(sum(dipcontri(:,iexcitorb)**2))
+            end do
+        end if
 		forall (i=1:excnorb) idxlist(i)=i
 		call sortr8(tmparr,"abs",idxlist)
 		call invarri4(idxlist)
-		if (isel==2) write(*,"(a,/)") " The pairs have been sorted according to absolute value of X component of transition dipole moment"
-		if (isel==3) write(*,"(a,/)") " The pairs have been sorted according to absolute value of Y component of transition dipole moment"
-		if (isel==4) write(*,"(a,/)") " The pairs have been sorted according to absolute value of Z component of transition dipole moment"
-		write(*,*) "How many pairs to be outputted? e.g. 20"
+		if (isel==2) write(*,"(a,/)") " The orbital pairs have been sorted according to absolute value of X component of transition dipole moment"
+		if (isel==3) write(*,"(a,/)") " The orbital pairs have been sorted according to absolute value of Y component of transition dipole moment"
+		if (isel==4) write(*,"(a,/)") " The orbital pairs have been sorted according to absolute value of Z component of transition dipole moment"
+		if (isel==5) write(*,"(a,/)") " The orbital pairs have been sorted according to norm of contribution vector to transition dipole moment"
+		write(*,*) "How many orbital pairs to output? e.g. 20"
 		read(*,*) noutpair
 		if (noutpair>excnorb) noutpair=excnorb
-		write(*,*) "  #Pair                   Coefficient     Transition dipole X/Y/Z (a.u.)"
+		write(*,*) " #Pair   Orbital trans. Coefficient      Transition dipole X/Y/Z   Norm (a.u.)"
 		do idx=1,noutpair
 			iexcitorb=idxlist(idx)
 			imo=orbleft(iexcitorb)
@@ -4447,37 +4816,45 @@ do while(.true.)
 			strdir=" ->"
 			if (excdir(iexcitorb)==2) strdir=" <-"
 			if (wfntype==0.or.wfntype==3) then
-				write(*,"(i8,i7,a,i7,f12.6,3x,3f11.6)") iexcitorb,imo,strdir,jmo,exccoeff(iexcitorb),dipcontri(:,iexcitorb)
+				write(*,"(i7,i7,a,i7,f11.6,4f11.6)") iexcitorb,imo,strdir,jmo,exccoeff(iexcitorb),dipcontri(:,iexcitorb),dsqrt(sum(dipcontri(:,iexcitorb)**2))
 			else
-				strspin="A"
+				strspini="A"
 				if (imo>nbasis) then
-					strspin="B"
+					strspini="B"
 					imo=imo-nbasis
+				end if
+				strspinj="A"
+				if (jmo>nbasis) then
+					strspinj="B"
 					jmo=jmo-nbasis
 				end if
-				write(*,"(i8,i6,a,a,i6,a,f12.6,3x,3f11.6)") iexcitorb,imo,strspin,strdir,jmo,strspin,exccoeff(iexcitorb),dipcontri(:,iexcitorb)
+				write(*,"(i7,i6,a,a,i6,a,f11.6,4f11.6)") iexcitorb,imo,strspini,strdir,jmo,strspinj,exccoeff(iexcitorb),dipcontri(:,iexcitorb),dsqrt(sum(dipcontri(:,iexcitorb)**2))
 			end if
 		end do
 		deallocate(tmparr,idxlist)
 		
 	else if (isel==10) then
 		open(10,file="transdip.txt",status="replace")
-		write(10,*) "   #Pair                  Coefficient   Transition dipole X/Y/Z (a.u.)"
+		write(10,*) " #Pair   Orbital trans. Coefficient      Transition dipole X/Y/Z   Norm (a.u.)"
 		do iexcitorb=1,excnorb
 			imo=orbleft(iexcitorb)
 			jmo=orbright(iexcitorb)
 			strdir=" ->"
 			if (excdir(iexcitorb)==2) strdir=" <-"
 			if (wfntype==0.or.wfntype==3) then
-				write(10,"(i8,i7,a,i7,f12.6,3x,3f11.6)") iexcitorb,imo,strdir,jmo,exccoeff(iexcitorb),dipcontri(:,iexcitorb)
+				write(10,"(i7,i7,a,i7,f11.6,4f11.6)") iexcitorb,imo,strdir,jmo,exccoeff(iexcitorb),dipcontri(:,iexcitorb),dsqrt(sum(dipcontri(:,iexcitorb)**2))
 			else
-				strspin="A"
+				strspini="A"
 				if (imo>nbasis) then
-					strspin="B"
+					strspini="B"
 					imo=imo-nbasis
+				end if
+				strspinj="A"
+				if (jmo>nbasis) then
+					strspinj="B"
 					jmo=jmo-nbasis
 				end if
-				write(10,"(i8,i6,a,a,i6,a,f12.6,3x,3f11.6)") iexcitorb,imo,strspin,strdir,jmo,strspin,exccoeff(iexcitorb),dipcontri(:,iexcitorb)
+				write(10,"(i7,i6,a,a,i6,a,f11.6,4f11.6)") iexcitorb,imo,strspini,strdir,jmo,strspinj,exccoeff(iexcitorb),dipcontri(:,iexcitorb),dsqrt(sum(dipcontri(:,iexcitorb)**2))
 			end if
 		end do
 		close(10)
@@ -4500,6 +4877,7 @@ end subroutine
 !iTDMtype=1: Correct for transition electric dipole moment, excitation and de-excitation are not distinguished
 !iTDMtype=2: Correct for transition velocity/magnetic dipole moment, excitation and de-excitation are considered individually
 !isym=1: Ask user if symmetrizing the TDM.  =3: Skip symmetrizing
+!For SF-TDDFT, this routine is meaningless because TDM between reference state and SF-TDDFT states must be zero due to spin orthogonal
 subroutine genTDM(iTDMtype,isym)
 use defvar
 use excitinfo
@@ -4543,6 +4921,7 @@ do imo=1,nint(naelec) !Closed-shell or alpha part of open-shell
 	tmpmat(1,:)=tmparr(:)
 	tdmata=tdmata+matmul(CObasa(:,imo:imo),tmpmat)
 end do
+
 if (wfntype==0.or.wfntype==3) then
 	tdmata=tdmata*2 !Closed-shell, double the current TDM
 else if (wfntype==1.or.wfntype==4) then !Beta part of open-shell
@@ -4619,7 +4998,7 @@ if (isym==1) then
 	write(*,*) "If symmetrizing the transition density matrix?"
 	write(*,*) "0 or n: Do not symmetrize"
 	write(*,*) "1 or y: Symmetrize as TDM_sym(i,j)=[TDM(i,j)+TDM(j,i)]/2"
-	write(*,*) "2: Symmetrize as TDM_sym(i,j)=[TDM(i,j)+TDM(j,i)]/sqrt(2)"
+	write(*,*) "2:      Symmetrize as TDM_sym(i,j)=[TDM(i,j)+TDM(j,i)]/sqrt(2)"
 	read(*,*) c80tmp
 	if (c80tmp(1:1)=='1'.or.c80tmp(1:1)=='y'.or.c80tmp(1:1)=='2') then
 		if (c80tmp(1:1)=='1'.or.c80tmp(1:1)=='y') tmpfac=2
@@ -4648,6 +5027,7 @@ end subroutine
 !---------- Generate transition density matrix between two excited states and store to tdmata/tdmatab ----------
 !---------------------------------------------------------------------------------------------------------------
 !isymmetry controls how to symmetrize the matrix. If =-1, then user will be asked to choose a symmetrization method
+!SF-TDDFT case is not supported yet (in that case, closed-shell code in this routine should be used, while both CObasa and CObasb are involved)
 subroutine genTDM_2exc(istate,jstate,isymmetry)
 use defvar
 use util
@@ -4659,7 +5039,7 @@ character c80tmp*80
 
 !1E-5 is lowest acceptable threshold. Cost of 1E-6 will be higher than 1E-5 by one order of magnitude
 write(*,"(a)") " Input the threshold of product of two configuration coefficients for skipping configurations, e.g. 1E-6"
-write(*,"(a)") " Note: If you press ENTER button directly, then 0.00001 will be used, which is a good balance between cost and accuracy"
+write(*,"(a)") " Note: If you press ENTER button directly, then 0.00001 will be used, which is a good compromise between cost and accuracy"
 read(*,"(a)") c80tmp
 if (c80tmp==" ") then
 	thres=1D-5
@@ -4686,11 +5066,12 @@ if (wfntype==0.or.wfntype==3) then !Closed-shell case
 			kmo=allorbright(jpair,jstate)
 			wei=allexccoeff(ipair,istate)*allexccoeff(jpair,jstate)
 			if (abs(wei)<thres) cycle !For saving time
-			!For two |X+Y> wavefunctions, X only acts with X, Y only acts with Y
-			!Assume what we calculated it <X-Y|-r|X+Y> = <X|-r|X> - <Y|-r|Y>. XX and YY are treated in the same way 
-			!For TDA case, Y is not existed, the result for the same two states is exactly identical to density=rhoci outputted by Gaussian,
-			!While for TD case, the wavefunction is not rigorously defined, and the result is not completely in line with Gaussian,
+			!For two |X+Y> wavefunctions, X only acts with X, and Y only acts with Y
+			!Assume what we calculated is <X-Y|-r|X+Y> = <X|-r|X> - <Y|-r|Y>. XX and YY are treated in the same way 
+			!For TDA case, Y is nonexistent, the result for the same two states is exactly identical to density=rhoci outputted by Gaussian, &
+			!while for TD case, the wavefunction is not rigorously defined, and the result is not completely in line with Gaussian, &
 			!but the difference is usually marginal (I am not sure which formula is employed by Gaussian)
+			!The way of evaluating transition dipole momemnt used here follows the rule in Section 3.21.9 of manual.
 			if (allexcdir(ipair,istate)/=allexcdir(jpair,jstate)) cycle
 			nterm=nterm+1
 			if (allexcdir(ipair,istate)==2) wei=-wei
@@ -4722,10 +5103,10 @@ else !Open-shell case
 			wei=allexccoeff(ipair,istate)*allexccoeff(jpair,jstate)
 			if (abs(wei)<thres) cycle
 			if (allexcdir(ipair,istate)/=allexcdir(jpair,jstate)) cycle
-			if (imo<=nbasis.and.jmo>nbasis) cycle !Skip A->A interact with B->B case due to spin forbidden
+			if (imo<=nbasis.and.jmo>nbasis) cycle !Skip interaction between A->A and B->B due to spin forbidden
 			nterm=nterm+1
 			if (allexcdir(ipair,istate)==2) wei=-wei
-			if (imo<=nbasis) then !A->A interact with A->A
+			if (imo<=nbasis) then !A->A interacts with A->A
 				if (imo==jmo.and.lmo/=kmo) then
 					tdmata=tdmata+wei*matmul(CObasa(:,lmo:lmo),CObasa_tr(kmo:kmo,:))
 				else if (imo/=jmo.and.lmo==kmo) then
@@ -4733,7 +5114,7 @@ else !Open-shell case
 				else if (imo==jmo.and.lmo==kmo) then
 					tdmata=tdmata+wei*( Palpha - matmul(CObasa(:,imo:imo),CObasa_tr(imo:imo,:)) + matmul(CObasa(:,lmo:lmo),CObasa_tr(lmo:lmo,:)) )
 				end if
-			else !B->B interact with B->B
+			else !B->B interacts with B->B
 				if (imo==jmo.and.lmo/=kmo) then
 					llmo=lmo-nbasis
 					kkmo=kmo-nbasis
@@ -4849,7 +5230,7 @@ if (selectyn=='y'.or.selectyn=='Y') then
 	end if
 	call outfch("TDM.fch",10,1)
 	write(*,"(' Reloading: ',a)") trim(firstfilename)
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1)
 end if
 end subroutine
@@ -4953,8 +5334,14 @@ end do
 write(10,*)
 write(10,"(a)") " Contribution from atoms to transition dipole moment (X,Y,Z, in a.u.) derived by Mulliken partition:"
 do iatm=1,ncenter
-	write(10,"(i5,'(',a2,'):',3f12.6)") iatm,a(iatm)%name,&
-	sum(bastrdip(1,basstart(iatm):basend(iatm))),sum(bastrdip(2,basstart(iatm):basend(iatm))),sum(bastrdip(3,basstart(iatm):basend(iatm)))
+	if (basstart(iatm)==0) then
+		xval=0;yval=0;zval=0
+    else
+		xval=sum(bastrdip(1,basstart(iatm):basend(iatm)))
+		yval=sum(bastrdip(2,basstart(iatm):basend(iatm)))
+		zval=sum(bastrdip(3,basstart(iatm):basend(iatm)))
+    end if
+	write(10,"(i5,'(',a2,'):',3f12.6)") iatm,a(iatm)%name,xval,yval,zval
 end do
 write(10,*)
 write(10,"(a,3f12.6,a)") " Transition dipole moment in X/Y/Z",sum(bastrdip(1,:)),sum(bastrdip(2,:)),sum(bastrdip(3,:))," a.u."
@@ -4966,8 +5353,11 @@ write(*,*)
 write(*,"(a)") " Would you also like to output atom transition dipole moment matrix in current folder? (y/n)"
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
+	trdipmatatm=0
 	do iatm=1,ncenter
+		if (basstart(iatm)==0) cycle
 		do jatm=1,ncenter
+			if (basstart(jatm)==0) cycle
 			trdipmatatm(1,iatm,jatm)=sum( trdipmatbas(1,basstart(iatm):basend(iatm),basstart(jatm):basend(jatm)) )
 			trdipmatatm(2,iatm,jatm)=sum( trdipmatbas(2,basstart(iatm):basend(iatm),basstart(jatm):basend(jatm)) )
 			trdipmatatm(3,iatm,jatm)=sum( trdipmatbas(3,basstart(iatm):basend(iatm),basstart(jatm):basend(jatm)) )
@@ -5036,8 +5426,14 @@ do ibas=1,nbasis
 	end do
 end do
 do iatm=1,ncenter
-	write(10,"(1x,a,4f12.6)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a,-sum(bastrpopa(basstart(iatm):basend(iatm)))
-	if (wfntype==1.or.wfntype==4) write(11,"(1x,a,4f12.6)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a,-sum(bastrpopb(basstart(iatm):basend(iatm)))
+	tmpvala=0D0
+	tmpvalb=0D0
+    if (basstart(iatm)/=0) then
+		tmpvala=-sum(bastrpopa(basstart(iatm):basend(iatm)))
+        tmpvalb=-sum(bastrpopb(basstart(iatm):basend(iatm)))
+    end if
+	write(10,"(1x,a,4f12.6)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a,tmpvala
+	if (wfntype==1.or.wfntype==4) write(11,"(1x,a,4f12.6)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a,tmpvalb
 end do
 
 if (wfntype==0.or.wfntype==3) then
@@ -5066,7 +5462,8 @@ use excitinfo
 implicit real*8 (a-h,o-z)
 character c2000tmp*2000,c200tmp*200
 integer,allocatable :: excarr(:)
-real*8 orbwei(nbasis),orbDM(nbasis,nbasis)
+real*8 orbwei(nmo),orbDM(nbasis,nbasis),tmpmat(nbasis,nbasis)
+logical,allocatable :: skippair(:)
 
 if (.not.allocated(CObasa)) then
 	write(*,"(a)") " Error: TDM is unable to be generated because basis function information is not available! &
@@ -5083,6 +5480,7 @@ if ((wfntype==1.or.wfntype==4).and.(.not.allocated(CObasb_org))) then
 	allocate(CObasb_org(nbasis,nbasis))
 	CObasb_org=CObasb
 end if
+iwfntype_org=wfntype !wfntype should be backed up since subroutine "gennatorb" will alter it
 
 call loadallexcinfo(1)
 write(*,"(a)") " Input indices of the excited states, for which the natural orbitals will be generated and exported to .mwfn file, e.g. 1,4,6-8"
@@ -5090,16 +5488,17 @@ read(*,"(a)") c2000tmp
 call str2arr(c2000tmp,nexcsel)
 allocate(excarr(nexcsel))
 call str2arr(c2000tmp,nexcsel,excarr)
-	
-if (.not.allocated(tdmata)) allocate(tdmata(nbasis,nbasis))
-if ((wfntype==1.or.wfntype==4).and.(.not.allocated(tdmatb))) allocate(tdmatb(nbasis,nbasis))
+
+call ask_Sbas_PBC
+if (cfgcrossthres/=0) then
+	write(*,"(/,a,f8.5,a)") " Note: When calculating cross term of density matrix of excited state, configurations with absolute value of coefficient <",&
+    cfgcrossthres," will be ignored to reduce cost. The threshold is determined by ""cfgcrossthres"" in settings.ini"
+end if
 
 do iexc=1,nexcsel
 	istate=excarr(iexc)
-	write(*,*)
-	write(*,"(' Generating density matrix and natural orbitals for excited state',i5,'...')") istate
-	call loadexccoeff(istate,0)
-
+	write(*,"(/,' Dealing with excited state',i5)") istate
+	call loadexccoeff(istate,1)
 	!In order to accelerate generation speed of DM, we first get contribution of all orbitals (sum of square of its coefficients in all CSFs), &
 	!then cycle orbitals and calculate DM of the orbital, and correspondingly modify the ground state DM
 	orbwei=0
@@ -5107,55 +5506,164 @@ do iexc=1,nexcsel
 		imo=orbleft(iexcitorb)
 		jmo=orbright(iexcitorb)
 		wei=exccoeff(iexcitorb)**2
-		if (excdir(iexcitorb)==1) then
+		if (excdir(iexcitorb)==1) then !Excitation
 			orbwei(imo)=orbwei(imo)-wei
 			orbwei(jmo)=orbwei(jmo)+wei
-		else !de-excitation
+		else !De-excitation
 			orbwei(imo)=orbwei(imo)+wei
 			orbwei(jmo)=orbwei(jmo)-wei
 		end if
 	end do
+    
+    !Construct an array used in determining which configurations will be ignored during calculating the expensive cross term
+    !0.01 is found to be a good compromise between cost and accuracy
+	allocate(skippair(excnorb))
+	skippair=.false.
+	do iexcitorb=1,excnorb
+		if (abs(exccoeff(iexcitorb))<cfgcrossthres) skippair(iexcitorb)=.true.
+	end do
+    
 	if (wfntype==0.or.wfntype==3) then !Closed-shell
-		do iorb=1,nmo
-			if (orbwei(iorb)/=0) then
-				orbDM=matmul( CObasa(:,iorb:iorb),transpose(CObasa(:,iorb:iorb)) )
-				Ptot=Ptot+orbwei(iorb)*orbDM*2
-			end if
+        write(*,*) "Calculating local term of density matrix..."
+		! Old slow code:
+		!do iorb=1,nmo !This loop is most time-consuming part
+		!	if (orbwei(iorb)/=0) then
+		!		orbDM=matmul( CObasa(:,iorb:iorb),transpose(CObasa(:,iorb:iorb)) )
+		!		Ptot=Ptot+2*orbwei(iorb)*orbDM
+		!	end if
+		!end do
+		! New fast code:
+		!A temporary matrix (tmpmat) is utilized, which effectively includes orbwei(:) into the coefficient matrix, &
+		!this way is significantly cheaper than the above equivalent commented code. The same trick is used in subroutine genP
+        do imo=1,nmo
+			tmpmat(:,imo)=2*orbwei(imo)*CObasa(:,imo)
+        end do
+        Ptot=Ptot+matmul_blas(tmpmat,CObasa,nbasis,nbasis,0,1)
+        
+        write(*,"(a)") " Calculating cross term of density matrix..."
+		!Currently only take below two cases into account (the same as hole-electron analysis):
+		! Calculate |i><j|: add (i->l,j->l) and substract (i<-l,j<-l) to Ptot
+		! Calculate |l><m|: add (i->l,i->m) and substract (i<-l,i<-m) to Ptot
+		do iexcitorb=1,excnorb
+			call showprog(iexcitorb,excnorb)
+			if (skippair(iexcitorb)) cycle
+			idir=excdir(iexcitorb)
+			ileft=orbleft(iexcitorb)
+			iright=orbright(iexcitorb)
+			do jexcitorb=1,excnorb
+				if (skippair(jexcitorb)) cycle
+				jdir=excdir(jexcitorb)
+				if (idir/=jdir) cycle !Two configurations must have the same excitation direction
+				jleft=orbleft(jexcitorb)
+				jright=orbright(jexcitorb)
+				if (ileft==jleft) then !Calculate virtual MO coupling |l><m| contribution to P
+					if (iright==jright) cycle
+					tmpmat=exccoeff(iexcitorb)*exccoeff(jexcitorb)*matmul_blas(CObasa(:,iright:iright),CObasa(:,jright:jright),nbasis,nbasis,0,1)
+					if (idir==1) then !->
+						Ptot=Ptot+tmpmat
+					else !<-
+						Ptot=Ptot-tmpmat
+					end if
+				else if (iright==jright) then !Calculate occupied MO coupling |i><j| contribution to P
+					tmpmat=exccoeff(iexcitorb)*exccoeff(jexcitorb)*matmul_blas(CObasa(:,ileft:ileft),CObasa(:,jleft:jleft),nbasis,nbasis,0,1)
+					if (idir==1) then !->
+						Ptot=Ptot-tmpmat
+					else !<-
+						Ptot=Ptot+tmpmat
+					end if
+				end if
+			end do
 		end do
+        
+        write(*,*) "Generating natural orbitals..."
 		call gennatorb(1,0) !Generate spatial NOs
+        
 	else if (wfntype==1.or.wfntype==4) then !Open-shell
+        write(*,*) "Calculating local term of density matrix..."
 		!Alpha part
-		do iorb=1,nbasis
-			if (orbwei(iorb)/=0) then
-				orbDM=matmul( CObasa(:,iorb:iorb),transpose(CObasa(:,iorb:iorb)) )
-				Palpha=Palpha+orbwei(iorb)*orbDM
-			end if
-		end do
+        do imo=1,nbasis
+			tmpmat(:,imo)=orbwei(imo)*CObasa(:,imo)
+        end do
+        Palpha=Palpha+matmul_blas(tmpmat,CObasa,nbasis,nbasis,0,1)
 		!Beta part
-		do iorb=1,nbasis
-			if (orbwei(iorb-nbasis)/=0) then
-				orbDM=matmul( CObasb(:,iorb:iorb),transpose(CObasb(:,iorb:iorb)) )
-				Pbeta=Pbeta+orbwei(iorb-nbasis)*orbDM
-			end if
+        do imo=1,nbasis
+			tmpmat(:,imo)=orbwei(imo+nbasis)*CObasb(:,imo)
+        end do
+        Pbeta=Pbeta+matmul_blas(tmpmat,CObasb,nbasis,nbasis,0,1)
+        
+        write(*,"(a)") " Calculating cross term of density matrix..."
+		do iexcitorb=1,excnorb
+			call showprog(iexcitorb,excnorb)
+			if (skippair(iexcitorb)) cycle
+			idir=excdir(iexcitorb)
+			ileft=orbleft(iexcitorb)
+			iright=orbright(iexcitorb)
+			do jexcitorb=1,excnorb
+				if (skippair(jexcitorb)) cycle
+				jdir=excdir(jexcitorb)
+				if (idir/=jdir) cycle
+				jleft=orbleft(jexcitorb)
+				jright=orbright(jexcitorb)
+				if (ileft==jleft) then !Calculate virtual MO coupling |l><m| contribution to P
+					if (iright==jright) cycle
+                    if (ileft<=nbasis) then !Transition between alpha MOs
+						tmpmat=exccoeff(iexcitorb)*exccoeff(jexcitorb)*matmul_blas(CObasa(:,iright:iright),CObasa(:,jright:jright),nbasis,nbasis,0,1)
+						if (idir==1) then !->
+							Palpha=Palpha+tmpmat
+						else !<-
+							Palpha=Palpha-tmpmat
+						end if
+                    else !Transition between beta MOs
+						tmpmat=exccoeff(iexcitorb)*exccoeff(jexcitorb)*matmul_blas(CObasb(:,iright-nbasis:iright-nbasis),CObasb(:,jright-nbasis:jright-nbasis),nbasis,nbasis,0,1)
+						if (idir==1) then !->
+							Pbeta=Pbeta+tmpmat
+						else !<-
+							Pbeta=Pbeta-tmpmat
+						end if
+                    end if
+				else if (iright==jright) then !Calculate occupied MO coupling |i><j| contribution to P
+                    if (iright<=nbasis) then !Transition between alpha MOs
+						tmpmat=exccoeff(iexcitorb)*exccoeff(jexcitorb)*matmul_blas(CObasa(:,ileft:ileft),CObasa(:,jleft:jleft),nbasis,nbasis,0,1)
+                        if (idir==1) then !->
+							Palpha=Palpha-tmpmat
+						else !<-
+							Palpha=Palpha+tmpmat
+						end if
+                    else !Transition between beta MOs
+						tmpmat=exccoeff(iexcitorb)*exccoeff(jexcitorb)*matmul_blas(CObasb(:,ileft-nbasis:ileft-nbasis),CObasb(:,jleft-nbasis:jleft-nbasis),nbasis,nbasis,0,1)
+                        if (idir==1) then !->
+							Pbeta=Pbeta-tmpmat
+						else !<-
+							Pbeta=Pbeta+tmpmat
+						end if
+                    end if
+				end if
+			end do
 		end do
+        
+        write(*,*) "Generating natural orbitals of alpha and beta spins..."
 		call gennatorb(2,0) !Generate alpha and beta NOs
 	end if
+    
+	deallocate(skippair)
 
 	write(c200tmp,"('NO_',i4.4,'.mwfn')") istate
 	write(*,"(' Exporting ',a,'...')") trim(c200tmp) 
 	call outmwfn(c200tmp,10,0)
-	write(*,"(a,i4,a)") " The natural orbitals of excited state",istate," have been exported to "//trim(c200tmp)//" in current folder"
+	write(*,"(a,i4,a)") " Natural orbitals of excited state",istate," have been exported to "//trim(c200tmp)//" in current folder"
 	
-    !Restore to original status
+    !Restore to original status and regenerate ground state density matrix
 	MOocc=MOocc_org
     MOene=MOene_org
     CObasa=CObasa_org
     if (allocated(CObasb)) CObasb=CObasb_org
+    wfntype=iwfntype_org
 	call genP
 end do
+
 deallocate(CObasa_org)
 if (allocated(CObasb_org)) deallocate(CObasb_org)
-write(*,"(/,a)") " Done! .mwfn files containing natural orbitals of all selected excited states have been successfully generated!"
+write(*,"(/,a)") " Done! .mwfn files containing natural orbitals of selected excited state(s) have been successfully generated!"
 end subroutine
 
 
@@ -5171,7 +5679,7 @@ use defvar
 use excitinfo
 use util
 implicit real*8 (a-h,o-z)
-character c2tmp*2,c80tmp*80,outstr*80,outfilename*200,selectyn
+character c2tmp*2,c80tmp*80,c200tmp*200,outstr*80,outfilename*200,selectyn
 integer,allocatable :: idxorder(:)
 real*8,allocatable :: exccoefftmp(:)
 
@@ -5215,6 +5723,14 @@ else if (iprog==5) then !CP2K
     call readaftersign_int(c80tmp,':',nbasis)
     iopsh=0
     call loclabel(10,"U-TDDFPT",iopsh)
+else if (iprog==7) then !BDF. This part of code was contributed by Cong Wang, 2022-Dec-1
+    iopsh=0
+    call loclabel(10,"Beta MOs",iopsh)
+    if (iopsh==0) wfntype=0
+    if (iopsh==1) wfntype=1
+    call loclabel(10,"Basis Functions =")
+    read(10,"(a)") c200tmp
+    read(c200tmp(index(c200tmp,"=")+1:len_trim(c200tmp)),*) nbasis
 else
     write(*,*) "Error: Unable to determine the content of this file"
     write(*,*) "Press ENTER button to return"
@@ -5310,6 +5826,14 @@ else if (iprog==5) then !CP2K
 		read(10,"(a)") c80tmp
 		call readaftersign_int(c80tmp,':',iHOMO_B)
     end if
+else if (iprog==7) then !BDF. This part of code was contributed by Cong Wang, 2022-Dec-1
+    open(10,file=filename,status="old")
+    call loclabel(10,"alpha electrons :")
+    read(10,"(a)") c200tmp
+    read(c200tmp(index(c200tmp,":")+1:len_trim(c200tmp)),*) iHOMO_A
+    read(10,"(a)") c200tmp
+    read(c200tmp(index(c200tmp,":")+1:len_trim(c200tmp)),*) iHOMO_B
+    close(10)
 end if
 
 iLUMO_A=iHOMO_A+1
@@ -5601,7 +6125,7 @@ if (imethod==2.and.iautointgrid==1) then
 end if
 
 !Generate CTspectrum.txt
-inquire(directory="CT_multiple",exist=alive)
+call inquire_dir("CT_multiple",alive)
 if (alive) then
 	if (isys==1) then !delete old wfntmp folder
 		write(*,*) "Running: rmdir /S /Q CT_multiple"
@@ -5614,25 +6138,30 @@ end if
 call system("mkdir CT_multiple")
 if (isys==1) tmpdir="CT_multiple\"
 if (isys==2) tmpdir="CT_multiple/"
+
+!Generate files included in CTspectrum\CTspectrum.txt
 open(12,file=tmpdir//"CT_multiple.txt",status="replace")
-write(12,"(a)") tmpdir//"total_spectrum.txt UV-Vis"
+write(12,"(a)") '"'//tmpdir//"total_spectrum.txt"" UV-Vis"
 do ifrag=1,nfrag
-    write(12,"(a,i1,a,i1)") tmpdir//"Redis_",ifrag,".txt Redistribution ",ifrag
+    write(12,"(a,i1,a,i1)") '"'//tmpdir//"Redis_",ifrag,".txt"" Redistribution ",ifrag
 end do
 do ifrag=1,nfrag
     do jfrag=ifrag+1,nfrag
-        write(12,"(a,i1,a,i1,a,i1,a,i1)") tmpdir//"ET_",ifrag,"to",jfrag,".txt Electron transfer ",ifrag,"->",jfrag
-        write(12,"(a,i1,a,i1,a,i1,a,i1)") tmpdir//"ET_",jfrag,"to",ifrag,".txt Electron transfer ",ifrag,"<-",jfrag
+        write(12,"(a,i1,a,i1,a,i1,a,i1)") '"'//tmpdir//"ET_",ifrag,"to",jfrag,".txt"" Electron transfer ",ifrag,"->",jfrag
+        write(12,"(a,i1,a,i1,a,i1,a,i1)") '"'//tmpdir//"ET_",jfrag,"to",ifrag,".txt"" Electron transfer ",ifrag,"<-",jfrag
     end do
 end do
 close(12)
-!Generate files included in CTspectrum.txt
+
+!Generate data in CTspectrum\total_spectrum.txt
 open(12,file=tmpdir//"total_spectrum.txt",status="replace")
 write(12,*) nstates,1
 do istate=1,nstates
     write(12,"(f10.5,f10.5)") allexcene(istate),allexcf(istate)
 end do
 close(12)
+
+!Generate data in CTspectrum\Redis_xxx.txt
 do ifrag=1,nfrag
     write(c80tmp,"(a,i1,a)") tmpdir//"Redis_",ifrag,".txt"
     open(12,file=trim(c80tmp),status="replace")
@@ -5642,6 +6171,8 @@ do ifrag=1,nfrag
     end do
     close(12)
 end do
+
+!Generate data in CTspectrum\ET_xxx.txt
 do ifrag=1,nfrag
     do jfrag=ifrag+1,nfrag
         write(c80tmp,"(a,i1,a,i1,a)") tmpdir//"ET_",ifrag,"to",jfrag,".txt"
@@ -5678,7 +6209,7 @@ end subroutine
 subroutine calc_holeele(x,y,z,skipthres,hole,ele)
 use defvar
 use excitinfo
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 x,y,z,skipthres,hole,ele,orbval(nmo)
 

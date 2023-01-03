@@ -1,5 +1,5 @@
 module util
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 
 interface sort
 	module procedure sortr8
@@ -11,11 +11,11 @@ interface invarr
 end interface
 !!------------------- Root and weight of Hermite polynomial
 real*8 Rhm(10,10),Whm(10,10)
-data Rhm(1,1) /  0.0D0                      /
+data Rhm(1,1) /  0D0                      /
 data Rhm(2,1) / -0.70710678118654752440D+00 /
 data Rhm(2,2) /  0.70710678118654752440D+00 /
 data Rhm(3,1) / -1.22474487139158904910D+00 /
-data Rhm(3,2) /  0.0D0                      /
+data Rhm(3,2) /  0D0                      /
 data Rhm(3,3) /  1.22474487139158904910D+00 /
 data Rhm(4,1) / -1.65068012388578455588D+00 /
 data Rhm(4,2) / -0.52464762327529031788D+00 /
@@ -23,7 +23,7 @@ data Rhm(4,3) /  0.52464762327529031788D+00 /
 data Rhm(4,4) /  1.65068012388578455588D+00 /
 data Rhm(5,1) / -2.02018287045608563293D+00 /
 data Rhm(5,2) / -0.95857246461381850711D+00 /
-data Rhm(5,3) /  0.0D0                      /
+data Rhm(5,3) /  0D0                      /
 data Rhm(5,4) /  0.95857246461381850711D+00 /
 data Rhm(5,5) /  2.02018287045608563293D+00 /
 data Rhm(6,1) / -2.35060497367449222283D+00 /
@@ -35,7 +35,7 @@ data Rhm(6,6) /  2.35060497367449222283D+00 /
 data Rhm(7,1) / -2.65196135683523349245D+00 /
 data Rhm(7,2) / -1.67355162876747144503D+00 /
 data Rhm(7,3) / -0.81628788285896466304D+00 /
-data Rhm(7,4) /  0.0D0                      /
+data Rhm(7,4) /  0D0                      /
 data Rhm(7,5) /  0.81628788285896466304D+00 /
 data Rhm(7,6) /  1.67355162876747144503D+00 /
 data Rhm(7,7) /  2.65196135683523349245D+00 /
@@ -51,7 +51,7 @@ data Rhm(9,1) / -3.19099320178152760723D+00 /
 data Rhm(9,2) / -2.26658058453184311180D+00 /
 data Rhm(9,3) / -1.46855328921666793167D+00 /
 data Rhm(9,4) / -0.72355101875283757332D+00 /
-data Rhm(9,5) /  0.0D0                      /
+data Rhm(9,5) /  0D0                      /
 data Rhm(9,6) /  0.72355101875283757332D+00 /
 data Rhm(9,7) /  1.46855328921666793167D+00 /
 data Rhm(9,8) /  2.26658058453184311180D+00 /
@@ -226,6 +226,7 @@ end function
 
 
 !!--------- Input two points, return their distance in Bohr
+!To calculate distance between two atoms, "atomdist" should be used instead
 real*8 function xyz2dist(x1,y1,z1,x2,y2,z2)
 real*8 x1,y1,z1,x2,y2,z2
 xyz2dist=dsqrt((x1-x2)**2+(y1-y2)**2+(z1-z2)**2)
@@ -233,6 +234,7 @@ end function
 
 
 !!--------- Input three points, return angle between 1-2 and 2-3 (in degree)
+!To calculate angle between three atoms, "atomang" should be used instead
 real*8 function xyz2angle(x1,y1,z1,x2,y2,z2,x3,y3,z3)
 real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3
 real*8 :: pi=3.141592653589793D0
@@ -252,33 +254,9 @@ xyz2angle=acos(tmp)/pi*180
 end function
 
 
-!!--------- Input four points, return dihedral angle (in degree)
-!Note that the value is always positive and within [0,180]
-real*8 function xyz2dih(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4)
-real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,phi,tmp
-real*8 :: pi=3.141592653589793D0
-v12x=x1-x2
-v12y=y1-y2
-v12z=z1-z2
-v23x=x2-x3
-v23y=y2-y3
-v23z=z2-z3
-v34x=x3-x4
-v34y=y3-y4
-v34z=z3-z4
-call vecprod(v12x,v12y,v12z,v23x,v23y,v23z,p1x,p1y,p1z)
-call vecprod(v23x,v23y,v23z,v34x,v34y,v34z,p2x,p2y,p2z)
-!a·b=|a||b|cosθ, so θ=acos[a·b/(|a||b|)]
-tmp=(p1x*p2x+p1y*p2y+p1z*p2z)/(sqrt(p1x*p1x+p1y*p1y+p1z*p1z)*sqrt(p2x*p2x+p2y*p2y+p2z*p2z))
-if (tmp>1D0) tmp=1D0 !acos(x) should <1 and >-1, the x may marginally violate this condition due to numerical reason, making acos return NaN, so fix it
-if (tmp<-1D0) tmp=-1D0 
-phi=acos(tmp)
-xyz2dih=phi/pi*180
-end function
-
-
-!!--------- Input four points, return dihedral angle (in degree)
-!The value is in line with internal coordinate dihedral sign rule
+!!--------- Input four points, return dihedral (in degree)
+!The value is in line with internal coordinate dihedral sign rule, namely [-180,180]
+!To calculate dihedral between four atoms, "atomdih" should be used instead
 real*8 function xyz2dih_sign(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4)
 real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,phi,tmp
 real*8 :: pi=3.141592653589793D0
@@ -305,33 +283,81 @@ end function
 
 
 
-!!-------- Return distance between two atoms in Bohr
-real*8 function atomdist(iatm,jatm)
+!!-------- Return distance between two atoms in Bohr, consider PBC if iallowPBC=1
+real*8 function atomdist(iatm,jatm,iallowPBC)
 use defvar
-integer iatm,jatm
-atomdist=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)
+integer iatm,jatm,iallowPBC
+real*8 xyzA(3),xyzB(3),xyzB2(3)
+if (ifPBC==0.or.iallowPBC==0) then
+    atomdist=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)
+else !Consider PBC, finding nearest jatm that connected to iatm
+    xyzA(1)=a(iatm)%x
+    xyzA(2)=a(iatm)%y
+    xyzA(3)=a(iatm)%z
+    xyzB(1)=a(jatm)%x
+    xyzB(2)=a(jatm)%y
+    xyzB(3)=a(jatm)%z
+    call nearest_mirror(xyzA,xyzB,xyzB2)
+    atomdist=dsqrt(sum((xyzA-xyzB2)**2))
+end if
 end function
 !!-------- Return distance between two atoms in Angstrom
-real*8 function atomdistA(iatm,jatm)
+real*8 function atomdistA(iatm,jatm,iallowPBC)
 use defvar
-integer iatm,jatm
-atomdistA=dsqrt((a(iatm)%x-a(jatm)%x)**2+(a(iatm)%y-a(jatm)%y)**2+(a(iatm)%z-a(jatm)%z)**2)*b2a
+integer iatm,jatm,iallowPBC
+atomdistA=atomdist(iatm,jatm,iallowPBC)*b2a
 end function
 
 
 !!-------- Return angle (Degree) between three atoms
-real*8 function atomang(iatm,jatm,katm)
+real*8 function atomang(iatm,jatm,katm,iallowPBC)
 use defvar
-integer iatm,jatm,katm
-atomang=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z)
+integer iatm,jatm,katm,iallowPBC
+real*8 xyzA(3),xyzB(3),xyzC(3),xyzA2(3),xyzC2(3)
+if (ifPBC==0.or.iallowPBC==0) then
+    atomang=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z)
+else !Consider PBC, finding nearest iatm and katm that connected to jatm
+    xyzA(1)=a(iatm)%x
+    xyzA(2)=a(iatm)%y
+    xyzA(3)=a(iatm)%z
+    xyzB(1)=a(jatm)%x
+    xyzB(2)=a(jatm)%y
+    xyzB(3)=a(jatm)%z
+    xyzC(1)=a(katm)%x
+    xyzC(2)=a(katm)%y
+    xyzC(3)=a(katm)%z
+    call nearest_mirror(xyzB,xyzA,xyzA2)
+    call nearest_mirror(xyzB,xyzC,xyzC2)
+    atomang=xyz2angle(xyzA2(1),xyzA2(2),xyzA2(3),xyzB(1),xyzB(2),xyzB(3),xyzC2(1),xyzC2(2),xyzC2(3))
+end if
 end function
 
 
 !!-------- Return dihedral between four atoms
-real*8 function atomdih(iatm,jatm,katm,latm)
+real*8 function atomdih(iatm,jatm,katm,latm,iallowPBC)
 use defvar
-integer iatm,jatm,katm,latm
-atomdih=xyz2dih_sign(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z,a(latm)%x,a(latm)%y,a(latm)%z)
+integer iatm,jatm,katm,latm,iallowPBC
+real*8 xyzA(3),xyzB(3),xyzC(3),xyzD(3),xyzA2(3),xyzC2(3),xyzD2(3)
+if (ifPBC==0.or.iallowPBC==0) then
+	atomdih=xyz2dih_sign(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(jatm)%x,a(jatm)%y,a(jatm)%z,a(katm)%x,a(katm)%y,a(katm)%z,a(latm)%x,a(latm)%y,a(latm)%z)
+else !Consider PBC, finding nearest iatm, katm and latm that connected to jatm
+    xyzA(1)=a(iatm)%x
+    xyzA(2)=a(iatm)%y
+    xyzA(3)=a(iatm)%z
+    xyzB(1)=a(jatm)%x
+    xyzB(2)=a(jatm)%y
+    xyzB(3)=a(jatm)%z
+    xyzC(1)=a(katm)%x
+    xyzC(2)=a(katm)%y
+    xyzC(3)=a(katm)%z
+    xyzD(1)=a(latm)%x
+    xyzD(2)=a(latm)%y
+    xyzD(3)=a(latm)%z
+    call nearest_mirror(xyzB,xyzA,xyzA2)
+    call nearest_mirror(xyzB,xyzC,xyzC2)
+    call nearest_mirror(xyzB,xyzD,xyzD2)
+    atomdih=xyz2dih_sign(xyzA2(1),xyzA2(2),xyzA2(3),xyzB(1),xyzB(2),xyzB(3),xyzC2(1),xyzC2(2),xyzC2(3),xyzD2(1),xyzD2(2),xyzD2(3))
+end if
 end function
 
 
@@ -388,9 +414,9 @@ implicit real*8 (a-h,o-z)
 real*8 vec1(3),vec2(3),mat(3,3)
 real*8 vecv(3),vecu(3),vecc(3),vecx(3)
 
-dotp=dsqrt(sum(vec1*vec2))
+test=abs(sum(vec1*vec2))
 
-if (dotp<0.99D0) then !The two inputted vectors are not nearly orthogonal with each other
+if (test<0.99D0) then !The two inputted vectors are not nearly orthogonal with each other
 	call vecprod(vec1(1),vec1(2),vec1(3),vec2(1),vec2(2),vec2(3),vecv(1),vecv(2),vecv(3))
 	vecu=vecv/dsqrt(sum(vecv**2))
 	valc=sum(vec1*vec2)
@@ -526,6 +552,22 @@ rmsfit=dsqrt(accum/natm)
 end subroutine
 
 
+!!--------- Input an angle in radian, return degree
+real*8 function rad2ang(rad)
+use defvar
+real*8 rad
+rad2ang=rad/pi*180D0
+end function
+
+
+!!--------- Input an angle in degree, return radian
+real*8 function ang2rad(ang)
+use defvar
+real*8 ang
+ang2rad=ang/180D0*pi
+end function
+
+
 
 
 !===============================================================!
@@ -596,6 +638,15 @@ end subroutine
 !inmode =abs: sort by absolute value, =val: sort by value. Default is by value
 !If "list" is presented, also exchange the index in the list during sorting. list should have same size as array
 !If want to sort from big to small, then you should use invarrr8 or invarri4 to invert the array
+!BTW: To sort in descending order, one modify the code as
+!do i=1,N-1
+!	do j=1,N-i
+!		if (array(j)<array(j+1)) then
+!		...
+!       end if
+!   end do
+!end do
+!
 !Real*8 version
 subroutine sortr8(array,inmode,list,list2)
 real*8 array(:)
@@ -611,7 +662,7 @@ if (present(list)) ilist=1
 ilist2=0
 if (present(list2)) ilist2=1
 if (mode==1) then
-	do i=1,N
+	do i=1,N-1
 		do j=i+1,N
 			if (array(i)>array(j)) then
 				temp=array(i)
@@ -631,7 +682,7 @@ if (mode==1) then
 		end do
 	end do
 else if (mode==2) then
-	do i=1,N
+	do i=1,N-1
 		do j=i+1,N
 			if (abs(array(i))>abs(array(j))) then
 				temp=array(i)
@@ -667,7 +718,7 @@ if (present(list)) ilist=1
 ilist2=0
 if (present(list2)) ilist2=1
 if (mode==1) then
-	do i=1,N
+	do i=1,N-1
 		do j=i+1,N
 			if (array(i)>array(j)) then
 				itemp=array(i)
@@ -687,7 +738,7 @@ if (mode==1) then
 		end do
 	end do
 else if (mode==2) then
-	do i=1,N
+	do i=1,N-1
 		do j=i+1,N
 			if (abs(array(i))>abs(array(j))) then
 				itemp=array(i)
@@ -711,13 +762,25 @@ end subroutine
 
 
 !-------- Sort an index array, namely array(1:nslot,1:nmember). For example, array(:,1)=1,3,9  array(:,2)=2,6,4  etc.
-!Sort from left to right (1->nslot); for each slot, arrays are reordered so that the index of this slot is from small to large 
+!Sort from left to right (slot 1 to slot "nslot"); when processing slot i, arrays are reordered so that the index of this slot is from small to large, but order of slot i-1 remains unchanged
+!For example, original list is
+!7,5,6
+!3,8,2
+!4,6,9
+!7,5,1
+!4,2,3
+!After sorting the list will be
+!3,8,2
+!4,2,3
+!4,6,9
+!7,5,1
+!7,5,6
 subroutine sortidxlist(array,nslot,nmember)
 integer nslot,nmember
 integer array(nslot,nmember),arrtmp(nslot)
 do islot=1,nslot
-	do imember=1,nmember
-cycjmem:do jmember=imember+1,nmember
+	do imember=1,nmember-1
+cycjmem:do jmember=imember+1,nmember-1
 			if (array(islot,imember)>array(islot,jmember)) then
                 !If changing order of islot will reverse order of islot-1, then do not change order
                 if (islot>=2) then
@@ -1197,6 +1260,15 @@ end do
 end subroutine
 
 
+!!------- Remove the first and the last " or ' symbol, because directly dragging file into the window will result in " or ' symbol, which is unrecognized
+subroutine remove_quotemark(str)
+character(len=*) str
+ltmp=len_trim(str)
+if (str(1:1)=='"'.or.str(1:1)=="'") str(1:1)=" "
+if (str(ltmp:ltmp)=='"'.or.str(ltmp:ltmp)=="'") str(ltmp:ltmp)=" "
+str=adjustl(str)
+end subroutine
+
 
 
 
@@ -1308,12 +1380,12 @@ if (present(inmaxcyc)) maxcyc=inmaxcyc
 if (present(inthres)) thres=inthres
 S=0
 do i=1,n
-	S(i,i)=1.0D0
+	S(i,i)=1D0
 end do
 do k=1,maxcyc+1
 	R=0
 	do i=1,n
-		R(i,i)=1.0D0
+		R(i,i)=1D0
 	end do
 	i=1
 	j=2
@@ -1327,7 +1399,7 @@ do k=1,maxcyc+1
 	end do
 	if (abs(mat(i,j))<thres) exit
 	if (k==maxcyc+1) write(*,*) "Note: Matrix diagonalization exceed max cycle before convergence"
-	phi=atan(2*mat(i,j)/(mat(i,i)-mat(j,j)))/2.0D0
+	phi=atan(2*mat(i,j)/(mat(i,i)-mat(j,j)))/2D0
 	R(i,i)=cos(phi)
 	R(j,j)=R(i,i)
 	R(i,j)=-sin(phi)
@@ -1520,7 +1592,7 @@ integer, allocatable, dimension(:)         :: INDX
 real*8, allocatable, dimension(:)  :: TEMP
 integer        :: I, J, JP1, K, KJ, KM1, KP1, L, LJ, MAXB, NJ, NMJ, NMK, NM1, ONEJ
 real*8 :: D, DSUM, P, T
-real*8, parameter :: ZERO = 0.0D0, ONE = 1.0D0
+real*8, parameter :: ZERO = 0D0, ONE = 1D0
 if (N < 1 .or. KA < N) then
   IERR = -1
   return
@@ -1673,7 +1745,7 @@ if (MO == 0) deallocate( INDX, TEMP )
 end subroutine
 
 
-!------- Calculate how much is a matrix deviates from identity matrix
+!------- Calculate how much is a square matrix deviates from identity matrix
 !error=∑[i,j]abs( abs(mat(i,j))-δ(i,j) )
 real*8 function identmaterr(mat)
 implicit real*8 (a-h,o-z)
@@ -1690,6 +1762,39 @@ do i=1,nsize
 	end do
 end do
 end function
+
+
+!------- Return maximal deviation of given square matrix from identity matrix
+!errdiag is maximum absolute deviation of diagonal elements from 1, idiag is its index
+!errndiag is maximum absolute deviation of non-diagonal elements from 0, indiag,jndiag are its row and column indices
+subroutine identmatmaxerr(mat,errdiag,idiag,errndiag,indiag,jndiag)
+implicit real*8 (a-h,o-z)
+real*8 mat(:,:)
+nsize=size(mat,1)
+errdiag=0D0
+idiag=1
+errndiag=0D0
+indiag=1
+jndiag=1
+do i=1,nsize
+	do j=1,nsize
+		if (i==j) then
+			absdev=abs(mat(i,j)-1)
+            if (absdev>errdiag) then
+				idiag=i
+                errdiag=absdev
+            end if
+		else
+			absdev=abs(mat(i,j))
+            if (absdev>errndiag) then
+				indiag=i
+				jndiag=j
+                errndiag=absdev
+            end if
+		end if
+	end do
+end do
+end subroutine
 
 
 !----- Convert a square matrix to an array. imode=1/2/3: Full matrix; Lower half matrix; Upper half matrix
@@ -1787,16 +1892,31 @@ end subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !===============================================================!
 
-!!---------- Get current time in second, the difference between two times of invoking this routine is consumed wall clock time
+
+!!------- Returns a unique second value. The difference between two times of invoking this routine is the consumed wall clock time
 subroutine walltime(inow)
-character nowdate*20,nowtime*20
-integer inow
+character nowdate*80,nowtime*10
+integer :: inow,i1,i2,yyyy,mm,dd
+
 call date_and_time(nowdate,nowtime)
+!i1 converts yyyymmdd to a unique integer of second resolution
+!see https://community.intel.com/t5/Intel-Fortran-Compiler/Convert-some-date-to-seconds-since-1970/m-p/805010
+read(nowdate(1:4),*) yyyy
+read(nowdate(5:6),*) mm
+read(nowdate(7:8),*) dd
+i1=dd-32075+1461*(yyyy+4800+(mm-14)/12)/4 + &
+367*(mm-2-((mm-14)/12)*12)/12- &
+3*((yyyy + 4900 + (mm - 14)/12)/100)/4
+
+!i2 records seconds passed today
 read(nowtime(1:2),*) inowhour
 read(nowtime(3:4),*) inowminute
 read(nowtime(5:6),*) inowsecond
-inow=inowhour*3600+inowminute*60+inowsecond
+i2=inowhour*3600+inowminute*60+inowsecond
+
+inow=i1+i2
 end subroutine
+
 
 
 !!----- Find the position of specific value in cube
@@ -1829,7 +1949,7 @@ end subroutine
 !inncol: seems controls spacing between number labels of each frame
 !formindex: Format of index. Default is "i8,6x". Note that if you manually set inncol, you should also set this to broaden or narrow index spacing
 subroutine showmatgau(mat,label,insemi,form,fileid,usern1,usern2,inncol,formindex)
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 real*8 :: mat(:,:)
 character(*),optional :: label,form,formindex
 integer,optional :: insemi,fileid,usern1,usern2,inncol
@@ -1839,22 +1959,28 @@ ides=6
 ncol=5
 n1=size(mat,1)
 n2=size(mat,2)
-if (present(usern1).and.usern1/=-1) n1=usern1
-if (present(usern2).and.usern1/=-1) n2=usern2
+if (present(usern1)) then
+	if (usern1/=-1) n1=usern1
+end if
+if (present(usern2)) then
+	if (usern2/=-1) n2=usern2
+end if
 if (present(insemi)) semi=insemi
 if (present(fileid)) ides=fileid
 if (present(inncol)) ncol=inncol
-if (present(label).and.label/='') then
-	nspc=int((79-len(label))/2D0)
-    write(ides,"(a)",advance='no') " "
-	do i=1,nspc-2
-		write(ides,"(a)",advance='no') '*'
-	end do
-	write(ides,"(a)",advance='no') ' '//label//' '
-	do i=1,nspc-2
-		write(ides,"(a)",advance='no') '*'
-	end do
-    write(ides,*)
+if (present(label)) then
+	if (label/='') then
+		nspc=int((79-len(label))/2D0)
+		write(ides,"(a)",advance='no') " "
+		do i=1,nspc-2
+			write(ides,"(a)",advance='no') '*'
+		end do
+		write(ides,"(a)",advance='no') ' '//label//' '
+		do i=1,nspc-2
+			write(ides,"(a)",advance='no') '*'
+		end do
+		write(ides,*)
+    end if
 end if
 nf=ceiling(n2/float(ncol))
 do i=1,nf !How many frame
@@ -1912,7 +2038,7 @@ subroutine readmatgau(fileid,mat,insemi,inform,inskipcol,inncol,innspace,iostat)
 !       2  0.236704D+00  0.100000D+01
 !       ...
 !    Nbasis ...
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 real*8 :: mat(:,:)
 character(len=*),optional :: inform
 integer,optional :: inskipcol,inncol,insemi,innspace,iostat
@@ -2014,14 +2140,18 @@ end function
 subroutine loclabel(fileid,label,ifound,irewind,maxline)
 integer fileid,ierror
 integer,optional :: ifound,irewind,maxline
-character c200*200
-CHARACTER(LEN=*) label
-if ((.not.present(irewind)).or.(present(irewind).and.irewind==1)) rewind(fileid)
+character c200tmp*200
+character(len=*) label
+if (.not.present(irewind)) then
+	rewind(fileid)
+else
+	if (irewind==1) rewind(fileid)
+end if
 if (.not.present(maxline)) then
 	do while(.true.)
-		read(fileid,"(a)",iostat=ierror) c200
+		read(fileid,"(a)",iostat=ierror) c200tmp
 		if (ierror/=0) exit
-		if (index(c200,label)/=0) then
+		if (index(c200tmp,label)/=0) then
 			backspace(fileid)
 			if (present(ifound)) ifound=1 !Found result
 			return
@@ -2029,9 +2159,9 @@ if (.not.present(maxline)) then
 	end do
 else
 	do iline=1,maxline
-		read(fileid,"(a)",iostat=ierror) c200
+		read(fileid,"(a)",iostat=ierror) c200tmp
 		if (ierror/=0) exit
-		if (index(c200,label)/=0) then
+		if (index(c200tmp,label)/=0) then
 			backspace(fileid)
 			if (present(ifound)) ifound=1 !Found result
 			return
@@ -2157,7 +2287,7 @@ end subroutine
 
 !--------- Determine the present file is output file of which code
 !The file must has been opended as "ifileid"
-!iprog: 1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 5=CP2K, 0=Undetermined
+!iprog: 1=Outputted by Gaussian, 2=Outputted by ORCA, 3=Outputted by GAMESS-US, 4=Outputted by Firefly, 5=CP2K, 6=xTB, 7=BDF, 0=Undetermined
 !info (optional): 1 means output the type of this file
 subroutine outputprog(ifileid,iprog,info)
 integer ifileid,iprog
@@ -2193,6 +2323,18 @@ if (ifound==1) then
     if (present(info)) write(*,*) "Note: This file is recognized as a CP2K output file"
     return
 end if
+call loclabel(10,"x T B",ifound,maxline=500)
+if (ifound==1) then
+    iprog=6
+    if (present(info)) write(*,*) "Note: This file is recognized as a xTB output file"
+    return
+end if
+call loclabel(10,"BDF",ifound,maxline=500)
+if (ifound==1) then
+    iprog=7
+    if (present(info)) write(*,*) "Note: This file is recognized as a BDF output file"
+    return
+end if
 iprog=0
 if (present(info)) write(*,*) "Note: This file is treated as a plain text file"
 end subroutine
@@ -2203,7 +2345,7 @@ end subroutine
 subroutine inputprog(ifileid,iprog)
 integer ifileid,iprog
 iprog=0
-call loclabel(ifileid,"&FORCE_EVAL",ifound,maxline=500)
+call loclabel(ifileid,"&COORD ",ifound,maxline=500)
 if (ifound==1) then
     iprog=1
     return
@@ -2358,7 +2500,7 @@ end subroutine
 !!--------- Calculate switching function based on error function at x
 !Decrease from x= 0 to inf
 !xhalf is the position where switching function is 0.5
-!xscale is the scale factor of x value. When it is 0.25, the switching function will decay from 1 to 0 approximately within [xhalf-0.5,xhalf+0.5]
+!xscale is the scale factor of x value. The larger the smoother. When it is 0.25, the switching function will decay from 1 to 0 approximately within [xhalf-0.5,xhalf+0.5]
 !Approximate sharpness relationship: xscale=0.3 is basically iter=3 of Becke, xscale=0.5 is basically iter=1 of Becke
 real*8 function switch_erf(x,xhalf,xscale)
 implicit real*8 (a-h,o-z)
@@ -2367,7 +2509,7 @@ switch_erf=1-(0.5D0*erf((x-xhalf)/xscale)+0.5D0)
 end function
 
 !!--------- Calculate switching function based on Becke's function at x
-!Decrease from x= 0 to inf
+!Decrease from x= xhalf-1 (value=1) to x= xhalf+1 (value=0)
 !xhalf is the position where switching function is 0.5
 !nBeckeiter is number of iterations (>=1), the larger the sharper the variation. If =1, variation will be linear
 real*8 function switch_Becke(x,xhalf,nBeckeiter)
@@ -2381,18 +2523,17 @@ else if (tmps<-1) then
 	switch_Becke=1
 else
 	do iter=1,nBeckeiter
-		tmps=1.5D0*(tmps)-0.5D0*(tmps)**3
+		tmps=1.5D0*tmps-0.5D0*tmps**3
 	end do
 	switch_Becke=0.5D0*(1-tmps)
 end if
 end function
 
 !!--------- Calculate switching function based on (unnormalized) Gaussian function at x
-!Decrease from 1.0 to 0 as x goes from 0 to inf
+!Decrease from 1 to 0 as x goes from 0 to inf
 !gauFWHM is FWHM of Gaussian function
 real*8 function switch_Gauss(x,gauFWHM)
-implicit real*8 (a-h,o-z)
-real*8 x,gauFWHM             
+real*8 x,gauFWHM,parmc
 parmc=gauFWHM/2.35482D0 !Parameter c of Gaussian
 switch_Gauss=exp(-x**2/(2*parmc**2))
 end function
@@ -2430,7 +2571,7 @@ end module
 !r is the point to be studied, the resultant val, der1, der2 are its value, 1st and 2nd derivatives
 !itype=1: only calculate value    =2: also calculate 1st-derv.    =3: also calculate 2nd-derv.
 subroutine lagintpol(ptpos,ptval,npt,r,val,der1,der2,itype)
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer npt,itype
 real*8 ptpos(npt),ptval(npt),r,val,der1,der2
 if (r<=ptpos(1)) then !Out of boundary
@@ -2515,11 +2656,6 @@ subroutine showprog(inow,nall)
 integer inow,nall
 integer :: itmp=0
 character c80tmp*80
-!if (inow==nall) then
-!    write(*,*)
-!else if (inow>nall) then
-!    return
-!end if
 iprog=int(dfloat(inow)/nall*50)
 c80tmp=' Progress: ['
 c80tmp(13:62)=repeat('#',iprog)
@@ -2534,7 +2670,7 @@ if (itmp==4) then
 	c80tmp(79:79)='/'
 	itmp=0
 end if
-write(*,"(2a\)") trim(c80tmp),char(13)
+write(*,"(2a$)") trim(c80tmp),char(13)
 if (inow>=nall) write(*,*)
 end subroutine
 
@@ -2640,4 +2776,29 @@ do while(iarg<=narg)
     end if
     iarg=iarg+1
 end do
+end subroutine
+
+
+
+!!--------- Test if a directory is existed
+subroutine inquire_dir(dirname,diralive)
+use defvar
+character(len=*) dirname
+logical diralive
+if (isys==1) then !Windows
+	call execute_command_line("mkdir "//trim(dirname)//" >NUL 2>&1",exitstat=ierror)
+else
+	call execute_command_line("mkdir "//trim(dirname)//" &> /dev/null",exitstat=ierror)
+end if
+if (ierror==0) then !Directory can be created, so the directory doesn't exist before
+	diralive=.false.
+    !Delete temporarily created directory
+	if (isys==1) then !Windows
+		call execute_command_line("rmdir /Q /S "//trim(dirname)//" >NUL 2>&1")
+	else
+		call execute_command_line("rm -rf "//trim(dirname)//" &> /dev/null")
+    end if
+else
+	diralive=.true.
+end if
 end subroutine

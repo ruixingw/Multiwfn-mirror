@@ -1,6 +1,7 @@
 # A script to calculate RESP2 charges by invoking Gaussian and Multiwfn
 # Written by Tian Lu (sobereva@sina.com)
 # Last update: 2021-Dec-16
+# Examples:
 # RESP2(0.5) for singlet neutral molecule with water solvent: ./RESP2.sh maki.pdb
 # RESP2(0.5) for triplet neutral molecule with water solvent: ./RESP2.sh nozomi.xyz 0 3
 # RESP2(0.5) for singlet anion with ethanol solvent: ./RESP2.sh nico.mol -1 1 ethanol
@@ -106,7 +107,7 @@ echo Running formchk...
 formchk gau.chk > /dev/null
 
 echo Running Multiwfn...
-Multiwfn gau.fchk > /dev/null << EOF
+Multiwfn gau.fchk -ispecial 1 > /dev/null << EOF
 7
 18
 8
@@ -145,7 +146,7 @@ echo Running formchk...
 formchk gau.chk > /dev/null
 
 echo Running Multiwfn...
-Multiwfn gau.fchk > /dev/null << EOF
+Multiwfn gau.fchk -ispecial 1 > /dev/null << EOF
 7
 18
 8

@@ -2,6 +2,7 @@
 subroutine otherfunc_main
 use defvar
 implicit real*8 (a-h,o-z)
+character c80tmp*80
 do while(.true.)
 	write(*,*)
 	write(*,*) "              ============ Other functions (Part 1) ============ "
@@ -21,7 +22,6 @@ do while(.true.)
 	write(*,*) "13 Calculate HOMA and Bird aromaticity index"
 	write(*,*) "14 Calculate LOLIPOP (LOL Integrated Pi Over Plane)"
 	write(*,*) "15 Calculate intermolecular orbital overlap"
-    !write(*,*) "16 Calculate various quantities in conceptual density functional theory (CDFT)"
     write(*,*) "17 Generate Fock/KS matrix based on orbital energies and coefficients"
 	write(*,*) "18 Yoshizawa's electron transport route analysis"
 	write(*,*) "19 Generate new wavefunction by combining fragment wavefunctions"
@@ -30,8 +30,15 @@ do while(.true.)
 	write(*,*) "22 Detect pi orbitals, set occupation numbers and calculate pi composition"
 	write(*,*) "23 Fit function distribution to atomic value"
 	write(*,*) "24 Obtain NICS_ZZ value for non-planar or tilted system"
-	read(*,*) isel
+	read(*,*) c80tmp
 
+    if (c80tmp=="4a".or.c80tmp=="4b") then !For Chunying Rong's Fukui Shannon project
+		if (c80tmp=="4a") call info_rhodiff
+		if (c80tmp=="4b") call info_rhodiff_grid
+        cycle
+    else
+		read(c80tmp,*) isel
+    end if
 	if (isel==0) then
 		return
 	else if (isel==1) then
@@ -123,7 +130,7 @@ do iatm=1,ncenter
 	do jatm=iatm+1,ncenter
 		if (jatm==iatm) cycle
         if (ifPBC==0) then
-    			r=distmat(iatm,jatm)
+    			r=atomdist(iatm,jatm,0)
         else
             call nearest_atmdistxyz(iatm,jatm,r,atmx,atmy,atmz)
         end if
@@ -180,6 +187,7 @@ write(*,*) "9 Output current wavefunction as old Molekel input file (.mkl)"
 write(*,*) "31 Output current structure to .cml file"
 write(*,*) "32 Output current wavefunction as .mwfn file"
 if (ifPBC==3) write(*,*) "33 Output current structure and cell information as .cif file"
+if (ifPBC==3) write(*,*) "34 Output current structure and cell information as .gro file"
 if (allocated(cubmat)) then
     write(*,*) "35 Output current grid data to Gaussian-type .cub file"
     write(*,*) "36 Output current grid data to .vti file"
@@ -340,6 +348,8 @@ else if (isel==32) then
     call outmwfn_wrapper
 else if (isel==33) then
     call outcif_wrapper
+else if (isel==34) then
+    call outgro_wrapper
 else if (isel==35) then
     call outcube_wrapper
 else if (isel==36) then
@@ -351,7 +361,7 @@ end subroutine
 
 
 
-!! ----------- function vs. function
+!!----------- function vs. function
 !iwork=0: General case
 !iwork=1: NCI
 !iwork=2: NCI based on promolecular approximation
@@ -365,6 +375,7 @@ use GUI
 implicit real*8 (a-h,o-z)
 integer iwork
 real*8,allocatable :: scatterx(:),scattery(:),exchangedata(:,:,:)
+real*8,allocatable :: f2orgdata(:,:,:) !Backup original data of function 2, because it may be modified by users
 character c200tmp*200,f1name*20,f2name*20
 
 f1name="function 1"
@@ -407,7 +418,7 @@ else
 end if
 if (iselfunc1==15.or.iselfunc1==16) f1name="sign(lambda2)rho"
 if (iselfunc2==13.or.iselfunc2==14) f2name="RDG"
-if (iselfunc2==100.and.iuserfunc==99) f2name="IRI"
+if (iselfunc2==24.or.(iselfunc2==100.and.iuserfunc==99)) f2name="IRI"
 if (iselfunc2==100.and.iuserfunc==20) f2name="DORI"
 
 if (iselfunc1==0.and.iselfunc2==0) then !Directly load grid data
@@ -425,13 +436,13 @@ else !Calculate grid data
 	call setgrid(0,igridsel)
 	if (allocated(cubmat)) deallocate(cubmat)
 	if (allocated(cubmattmp)) deallocate(cubmattmp)
-	allocate(cubmat(nx,ny,nz),cubmattmp(nx,ny,nz),exchangedata(nx,ny,nz))
+	allocate(cubmat(nx,ny,nz),cubmattmp(nx,ny,nz))
 	call delvirorb(1)
 	if (iselfunc1==15.and.iselfunc2==13) then !Since RDG and sign(lambda2)rho is often combined to study NCI, a special code is provided for reducing cost
 		call savecubmat(1513,0,1)
 	else if (iselfunc1==16.and.iselfunc2==14) then 
 		call savecubmat(1614,0,1)
-	else if (iselfunc1==15.and.iselfunc2==100.and.iuserfunc==99) then !Combinedly calculate IRI and sign(lambda2)rho to reduce cost by double
+	else if (iselfunc1==15.and.(iselfunc2==24.or.(iselfunc2==100.and.iuserfunc==99))) then !Combinedly calculate IRI and sign(lambda2)rho to reduce cost by double
 		call savecubmat(1599,0,1)
 	else
 		write(*,"(a)") " Calculating "//trim(f2name)//"..."
@@ -471,26 +482,27 @@ ymax=maxval(scattery)
 if (iselfunc1==15.and.iselfunc2==13) then !sign(lambda2)*rho vs. RDG
 	xmin=-RDG_maxrho
 	xmax=RDG_maxrho
-	if (RDG_maxrho==0.0D0) xmin=-2.0D0
-	if (RDG_maxrho==0.0D0) xmax=2.0D0
-	ymin=0.0D0
-	ymax=2.0D0
+	if (RDG_maxrho==0D0) xmin=-2D0
+	if (RDG_maxrho==0D0) xmax=2D0
+	ymin=0D0
+	ymax=2D0
 else if (iselfunc1==16.and.iselfunc2==14) then !sign(lambda2)*rho vs. RDG based on promolecular density
 	xmin=-RDGprodens_maxrho
 	xmax=RDGprodens_maxrho
-	if (RDGprodens_maxrho==0.0D0) xmin=-2.0D0
-	if (RDGprodens_maxrho==0.0D0) xmax=2.0D0
-	ymin=0.0D0
-	ymax=2.0D0
-else if (iselfunc1==15.and.iselfunc2==100.and.iuserfunc==99) then !sign(lambda2)*rho vs. IRI
+	if (RDGprodens_maxrho==0D0) xmin=-2D0
+	if (RDGprodens_maxrho==0D0) xmax=2D0
+	ymin=0D0
+	ymax=2D0
+else if (iselfunc1==15.and.(iselfunc2==24.or.(iselfunc2==100.and.iuserfunc==99))) then !sign(lambda2)*rho vs. IRI
 	xmin=-0.4D0
 	xmax=0.1D0
-	ymin=0.0D0
+	ymin=0D0
 	ymax=2.5D0
 end if
 
 do while (.true.)
 	write(*,*)
+	if (allocated(f2orgdata)) write(*,"(a)") " -4 Restore original "//trim(f2name)//" grid data"
 	write(*,"(a)") " -3 Set "//trim(f2name)//" value where value of "//trim(f1name)//" is out of a certain range"
 	write(*,"(a)") " -2 Set "//trim(f2name)//" value where value of "//trim(f1name)//" is within a certain range"
 	write(*,*) "-1 Draw scatter graph"
@@ -504,7 +516,13 @@ do while (.true.)
 	write(*,"(a)") " 7 Show isosurface of "//trim(f2name)
 	write(*,"(a)") " 8 Output "//trim(f1name)//" to output.txt where "//trim(f2name)//" is within in certain range"
 	read(*,*) isel
-	if (isel==-2.or.isel==-3) then
+	if (isel==-4) then
+		cubmattmp=f2orgdata
+        deallocate(f2orgdata)
+        write(*,*) "Done! Original grid data has been restored"
+	else if (isel==-2.or.isel==-3) then
+		allocate(f2orgdata(nx,ny,nz)) !Back up grid data of function 2
+		f2orgdata=cubmattmp
 		write(*,"(a)") " Input lower and upper limit of the range of "//trim(f1name)//", e.g. 0.5,2.3"
 		read(*,*) rlower,rupper
 		write(*,"(a)") " Input the expected value of "//trim(f2name)//", e.g. 100"
@@ -516,15 +534,15 @@ do while (.true.)
 			where (scatterx>=rupper.or.scatterx<=rlower) scattery=rsetfunc2
 			where (cubmat>=rupper.or.cubmat<=rlower) cubmattmp=rsetfunc2
 		end if
-		write(*,*) "Done!"
+		write(*,*) "Done! Then if you want to restore original data, you can use option -4"
 	else if (isel==-1) then
 		write(*,*) "Drawing graph, please wait..."
 		if ((iselfunc1==15.and.iselfunc2==13).or.(iselfunc1==16.and.iselfunc2==14)) then
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","Reduced density gradient")
 		else if (iselfunc1==15.and.iselfunc2==100.and.iuserfunc==20) then
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","DORI")
-		else if (iselfunc1==15.and.iselfunc2==100.and.iuserfunc==99) then
-			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","IRI")
+		else if (iselfunc1==15.and.(iselfunc2==24.or.(iselfunc2==100.and.iuserfunc==99))) then
+			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","IRI (a.u.)")
 		else
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1)
 		end if
@@ -538,13 +556,13 @@ do while (.true.)
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","Reduced density gradient")
 		else if (iselfunc1==15.and.iselfunc2==100.and.iuserfunc==20) then
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","DORI")
-		else if (iselfunc1==15.and.iselfunc2==100.and.iuserfunc==99) then
-			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","IRI")
+		else if (iselfunc1==15.and.(iselfunc2==24.or.(iselfunc2==100.and.iuserfunc==99))) then
+			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","IRI (a.u.)")
 		else
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1)
 		end if
 		isavepic=0
-		write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""DISLIN"" prefix in current directory"
+		write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""dislin"" prefix in current directory"
 	else if (isel==2) then
 		write(*,*) "Outputting output.txt in current folder..."
 		open(10,file="output.txt",status="replace")
@@ -564,17 +582,15 @@ do while (.true.)
 		write(*,"(a)") " Obviously, if you will plot scatter map between "//trim(f1name)//" and "//trim(f2name)//" in external tools such as Origin, &
 		the last two columns should be taken as X and Y axes data"
 	else if (isel==3) then
+		write(*,*) "Exporting..."
 		open(10,file="func1.cub",status="replace")
 		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,"(a)") " The cube file of "//trim(f1name)//" has been exported to func1.cub in current folder"
-		exchangedata=cubmat
-		cubmat=cubmattmp !cubmat store function 2 value temporarily for outcube routine
 		open(10,file="func2.cub",status="replace")
-		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+		call outcube(cubmattmp,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
 		write(*,"(a)") " The cube file of "//trim(f2name)//" has been exported to func2.cub in current folder"
-		cubmat=exchangedata !recover function 1
 	else if (isel==4) then
 		write(*,*) "Input lower limit and upper limit of X axis e.g. 0,1.5"
 		read(*,*) xmin,xmax
@@ -586,12 +602,14 @@ do while (.true.)
 		read(*,*) sur_value
 		call drawisosurgui(1)
 	else if (isel==7) then
+        allocate(exchangedata(nx,ny,nz))
 		exchangedata=cubmat
 		cubmat=cubmattmp
 	 	write(*,*) "Input the value of isosurface, e.g. 0.5"
 		read(*,*) sur_value
 		call drawisosurgui(1)
 		cubmat=exchangedata
+        deallocate(exchangedata)
 	else if (isel==8) then
 		write(*,*) "Input range of "//trim(f2name)//", e.g. 0.0009, 0.0011"
 		read(*,*) rlowlim,uplim
@@ -644,21 +662,20 @@ if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
     open(10,file=filename,status="old")
     call loclabel(10,"NBasis=",ifound) !Number of basis functions
     read(10,*) c80tmp,nbasis
-    write(*,"('The number of basis functions in the dimer',i10)") nbasis
+    write(*,"(' The number of basis functions in the dimer',i10)") nbasis
     allocate(ovlpbasmat(nbasis,nbasis))
     write(*,*) "Loading overlap matrix of dimer, please wait..."
     call loclabel(10,"*** Overlap ***",ifound)
     call readmatgau(10,ovlpbasmat,1,"D14.6",7,5)
     close(10)
 
-    ! monofile1="x\transint\db-ttf1.out"
     write(*,*)
     write(*,*) "Input Gaussian output file of monomer 1, e.g. C:\monomer1.out"
     do while(.true.)
 	    read(*,"(a)") monofile1
 	    inquire(file=monofile1,exist=alive)
 	    if (alive) exit
-	    write(*,*) "File not found, input again"
+	    write(*,*) "Error: File cannot be found, input again"
     end do
     open(10,file=monofile1,status="old")
     call loclabel(10,"NBasis=",ifound)
@@ -686,14 +703,13 @@ if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
     end if
     close(10)
 
-    ! monofile2="x\transint\db-ttf2.out"
     write(*,*)
     write(*,*) "Input Gaussian output file of monomer 2, e.g. C:\monomer2.out"
     do while(.true.)
 	    read(*,"(a)") monofile2
 	    inquire(file=monofile2,exist=alive)
 	    if (alive) exit
-	    write(*,*) "File not found, input again"
+	    write(*,*) "Error: File cannot be found, input again"
     end do
     open(10,file=monofile2,status="old")
     call loclabel(10,"NBasis=",ifound)
@@ -724,12 +740,11 @@ if (ifiletype==0) then !Plain text file, assumed to be gaussian output file
     ! call showmatgau(cobas1,"111",0,"f14.8",6)
 
 else !Using wavefunction file of dimer and monomer to do the analysis
-    
     allocate(ovlpbasmat(nbasis,nbasis))
     ovlpbasmat=Sbas
     nmoall=nmo
     nbasisall=nbasis
-    call dealloall
+    call dealloall(0)
     
     write(*,*) "Input wavefunction of monomer 1, e.g. C:\monomer1.fch"
     do while(.true.)
@@ -759,7 +774,7 @@ else !Using wavefunction file of dimer and monomer to do the analysis
     allocate(elemidxcomb(ncenter_org))
     elemidxcomb(1:ncenter)=a%index
     ncenterfrag1=ncenter
-    call dealloall
+    call dealloall(0)
     
     write(*,*)
     write(*,*) "Input wavefunction of monomer 2, e.g. C:\monomer2.fch"
@@ -792,7 +807,7 @@ else !Using wavefunction file of dimer and monomer to do the analysis
         iopsh2=0
     end if
     elemidxcomb(ncenterfrag1+1:)=a%index
-    call dealloall
+    call dealloall(0)
     
     !Check correspondence of fragments and dimer
     do iatm=1,ncenter_org
@@ -1024,7 +1039,7 @@ else
 end if
 !Generate new.gjf
 open(10,file="new.gjf",status="replace")
-write(10,"(a,/,/,a,/,/,2i3)") adjustl(trim(ctitle))//" guess=cards","Please check this file to ensure validity",nchargetot,itotmulti
+write(10,"(a,/,/,a,/,/,2i3)") adjustl(trim(ctitle))//" guess=cards IOp(3/32=2)","Please check this file to ensure validity",nchargetot,itotmulti
 do i=1,ncenter
 	write(10,"(a,3f14.8)") ind2name(a(i)%index),a(i)%x,a(i)%y,a(i)%z
 end do
@@ -1518,12 +1533,12 @@ write(*,"(a)") " Do you want to load the biortho.fch now? If load, then you can 
 read(*,*) selectyn
 if (selectyn=='y'.or.selectyn=='Y') then
 	write(*,*) "Loading biortho.fch..."
-	call dealloall
+	call dealloall(0)
 	call readinfile("biortho.fch",1)
 	write(*,*) "Loading finished!"
 else
 	write(*,"(' Reloading ',a,'...')") trim(firstfilename)
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1)
 end if
 end subroutine
@@ -1588,14 +1603,18 @@ end subroutine
 !
 !The intval and funcval have 5 slots, the first one is used in normal case
 subroutine intfunc(ifunc)
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
-real*8 intval(5),intvalold(5),funcval(radpot*sphpot,5),beckeweigrid(radpot*sphpot)
+real*8 intval(5),intvalold(5),funcval(radpot*sphpot,5)
+real*8 weigrid(radpot*sphpot) !Atom weighting function at grids
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 real*8 ELF2,ELF2r2 !Used to evaluate spherically symmetric average ELF (or LOL)
 
+ioutvalue=1
+
 call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+if (outmedinfo==1) open(10,file="integrate.txt",status="replace")
 
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 call gen1cintgrid(gridatmorg,iradcut)
@@ -1617,7 +1636,7 @@ do iatm=1,ncenter
 		rnowy=gridatm(i)%y
 		rnowz=gridatm(i)%z
 		if (ispecial==0) then
-			funcval(i,1)=calcfuncall(ifunc,rnowx,rnowy,rnowz)
+			funcval(i,1)=calcfuncall(ifunc,rnowx,rnowy,rnowz) !This function automatically considers PBC
 		else if (ispecial==1) then
 			funcval(i,1)=infoentro(2,rnowx,rnowy,rnowz) !Shannon entropy density, see JCP,126,191107 for example
 			funcval(i,2)=Fisherinfo(1,rnowx,rnowy,rnowz) !Fisher information density, see JCP,126,191107 for example
@@ -1626,19 +1645,23 @@ do iatm=1,ncenter
 	end do
 	!$OMP end parallel do
 	
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+    !Generate atomic weighting function values at integration points
+    !call gen1catmwei(iatm,iradcut,gridatm,weigrid,1) !Hirshfeld weightnig function
+    call gen1cbeckewei(iatm,iradcut,gridatm,weigrid,covr_tianlu,3) !Becke weighting function
+    
 	do i=1+iradcut*sphpot,radpot*sphpot
-		intval=intval+funcval(i,:)*gridatmorg(i)%value*beckeweigrid(i)
-		if (ifunc==9.or.ifunc==10) then
-			tmp=funcval(i,1)**2*gridatmorg(i)%value*beckeweigrid(i)
+		intval=intval+funcval(i,:)*weigrid(i)*gridatmorg(i)%value
+		if (ifunc==9.or.ifunc==10) then !ELF and LOL
+			tmp=funcval(i,1)**2*weigrid(i)*gridatmorg(i)%value
 			r2=gridatm(i)%x**2+gridatm(i)%y**2+gridatm(i)%z**2
 			ELFsqr=ELFsqr+tmp
 			ELFsqrr2=ELFsqrr2+tmp*r2
 		end if
-        !Output integration position (Bohr), function value, Lebedev weight, Becke weight
- 		!write(12,"(i6,3f12.5,3(1PE16.8))") i,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,funcval(i,1),gridatmorg(i)%value,beckeweigrid(i)
+ 		if (outmedinfo==1) write(10,"(i7,3f12.5,3(1PE16.8))") i,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,funcval(i,1),gridatmorg(i)%value,weigrid(i)
 	end do
 	
+	!call walltime(iwalltime2)
+	!write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 	if (ispecial==0) write(*,"(' Accumulated value:',f20.10,'  Current center:',f20.10)") intval(1),intval(1)-intvalold(1)
 	intvalold=intval
 end do
@@ -1665,21 +1688,32 @@ else if (ifunc==10) then
 	write(*,"(a,E14.6)") " int(LOL*LOL):   ",ELFsqr
 	write(*,"(a,f12.6,' Bohr')") " Spherically symmetric average LOL:",dsqrt(ELFsqrr2/ELFsqr)
 end if
+
+if (outmedinfo==1) then
+	close(10)
+    write(*,*) "integrate.txt has been exported to current folder"
+    write(*,*) "Column 1: Index of integration points"
+    write(*,*) "Columns 2~4: X, Y, Z of integration points in Bohr"
+    write(*,*) "Column 5: Function value"
+    write(*,*) "Column 6: Lebedev integration weighting"
+    write(*,*) "Column 7: Atom weighting function"
+end if
 end subroutine
 
-!!----------- Silent and simplied version of subroutine intfunc, directly return the integrated result
+
+!!----------- Silent and simplied version of subroutine intfunc, directly return the integral. Currently used by EDA_SBL
 subroutine intfunc_silent(ifunc,intval)
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
-real*8 intval,funcval(radpot*sphpot),beckeweigrid(radpot*sphpot)
+real*8 intval,funcval(radpot*sphpot),weigrid(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 call gen1cintgrid(gridatmorg,iradcut)
 intval=0
 call showprog(0,ncenter)
 do iatm=1,ncenter
-	call showprog(iatm,ncenter)
 	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
 	gridatm%y=gridatmorg%y+a(iatm)%y
 	gridatm%z=gridatmorg%z+a(iatm)%z
@@ -1688,20 +1722,142 @@ do iatm=1,ncenter
 		funcval(i)=calcfuncall(ifunc,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
 	end do
 	!$OMP end parallel do
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+	call gen1cbeckewei(iatm,iradcut,gridatm,weigrid,covr_tianlu,3)
 	do i=1+iradcut*sphpot,radpot*sphpot
-		intval=intval+funcval(i)*gridatmorg(i)%value*beckeweigrid(i)
+		intval=intval+funcval(i)*weigrid(i)*gridatmorg(i)%value
 	end do
+	call showprog(iatm,ncenter)
 end do
 end subroutine
 
+
+
+!------ Integrate difference between two wavefunctions
+!itype=1 : Integrate (f_wfn1 - f_wfn2)**2
+!itype=2 : Integrate |f_wfn1 - f_wfn2|
+!where f_wfn1 means real space function for wavefunction file 1, f_wfn2 is that for wavefunction file 2
+!This function was specifically written for realizing Michael G. Medvedev's idea
+subroutine intdiff(itype)
+use functions
+use util
+implicit real*8 (a-h,o-z)
+real*8 intval,intvalold,funcval1(radpot*sphpot),funcval2(radpot*sphpot),beckeweigrid(radpot*sphpot)
+real*8 funcval1all(radpot*sphpot,ncenter) !For reuse data
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+character filename2*200,reusename*200
+
+if (itype==1) write(*,*) "Note: The integrand is (f_wfn1 - f_wfn2)**2"
+if (itype==2) write(*,*) "Note: The integrand is |f_wfn1 - f_wfn2|"
+if (ifiletype/=2.and.ifiletype/=3) write(*,"(a)") " Hint: If you use .wfx or .wfn file as input instead, the calculation speed may be improved significantly!"
+write(*,*)
+write(*,*) "Select the function to be integrated over the whole space"
+call selfunc_interface(1,ifunc)
+write(*,*)
+write(*,*) "Input the filename of another wavefunction file, e.g. C:\yuri.wfn"
+read(*,"(a)") filename2
+write(*,*)
+write(*,"(a)") " Input density cutoff (e.g. 0.5), if electron density of the firstly loaded wavefunction at a point is &
+larger than this value, then corresponding integration grid will be ignored"
+write(*,*) "If you do not want to enable this feature, input 0"
+read(*,*) denscut
+
+ireuse=0
+write(reusename,"(a,'_',i3.3,'_',i4.4,'_',i4.4)") trim(firstfilename),ifunc,radpot,sphpot
+inquire(file=reusename,exist=alive)
+if (alive) then
+	write(*,"(' Note: Data of reference system retrieved from ',a,' will be used')") trim(reusename)
+	ireuse=1
+	open(10,file=reusename,status="old")
+	do iatm=1,ncenter
+		read(10,*)
+		read(10,*) funcval1all(:,iatm)
+	end do
+	close(10)
+end if
+
+write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+call gen1cintgrid(gridatmorg,iradcut)
+
+call walltime(iwalltime1)
+
+intval=0
+do iatm=1,ncenter
+	write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+	
+	if (ireuse==0) then !Calculate data for wfn1
+		!$OMP parallel do shared(funcval1) private(i,rnowx,rnowy,rnowz) num_threads(nthreads) schedule(DYNAMIC)
+		do i=1+iradcut*sphpot,radpot*sphpot
+			rnowx=gridatm(i)%x
+			rnowy=gridatm(i)%y
+			rnowz=gridatm(i)%z
+			funcval1(i)=calcfuncall(ifunc,rnowx,rnowy,rnowz)
+		end do
+		!$OMP end parallel do
+		funcval1all(:,iatm)=funcval1
+	else !Reuse data of wfn1 from external file
+		funcval1=funcval1all(:,iatm)
+	end if
+	
+	!Calculate data for wfn2
+	call dealloall(0)
+	call readinfile(filename2,1)
+	!$OMP parallel do shared(funcval2) private(i,rnowx,rnowy,rnowz) num_threads(nthreads) schedule(DYNAMIC)
+	do i=1+iradcut*sphpot,radpot*sphpot
+		rnowx=gridatm(i)%x
+		rnowy=gridatm(i)%y
+		rnowz=gridatm(i)%z
+		funcval2(i)=calcfuncall(ifunc,rnowx,rnowy,rnowz)
+	end do
+	!$OMP end parallel do
+	!Recover to wfn1
+	call dealloall(0)
+	call readinfile(firstfilename,1)
+	
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+	do i=1+iradcut*sphpot,radpot*sphpot
+		if (denscut/=0) then
+			if (ifunc==1) then
+				tmpdens=funcval1(i)
+			else
+				tmpdens=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
+			end if
+			if (tmpdens>denscut) cycle
+		end if
+		if (itype==1) then
+			intval=intval+(funcval1(i)-funcval2(i))**2 *gridatmorg(i)%value*beckeweigrid(i)
+		else
+			intval=intval+abs(funcval1(i)-funcval2(i)) *gridatmorg(i)%value*beckeweigrid(i)
+		end if
+	end do
+	write(*,"(' Accumulated value:',f20.10,'  Current center:',f20.10)") intval,intval-intvalold
+	intvalold=intval
+end do
+
+call walltime(iwalltime2)
+write(*,"(' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
+write(*,"(' Final result:',f24.12)") intval
+
+!Write calculated wfn1 data to external file for reuse in the later calculation
+if (ireuse==0) then
+	open(10,file=reusename,status="replace")
+	do iatm=1,ncenter
+		write(10,*) iatm
+		write(10,*) funcval1all(:,iatm)
+	end do
+	close(10)
+	write(*,"(/,' Data of the firstly loaded file have been exported to ',a,' for possible later use')") trim(reusename)
+end if
+end subroutine
 
 
 
 
 !------ Calculate overlap and distance between two orbitals
 subroutine ovlpdistorb
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 real*8 intval(2),funcval(radpot*sphpot,2) !1/2=overlap of norm/sqr
@@ -1765,7 +1921,7 @@ do while(.true.)
 		end do
 		!$OMP end parallel do
 		
-		call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+		call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
 		do i=1+iradcut*sphpot,radpot*sphpot
 			intval=intval+funcval(i,:)*gridatmorg(i)%value*beckeweigrid(i)
 			cenpos=cenpos+cenval(i,:,:)*gridatmorg(i)%value*beckeweigrid(i)
@@ -1805,127 +1961,6 @@ do while(.true.)
 		return
 	end if
 end do
-end subroutine
-
-
-!itype=1 : Integrate (f_wfn1 - f_wfn2)**2
-!itype=2 : Integrate |f_wfn1 - f_wfn2|
-!where f_wfn1 means real space function for wavefunction file 1, f_wfn2 is that for wavefunction file 2
-!This function was specifically written for realizing Michael G. Medvedev's idea
-subroutine intdiff(itype)
-use function
-use util
-implicit real*8 (a-h,o-z)
-real*8 intval,intvalold,funcval1(radpot*sphpot),funcval2(radpot*sphpot),beckeweigrid(radpot*sphpot)
-real*8 funcval1all(radpot*sphpot,ncenter) !For reuse data
-type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
-character filename2*200,reusename*200
-
-if (itype==1) write(*,*) "Note: The integrand is (f_wfn1 - f_wfn2)**2"
-if (itype==2) write(*,*) "Note: The integrand is |f_wfn1 - f_wfn2|"
-if (ifiletype/=2.and.ifiletype/=3) write(*,"(a)") " Hint: If you use .wfx or .wfn file as input instead, the calculation speed may be improved significantly!"
-write(*,*)
-write(*,*) "Select the function to be integrated over the whole space"
-call funclist
-read(*,*) ifunc
-write(*,*)
-write(*,*) "Input the filename of another wavefunction file, e.g. C:\yuri.wfn"
-read(*,"(a)") filename2
-write(*,*)
-write(*,"(a)") " Input density cutoff (e.g. 0.5), if electron density of the firstly loaded wavefunction at a point is &
-larger than this value, then corresponding integration grid will be ignored"
-write(*,*) "If you do not want to enable this feature, input 0"
-read(*,*) denscut
-
-ireuse=0
-write(reusename,"(a,'_',i3.3,'_',i4.4,'_',i4.4)") trim(firstfilename),ifunc,radpot,sphpot
-inquire(file=reusename,exist=alive)
-if (alive) then
-	write(*,"(' Note: Data of reference system retrieved from ',a,' will be used')") trim(reusename)
-	ireuse=1
-	open(10,file=reusename,status="old")
-	do iatm=1,ncenter
-		read(10,*)
-		read(10,*) funcval1all(:,iatm)
-	end do
-	close(10)
-end if
-
-write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
-call gen1cintgrid(gridatmorg,iradcut)
-
-call walltime(iwalltime1)
-
-intval=0
-do iatm=1,ncenter
-	write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
-	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
-	gridatm%y=gridatmorg%y+a(iatm)%y
-	gridatm%z=gridatmorg%z+a(iatm)%z
-	
-	if (ireuse==0) then !Calculate data for wfn1
-		!$OMP parallel do shared(funcval1) private(i,rnowx,rnowy,rnowz) num_threads(nthreads) schedule(DYNAMIC)
-		do i=1+iradcut*sphpot,radpot*sphpot
-			rnowx=gridatm(i)%x
-			rnowy=gridatm(i)%y
-			rnowz=gridatm(i)%z
-			funcval1(i)=calcfuncall(ifunc,rnowx,rnowy,rnowz)
-		end do
-		!$OMP end parallel do
-		funcval1all(:,iatm)=funcval1
-	else !Reuse data of wfn1 from external file
-		funcval1=funcval1all(:,iatm)
-	end if
-	
-	!Calculate data for wfn2
-	call dealloall
-	call readinfile(filename2,1)
-	!$OMP parallel do shared(funcval2) private(i,rnowx,rnowy,rnowz) num_threads(nthreads) schedule(DYNAMIC)
-	do i=1+iradcut*sphpot,radpot*sphpot
-		rnowx=gridatm(i)%x
-		rnowy=gridatm(i)%y
-		rnowz=gridatm(i)%z
-		funcval2(i)=calcfuncall(ifunc,rnowx,rnowy,rnowz)
-	end do
-	!$OMP end parallel do
-	!Recover to wfn1
-	call dealloall
-	call readinfile(firstfilename,1)
-	
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
-	do i=1+iradcut*sphpot,radpot*sphpot
-		if (denscut/=0) then
-			if (ifunc==1) then
-				tmpdens=funcval1(i)
-			else
-				tmpdens=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
-			end if
-			if (tmpdens>denscut) cycle
-		end if
-		if (itype==1) then
-			intval=intval+(funcval1(i)-funcval2(i))**2 *gridatmorg(i)%value*beckeweigrid(i)
-		else
-			intval=intval+abs(funcval1(i)-funcval2(i)) *gridatmorg(i)%value*beckeweigrid(i)
-		end if
-	end do
-	write(*,"(' Accumulated value:',f20.10,'  Current center:',f20.10)") intval,intval-intvalold
-	intvalold=intval
-end do
-
-call walltime(iwalltime2)
-write(*,"(' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
-write(*,"(' Final result:',f24.12)") intval
-
-!Write calculated wfn1 data to external file for reuse in the later calculation
-if (ireuse==0) then
-	open(10,file=reusename,status="replace")
-	do iatm=1,ncenter
-		write(10,*) iatm
-		write(10,*) funcval1all(:,iatm)
-	end do
-	close(10)
-	write(*,"(/,' Data of the firstly loaded file have been exported to ',a,' for possible later use')") trim(reusename)
-end if
 end subroutine
 
 
@@ -1970,7 +2005,7 @@ end subroutine
 !imethod=1: Use superposition of vdW sphere to define vdW region, =2: use isosurface of electron density to define it
 subroutine calcvolume(imethod,pointexp,mcisoval,enlarbox)
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 maxx,maxy,maxz,minx,miny,minz,lengthx,lengthy,lengthz,nowx,nowy,nowz,rx,ry,rz,r2,tmp
 real*8 pointexp,mcisoval,enlarbox,boxvol
@@ -2195,9 +2230,7 @@ do while(.true.)
 		do iz=1,nz
 			do iy=1,ny
 				do ix=1,nx
-					xtmp=orgx+(ix-1)*dx
-					ytmp=orgy+(iy-1)*dy
-					ztmp=orgz+(iz-1)*dz
+                    call getgridxyz(ix,iy,iz,xtmp,ytmp,ztmp)
 					valtmp=cubmat(ix,iy,iz)
 					call pointprjple(atm1x,atm1y,atm1z,atm3x,atm3y,atm3z,atm5x,atm5y,atm5z,xtmp,ytmp,ztmp,xprj,yprj,zprj) !Project grid point to the plane defined by atoms 1,3,5 in the ring
 					if (valtmp>LOLiso) then
@@ -2227,9 +2260,7 @@ do while(.true.)
 		    do iz=1,nz
 			    do iy=1,ny
 				    do ix=1,nx
-					    xtmp=orgx+(ix-1)*dx
-					    ytmp=orgy+(iy-1)*dy
-					    ztmp=orgz+(iz-1)*dz
+                        call getgridxyz(ix,iy,iz,xtmp,ytmp,ztmp)
 					    if (gridconsider(ix,iy,iz)) write(10,"(a,3f12.6)") "C ",xtmp*b2a,ytmp*b2a,ztmp*b2a
 				    end do
 			    end do
@@ -2249,8 +2280,8 @@ end subroutine
 
 
 !!---- Yoshizawa's electron transport route analysis
-!!Based on Eqs. 2 and 3 of Account of chemical research, 45, 1612
-!Use Gaussian output file as input, should specify pop=(full,nboread). Only closed-shell is supported
+!Based on Eqs. 2 and 3 of Account of chemical research, 45, 1612
+!Only closed-shell is supported
 subroutine Yoshieletrans
 use defvar
 use util
@@ -2323,19 +2354,19 @@ if (ifiletype==0) then
 	    ilow=(itime-1)*5+1
 	    ihigh=itime*5
 	    if (ihigh>=iHOMO) ihigh=iHOMO
-	    read(c80tmp(29:),*) MOene(ilow:ihigh)
+	    read(c80tmp(29:),"(5f10.5)") MOene(ilow:ihigh)
     end do
     do itime=1,ceiling((nmo-iHOMO)/5D0) !Load unoccupied orbital energies
 	    read(10,"(a)") c80tmp
 	    ilow=(itime-1)*5+1+iHOMO
 	    ihigh=itime*5+iHOMO
 	    if (ihigh>=nmo) ihigh=nmo
-	    read(c80tmp(29:),*) MOene(ilow:ihigh)
+	    read(c80tmp(29:),"(5f10.5)") MOene(ilow:ihigh)
     end do
-    ! write(*,*) "Energies of occupied MOs (a.u.):"
-    ! write(*,"(7f11.5)") MOene(:iHOMO)
-    ! write(*,*) "Energies of unoccupied MOs (a.u.):"
-    ! write(*,"(7f11.5)") MOene(iLUMO:)
+     !write(*,*) "Energies of occupied MOs (a.u.):"
+     !write(*,"(7f11.5)") MOene(:iHOMO)
+     !write(*,*) "Energies of unoccupied MOs (a.u.):"
+     !write(*,"(7f11.5)") MOene(iLUMO:)
 else
     if (wfntype/=0) then
 	    write(*,*) "Error: Only closed-shell wavefunction is supported!"
@@ -2355,6 +2386,7 @@ end if
 
 write(*,*)
 write(*,*) "The molecule is in which plane?  1=XY  2=YZ  3=XZ"
+write(*,"(a)") " Note: This function cannot be used if all atoms are not in the same Cartesian plane"
 read(*,*) iplesel
 
 !Load information outputted by NBO program
@@ -2604,7 +2636,7 @@ end subroutine
 !!----------- Detect pi orbital and set occupation number
 subroutine detectpiorb
 use defvar
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 integer piorblist(nmo) !1 means this orbital is expected pi orbital
@@ -2916,7 +2948,7 @@ if (isel==0) then !Set occupation number
 else if (isel==-1) then !Calculate pi composition for orbitals in another file
     CObasa_LMO=CObasa
     if (allocated(CObasb)) CObasb_LMO=CObasb
-    call dealloall
+    call dealloall(0)
     write(*,*) "Input a file containing other set of orbitals, e.g. C:\riko.fch"
     do while(.true.)
 	    read(*,"(a)") c200tmp
@@ -2984,12 +3016,12 @@ end subroutine
 subroutine fitfunc
 use util
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 character addcenfile*200,extptfile*200
 character selectyn,c80tmp
 integer :: nlayer=4 !Number of fitting layers
-real*8 :: funcfitvdwr(0:nelesupp)=-1D0,sclvdwlayer(100)=(/1.4D0,1.6D0,1.8D0,2.0D0,(2.2D0,i=5,100)/)
+real*8 :: funcfitvdwr(0:nelesupp)=-1D0,sclvdwlayer(100)=(/1.4D0,1.6D0,1.8D0,2D0,(2.2D0,i=5,100)/)
 real*8,allocatable :: funcptval(:),funcptx(:),funcpty(:),funcptz(:),Bmat(:),Amat(:,:),Amatinv(:,:),atmval(:)
 real*8,allocatable :: fitcenx(:),fitceny(:),fitcenz(:),fitcenvdwr(:),disptcen(:),origsphpt(:,:)
 densperarea=6D0*b2a**2 !Point density per Angstrom**2 for MK, in order to convert to Bohr**2, multiply by b2a**2
@@ -3271,24 +3303,30 @@ integer,allocatable :: calcatom(:)
 do while(.true.)
 	write(*,*) "Input indices of the atoms for which geometry information will be calculated"
 	write(*,*) "e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 will be considered"
-	write(*,*) "Input ""all"" will analyze the whole system, input ""q"" will exit"
+	write(*,*) "Press ENTER button directly will analyze the whole system, input ""q"" will exit"
     write(*,*) "  Other commands:"
 	write(*,*) "Input ""size"" will report size information of the whole system"
 	write(*,*) "Input ""dist"" will report contact/distance between two specific fragments"
+	write(*,*) "Input ""cav"" will report diameter of cavity enclosed by specific atoms"
+	write(*,*) "Input ""ring"" will calculate area and perimeter of a specific ring"
 	write(*,"(a)") " Input ""MPP"" will calculate molecular planarity parameter (MPP) and span of deviation from plane (SDP) for a fragment"
 	read(*,"(a)") c2000tmp
 	if (c2000tmp(1:1)=='q'.or.c2000tmp(1:1)=='Q') then
 		exit
 	else if (c2000tmp(1:4)=='size') then
 		call calcmolsize
+	else if (c2000tmp(1:3)=='cav') then
+		call cavity_diameter
 	else if (c2000tmp(1:4)=='dist') then
 		call calcfragdist
+	else if (c2000tmp(1:4)=='ring') then
+		call calcringsize
 	else if (index(c2000tmp,"MPP")/=0.or.index(c2000tmp,"mpp")/=0) then
 		write(*,"(a,/)") " Hint: You can also directly enter this function by inputting ""MPP"" in main menu of Multiwfn"
 		call calcMPP
 	else
 		if (allocated(calcatom)) deallocate(calcatom)
-		if (index(c2000tmp,"all")/=0) then
+		if (c2000tmp==" ".or.index(c2000tmp,"all")/=0) then
 			ncalcatom=ncenter
 			allocate(calcatom(ncalcatom))
 			do itmp=1,ncalcatom
@@ -3328,17 +3366,21 @@ dipnucnorm=dsqrt(dipnucx**2+dipnucy**2+dipnucz**2)
 eleint=0D0
 do iatmidx=1,natmarr
 	iatm=atmarr(iatmidx)
+    tmpval=0
 	do jatmidx=iatmidx+1,natmarr
 		jatm=atmarr(jatmidx)
-		eleint=eleint+a(iatm)%charge*a(jatm)%charge/distmat(iatm,jatm)
+        distval=atomdist(iatm,jatm,0)
+		tmpval=tmpval+a(jatm)%charge/distval
 	end do
+    eleint=eleint+a(iatm)%charge*tmpval
+    if (natmarr>20000) call showprog(iatmidx,natmarr)
 end do
-write(*,"(' Mass of these atoms:',f14.6,' amu')") totmass
+write(*,"(' Mass of these atoms:',f18.6,' amu')") totmass
 write(*,"(' Geometry center (X/Y/Z):',3f14.8,' Angstrom')") avgx*b2a,avgy*b2a,avgz*b2a
 write(*,"(' Center of mass (X/Y/Z): ',3f14.8,' Angstrom')") cenmassx*b2a,cenmassy*b2a,cenmassz*b2a
 if (ifiletype==4) then !chg file
 	write(*,"(' Sum of atomic charges:',f20.8)") totnucchg
-	write(*,"(' Dipole from atomic charges (Norm):',E12.5,' a.u.',E13.5,' Debye')") dipnucnorm,dipnucnorm*au2debye
+	write(*,"(' Dipole from atomic charges (Norm): ',E12.5,' a.u.',E13.5,' Debye')") dipnucnorm,dipnucnorm*au2debye
 	write(*,"(' Dipole from atomic charges (X/Y/Z):',3E12.5,' a.u.')") dipnucx,dipnucy,dipnucz
 	write(*,"(' Electrostatic interaction energy between atomic charges:',/,f17.8,' a.u.',f20.5,' kcal/mol',f20.5,' KJ/mol')") eleint,eleint*au2kcal,eleint*au2KJ
 else if (ifiletype/=4) then
@@ -3388,12 +3430,12 @@ do idx=1,natmarr
 		izmin=iatm
 	end if
 end do
-write(*,"(' Minimum X is',f14.8,' Angstrom, at atom',i6,'(',a,')')") xmin*b2a,ixmin,a(ixmin)%name
-write(*,"(' Minimum Y is',f14.8,' Angstrom, at atom',i6,'(',a,')')") ymin*b2a,iymin,a(iymin)%name
-write(*,"(' Minimum Z is',f14.8,' Angstrom, at atom',i6,'(',a,')')") zmin*b2a,izmin,a(izmin)%name
-write(*,"(' Maximum X is',f14.8,' Angstrom, at atom',i6,'(',a,')')") xmax*b2a,ixmax,a(ixmax)%name
-write(*,"(' Maximum Y is',f14.8,' Angstrom, at atom',i6,'(',a,')')") ymax*b2a,iymax,a(iymax)%name
-write(*,"(' Maximum Z is',f14.8,' Angstrom, at atom',i6,'(',a,')')") zmax*b2a,izmax,a(izmax)%name
+write(*,"(' Minimum X is',f14.8,' Angstrom, at atom',i8,'(',a,')')") xmin*b2a,ixmin,a(ixmin)%name
+write(*,"(' Minimum Y is',f14.8,' Angstrom, at atom',i8,'(',a,')')") ymin*b2a,iymin,a(iymin)%name
+write(*,"(' Minimum Z is',f14.8,' Angstrom, at atom',i8,'(',a,')')") zmin*b2a,izmin,a(izmin)%name
+write(*,"(' Maximum X is',f14.8,' Angstrom, at atom',i8,'(',a,')')") xmax*b2a,ixmax,a(ixmax)%name
+write(*,"(' Maximum Y is',f14.8,' Angstrom, at atom',i8,'(',a,')')") ymax*b2a,iymax,a(iymax)%name
+write(*,"(' Maximum Z is',f14.8,' Angstrom, at atom',i8,'(',a,')')") zmax*b2a,izmax,a(izmax)%name
 if (natmarr>=2) then
 	rmindist=1D50
 	rmaxdist=0
@@ -3401,20 +3443,22 @@ if (natmarr>=2) then
 		i=atmarr(iidx)
 		do jidx=iidx+1,natmarr
 			j=atmarr(jidx)
-			if (distmat(i,j)<rmindist) then
-				rmindist=distmat(i,j)
+            tmpval=atomdist(i,j,0)
+			if (tmpval<rmindist) then
+				rmindist=tmpval
 				imindist=i
 				jmindist=j
 			end if
-			if (distmat(i,j)>rmaxdist) then
-				rmaxdist=distmat(i,j)
+			if (tmpval>rmaxdist) then
+				rmaxdist=tmpval
 				imaxdist=i
 				jmaxdist=j
 			end if
 		end do
+        if (natmarr>20000) call showprog(iidx,natmarr)
 	end do
-	write(*,"(' Maximum distance is',f12.6,' Angstrom, between atom',i6,'(',a,') and',i6,'(',a,')')") rmaxdist*b2a,imaxdist,a(imaxdist)%name,jmaxdist,a(jmaxdist)%name
-	write(*,"(' Minimum distance is',f12.6,' Angstrom, between atom',i6,'(',a,') and',i6,'(',a,')')") rmindist*b2a,imindist,a(imindist)%name,jmindist,a(jmindist)%name
+	write(*,"(' Maximum distance is',f12.6,' Angstrom, between ',i8,'(',a,') and',i8,'(',a,')')") rmaxdist*b2a,imaxdist,a(imaxdist)%name,jmaxdist,a(jmaxdist)%name
+	write(*,"(' Minimum distance is',f12.6,' Angstrom, between ',i8,'(',a,') and',i8,'(',a,')')") rmindist*b2a,imindist,a(imindist)%name,jmindist,a(jmindist)%name
 end if
 do iatmidx=1,natmarr
 	iatm=atmarr(iatmidx)
@@ -3428,8 +3472,8 @@ do iatmidx=1,natmarr
 		idistmin=iatm
 	end if
 end do
-write(*,"(' The atom closest to geometry center is',i8,'(',a,')  Dist:',f12.6,' Angstrom')") idistmin,a(idistmin)%name,distmin*b2a
-write(*,"(' The atom farthest to geometry center is',i7,'(',a,')  Dist:',f12.6,' Angstrom')") idistmax,a(idistmax)%name,distmax*b2a
+write(*,"(' The atom closest to geometry center is',i9,'(',a,') Dist:',f12.6,' Angstrom')") idistmin,a(idistmin)%name,distmin*b2a
+write(*,"(' The atom farthest to geometry center is',i8,'(',a,') Dist:',f12.6,' Angstrom')") idistmax,a(idistmax)%name,distmax*b2a
 write(*,*)
 inertia(1,1)=sum(atmwei(a(atmarr(:))%index)*( (a(atmarr(:))%y-cenmassy)**2+(a(atmarr(:))%z-cenmassz)**2) )*b2a*b2a
 inertia(2,2)=sum(atmwei(a(atmarr(:))%index)*( (a(atmarr(:))%x-cenmassx)**2+(a(atmarr(:))%z-cenmassz)**2) )*b2a*b2a
@@ -3463,8 +3507,9 @@ real*8 inertia(3,3),eigvalarr(3),eigvecmat(3,3),vec3(1,3)
 rmaxdist=0
 do iatm=1,ncenter
 	do jatm=iatm+1,ncenter
-		if (distmat(iatm,jatm)>rmaxdist) then
-			rmaxdist=distmat(iatm,jatm)
+		tmpval=atomdist(iatm,jatm,0)
+		if (tmpval>rmaxdist) then
+			rmaxdist=tmpval
 			imaxdist=iatm
 			jmaxdist=jatm
 		end if
@@ -3560,6 +3605,54 @@ do while(.true.)
 end do
 end subroutine
 
+!!--------- Calculate area for a given ring
+subroutine calcringsize
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer,allocatable :: ringatmlist(:)
+write(*,*) "Input the index of the atoms in the ring in clockwise manner, e.g. 2,3,4,6,7"
+read(*,"(a)") c2000tmp
+call str2arr(c2000tmp,nringatm)
+allocate(ringatmlist(nringatm))
+call str2arr(c2000tmp,nringatm,ringatmlist)
+ringarea=0D0
+ia=2
+ib=nringatm
+itri=0
+do while(.true.)
+	ntime=2
+    if (ib-ia==1) ntime=1
+    iatm1=ringatmlist(ia)
+    iatm2=ringatmlist(ib)
+    do itmp=1,ntime
+        if (itmp==1) ic=ia-1
+        if (itmp==2) ic=ib-1
+        iatm3=ringatmlist(ic)
+        itri=itri+1
+        triarea=gettriangarea(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z,a(iatm3)%x,a(iatm3)%y,a(iatm3)%z)*b2a**2
+        ringarea=ringarea+triarea
+        write(*,"(' Atoms in triangle',i4,':',3i7,'      Area:',f10.5,' Angstrom^2')") itri,iatm1,iatm2,iatm3,triarea
+    end do
+    ia=ia+1
+    ib=ib-1
+    if (ib<=ia) exit
+end do
+write(*,"(/,' The total ring area is',f12.6,' Angstrom^2')") ringarea
+ringperi=0D0
+do i=1,nringatm
+    iatm1=ringatmlist(i)
+    if (i==nringatm) then
+		iatm2=ringatmlist(1)
+	else
+		iatm2=ringatmlist(i+1)
+	end if
+	ringperi=ringperi+dsqrt((a(iatm1)%x-a(iatm2)%x)**2+(a(iatm1)%y-a(iatm2)%y)**2+(a(iatm1)%z-a(iatm2)%z)**2)*b2a
+end do
+write(*,"(' The ring perimeter is',f12.6,' Angstrom',/)") ringperi
+end subroutine
+
 !!------ Calculate distance between two fragments
 subroutine calcfragdist
 use util
@@ -3580,7 +3673,7 @@ do idx=1,nfr1
     iatm=fr1(idx)
     do jdx=1,nfr2
         jatm=fr2(jdx)
-        dist=distmat(iatm,jatm)
+        dist=atomdist(iatm,jatm,0)
         if (dist<distmin) then
             distmin=dist
             minatm1=iatm
@@ -3618,6 +3711,7 @@ write(*,"(' Mass center of fragment 1 (X/Y/Z):',3f10.4,' Angstrom')") cm1x*b2a,c
 write(*,"(' Mass center of fragment 2 (X/Y/Z):',3f10.4,' Angstrom')") cm2x*b2a,cm2y*b2a,cm2z*b2a
 write(*,"(' Distance between the two mass centers:',f10.4,' Angstrom')") dsqrt((cm1x-cm2x)**2+(cm1y-cm2y)**2+(cm1z-cm2z)**2)*b2a
 end subroutine
+
 
 
 !!------------ Calculate molecular planarity parameter (MPP) and span of deviation from plane (SDP)
@@ -3808,8 +3902,190 @@ end subroutine
 
 
 
+!!------------ Calculate diameter of cavity consisting of specific atoms in the system    
+subroutine cavity_diameter
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer,allocatable :: testatom(:)
+character c2000tmp*2000
+real*8 radmin,diamax,disp(3),coord(3),gvec(3),gvec_old(3),coordtmp(3),LSdisp(3),fract(3)
+
+write(*,"(/,a)") " Input indices of a set of atoms to detect contact. e.g. 3-10,14,18-23"
+write(*,*) "If pressing ENTER button directly, all atoms will be selected"
+read(*,"(a)") c2000tmp
+if (c2000tmp==" ") then
+	ntestatom=ncenter
+	allocate(testatom(ntestatom))
+	forall(i=1:ncenter) testatom(i)=i
+else
+	call str2arr(c2000tmp,ntestatom)
+	allocate(testatom(ntestatom))
+	call str2arr(c2000tmp,ntestatom,testatom)
+end if
+
+write(*,*) "How to define initial sphere center?"
+write(*,*) "1 Use geometric center of the atoms inputted in last step"
+write(*,*) "2 Use a point by inputting its Cartesian coordinate"
+if (ifPBC/=0) then
+    write(*,*) "3 Use center of the cell"
+	write(*,*) "4 Use a point by inputting its fractional coordinate"
+end if
+read(*,*) initcen
+
+if (initcen==1) then
+	coord(1)=sum(a(testatom(:))%x)/ntestatom
+	coord(2)=sum(a(testatom(:))%y)/ntestatom
+	coord(3)=sum(a(testatom(:))%z)/ntestatom
+else if (initcen==2) then
+	write(*,*) "Input X,Y,Z of the point in Angstrom, e.g. 2.5,0.79,0.2"
+    read(*,*) coord(:)
+    coord=coord/b2a
+else if (initcen==3.or.initcen==4) then
+	if (initcen==3) then
+		fract=(/ 0.5D0,0.5D0,0.5D0 /)
+    else
+		write(*,*) "Input fractional coordinate of the point, e.g. 0,0.5,0.25"
+		read(*,*) fract
+    end if
+	call fract2Cart(fract,coord)
+end if
+
+write(*,*) "If automatically adjusting the initial sphere center?"
+write(*,*) "0 Do not adjust"
+write(*,*) "1 Adjust in all directions"
+write(*,*) "2 Adjust only in X"
+write(*,*) "3 Adjust only in Y"
+write(*,*) "4 Adjust only in Z"
+write(*,*) "5 Adjust only in XY"
+write(*,*) "6 Adjust only in XZ"
+write(*,*) "7 Adjust only in YZ"
+read(*,*) iadjust
+
+if (iadjust==0) then
+	write(*,"(' X/Y/Z of geometry center are',3f12.6,' Angstrom')") coord*b2a
+    call getradmin(coord,testatom,ntestatom,radmin)
+else
+	!Iteratively update sphere center to find a position where radmin can be maximized
+	!Barzilai¨CBorwein steepest ascent method cannot be used, because the object function is zigzag rather than smooth function
+	write(*,"(' X/Y/Z of initial geometry center are',3f12.6,' Angstrom')") coord*b2a
+	call getradmin(coord,testatom,ntestatom,radmin)
+	write(*,"(' Initial sphere radius is',f12.6,' Angstrom')") radmin*b2a
+
+	trustrad=0.3D0/b2a !Trust radius, 0.3 A
+	dispconv=0.01D0/b2a !Displacement Threshold, 0.01 A
+	stepscale=1D0
+	nstepmax=100 !Maximum number of steps
+	!Finite difference stepsize. Use a large value, not only because the object function is zigzag and thus derivative &
+	!is invariant to stepsize in specific range, but also large stepsize can make position of sphere center can overcome slight barrier
+	diff=0.3D0/b2a
+    do istep=1,nstepmax
+        write(*,*)
+	    write(*,"(' Step',i5)") istep
+    
+        !Calculate gradient
+        gvec=0
+        do idir=1,3
+            if ( (idir==1.and.(iadjust==1.or.iadjust==2.or.iadjust==5.or.iadjust==6)) &
+            .or. (idir==2.and.(iadjust==1.or.iadjust==3.or.iadjust==5.or.iadjust==7)) &
+            .or. (idir==3.and.(iadjust==1.or.iadjust==4.or.iadjust==6.or.iadjust==7)) ) then
+                coordtmp=coord
+                coordtmp(idir)=coord(idir)+diff
+                call getradmin(coordtmp,testatom,ntestatom,tmpadd)
+                coordtmp(idir)=coord(idir)-diff
+                call getradmin(coordtmp,testatom,ntestatom,tmpmin)
+                gvec(idir)=(tmpadd-tmpmin)/(2*diff)
+            end if
+        end do
+        write(*,"(' Current coordinate:',3f12.6,' Angstrom')") coord*b2a
+	    write(*,"(' Gradient:    ',3f12.6,'  Norm',f12.6)") gvec,dsqrt(sum(gvec**2))
+        
+        if (all(abs(gvec)<1D-6)) then
+            disp=0
+        else
+            !Line search
+            call getradmin(coord,testatom,ntestatom,radmin)
+            LSdisp=0.5D0*gvec !Due to object function character, gvec must be a unit vector. So first step is 0.5 Bohr
+            nmicro=0
+            do nmicro=1,25
+                coordtmp=coord+LSdisp
+                call getradmin(coordtmp,testatom,ntestatom,radmintmp)
+                !write(*,"(i4,2f12.6,3f16.10)") nmicro,radmin*b2a,radmintmp*b2a,LSdisp
+                if (radmintmp>radmin) then
+                    disp=coordtmp-coord
+                    exit
+                else
+                    LSdisp=LSdisp*0.5D0
+                end if
+            end do
+            if (nmicro==26) then !If finite difference stepsize is too large and thus inaccurate, then object functino cannot increase by following this direction
+                diff=diff/2
+				write(*,"(a,f10.6,' Bohr')") " Micro iteration in line search was not converged, reduce finite different stepsize by half to",diff
+                cycle
+            end if
+            !write(*,"(' Number of micro steps in line search:',i6)") nmicro
+        
+            !Apply trust radius
+            dispnorm=dsqrt(sum(disp**2))
+            if (dispnorm>trustrad) then
+                disp=disp*trustrad/dispnorm
+            end if
+    
+	        coord=coord+stepscale*disp !Move coordinate
+    
+            if (ifPBC>0) call move_to_cell(coord,coord) !If moved to a position out of box, move it to central cell
+        end if
+    
+        dispnorm=dsqrt(sum(disp**2))
+	    write(*,"(' Displacement:',3f12.6,'  Norm',f12.6,' Angstrom')") disp*b2a,dispnorm*b2a
+	    write(*,"(' Goal: displacement norm <',f12.8,' Angstrom')") dispconv*b2a
+        if (dispnorm>dispconv) then
+            write(*,"(' Not converged, new coordinate:',3f12.6,' Angstrom')") coord*b2a
+        else
+            write(*,"(/,' Converged after',i6,' iterations')") istep
+            exit
+        end if
+        call getradmin(coord,testatom,ntestatom,radmin)
+	    write(*,"(' Sphere radius at new coordinate:',f12.6,' Angstrom')") radmin*b2a
+    end do
+    write(*,"(/,' Final X/Y/Z of sphere center:',3f12.6,' Angstrom')") coord(:)*b2a
+end if
+
+diamax=2*radmin
+write(*,"(' Radius is',f12.6,' Angstrom')") radmin*b2a
+write(*,"(' Diameter is',f12.6,' Angstrom')") diamax*b2a
+write(*,"(' Volume is',f14.6,' Angstrom^3')") 4D0/3D0*pi*(radmin*b2a)**3
+write(*,*)
+write(*,*) "Commands of drawing a sphere in VMD to show the cavity:"
+write(*,*) "color Display Background white"
+write(*,*) "draw material Transparent"
+write(*,*) "draw color yellow"
+write(*,"(a,3f9.3,a,f8.3,a)") " draw sphere {",coord(:)*b2a," } radius",radmin*b2a," resolution 100"
+end subroutine
+
+!------- Get minimum contact distance (w.r.t. atomic vdW sphere surface) between a point and all atoms in the list
+subroutine getradmin(xyzA,testatom,ntestatom,radmin)
+use defvar
+implicit real*8 (a-h,o-z)
+integer ntestatom,testatom(ntestatom)
+real*8 radmin,xyzA(3),xyzB(3)
+radmin=1D10
+do idx=1,ntestatom
+    iatm=testatom(idx)
+    xyzB(1)=a(iatm)%x
+    xyzB(2)=a(iatm)%y
+    xyzB(3)=a(iatm)%z
+    call nearest_dist(xyzA,xyzB,dist)
+    contdist=dist-vdwr(a(iatm)%index)
+    if (contdist<radmin) radmin=contdist
+end do
+end subroutine
+
+
+
+
 !! ------------ Generate combined wavefunction by combining several fragment wavefunctions
-! Any format of wavefunction file can be used as input, all orbitals including the virtual ones are stored to _all arrays first
+!Any format of wavefunction file can be used as input, all orbitals including the virtual ones are stored to _all arrays first
 subroutine gencombwfn
 use defvar
 implicit real*8 (a-h,o-z)
@@ -3859,7 +4135,7 @@ end do
 !Detect if need to treat this whole system as open-shell
 iopsh=0
 do i=1,nfrag
-	call dealloall
+	call dealloall(0)
 	call readinfile(namearray(i),1)
 	if (wfntype==1.or.wfntype==4) then
 		iopsh=1
@@ -3882,7 +4158,7 @@ iopshfrag(:)=0 !Assume all fragments are closed-shell
 naelec_all=0
 nbelec_all=0
 do i=1,nfrag
-	call dealloall
+	call dealloall(0)
 	write(*,"(/,' Loading ',a)") trim(namearray(i))
 	call readinfile(namearray(i),1)
 	ncenter_all=ncenter_all+ncenter
@@ -3974,7 +4250,7 @@ imoa=1
 imob=nmoa_all+1
 do i=1,nfrag
 	write(*,"(a)") " Dealing with "//trim(namearray(i))//" ..."
-	call dealloall
+	call dealloall(0)
 	call readinfile(namearray(i),1)
 	a_all(icenter:icenter+ncenter-1)=a(:)
 	b_all(iprim:iprim+nprims-1)=b(:)
@@ -4063,7 +4339,7 @@ do i=1,nfrag
 end do
 
 !Store the data to global arrays so that they can be outputted by "outwfn" subroutine
-call dealloall
+call dealloall(0)
 allocate(a(ncenter_all),b(nprims_all),MOene(nmo_all),MOocc(nmo_all),MOtype(nmo_all),CO(nmo_all,nprims_all))
 ncenter=ncenter_all
 nprims=nprims_all
@@ -4170,7 +4446,7 @@ else if (ifile==2) then !Output .mwfn file
 end if
 
 !Recover to the first loaded system
-call dealloall
+call dealloall(0)
 call readinfile(firstfilename,1)
 
 end subroutine
@@ -4181,7 +4457,7 @@ end subroutine
 !! ----------- Calculate Hellmann-Feynman forces at each nucleus
 subroutine hellmann_feynman
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 HFforce_nuc(ncenter,3),HFforce_ele(ncenter,3),HFforce_tot(ncenter,3)
 write(*,*) "Note: All units below are Hartree/Bohr"
@@ -4204,7 +4480,7 @@ HFforce_nuc=0
 do iatm=1,ncenter
 	do jatm=1,ncenter
 		if (jatm==iatm) cycle
-		forcetmp=a(iatm)%charge*a(jatm)%charge/distmat(iatm,jatm)**3
+		forcetmp=a(iatm)%charge*a(jatm)%charge/atomdist(iatm,jatm,0)**3
 		HFforce_nuc(iatm,1)=HFforce_nuc(iatm,1)+forcetmp*(a(iatm)%x-a(jatm)%x)
 		HFforce_nuc(iatm,2)=HFforce_nuc(iatm,2)+forcetmp*(a(iatm)%y-a(jatm)%y)
 		HFforce_nuc(iatm,3)=HFforce_nuc(iatm,3)+forcetmp*(a(iatm)%z-a(jatm)%z)
@@ -4224,7 +4500,7 @@ end subroutine
 
 !!------ Calculate attractive energy between an orbital and nuclei in a fragment
 subroutine attene_orb_fragnuc
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 character c2000tmp*2000
@@ -4262,7 +4538,7 @@ do iatm=1,ncenter
  		funcval(i)=-potnuc*fmo(rnowx,rnowy,rnowz,iorb)**2
 	end do
 	!$OMP end parallel do
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
 	do i=1+iradcut*sphpot,radpot*sphpot
 		intval=intval+funcval(i)*gridatmorg(i)%value*beckeweigrid(i)
 	end do
@@ -4279,7 +4555,7 @@ end subroutine
 subroutine sphatmraddens
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: potx(:),poty(:),potz(:),potw(:),radpos(:),sphavgval(:)
 truncrho=1D-8
@@ -4351,7 +4627,6 @@ read(*,*) isel
 
 write(*,*) "Input total number of frames, e.g. 4001"
 read(*,*) nframetraj
-allocate(traj(3,ncenter,nframetraj))
 
 allocate(frag1(ncenter),frag2(ncenter))
 
@@ -4366,6 +4641,7 @@ if (isel==1) then
 
     open(10,file=filename,status="old")
     open(11,file="distangle.txt",status="replace")
+    !open(12,file="distangle2.txt",status="replace") !special
 
     call showprog(0,nframetraj)
     do iframe=1,nframetraj
@@ -4398,6 +4674,7 @@ if (isel==1) then
         if (angle2>90) angle2=180-angle2
     
         write(11,"(i10,3f12.6)") iframe,cendist,angle,angle2
+        !if (cendist<3) write(12,"(i10,2f12.6)") iframe,cendist,angle2 !special
     
         call showprog(iframe,nframetraj)
     end do
@@ -4437,7 +4714,181 @@ end if
 
 close(10)
 close(11)
-deallocate(traj,frag1,frag2)
+!close(12) !special
+deallocate(frag1,frag2)
+end subroutine
+
+
+
+!!------- Calculate rotate angle velocity of C18 ring in OPP loop
+subroutine ring_rotate
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c2000tmp*2000
+integer ringnatm
+integer,allocatable :: ringatm(:)
+type(atomtype) alast(ncenter)
+real*8 cenloop(3),cen1(3),cenring(3),cenmove(3),vec1(3),vecc1(3,1),vecn(3),vecr(3),vecmove(3),vectan(3),mat(3,3)
+integer loopnatm
+integer,allocatable :: loopatm(:)
+
+idetectout=1 !If skip frame if ring center deviates from loop center significantly (3 A)
+
+write(*,*) "Input total number of frames, e.g. 4001"
+!read(*,*) nframetraj
+nframetraj=500001
+
+write(*,*) "Input time interval between frames in ps, e.g. 2.0"
+!read(*,*) timestep
+timestep=0.2D0
+
+write(*,*) "Input index of the atoms in ring, e.g. 2,3,7-10"
+!read(*,"(a)") c2000tmp
+c2000tmp="225-242"
+!c2000tmp="243-260"
+call str2arr(c2000tmp,ringnatm)
+allocate(ringatm(ringnatm))
+call str2arr(c2000tmp,ringnatm,ringatm)
+
+if (idetectout==1) then
+    write(*,*) "Input index of the atoms in the loop, e.g. 2,3,7-10"
+    !read(*,"(a)") c2000tmp
+    c2000tmp="16-18,20-22,43,49,62-63,82,97,112,127-128,145,149,154,179,186"
+    !c2000tmp="23,28,33,38,52,57,64,69,100,105,159,164,169,174,197,202,207,212,217,222"
+    call str2arr(c2000tmp,loopnatm)
+    allocate(loopatm(loopnatm))
+    call str2arr(c2000tmp,loopnatm,loopatm)
+end if
+
+write(*,*) "Input radius of the ring in Angstrom, e.g. 3.7"
+!read(*,*) ringradius
+ringradius=7.396D0/2 !wB97XD/6-311G* radius of C18
+ringradius=ringradius/b2a
+
+open(10,file=filename,status="old")
+open(11,file="rotate.txt",status="replace")
+!open(12,file="ring.xyz",status="replace")
+
+nskip=0
+iskiplast=0
+call showprog(0,nframetraj)
+do iframe=1,nframetraj
+	call readxyztrj(10)
+    
+    if (iframe==1) then !Calculate geometry center of ring for first frame
+        cen1(1)=sum(a(ringatm(:))%x)/ringnatm
+        cen1(2)=sum(a(ringatm(:))%y)/ringnatm
+        cen1(3)=sum(a(ringatm(:))%z)/ringnatm
+    else !Calculate rotation with respect to last frame
+        
+        !Make normal vector coincide with first frame, so that rotation is removed
+        !This is not used, because I found this treatment may cause artificial rotation and the magnitude may be quite large! (i.e. flip)
+        !call ptsfitplane(ringatm,ringnatm,vec1(1),vec1(2),vec1(3),rnouse,rmsfit)
+        !call rotmat_vec1_vec2(vec1,vecn1,mat)
+        !do idx=1,ringnatm
+        !    iatm=ringatm(idx)
+        !    vecc1(1,1)=a(iatm)%x
+        !    vecc1(2,1)=a(iatm)%y
+        !    vecc1(3,1)=a(iatm)%z
+        !    vecc1=matmul(mat,vecc1)
+        !    a(iatm)%x=vecc1(1,1)
+        !    a(iatm)%y=vecc1(2,1)
+        !    a(iatm)%z=vecc1(3,1)
+        !end do
+        
+        !Center of ring
+        cenring(1)=sum(a(ringatm(:))%x)/ringnatm
+        cenring(2)=sum(a(ringatm(:))%y)/ringnatm
+        cenring(3)=sum(a(ringatm(:))%z)/ringnatm
+    
+        if (idetectout==1) then !Detect if ring is far from loop
+            if (iskiplast==1) then !Last frame was skipped, so this frame cannot be calculated
+                iskiplast=0
+                alast=a
+                nskip=nskip+1
+                cycle
+            end if
+            cenloop(1)=sum(a(loopatm(:))%x)/loopnatm
+            cenloop(2)=sum(a(loopatm(:))%y)/loopnatm
+            cenloop(3)=sum(a(loopatm(:))%z)/loopnatm
+            cendist=dsqrt(sum((cenring-cenloop)**2))
+            if ( cendist*b2a > 3D0 ) then !Skip this frame
+                iskiplast=1
+                nskip=nskip+1
+                cycle
+            end if
+        end if
+        
+        !Make ring center in current frame coincide with first frame, so that its translation is removed
+        cenmove(:)=cenring(:)-cen1(:)
+        do idx=1,ringnatm
+            iatm=ringatm(idx)
+            a(iatm)%x=a(iatm)%x-cenmove(1)
+            a(iatm)%y=a(iatm)%y-cenmove(2)
+            a(iatm)%z=a(iatm)%z-cenmove(3)
+        end do
+        
+        call ptsfitplane(ringatm,ringnatm,vecn(1),vecn(2),vecn(3),rnouse,rmsfit) !Normal vector of the ring at first frame
+        
+        !Calculate tangential displacement for all atoms in the ring and then take average
+        dtan_avg=0
+        do idx=1,ringnatm
+            iatm=ringatm(idx)
+            !vecr is the vector pointing from ring center to reference atom
+            vecr(1)=(a(iatm)%x+alast(iatm)%x)/2-cen1(1)
+            vecr(2)=(a(iatm)%y+alast(iatm)%y)/2-cen1(2)
+            vecr(3)=(a(iatm)%z+alast(iatm)%z)/2-cen1(3)
+            !Construct tangential unit vector
+            call crossprod(vecn,vecr,vectan)
+            vectan=vectan/dsqrt(sum(vectan**2))
+            !Movement vector of reference atom along tangential direction
+            vecmove(1)=a(iatm)%x-alast(iatm)%x
+            vecmove(2)=a(iatm)%y-alast(iatm)%y
+            vecmove(3)=a(iatm)%z-alast(iatm)%z
+            !Tangential displacement
+            dtan=dot_product(vecmove,vectan)
+            dtan_avg=dtan_avg+dtan
+        end do
+        dtan_avg=dtan_avg/ringnatm/timestep
+        
+        angvel=dtan_avg/ringradius
+        write(11,"(i10,f12.2,4f10.4)") (iframe-1),(iframe-1)*timestep,dtan_avg*b2a,abs(dtan_avg)*b2a,angvel,abs(angvel)
+        
+    end if
+    
+    !Output processed ring geometry
+    !write(12,*) ringnatm
+    !write(12,"('Frame',i13)") iframe
+    !do itmp=1,ringnatm
+    !    iatm=ringatm(itmp)
+	   ! write(12,"(a,3f16.8)") ind2name(a(iatm)%index),a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+    !end do
+    
+    alast=a
+    if (mod(iframe,100)==0) call showprog(iframe,nframetraj)
+end do
+call showprog(nframetraj,nframetraj)
+
+close(10)
+close(11)
+!close(12)
+
+if (nskip>0) then
+    write(*,"(/,' Number of skipped frames:',i10,' (',f8.3,' %)')") nskip,float(nskip)/nframetraj*100
+else
+    write(*,*) "No frame is skipped"
+end if
+write(*,*)
+write(*,*) "Results have been exported to rotate.txt in current folder"
+write(*,*) "Column 1: Frame"
+write(*,*) "Column 2: Time (ps)"
+write(*,*) "Column 3: Tangential velocity (signed, Angstrom*rad/ps)"
+write(*,*) "Column 4: Tangential velocity (unsigned, Angstrom*rad/ps)"
+write(*,*) "Column 5: Angle velocity (signed, rad/ps)"
+write(*,*) "Column 6: Angle velocity (unsigned, rad/ps)"
+!write(*,*)
+!write(*,"(a)") " The ring coordinates with removal of overall rotation and translation with respect to the first frame has been exported to ring.xyz"
 end subroutine
 
 

@@ -1,6 +1,6 @@
 module GUI
 use plot
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 !Used for sharing dislin id between various GUI routines
 integer iatm1text,iatm2text,iatm3text,iatm4text,igeomresult
 integer idisisosurnumpt,idisisosurverypoor,idisisosurpoor,idisisosurdef,idisisosurgood,idisisosurhigh,idisisosurveryhigh,idisisosurperfect
@@ -16,23 +16,32 @@ end subroutine
 !!--------- A GUI for drawing molecular structure and orbital isosurface
 subroutine drawmolgui
 use defvar
-character ictmp*4,molorblist*50000 !max 9999 orbitals (the 0th is "none"), each one take up 4 characters, adding "|",so 10000*(4+1)=50000
+character ictmp*5,molorblist*600000 !Max 99999 orbitals (the 0th is "none"), each one take up 5 characters, adding "|", so 100000*(5+1)=600000
 isavepic=0
 if (ifPBC>0) then
     aug3D_main0=-1 !For PBC system, make box size consistent with cell
     ishowdatarange=1 !Show box
-    nprevorbgrid=25000 !Corresponding to very poor quality
+    if (allocated(b)) then
+		nprevorbgrid=25000 !Corresponding to very poor quality
+		write(*,"(a)") " Note: Because this is a periodic system, the default grid quality is set to ""very poor"" to reduce &
+        possibly high cost for visualizing orbitals. To use better grid qualtiy, choose ""Isosur. quality"" in menu bar of GUI"
+    end if
 end if
-!Set variables for viewing orbital
-molorblist(1:4)="None"
-molorblist(5:)=" "
-do i=1,nmo
-	write(ictmp,"(i4)") i
-	molorblist(i*5+1:i*5+5)="|"//ictmp
+!Set variables for viewing orbitals
+molorblist(1:5)="None"
+molorblist(6:)=" "
+ntmp=6
+do i=1,min(99999,nmo)
+	write(ictmp,"(i5)") i
+	molorblist(i*ntmp+1:i*ntmp+ntmp)="|"//ictmp
 end do
 GUI_mode=1
 idrawmol=1 !Molecular structure must be drawn
-CALL swgtit('Molecular structure / Orbital isosurfaces')
+if (allocated(b)) then
+	CALL swgtit("Geometry structure / Orbital isosurfaces")
+else
+	CALL swgtit("Geometry structure")
+end if
 if (imodlayout==2) then
 	call swgwth(80)
 	!The main window will appear at left-upper corner
@@ -82,10 +91,13 @@ call wgapp(idisisosurquality,"good quality (300k points)",idisisosurgood)
 call wgapp(idisisosurquality,"High quality (500k points)",idisisosurhigh)
 call wgapp(idisisosurquality,"Very high quality (1000k points)",idisisosurveryhigh)
 call wgapp(idisisosurquality,"Perfect quality (1500k points)",idisisosurperfect)
-CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
-CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
+CALL WGPOP(idiswindow,"Set view",idissetpersp)
+CALL wgapp(idissetpersp,"Set rotation of viewpoint",idissetangle)
+CALL wgapp(idissetpersp,"Set rotation along screen",idissetcamrot)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
-CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
+CALL wgapp(idissetpersp,"Set position of focus point",idissetfocpt)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic modes",idisortho)
+CALL wgapp(idissetpersp,"Set focus length of perspective mode",idissetVANG3D)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set extension distance",idisextdist)
 CALL wgapp(idisotherset,"Make box size consistent to cell",idisboxeqcell)
@@ -119,7 +131,7 @@ CALL wgapp(idistools,"Export all internal coordinates",idisexpintcoord)
 if (imodlayout==2) call swgdrw(0.9D0) !Set height of drawing widget 0.9*width to make it fully shown
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
-CALL SWGSPC(1.3D0,0.0D0) !Set space between widgets below
+CALL SWGSPC(1.3D0,0D0) !Set space between widgets below
 CALL WGBAS(idiswindow,"VERT",idisright)
 if ((isys==1.and.imodlayout==1).or.isys==2) CALL WGBAS(idiswindow,"VERT",idisright2) !Provide another frame for linux version
 call wgpbut(idisright,"RETURN",idisreturn)
@@ -137,17 +149,17 @@ call wgbut(idisright,"Show+Sel. isosur#2",isosursec,idisisosursec)
 call swgatt(idisisosursec,"INACTIVE","STATUS") !User cannot select isosurface 2 when just entered this GUI, it must be activated by selecting an orbital
 if (imodlayout<=1) then !When imodlayout=2, make below widgets invisible to ensure the orbital selection box can be shown
 	call SWGSTP(0.05D0)
-	call wgscl(idisright,"Bonding threshold",0.0D0,5.0D0,1.15D0,2,idisbondcrit)
+	call wgscl(idisright,"Bonding threshold",0D0,5D0,1.15D0,2,idisbondcrit)
 end if
 call SWGSTP(0.1D0)
-call wgscl(idisright,"Ratio of atomic size",0.0D0,5.0D0,1.0D0,2,idisatmsize)
+call wgscl(idisright,"Ratio of atomic size",0D0,5D0,1D0,2,idisatmsize)
 if (imodlayout<=1) then
 	call SWGSTP(0.02D0)
-	call wgscl(idisright,"Radius of bonds",0.0D0,1.0D0,0.2D0,2,idisbondradius)
+	call wgscl(idisright,"Radius of bonds",0D0,1D0,0.2D0,2,idisbondradius)
 end if
-call SWGSTP(3.0D0)
-call wgscl(idisright,"Size of atomic labels",0.0D0,100.0D0,38.0D0,0,idislabelsize)
-CALL SWGSPC(0.0D0,0.0D0)
+call SWGSTP(3D0)
+call wgscl(idisright,"Size of atomic labels",0D0,100D0,38D0,0,idislabelsize)
+CALL SWGSPC(0D0,0D0)
 if (isys==1.and.(imodlayout==0.or.imodlayout==2)) then
 	!Set region for orbital viewing
 	call WGLAB(idisright,"Orbitals:",iorbseltext)
@@ -167,9 +179,9 @@ if (isys==1.and.(imodlayout==0.or.imodlayout==2)) then
 	call swgwin(100,5,70,115)
 	call swgtyp("VERT","SCALE")
 	call swgstp(0.002D0)
-	call wgscl(idisbotrig,"Isovalue",0D0,0.4D0,sur_value,3,idisisosurscl)
+	call wgscl(idisbotrig,"Isovalue",0D0,0.4D0,sur_value_orb,3,idisisosurscl)
 else if ((isys==1.and.imodlayout==1).or.isys==2) then !Use different layout for linux, since the sizes of widgets relative to Windows version are different
-	CALL SWGSPC(0.0D0,0.5D0)
+	CALL SWGSPC(0D0,0.5D0)
 	call WGLAB(idisright2,"Orbitals:",iorbseltext)
 	call swgtyp("SCROLL","LIST")
 	call WGLIS(idisright2,molorblist,1,iorblis)
@@ -179,7 +191,7 @@ else if ((isys==1.and.imodlayout==1).or.isys==2) then !Use different layout for 
 	call swgtyp("HORI","PBAR")
 	call swgtyp("HORI","SCALE")
 	call swgstp(0.002D0)
-	call wgscl(idisright2,"Isovalue of orbital",0D0,0.4D0,sur_value,3,idisisosurscl)
+	call wgscl(idisright2,"Isovalue of orbital",0D0,0.4D0,sur_value_orb,3,idisisosurscl)
 end if
 
 call SWGCBK(idisorbinfo,showorbinfo1)
@@ -215,9 +227,12 @@ call SWGCBK(idisisosurhigh,setisosurnumpt)
 call SWGCBK(idisisosurveryhigh,setisosurnumpt)
 call SWGCBK(idisisosurperfect,setisosurnumpt)
 call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetcamrot,setcamrot)
 call SWGCBK(idissetzoom,setzoom)
-call SWGCBK(idisextdist,setextdist)
+call SWGCBK(idissetfocpt,setfocpt)
 call SWGCBK(idisortho,setorthoview)
+call SWGCBK(idissetVANG3D,setVANG3D)
+call SWGCBK(idisextdist,setextdist)
 call SWGCBK(idisboxeqcell,setboxeqcell)
 call SWGCBK(idissetorbisovalue,setorbisovalue)
 call SWGCBK(idissetlight,setlight)
@@ -238,7 +253,7 @@ call SWGCBK(idisbatchplot,batchplot)
 call SWGCBK(idisselfrag,GUIselfrag)
 call SWGCBK(idisgetatmidx_by_ele,getatmidx_by_ele)
 call SWGCBK(idisshowcoordA,showcoordA)
-call SWGCBK(idisshowcoordA,showcoordB)
+call SWGCBK(idisshowcoordB,showcoordB)
 call SWGCBK(idisshowfractcoord,showfractcoord)
 call SWGCBK(idisexpintcoord,export_intcoord)
 call SWGCBK(idisreturn,GUIreturn)
@@ -264,7 +279,7 @@ call SWGCBK(idislabelsize,setlabelsize)
 call SWGCBK(iorblis,showorbsellist)
 call SWGCBK(iorbtxt,showorbselbox)
 call SWGCBK(idisisosurscl,setisosurscl)
-CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
+CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 idrawisosur=0 !Don't draw the cubmat in memory at first time go into the GUI
 if (isys==1) call drawmol !Directly show image in Windows GUI.
@@ -397,10 +412,13 @@ else if (iallowsetstyle==2) then
 	call wgapp(idisisosurallstyle,"Use solid face+mesh",idisisosurallsolidmesh)
 	call wgapp(idisisosurallstyle,"Use transparent face",idisisosuralltpr)
 end if
-CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
-CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
+CALL WGPOP(idiswindow,"Set view",idissetpersp)
+CALL wgapp(idissetpersp,"Set rotation of viewpoint",idissetangle)
+CALL wgapp(idissetpersp,"Set rotation along screen",idissetcamrot)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
-CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
+CALL wgapp(idissetpersp,"Set position of focus point",idissetfocpt)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic modes",idisortho)
+CALL wgapp(idissetpersp,"Set focus length of perspective mode",idissetVANG3D)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set lighting",idissetlight)
 CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
@@ -420,7 +438,7 @@ CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idisright,"VERT",idisOK)
 ! CALL WGBAS(idisright,"FORM",idisOK) !seems this function has bug in current dislin version
 ! call swgsiz(int(iscrwidth*0.12D0),50)
-CALL SWGSPC(1.3D0,0.0D0) !Set space between widgets below
+CALL SWGSPC(1.3D0,0D0) !Set space between widgets below
 call wgpbut(idisOK,"RETURN",idisreturn)
 call wgpbut(idisright,"Up",idisrotup)
 call wgpbut(idisright,"Down",idisrotdown)
@@ -453,15 +471,15 @@ else
 end if
 if (imodlayout<=1) then
 	call SWGSTP(0.05D0)
-	call wgscl(idisright,"Bonding threshold",0.0D0,5.0D0,1.15D0,2,idisbondcrit)
+	call wgscl(idisright,"Bonding threshold",0D0,5D0,1.15D0,2,idisbondcrit)
 	call SWGSTP(0.02D0)
-	call wgscl(idisright,"Radius of bonds",0.0D0,2.0D0,0.2D0,2,idisbondradius)
+	call wgscl(idisright,"Radius of bonds",0D0,2D0,0.2D0,2,idisbondradius)
 end if
 call SWGSTP(0.1D0)
-call wgscl(idisright,"Ratio of atomic size",0.0D0,5.0D0,1.0D0,2,idisatmsize)
-call SWGSTP(3.0D0)
-call wgscl(idisright,"Size of atomic labels",0.0D0,200.0D0,38.0D0,0,idislabelsize)
-CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
+call wgscl(idisright,"Ratio of atomic size",0D0,5D0,1D0,2,idisatmsize)
+call SWGSTP(3D0)
+call wgscl(idisright,"Size of atomic labels",0D0,200D0,38D0,0,idislabelsize)
+CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 
 if (iallowsetstyle==1) then
 	call SWGCBK(idisisosur1solid,setisosur1solid)
@@ -483,8 +501,11 @@ else if (iallowsetstyle==2) then
 	call SWGCBK(idisisosuralltpr,setisosuralltpr)
 end if
 call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetcamrot,setcamrot)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idissetfocpt,setfocpt)
 call SWGCBK(idisortho,setorthoview)
+call SWGCBK(idissetVANG3D,setVANG3D)
 call SWGCBK(idissetlight,setlight)
 call SWGCBK(idisatmlabtyp,setatmlabtyp)
 call SWGCBK(idisatmlabclr,setatmlabclr)
@@ -551,10 +572,13 @@ CALL WGPOP(idiswindow,"CP labelling settings",idissetlabclr)
 CALL wgapp(idissetlabclr,"Set atomic label color",idisatmlabclr)
 CALL wgapp(idissetlabclr,"Set CP label color",idisCPlabclr)
 CALL wgapp(idissetlabclr,"Labelling only one CP",idisCPlabone)
-CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
-CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
+CALL WGPOP(idiswindow,"Set view",idissetpersp)
+CALL wgapp(idissetpersp,"Set rotation of viewpoint",idissetangle)
+CALL wgapp(idissetpersp,"Set rotation along screen",idissetcamrot)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
-CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
+CALL wgapp(idissetpersp,"Set position of focus point",idissetfocpt)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic modes",idisortho)
+CALL wgapp(idissetpersp,"Set focus length of perspective mode",idissetVANG3D)
 CALL WGPOP(idiswindow,"Other settings",idisotherset)
 CALL wgapp(idisotherset,"Set atomic label type",idisatmlabtyp)
 CALL wgapp(idisotherset,"Set atomic label color",idisatmlabclr)
@@ -567,7 +591,7 @@ if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
 !Main region
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
-CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
+CALL SWGSPC(1D0,0D0) !Set space between widgets below
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idisright,"VERT",idisOK)
 call wgpbut(idisOK,"RETURN",idisreturn)
@@ -592,20 +616,23 @@ call wgbut(idisright,"Show (3,-3)",ishow3n3,idisshow3n3)
 call wgbut(idisright,"Show (3,-1)",ishow3n1,idisshow3n1)
 call wgbut(idisright,"Show (3,+1)",ishow3p1,idisshow3p1)
 call wgbut(idisright,"Show (3,+3)",ishow3p3,idisshow3p3)
-CALL SWGSPC(1.0D0,0.0D0)
+CALL SWGSPC(1D0,0D0)
 call SWGSTP(0.1D0)
-call wgscl(idisright,"Ratio of atomic size",0.0D0,5D0,ratioatmsphere,2,idisatmsize)
+call wgscl(idisright,"Ratio of atomic size",0D0,5D0,ratioatmsphere,2,idisatmsize)
 if (imodlayout<=1) then
 	call SWGSTP(0.02D0)
-	call wgscl(idisright,"Radius of bonds",0.0D0,0.5D0,bondradius,2,idisbondradius)
+	call wgscl(idisright,"Radius of bonds",0D0,0.5D0,bondradius,2,idisbondradius)
 end if
-call SWGSTP(2.0D0)
-call wgscl(idisright,"Size of labels",20.0D0,100.0D0,textheigh,0,idislabelsize)
+call SWGSTP(2D0)
+call wgscl(idisright,"Size of labels",20D0,100D0,textheigh,0,idislabelsize)
 call SWGSTP(0.05D0)
-call wgscl(idisright,"Ratio of CP size",0.0D0,2D0,ratioCPsphere,2,idisCPsize)
+call wgscl(idisright,"Ratio of CP size",0D0,2.5D0,ratioCPsphere,2,idisCPsize)
 call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetcamrot,setcamrot)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idissetfocpt,setfocpt)
 call SWGCBK(idisortho,setorthoview)
+call SWGCBK(idissetVANG3D,setVANG3D)
 call SWGCBK(idisatmlabclr,setatmlabclr)
 call SWGCBK(idisCPlabclr,setCPlabclr)
 call SWGCBK(idisCPlabone,setCPlabone)
@@ -644,7 +671,7 @@ call SWGCBK(idisatmsize,setatmsize)
 call SWGCBK(idisCPsize,setCPsize)
 if (imodlayout<=1) call SWGCBK(idisbondradius,setbondradius)
 call SWGCBK(idislabelsize,setlabelsize)
-CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
+CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 if (isys==1) call drawmol
 CALL WGFIN
@@ -670,11 +697,14 @@ call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
 call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
-CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
-CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
-CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
+CALL SWGSPC(1D0,0D0) !Set space between widgets below
+CALL WGPOP(idiswindow,"Set view",idissetpersp)
+CALL wgapp(idissetpersp,"Set rotation of viewpoint",idissetangle)
+CALL wgapp(idissetpersp,"Set rotation along screen",idissetcamrot)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
-CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
+CALL wgapp(idissetpersp,"Set position of focus point",idissetfocpt)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic modes",idisortho)
+CALL wgapp(idissetpersp,"Set focus length of perspective mode",idissetVANG3D)
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idisright,"VERT",idisOK)
 call wgpbut(idisOK,"RETURN",idisreturn)
@@ -693,16 +723,19 @@ call wgbut(idisright,"Maximum label",ishowlocmaxlab,idisshowlocmaxlab)
 call wgbut(idisright,"Minimum position",ishowlocminpos,idisshowlocminpos)
 call wgbut(idisright,"Maximum position",ishowlocmaxpos,idisshowlocmaxpos)
 call wgbut(idisright,"Show axis",ishowaxis,idisshowaxis)
-CALL SWGSPC(1.0D0,0.0D0)
+CALL SWGSPC(1D0,0D0)
 call SWGSTP(0.1D0)
-call wgscl(idisright,"Ratio of atomic size",0.0D0,6D0,ratioatmsphere,2,idisatmsize)
+call wgscl(idisright,"Ratio of atomic size",0D0,6D0,ratioatmsphere,2,idisatmsize)
 call SWGSTP(0.02D0)
-call wgscl(idisright,"Radius of bonds",0.0D0,0.5D0,bondradius,2,idisbondradius)
-call SWGSTP(2.0D0)
-call wgscl(idisright,"Size of labels",0.0D0,80.0D0,textheigh,0,idislabelsize)
+call wgscl(idisright,"Radius of bonds",0D0,0.5D0,bondradius,2,idisbondradius)
+call SWGSTP(2D0)
+call wgscl(idisright,"Size of labels",0D0,80D0,textheigh,0,idislabelsize)
 call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetcamrot,setcamrot)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idissetfocpt,setfocpt)
 call SWGCBK(idisortho,setorthoview)
+call SWGCBK(idissetVANG3D,setVANG3D)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -722,7 +755,7 @@ call SWGCBK(idisshowaxis,ifshowaxis)
 call SWGCBK(idisatmsize,setatmsize)
 call SWGCBK(idisbondradius,setbondradius)
 call SWGCBK(idislabelsize,setlabelsize)
-CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
+CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 if (isys==1) call drawmol
 CALL WGFIN
@@ -759,17 +792,21 @@ call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
 call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
-CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
-CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
-CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
-CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
-CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
+CALL SWGSPC(1D0,0D0) !Set space between widgets below
 CALL WGPOP(idiswindow,"Set basin drawing method",idissetdraw)
 if (allocated(b)) CALL wgapp(idissetdraw,"Entire basin",idisshowbasinall)
 if (allocated(b)) CALL wgapp(idissetdraw,"rho>0.001 region only",idisshowbasinvdw)
 CALL wgapp(idissetdraw,"Set sphere size for showing basins",idissetbasinsphsize)
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idiswindow,"VERT",idisright2) !Provide another frame for linux version
+CALL WGPOP(idiswindow,"Other settings",idisotherset)
+CALL WGPOP(idiswindow,"Set view",idissetpersp)
+CALL wgapp(idissetpersp,"Set rotation of viewpoint",idissetangle)
+CALL wgapp(idissetpersp,"Set rotation along screen",idissetcamrot)
+CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
+CALL wgapp(idissetpersp,"Set position of focus point",idissetfocpt)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic modes",idisortho)
+CALL wgapp(idissetpersp,"Set focus length of perspective mode",idissetVANG3D)
 CALL WGBAS(idisright,"VERT",idisOK)
 call wgpbut(idisOK,"RETURN",idisreturn)
 call wgpbut(idisright,"Up",idisrotup)
@@ -785,17 +822,21 @@ call wgbut(idisright,"Show axis",ishowaxis,idisshowaxis)
 call wgbut(idisright,"Atom labels",ishowatmlab,idisshowatmlab)
 call wgbut(idisright,"Attractor labels",ishowattlab,idisshowattlab)
 call wgbut(idisright,"Show basin interior",idrawinternalbasin,idisdrawinternalbasin)
-CALL SWGSPC(1.0D0,0.0D0)
+CALL wgapp(idisotherset,"Toggle showing cell frame",idisshowcell)
+if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
+CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
+if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
+CALL SWGSPC(1D0,0D0)
 if (imodlayout<=1) then
 	call SWGSTP(0.1D0)
-	call wgscl(idisright,"Ratio of atomic size",0.0D0,5D0,ratioatmsphere,2,idisatmsize)
+	call wgscl(idisright,"Ratio of atomic size",0D0,5D0,ratioatmsphere,2,idisatmsize)
 	call SWGSTP(0.02D0)
-	call wgscl(idisright,"Radius of bonds",0.0D0,0.5D0,bondradius,2,idisbondradius)
+	call wgscl(idisright,"Radius of bonds",0D0,0.5D0,bondradius,2,idisbondradius)
 end if
-call SWGSTP(2.0D0)
-call wgscl(idisright,"Size of labels",0.0D0,80.0D0,textheigh,0,idislabelsize)
+call SWGSTP(2D0)
+call wgscl(idisright,"Size of labels",0D0,80D0,textheigh,0,idislabelsize)
 call SWGSTP(0.02D0)
-call wgscl(idisright,"Size of attractors",0.0D0,0.3D0,attsphsize,2,idisattsize)
+call wgscl(idisright,"Size of attractors",0D0,0.3D0,attsphsize,2,idisattsize)
 if (isys==1) then
 	call WGLAB(idisright,"Basins:",ibasinseltext)
 	CALL WGBAS(idisright,"FORM",idisbotrig)
@@ -810,8 +851,11 @@ end if
 
 !Widget response
 call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetcamrot,setcamrot)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idissetfocpt,setfocpt)
 call SWGCBK(idisortho,setorthoview)
+call SWGCBK(idissetVANG3D,setVANG3D)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -837,8 +881,13 @@ call SWGCBK(idisbasinplot,showbasinsel)
 if (allocated(b)) call SWGCBK(idisshowbasinall,showbasinall)
 if (allocated(b)) call SWGCBK(idisshowbasinvdw,showbasinvdw)
 call SWGCBK(idissetbasinsphsize,setbasinsphsize)
-CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
+call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idisortho,setorthoview)
+CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
+call SWGCBK(idisshowcell,setshowcell)
+call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
 idrawbasinidx=-10 !Don't draw basins by default
 if (isys==1) call drawmol
 CALL WGFIN
@@ -873,11 +922,14 @@ call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
 call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
-CALL SWGSPC(1.0D0,0.0D0) !Set space between widgets below
-CALL WGPOP(idiswindow,"Set perspective",idissetpersp)
-CALL wgapp(idissetpersp,"Set rotation angle",idissetangle)
+CALL SWGSPC(1D0,0D0) !Set space between widgets below
+CALL WGPOP(idiswindow,"Set view",idissetpersp)
+CALL wgapp(idissetpersp,"Set rotation of viewpoint",idissetangle)
+CALL wgapp(idissetpersp,"Set rotation along screen",idissetcamrot)
 CALL wgapp(idissetpersp,"Set zoom distance",idissetzoom)
-CALL wgapp(idissetpersp,"Toggle between perspective and orthographic views",idisortho)
+CALL wgapp(idissetpersp,"Set position of focus point",idissetfocpt)
+CALL wgapp(idissetpersp,"Toggle between perspective and orthographic modes",idisortho)
+CALL wgapp(idissetpersp,"Set focus length of perspective mode",idissetVANG3D)
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idiswindow,"VERT",idisright2) !Provide another frame for linux version
 CALL WGBAS(idisright,"VERT",idisOK)
@@ -893,12 +945,17 @@ call wgpbut(idisright,"Save picture",idissavepic)
 call wgbut(idisright,"Show molecule",idrawmol,idisshowmol)
 call wgbut(idisright,"Show axis",ishowaxis,idisshowaxis)
 call wgbut(idisright,"Atom labels",ishowatmlab,idisshowatmlab)
-CALL SWGSPC(1.0D0,0.0D0)
+CALL WGPOP(idiswindow,"Other settings",idisotherset)
+CALL wgapp(idisotherset,"Toggle showing cell frame",idisshowcell)
+if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
+CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
+if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
+CALL SWGSPC(1D0,0D0)
 call SWGSTP(0.1D0)
-call wgscl(idisright,"Ratio of atomic size",0.0D0,5D0,ratioatmsphere,2,idisatmsize)
+call wgscl(idisright,"Ratio of atomic size",0D0,5D0,ratioatmsphere,2,idisatmsize)
 call SWGSTP(0.02D0)
-call wgscl(idisright,"Radius of bonds",0.0D0,0.5D0,bondradius,2,idisbondradius)
-call SWGSTP(2.0D0)
+call wgscl(idisright,"Radius of bonds",0D0,0.5D0,bondradius,2,idisbondradius)
+call SWGSTP(2D0)
 if (isys==1) then
 	call WGLAB(idisright,"Domains:",idomainseltext)
 	CALL WGBAS(idisright,"FORM",idisbotrig)
@@ -913,8 +970,11 @@ end if
 call SWGLIS(idisdomainplot,idrawdomainidx+1)
 !Widget response
 call SWGCBK(idissetangle,setviewangle)
+call SWGCBK(idissetcamrot,setcamrot)
 call SWGCBK(idissetzoom,setzoom)
+call SWGCBK(idissetfocpt,setfocpt)
 call SWGCBK(idisortho,setorthoview)
+call SWGCBK(idissetVANG3D,setVANG3D)
 call SWGCBK(idisreturn,GUIreturn)
 call SWGCBK(idisrotleft,rotleft)
 call SWGCBK(idisrotright,rotright)
@@ -930,8 +990,10 @@ call SWGCBK(idisshowaxis,ifshowaxis)
 call SWGCBK(idisshowatmlab,ifshowatmlabel)
 call SWGCBK(idisatmsize,setatmsize)
 call SWGCBK(idisbondradius,setbondradius)
-call SWGCBK(idisdomainplot,showdomainsel) 
-CALL SWGSPC(4.0D0,0.5D0) !Reset the default widget spacing
+call SWGCBK(idisdomainplot,showdomainsel)
+call SWGCBK(idisshowcell,setshowcell)
+call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
+CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 if (isys==1) call drawmol
 CALL WGFIN
@@ -966,7 +1028,7 @@ CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
 CALL SWGWTH(20) !Set parent widget width
 CALL WGBAS(idiswindow,"VERT",idisright)
 CALL WGBAS(idisright,"VERT",idisOK)
-CALL SWGSPC(1.3D0,0.0D0) !Set space between widgets below
+CALL SWGSPC(1.3D0,0D0) !Set space between widgets below
 if (imodlayout<=1) call wgpbut(idisOK,"RETURN",idisreturn)
 call wgpbut(idisright,"Up",idisrotup)
 call wgpbut(idisright,"Down",idisrotdown)
@@ -977,7 +1039,7 @@ call wgpbut(idisright,"Zoom out",idiszoomout)
 if (imodlayout<=1) then
 	call wgbut(idisright,"Show atomic labels",ishowatmlab,idisshowatmlab)
 	call swgstp(0.1D0) !step size of scale bar than default
-	call wgscl(idisright,"Ratio of atomic size",0.0D0,5.0D0,1.0D0,2,idisatmsize)
+	call wgscl(idisright,"Ratio of atomic size",0D0,5D0,1D0,2,idisatmsize)
 end if
 !Set box length. The default initial box just encompass the system and the center is located at geometry center
 xmin=minval(a%x)
@@ -1023,9 +1085,9 @@ boxcenY=(orgy+endy)/2D0
 boxcenZ=(orgz+endz)/2D0
 if (imodlayout<=1) call wgsep(idisright,idissep)
 call swgstp(0.2D0)
-call wgscl(idisright,"X length (Bohr)",0.0D0,(xmax-xmin)+2*8,boxlenX,2,idisboxsizeX)
-call wgscl(idisright,"Y length (Bohr)",0.0D0,(ymax-ymin)+2*8,boxlenY,2,idisboxsizeY)
-call wgscl(idisright,"Z length (Bohr)",0.0D0,(zmax-zmin)+2*8,boxlenZ,2,idisboxsizeZ)
+call wgscl(idisright,"X length (Bohr)",0D0,(xmax-xmin)+2*8,boxlenX,2,idisboxsizeX)
+call wgscl(idisright,"Y length (Bohr)",0D0,(ymax-ymin)+2*8,boxlenY,2,idisboxsizeY)
+call wgscl(idisright,"Z length (Bohr)",0D0,(zmax-zmin)+2*8,boxlenZ,2,idisboxsizeZ)
 call wgscl(idisright,"X center (Bohr)",minval(a%x),maxval(a%x),boxcenX,2,idisboxposX)
 call wgscl(idisright,"Y center (Bohr)",minval(a%y),maxval(a%y),boxcenY,2,idisboxposY)
 call wgscl(idisright,"Z center (Bohr)",minval(a%z),maxval(a%z),boxcenZ,2,idisboxposZ)
@@ -1103,9 +1165,9 @@ call wgpbut(idisright,"Save picture",idissavepic)
 call wgbut(idisright,"Show axis",ishowaxis,idisshowaxis)
 call wgbut(idisright,"Show atomic labels",ishowatmlab,idisshowatmlab)
 call swgstp(0.1D0) !Step size of scale bar
-call wgscl(idisright,"Ratio of atomic size",0.0D0,5.0D0,1.0D0,2,idisatmsize)
-call SWGSTP(2.0D0)
-call wgscl(idisright,"Size of labels",0.0D0,80.0D0,textheigh,0,idislabelsize)
+call wgscl(idisright,"Ratio of atomic size",0D0,5D0,1D0,2,idisatmsize)
+call SWGSTP(2D0)
+call wgscl(idisright,"Size of labels",0D0,80D0,textheigh,0,idislabelsize)
 
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
@@ -1201,17 +1263,25 @@ end subroutine
 
 subroutine zoomin(id)
 integer,intent (in) :: id
-if (ZVU==2) return !Already too near to the system
-ZVU=ZVU-0.5D0
+if (iorthoview==0) then !Perspective
+	if (ZVU<=2) return !Already too close to the system, this routine should not be called again, otherwise the map will be crazy!
+	ZVU=ZVU-0.5D0
+else if (iorthoview==1) then !Ortho
+	XFAC=XFAC+0.1D0
+end if
 if (GUI_mode/=2) call drawmol
 if (GUI_mode==2) call drawplane(dp_init1,dp_end1,dp_init2,dp_end2,dp_init3,dp_end3,idrawtype)
-if (ZVU==2) call SWGATT(idiszoomin,"INACTIVE","STATUS") !Too near the molecule, disable zoom in button
+if (iorthoview==0.and.ZVU<=2) call SWGATT(idiszoomin,"INACTIVE","STATUS") !Too close to the system, disable zoom in button
 end subroutine
 
 subroutine zoomout(id)
 integer,intent (in) :: id
-if (ZVU==2) call SWGATT(idiszoomin,"ACTIVE","STATUS")
-ZVU=ZVU+0.5D0
+if (iorthoview==0) then !Perspective
+	ZVU=ZVU+0.5D0
+	if (ZVU>2) call SWGATT(idiszoomin,"ACTIVE","STATUS") !No the camera is not too close the molecule, the zoom in can be used now
+else if (iorthoview==1) then !Ortho
+	XFAC=XFAC-0.1D0
+end if
 if (GUI_mode/=2) call drawmol
 if (GUI_mode==2) call drawplane(dp_init1,dp_end1,dp_init2,dp_end2,dp_init3,dp_end3,idrawtype)
 end subroutine
@@ -1224,30 +1294,37 @@ end subroutine
 
 subroutine resetview(id)
 integer,intent (in) :: id
+iorthoview=0
 XVU=150D0
 YVU=30D0
+XFAC=1D0
+VANG3DANG=28D0
+XFOC=0D0
+YFOC=0D0
+ZFOC=0D0
+camrotang=0D0
 atmlabclrR=0D0
 atmlabclrG=0D0
 atmlabclrB=0D0
 if (GUI_mode==1.or.GUI_mode==3) then
 	bondcrit=1.15D0
-	textheigh=38.0D0
-	ratioatmsphere=1.0D0
+	textheigh=38D0
+	ratioatmsphere=1D0
 	bondradius=0.2D0
 	ishowatmlab=1
 	ishowaxis=1
 	call swgbut(idisshowatmlab,ishowatmlab)
 	call swgbut(idisshowaxis,ishowaxis)
 	if (GUI_mode==1) then
-		sur_value=0.05D0
-		ZVU=6.0D0
-		call swgscl(idisisosurscl,sur_value)
+		sur_value_orb=0.05D0
+		ZVU=6D0
+		call swgscl(idisisosurscl,sur_value_orb)
 		if (imodlayout/=2) call swgscl(idisbondradius,bondradius)
 		call swgscl(idisatmsize,ratioatmsphere)
 		if (imodlayout/=2) call swgscl(idisbondcrit,bondcrit)
 		call swgscl(idislabelsize,textheigh)
 	else if (GUI_mode==3) then
-		ZVU=7.0D0
+		ZVU=7D0
 		if (isosursec==0) isosurshowboth=1
 		ishowdatarange=0
 		idrawmol=1
@@ -1258,7 +1335,7 @@ if (GUI_mode==1.or.GUI_mode==3) then
 		call swgbut(idisshowisosur,idrawisosur)
 	end if
 else if (GUI_mode==4) then
-	ZVU=5.0D0 !Let the system seems closer
+	ZVU=5D0 !Let the system seems closer
 	ishowatmlab=0
 	ishowCPlab=0
 	ishowpathlab=0
@@ -1288,9 +1365,9 @@ else if (GUI_mode==4) then
 	call swgscl(idisatmsize,ratioatmsphere)
 	call swgscl(idislabelsize,textheigh)
 else if (GUI_mode==5) then
-	ZVU=6.0D0
-	textheigh=30.0D0
-	ratioatmsphere=1.0D0
+	ZVU=6D0
+	textheigh=30D0
+	ratioatmsphere=1D0
 	bondradius=0.2D0
 	ishowatmlab=1
 	ishowaxis=1
@@ -1308,14 +1385,14 @@ else if (GUI_mode==5) then
 	call swgbut(idisshowlocminpos,ishowlocminpos)
 	call swgbut(idisshowlocmaxpos,ishowlocmaxpos)
 else if (GUI_mode==6) then
-	ZVU=6.0D0
+	ZVU=6D0
 	idrawmol=1
 	ishowaxis=1
 	ishowatmlab=0
 	idrawinternalbasin=0
-	ratioatmsphere=1.0D0
+	ratioatmsphere=1D0
 	bondradius=0.2D0
-	textheigh=40.0D0
+	textheigh=40D0
 	attsphsize=0.1D0
 	call swgbut(idisshowmol,idrawmol)
 	call swgbut(idisshowaxis,ishowaxis)
@@ -1327,7 +1404,7 @@ else if (GUI_mode==6) then
 	call swgscl(idislabelsize,textheigh)
 	call swgscl(idisattsize,attsphsize)
 else if (GUI_mode==2) then
-	ZVU=7.0D0
+	ZVU=7D0
 end if
 call SWGATT(idiszoomin,"ACTIVE","STATUS")
 if (GUI_mode/=2) call drawmol
@@ -1484,12 +1561,12 @@ end subroutine
 
 !Calculate grid data of selected orbital and plot it as isosurface
 subroutine showorbsel(id,iorb)
-use function
+use functions
 use defvar
 integer id,iorb
 real*8 molxlen,molylen,molzlen
 character(len=3) :: orbtype(0:2)=(/ "A+B"," A "," B " /)
-character :: symstr*6
+character :: symstr*6,tmpstr*10
 !Set grid for calculating cube data
 if (aug3D_main0>=0) then !Normal case 
     molxlen=(maxval(a%x)-minval(a%x))+2*aug3D_main0
@@ -1547,11 +1624,12 @@ else
 		end if
     end if
 	call SWGTXT(iorbseltext,"Please wait...")
-	call SWGFGD(iorbseltext,1.0D0,0D0,0D0)
+	call SWGFGD(iorbseltext,1D0,0D0,0D0)
 	if (isosursec==0) then !Save cube data for isosurface 1 to cubmat
 		if (allocated(cubmat)) deallocate(cubmat)
 		allocate(cubmat(nx,ny,nz))
-		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat) NUM_THREADS(nthreads)
+        ifinish=0
+		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat,ifinish) NUM_THREADS(nthreads)
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
@@ -1559,6 +1637,13 @@ else
 					cubmat(i,j,k)=fmo(tmpx,tmpy,tmpz,iorb)
 				end do
 			end do
+            !I found progress cannot normally display in GUI during parallel calculation, program will get stuck...
+			!!$OMP CRITICAL
+            !ifinish=ifinish+1
+            !write(tmpstr,"(f5.1,'%')") dfloat(ifinish)/nz*100
+            !call showprog(ifinish,nz)
+            !call SWGTXT(iorbseltext,trim(tmpstr))
+			!!$OMP end CRITICAL
 		end do
 		!$OMP end parallel do
 		if (ifixorbsign==1.and.sum(cubmat)<0) cubmat=-cubmat
@@ -1652,8 +1737,10 @@ end subroutine
 subroutine setisosurscl(id) !Drag scale bar, change sur_value & text
 integer,intent (in) :: id
 character temp*20
-call GWGSCL(id,sur_value)
-if (GUI_mode==3) then
+if (GUI_mode==1) then
+	call GWGSCL(id,sur_value_orb)
+else if (GUI_mode==3) then
+	call GWGSCL(id,sur_value)
 	write(temp,"(f8.3)") sur_value
 	call SWGTXT(idisscrval,temp)
 end if
@@ -1694,7 +1781,7 @@ end subroutine
 
 subroutine setCPKstyle(id)
 integer,intent (in) :: id
-ratioatmsphere=1.0D0
+ratioatmsphere=1D0
 bondradius=0.2D0
 if (imodlayout/=2) call swgscl(idisbondradius,bondradius)
 call swgscl(idisatmsize,ratioatmsphere)
@@ -1703,7 +1790,7 @@ end subroutine
 
 subroutine setvdWstyle(id)
 integer,intent (in) :: id
-ratioatmsphere=4.0D0
+ratioatmsphere=4D0
 bondradius=0.2D0
 if (imodlayout/=2) call swgscl(idisbondradius,bondradius)
 call swgscl(idisatmsize,ratioatmsphere)
@@ -1724,8 +1811,12 @@ subroutine setorthoview(id)
 integer,intent (in) :: id
 if (iorthoview==1) then
     iorthoview=0
+    call swgatt(idissetVANG3D,"ACTIVE","STATUS")
+	if (ZVU<=2) call SWGATT(idiszoomin,"INACTIVE","STATUS")
 else
     iorthoview=1
+    call swgatt(idissetVANG3D,"INACTIVE","STATUS")
+    call SWGATT(idiszoomin,"ACTIVE","STATUS")
 end if
 call drawmol
 end subroutine
@@ -1913,9 +2004,51 @@ subroutine setzoom(id)
 integer,intent (in) :: id
 character inpstring*30
 CALL SWGWTH(45)
-write(inpstring,"(f8.2)") ZVU
-call dwgtxt("Input zoom distance|Larger/smaller value = Zoom out/in",inpstring)
-read(inpstring,*) ZVU
+if (iorthoview==0) then
+	write(inpstring,"(f8.2)") ZVU
+	call dwgtxt("Input zoom distance|Larger/smaller value = Zoom out/in",inpstring)
+	read(inpstring,*) ZVU
+else if (iorthoview==1) then
+	write(inpstring,"(f8.3)") XFAC
+	call dwgtxt("Input zoom distance|Larger/smaller value = Zoom in/out",inpstring)
+	read(inpstring,*) XFAC
+end if
+call drawmol
+CALL SWGWTH(20) !Recover default
+end subroutine
+
+!Set focal length for 3D GUI when perspective is used
+subroutine setVANG3D(id)
+integer,intent (in) :: id
+character inpstring*30
+CALL SWGWTH(50)
+write(inpstring,"(f8.3)") VANG3DANG
+call dwgtxt("Input focal length, the larger, the more perspective",inpstring)
+read(inpstring,*) VANG3DANG
+call drawmol
+CALL SWGWTH(20) !Recover default
+end subroutine
+
+!Set absolute position of focus point for 3D GUI
+subroutine setfocpt(id)
+integer,intent (in) :: id
+character inpstring*30
+CALL SWGWTH(60)
+write(inpstring,"(f6.2,1x,f6.2,1x,f6.2)") XFOC,YFOC,ZFOC
+call dwgtxt("Input position of focus point in X,Y,Z, can also be negative",inpstring)
+read(inpstring,*) XFOC,YFOC,ZFOC
+call drawmol
+CALL SWGWTH(20) !Recover default
+end subroutine
+
+!Set rotation angle of the camera along screen for 3D GUI
+subroutine setcamrot(id)
+integer,intent (in) :: id
+character inpstring*30
+CALL SWGWTH(75)
+write(inpstring,"(f7.1)") camrotang
+call dwgtxt("Input rotation degree along screen. Positive/negative=anticlockwise/clockwise",inpstring)
+read(inpstring,*) camrotang
 call drawmol
 CALL SWGWTH(20) !Recover default
 end subroutine
@@ -1956,10 +2089,10 @@ use defvar
 integer,intent (in) :: id
 character inpstring*30
 CALL SWGWTH(60)
-write(inpstring,"(f10.5)") sur_value
+write(inpstring,"(f10.5)") sur_value_orb
 CALL swgtit("Set orbital isovalue")
 call dwgtxt("Input isovalue for showing orbitals",inpstring)
-read(inpstring,*) sur_value
+read(inpstring,*) sur_value_orb
 call drawmol
 CALL SWGWTH(20) !Recover default
 end subroutine
@@ -2527,22 +2660,37 @@ if (atm1text/=" ".and.atm2text/=" ".and.atm3text/=" ".and.atm4text/=" ") then
     if (iatm1<1.or.iatm1>ncenter.or.iatm2<1.or.iatm2>ncenter.or.iatm3<1.or.iatm3>ncenter.or.iatm4<1.or.iatm4>ncenter) then
         resultstr="Error: Atom index exceeded valid range!"
     else
-        tmpval=xyz2dih(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z,a(iatm3)%x,a(iatm3)%y,a(iatm3)%z,a(iatm4)%x,a(iatm4)%y,a(iatm4)%z)
-        write(resultstr,"('Dihedral:',f10.4,' degree')") tmpval
+        tmpval=atomdih(iatm1,iatm2,iatm3,iatm4,0)
+        tmpval2=atomdih(iatm1,iatm2,iatm3,iatm4,1)
+        if (ifPBC==0) then
+			write(resultstr,"('Dihedral:',f10.4,' degree')") tmpval
+        else
+			write(resultstr,"(f9.4,' deg, with PBC:',f9.4,' deg')") tmpval,tmpval2
+        end if
     end if
 else if (atm1text/=" ".and.atm2text/=" ".and.atm3text/=" ") then
     if (iatm1<1.or.iatm1>ncenter.or.iatm2<1.or.iatm2>ncenter.or.iatm3<1.or.iatm3>ncenter) then
         resultstr="Error: Atom index exceeded valid range!"
     else
-        tmpval=xyz2angle(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z,a(iatm3)%x,a(iatm3)%y,a(iatm3)%z)
-        write(resultstr,"('Angle:',f10.4,' degree')") tmpval
+        tmpval=atomang(iatm1,iatm2,iatm3,0)
+        tmpval2=atomang(iatm1,iatm2,iatm3,1)
+        if (ifPBC==0) then
+			write(resultstr,"('Angle:',f10.4,' degree')") tmpval
+        else
+			write(resultstr,"(f9.4,' deg, with PBC:',f9.4,' deg')") tmpval,tmpval2
+        end if
     end if
 else if (atm1text/=" ".and.atm2text/=" ") then
     if (iatm1<1.or.iatm1>ncenter.or.iatm2<1.or.iatm2>ncenter) then
         resultstr="Error: Atom index exceeded valid range!"
     else
-        tmpval=xyz2dist(a(iatm1)%x,a(iatm1)%y,a(iatm1)%z,a(iatm2)%x,a(iatm2)%y,a(iatm2)%z)
-        write(resultstr,"('Distance:',f10.5,' Angstrom')") tmpval*b2a
+        tmpval=atomdist(iatm1,iatm2,0)
+        tmpval2=atomdist(iatm1,iatm2,1)
+        if (ifPBC==0) then
+			write(resultstr,"('Distance:',f10.5,' Angstrom')") tmpval*b2a
+        else
+			write(resultstr,"(f10.5,' A, with PBC:',f10.5,' A')") tmpval*b2a,tmpval2*b2a
+        end if
     end if
 else
     resultstr="You should at least input two atoms!"
@@ -2687,9 +2835,14 @@ end subroutine
 !!!-------- Export all internal coordinates
 subroutine export_intcoord(id)
 integer,intent (in) :: id
-call showgeomparam("int_coord.txt")
+call showgeomparam("int_coord.txt",0)
 call swgtit(" ")
-call dwgmsg("All internal coordinates have been written to int_coord.txt in current folder")
+call dwgmsg("All internal coordinates without considering periodicity have been written to int_coord.txt in current folder")
+if (ifPBC>0) then
+	call showgeomparam("int_coord_PBC.txt",1)
+	call swgtit(" ")
+	call dwgmsg("All internal coordinates with considering periodicity have been written to int_coord_PBC.txt in current folder")
+end if
 end subroutine
 
 
@@ -2805,6 +2958,13 @@ write(10,*) "clrBcub2samemeshpt",clrBcub2samemeshpt
 write(10,*) "clrRcub2oppomeshpt",clrRcub2oppomeshpt
 write(10,*) "clrGcub2oppomeshpt",clrGcub2oppomeshpt
 write(10,*) "clrBcub2oppomeshpt",clrBcub2oppomeshpt
+write(10,*) "XFAC              ",XFAC
+write(10,*) "XFOC              ",XFOC
+write(10,*) "YFOC              ",YFOC
+write(10,*) "ZFOC              ",ZFOC
+write(10,*) "VANG3DANG         ",VANG3DANG
+write(10,*) "camrotang         ",camrotang
+write(10,*) "sur_value_orb     ",sur_value_orb
 close(10)
 end subroutine
 
@@ -2815,7 +2975,7 @@ subroutine loadGUIsetting(id)
 use defvar
 integer,intent (in) :: id
 character c30tmp*30,c200tmp*200
-logical alive1,alive2
+logical :: alive1,alive2=.false.
 call getenv("Multiwfnpath",c200tmp)
 inquire(file=trim(c200tmp)//"/GUIsettings.ini",exist=alive1)
 if (alive1) then
@@ -2875,6 +3035,13 @@ if (alive1.or.alive2) then
     read(10,*) c30tmp,clrRcub2oppomeshpt
     read(10,*) c30tmp,clrGcub2oppomeshpt
     read(10,*) c30tmp,clrBcub2oppomeshpt
+	read(10,*) c30tmp,XFAC
+	read(10,*) c30tmp,XFOC
+	read(10,*) c30tmp,YFOC
+	read(10,*) c30tmp,ZFOC
+	read(10,*) c30tmp,VANG3DANG
+	read(10,*) c30tmp,camrotang
+    read(10,*) c30tmp,sur_value_orb
     close(10)
     call drawmol
     if (alive1) then
@@ -2890,7 +3057,7 @@ if (alive1.or.alive2) then
 		call swgscl(idisbondradius,bondradius)
 		call swgscl(idisbondcrit,bondcrit)
     end if
-    call swgscl(idisisosurscl,sur_value)
+    call swgscl(idisisosurscl,sur_value_orb)
 else
     call dwgmsg("Error: Cannot find GUIsettings.ini in either current folder or the folder defined by ""Multiwfnpath""")
 end if
@@ -2960,7 +3127,7 @@ subroutine load_isosur_setting(id)
 use defvar
 integer,intent (in) :: id
 character c30tmp*30,c200tmp*200
-logical alive1,alive2
+logical :: alive1,alive2=.false.
 call getenv("Multiwfnpath",c200tmp)
 inquire(file=trim(c200tmp)//"/isosur.ini",exist=alive1)
 if (alive1) then

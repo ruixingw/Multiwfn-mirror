@@ -2,15 +2,19 @@ program multiwfn
 use defvar
 use util
 use GUI
+use mod_2F2, only: set_alpha_level
 !use libreta
 !use function
-implicit real*8(a-h,o-z)
-character nowdate*20,nowtime*20,c200tmp*200,c2000tmp*2000,lovername*80,settingpath*200,strtmp*3
+implicit real*8 (a-h,o-z)
+character nowdate*20,nowtime*20,c200tmp*200,c2000tmp*2000,lovername*80,settingpath*200,strtmp*3,selectyn
 real*8,allocatable :: tmparr(:),tmparr2(:),tmpmat(:,:),tmpmat2(:,:),tmpmat3D(:,:,:) !For debug purpose
 integer,allocatable :: tmparri(:),tmparr2i(:),tmpmati(:,:),tmpmat2i(:,:)
 real*8 tmpv1(3),tmpv2(3)
 
+!Special treatment for Intel compiler
+#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)
 call kmp_set_warnings_off() !In rare case, "Cannot open message catalog "1041\libiomp5ui.dll"" may occurs, this calling avoid this problem, or user should set KMP_WARNINGS environment variable to 0
+#endif
 
 !Try to get input file name from argument, which should be the first argument
 filename=" "
@@ -27,8 +31,8 @@ end if
 
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.8(dev), release date: 2022-Mar-6"
-write(*,"(a)") " Developer: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
+write(*,*) "Version 3.8(dev), release date: 2022-Dec-18"
+write(*,*) "Developer: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
 write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
 write(*,*) "See ""How to cite Multiwfn.pdf"" in Multiwfn binary package for more information"
@@ -40,15 +44,33 @@ call date_and_time(nowdate,nowtime)
 write(*,"(/,' ( Number of parallel threads:',i4,'  Current date: ',a,'-',a,'-',a,'  Time: ',a,':',a,':',a,' )')") &
 nthreads,nowdate(1:4),nowdate(5:6),nowdate(7:8),nowtime(1:2),nowtime(3:4),nowtime(5:6)
 
-!For Linux/MacOS version, it seems the only way to set stacksize of each thread is to define KMP_STACKSIZE environment variable
-if (isys==1) then !Set via ompstacksize in settings.ini
+
+!!-------- Set up hardware resource information
+!For Windows version of ifort, use KMP_SET_STACKSIZE_S() to directly set stacksize of OpenMP threads according to ompstacksize in settings.ini, &
+!for other cases, the stacksize is determined by OMP_STACKSIZE environment variable, and we check if it has been defined here
+if (isys==1) then !Windows
+#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)
     call KMP_SET_STACKSIZE_S(ompstacksize)
-else if (isys==2) then !The size should have been defined by KMP_STACKSIZE
-    CALL getenv('KMP_STACKSIZE',c200tmp)
-    if (c200tmp==" ") write(*,"(/,a)") " Warning: You should set ""KMP_STACKSIZE"" environment variable as mentioned in Section 2.1.2 of Multiwfn manual!"
+#else
+    CALL getenv('OMP_STACKSIZE',c200tmp)
+    if (c200tmp==" ") write(*,"(/,a)") " Warning: You should set OMP_STACKSIZE environment variable in Windows system to define stacksize of OpenMP threads!"
+#endif
+else if (isys==2) then !Linux/MacOS
+    CALL getenv('OMP_STACKSIZE',c200tmp)
+#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)
+    if (c200tmp==" ") then !OpenMP stacksize may also be defined by KMP_STACKSIZE if compiled with ifort
+		CALL getenv('KMP_STACKSIZE',c200tmp)
+	end if
+#endif
+    if (c200tmp==" ") write(*,"(/,a)") " Warning: You should set OMP_STACKSIZE environment variable as mentioned in Section 2.1.2 of Multiwfn manual!"
 end if
 !write(*,"(' OpenMP stacksize for each thread: ',f10.2,' MB')") dfloat(KMP_GET_STACKSIZE_S())/1024/1024
-call mkl_set_num_threads(nthreads) !Use this to set number of cores used in MKL library (e.g. function matmul_blas)
+
+!Set number of cores used by calculation of MKL library (e.g. function matmul_blas)
+#if defined(INTEL_MKL)
+call mkl_set_num_threads(nthreads)
+#endif
+
 
 !!-------- Load input file
 write(*,*)
@@ -66,16 +88,12 @@ if (trim(filename)==" ") then !Haven't defined filename variable
 		else if (filename==' ') then
 			call selfileGUI
 			if (filename==' ') then
-				write(*,*) "You did not select a file, input the path again!"
+				write(*,*) "You did not select a file, input path again!"
 				cycle !User didn't select a file
 			end if
 			write(*,"(' Selected file: ',a)") trim(adjustl(filename))
 		end if
-		ltmp=len_trim(filename)
-		!Remove the first and the last " or  'symbol, because directly dragging file into the window will result in " or ' symbol, which is unrecognized by Multwifn
-		if (filename(1:1)=='"'.or.filename(1:1)=="'") filename(1:1)=" "
-		if (filename(ltmp:ltmp)=='"'.or.filename(ltmp:ltmp)=="'") filename(ltmp:ltmp)=" "
-		filename=adjustl(filename)
+        call remove_quotemark(filename) !Remove possible " or ' symbol
 		if (filename(1:1)=='?') then
 			do itmp=len_trim(lastfile),1,-1
 				if (isys==1.and.lastfile(itmp:itmp)=='\') exit
@@ -118,7 +136,8 @@ end if
 call readinfile(filename,0)
 write(*,"(/,3a)") " Loaded ",trim(filename)," successfully!"
 
-!!-------- Backup various information of first loaded (meanwhile unmodified) molecule
+
+!!-------- Backup various information of first loaded (meanwhile unmodified) system
 firstfilename=filename
 if (allocated(a)) then
 	allocate(a_org(ncenter))
@@ -142,21 +161,14 @@ cellv1_org=cellv1
 cellv2_org=cellv2
 cellv3_org=cellv3
 
+
 !!-------- Generate backed up fragment
 nfragatm_org=ncenter
 allocate(fragatm_org(nfragatm_org))
 forall (i=1:nfragatm_org) fragatm_org(i)=i
 
+
 !!-------- Call some routines only once
-if (allocated(a)) then
-	if (ncenter>15000) then
-        !For huge system, generation of distance matrix is not only quite time consuming but take huge memory
-        !Though it is needed in many analyses, they are unlikely to be applied for system containing more than 20000 atoms
-        write(*,"(a)") " Note: There are very large number of many atoms, distance matrix will not be generated"
-    else
-	    call gendistmat !Generate distance matrix. For 15000 atom systems, it will occupy about 2GB memory
-    end if
-end if
 !Convert prebuilt radii from Angstrom to Bohr. But some radii such as radii_hugo will remain unchanged since it is recorded as Bohr
 if (ifirstMultiwfn==1) then
 	vdwr=vdwr/b2a
@@ -180,17 +192,26 @@ if (itransparent==1) then
     CALL GIFMOD("ON",'TRANSPARENCY')
 end if
 
+
 !!-------- Show cell information
 call showcellinfo
+call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+if (asize<5D0.and.PBCnx==1) write(*,"(/,a)") " Warning: Because size of a axis of the cell is relatively small, &
+in order to guarantee analysis accuracy, it is suggested to increase the first index of ""PBCnxnynz"" in settings.ini to 2"
+if (bsize<5D0.and.PBCny==1) write(*,"(/,a)") " Warning: Because size of b axis of the cell is relatively small, &
+in order to guarantee analysis accuracy, it is suggested to increase the second index of ""PBCnxnynz"" in settings.ini to 2"
+if (csize<5D0.and.PBCnz==1) write(*,"(/,a)") " Warning: Because size of c axis of the cell is relatively small, &
+in order to guarantee analysis accuracy, it is suggested to increase the third index of ""PBCnxnynz"" in settings.ini to 2"
 
-!!-------- Show basic molecular information
+
+!!-------- Show brief information of present system
 if (allocated(a)) then
 	write(*,*)
 	call showformula
 	totmass=sum(atmwei(a%index))
 	write(*,"(' Molecule weight:',f16.5,' Da')") totmass
     !-- Show point group
-    if (ifPBC==0.and.ncenter<200.and.all(a%index>0)) then !Too large system will take evidently cost
+    if (ifPBC==0.and.ncenter<nPGmaxatm.and.all(a%index>0)) then !Too large system will take evidently cost
         allocate(tmpmat(3,ncenter),tmpmat2i(ncenter,ncenter),tmparri(ncenter))
         tmpmat(1,:)=a%x*b2a;tmpmat(2,:)=a%y*b2a;tmpmat(3,:)=a%z*b2a
         !Tolerance of 0.0025 is suitable for most systems. Though it may be too tight to detect point group for difficult case, &
@@ -219,7 +240,8 @@ if (allocated(a)) then
     end if
 end if
 
-!Special treatment
+!Special treatment and test new code
+!call energy_info_project
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
@@ -263,7 +285,7 @@ do while(.true.) !Main loop
     if (c200tmp=="q".or.c200tmp=="-10") then !Exit program
         stop
 	else if (c200tmp=="r".or.c200tmp=="-11") then !Load a new file
-	    call dealloall
+	    call dealloall(0)
 	    call dealloall_org
 	    filename=""
 	    ifirstMultiwfn=0
@@ -274,6 +296,8 @@ do while(.true.) !Main loop
         call outgjf_wrapper
     else if (c200tmp=="pi") then
         call outPSI4inp_wrapper
+    else if (c200tmp=="cp") then
+        call cp2kmate
     else if (c200tmp=="cp2k") then
         call outCP2Kinp_wrapper
     else if (c200tmp=="QE") then
@@ -283,15 +307,29 @@ do while(.true.) !Main loop
         read(*,*) iuserfunc
         call init_func
         write(*,*) "Done!"
+    else if (c200tmp=="cp2kbs".or.c200tmp=="bs") then
+		call CP2K_BS
     else if (c200tmp=="geomparm") then
+		iallowPBC=0
+		if (ifPBC>0) then
+			write(*,*) "Consider periodic boundary condition? (y/n)"
+            read(*,*) selectyn
+            if (index(selectyn,'y')/=0) iallowPBC=1
+        end if
 		write(*,*) "Input path of the file to be exported, e.g. /sob/geomparm.txt"
         read(*,"(a)") c200tmp
-		call showgeomparam(c200tmp)
+		call showgeomparam(c200tmp,iallowPBC)
         write(*,"(a)") " Done! The internal coordinates have been exported to "//trim(c200tmp)
     else if (c200tmp=="MPP".or.c200tmp=="mpp") then
 		call calcMPP
+    else if (c200tmp=="cav") then
+		call cavity_diameter
     else
-        read(c200tmp,*) isel
+        read(c200tmp,*,iostat=ierror) isel
+        if (ierror/=0) then
+			write(*,*) "Error: Unable to recognize the command you inputted"
+            cycle
+        end if
 
 	    !!!---------------------------------------------------------------------------------------------
 	    !1!------- Show system structure and view isosurface of MOs or the grid data read from cube file
@@ -311,6 +349,7 @@ do while(.true.) !Main loop
                 else
 					write(*,"(a)") " Note: There are more than 300 atoms, so their information are not shown here now. &
                     To print, in the manu bar please select ""Tools"" - ""Print XYZ coordinates"""
+                    ishowatmlab=0
 				end if
             end if
 		    if (allocated(CObasa).and.imodwfn==0) then !fch and occupation number hasn't been modified
@@ -337,7 +376,10 @@ do while(.true.) !Main loop
 				    write(*,"(' Index of SOMO orbitals:',10i6)") (i,i=nint(nbelec+1),nint(naelec))
 			    end if
 		    end if
-			call gen_GTFuniq(1) !Generate unique GTF information, for faster evaluation in orbderv
+            if (allocated(b)) then
+				write(*,*) "Constructing unique GTF information..."
+				call gen_GTFuniq(0) !Generate unique GTF information, for faster evaluation in orbderv
+            end if
 		    if (ifiletype==7.or.ifiletype==8) then !Visualize grid data
 			    if (isilent==0) call drawisosurgui(1)
 		    else
@@ -346,7 +388,7 @@ do while(.true.) !Main loop
             iorbvis=0 !Recover its status. iorbvis=0 makes saved image file has DISLIN prefix
             ishowdatarange=0 !Do not show data range if showing it
             call del_GTFuniq !Destory unique GTF information
-            call setfil("dislin."//trim(graphformat)) !The file name of saved image file may have been modified, recover to default one
+            call setfil("dislin."//trim(graphformat)) !The file name of saved image file may have been modified (e.g. equal to orbital index), so recover to default
 
 	    !!!-------------------------------------------------
 	    !1!-------------------- Output properties at a point
@@ -544,7 +586,9 @@ do while(.true.) !Main loop
 		    write(*,*) "97 Generate natural orbitals based on density matrix outputted by MRCC program"
 		    write(*,*) "99 Show EDF information (if any)"
 		    write(*,*) "100 Check the sanity of present wavefunction"
-            !write(*,*) "201 Ring-ring statistical for a trajectory" !Only used by Sobereva in C18 work
+            write(*,*) "1303 Setup fractional calculus"
+            !write(*,*) "201 Ring-ring distance&angle statistical analysis for a trajectory" !Only used by Sobereva in C18 work
+            !write(*,*) "202 Ring rotation statistical analysis for a trajectory" !Only used by Sobereva in C18 work
 		    read(*,*) i
 		    if (i==1) then
 			    write(*,*) "Input x,y,z in Bohr, e.g. 3.0,0.0,1.3"
@@ -641,7 +685,7 @@ do while(.true.) !Main loop
                 end do
                 close(10)
                 deallocate(tmpmat)
-                write(*,*) "Done! gen.gjf has been generated in current folder"
+                write(*,*) "Done! gau.gjf has been generated in current folder"
             else if (i==14) then
                 ipos=index(filename,'.',back=.true.)
                 write(*,"(a)") " Converting to "//filename(1:ipos)//"rad"
@@ -726,8 +770,18 @@ do while(.true.) !Main loop
 			    call wfnsanity
             else if (i==201) then
                 call ringring_geom
+            else if (i==202) then
+                call ring_rotate
+            else if (i==1303) then
+				call set_alpha_level()
 		    end if
+            
+        !!!-----------------------------------------
+	    !2000!!------------------- Very special functions
+	    else if (isel==2000) then
+			call energy_info_project
 	    end if
+        
     end if
     
 end do !End main cycle

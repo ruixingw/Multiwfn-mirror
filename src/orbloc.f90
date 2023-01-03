@@ -5,7 +5,7 @@
 subroutine orbloc
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 character c2000tmp*2000
 integer :: maxcyc=80,ireload=1,idoene=0,idocore=1,imethod=1,domark(4),iPMexp=2,ilmocen=0
@@ -225,10 +225,8 @@ else if (imethod==2) then !PM with Lowdin
 	write(*,*) "Performing Lowdin orthonormalization..."
 	allocate(Xmat(nbasis,nbasis),Xmatinv(nbasis,nbasis))
 	call symmorthomat(Sbas,Xmat,Xmatinv)
-    CObasa=matmul_blas(Xmat,CObasa,nbasis,nbasis,0,0)
-	!CObasa=matmul(Xmat,CObasa)
-    if (allocated(CObasb)) CObasb=matmul_blas(Xmat,CObasb,nbasis,nbasis,0,0)
-	!if (allocated(CObasb)) CObasb=matmul(Xmat,CObasb)
+    CObasa=matmul_blas(Xmat,CObasa,nbasis,nbasis) !Transform coefficient matrix to orthogonalized basis
+    if (allocated(CObasb)) CObasb=matmul_blas(Xmat,CObasb,nbasis,nbasis)
 	Sbas_org=Sbas
 	Sbas=0
 	forall (i=1:nbasis) Sbas(i,i)=1
@@ -305,6 +303,7 @@ do itime=1,4
 				    Aval=0;Bval=0
 					do iatm=1,ncenter
 						is=basstart(iatm)
+                        if (is==0) cycle
 						ie=basend(iatm)
                         if (imethod==1) then !Mulliken population
 						    Qij=0.5D0*sum(Cmat(is:ie,jmo)*SC(is:ie,imo)+Cmat(is:ie,imo)*SC(is:ie,jmo))
@@ -382,6 +381,7 @@ do itime=1,4
 		do idx=1,norblist
             imo=orblist(idx)
 			do iatm=1,ncenter
+				if (basstart(iatm)==0) cycle
 				Pval=Pval+Qval(Cmat,imo,imo,iatm)**iPMexp
 			end do
 		end do
@@ -400,8 +400,6 @@ do itime=1,4
 end do
 
 if (imethod==2) then !PM with Lowdin. Back convert CObas from orthonormal basis to original basis
-	!CObasa=matmul(Xmatinv,CObasa)
-	!if (allocated(CObasb)) CObasb=matmul(Xmatinv,CObasb)
     CObasa=matmul_blas(Xmatinv,CObasa,nbasis,nbasis,0,0)
 	if (allocated(CObasb)) CObasb=matmul_blas(Xmatinv,CObasb,nbasis,nbasis,0,0)
 	Sbas=Sbas_org
@@ -549,6 +547,7 @@ if (icompmethod>0) then
 		
 		!Calculate orbital composition and then sort from large to small. Size: orbcomp(1:ncenter,1:nbasis)
         if (icompmethod==1) then !Mulliken+SCPA
+			orbcomp=0
 		    do idx=1,norblist
                 iorb=orblist(idx)
 			    if (itime==1.or.itime==3) then !For occupied LMOs, use Mulliken
@@ -561,10 +560,12 @@ if (icompmethod>0) then
 					    bastot(ibas)=Cmat(ibas,iorb)**2+bascross
 				    end do
 				    do iatm=1,ncenter
+						if (basstart(iatm)==0) cycle
 					    orbcomp(iatm,iorb)=sum(bastot(basstart(iatm):basend(iatm)))
 				    end do
 			    else !For virtual LMOs, use SCPA. Since it guarantees that the result is within 0~100%
  				    do iatm=1,ncenter
+						if (basstart(iatm)==0) cycle
  					    orbcomp(iatm,iorb)=sum(Cmat(basstart(iatm):basend(iatm),iorb)**2)
  				    end do
  				    orbcomp(:,iorb)=orbcomp(:,iorb)/sum(orbcomp(:,iorb))
@@ -728,10 +729,10 @@ write(*,*) "Exporting localized orbitals to new.fch in current folder..."
 call outfch("new.fch",10,1)
 
 if (ireload==1) then !Automatically reload the newly generated new.fch as requested
-	call dealloall
+	call dealloall(0)
 	write(*,*) "Loading new.fch..."
-	call readfch("new.fch",1)
-	write(*,"(a)") " Loading finished!"
+    call readinfile("new.fch",1)
+	write(*,*) "Loading finished!"
 
 	!Adding center of LMOs as Bq atoms
 	if (ilmocen==1) then

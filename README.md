@@ -1,6 +1,6 @@
 # About this repository
 
-This repository tracks the latest *Linux* version of Multiwfn and its manual (hereinafter referred to as *the Software*). I merely download *the Software* from official Multiwfn website and upload them to this repository without any change. I will try to update this repository as soon as possible when there is a new version published on Multiwfn website, however this is not guaranteed.
+This repository tracks the latest *Linux* version of Multiwfn and its manual (hereinafter referred to as *the Software*). I merely download *the Software* from official Multiwfn website and upload them to this repository without any change.
 
 **Disclaimer:**
 
@@ -8,22 +8,9 @@ The owner of this repository claims no right to *the Software*. All rights are r
 
 Should any information in this repository be in conflict with the official Multiwfn website, the official Multiwfn website should be taken as valid and binding.
 
-**Installation:**
-
-A detailed guide is in Section 2.1.2 of the Multiwfn manual. Here's a short version for Ubuntu 18.04 LTS.
-
-1. Clone this repository.
-2. Install *motif* by running *sudo apt-get install libmotif-dev*. 
-3. Add these lines to shell startup files: *export KMP_STACKSIZE=200M* and *ulimit -s unlimited*.
-4. Add $Multiwfnpath environmental variable to shell startup files: *export Multiwfnpath=/path/to/multiwfn-folder*.
-5. Add *Multiwfn* executable to $PATH. For example, *ln -s /path/to/Multiwfn-executable ~/.bin*.
-6. Configure *setting.ini* according to the specific functions your need. Check the manual for details.
-
-
 **How to Cite:**
 
 Please carefully check "How to cite Multiwfn.pdf" document in the package. Do **NOT** cite this repository as this is not official. 
-
 
 **Useful Links:**
 - Official Multiwfn website: http://sobereva.com/multiwfn
@@ -33,9 +20,9 @@ Please carefully check "How to cite Multiwfn.pdf" document in the package. Do **
 
 **Structure of the repository**
 
-Linux binary: /<br/>
-Examples: /<br/>
+Linux binary and examples: /<br/>
 Manual: /<br/>
+Quick Start PDF: /<br/>
 Linux source code: /src<br/>
 
  
@@ -50,8 +37,7 @@ LICENSE INFORMATION: To use Multiwfn, you are required to read and agree the fol
 
 Whenever possible, please mention and cite Multiwfn in main text rather than in supplemental information, otherwise not only Multiwfn will be difficult for readers to notice, but also the paper will not be included in citation statistics.
 
-
-Below are LICENSE information in Chinese:
+Please ignore below if you are not a Chinese user
 
 使用了Multiwfn的文章里不引用或错误地引用Multiwfn程序的现象极为严重（尤其是在中国用户的文章中）！特此强调：
 
@@ -66,9 +52,9 @@ Multiwfn允许用于给别人代算时使用，但必须主动告诉对方在文
 ---------
 另：
 
-如果有Multiwfn使用上的问题，欢迎到 http://bbs.keinsci.com 的“波函数分析与Multiwfn”版块发帖咨询，开发者会非常及时回复（通常在24小时内回复）。也欢迎在Multiwfn英文论坛http://sobereva.com/wfnbbs上用英语发帖求助、和外国Multiwfn用户交流。开发者不在其它任何其它中文论坛里解答Multiwfn的使用问题。
+如果有Multiwfn使用上的问题，欢迎到 http://bbs.keinsci.com 的“波函数分析与Multiwfn”版块发帖咨询，开发者会非常及时回复（通常在24小时内回复）。也欢迎在Multiwfn英文论坛 http://sobereva.com/wfnbbs 上用英语发帖求助、和外国Multiwfn用户交流。开发者不在其它任何其它中文论坛里解答Multiwfn的使用问题。
 
-初次接触Multiwfn者请务必阅读《Multiwfn入门tips》（http://sobereva.com/167）。《Multiwfn FAQ》（http://sobereva.com/452）也非常重要，强烈建议完整过目一遍。
+初次接触Multiwfn者请务必阅读《Multiwfn入门tips》（ http://sobereva.com/167 ）。《Multiwfn FAQ》（ http://sobereva.com/452 ）也非常重要，强烈建议完整过目一遍。
 
 ---------
 

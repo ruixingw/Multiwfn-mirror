@@ -20,7 +20,7 @@ do while(.true.)
 	write(*,*) "-2 Multicenter bond order analysis in NAO basis"
 ! 	write(*,*) "-3 Multicenter bond order analysis in Lowdin orthogonalized basis" !Can be used, but not very meaningful, so not shown
 	write(*,*) "3 Wiberg bond order analysis in Lowdin orthogonalized basis"
-	write(*,*) "4 Mulliken bond order analysis"
+	write(*,*) "4 Mulliken bond order (Mulliken overlap population) analysis"
 	write(*,*) "5 Decompose Mulliken bond order between two atoms to orbital contributions"
 	write(*,*) "6 Orbital occupancy-perturbed Mayer bond order"
 	write(*,*) "7 Fuzzy bond order analysis (FBO)"
@@ -98,7 +98,7 @@ do while(.true.)
 		exit
 	else if (ibondana==1) then
         call ask_Sbas_PBC
-		write(*,*) "Please wait..."
+		write(*,*) "Calculating, please wait..."
 		call mayerbndord
 	else if (ibondana==2) then
         call ask_Sbas_PBC
@@ -146,7 +146,7 @@ do while(.true.)
 	else if (ibondana==7) then
 		call intatomspace(1)
 	else if (ibondana==8) then
-		write(*,"(a)") " Citation of Laplacian bond order:" 
+		write(*,"(a)") " Citation of Laplacian bond order (LBO):" 
 		write(*,"(a,/)") " Tian Lu and Feiwu Chen, &
 		Bond Order Analysis Based on the Laplacian of Electron Density in Fuzzy Overlap Space, J. Phys. Chem. A, 117, 3100-3108 (2013)"
 		call intatomspace(2)
@@ -180,8 +180,12 @@ bndmatb=0D0
 bndmattot=0D0
 !Calculate total bond order for restricted closed-shell wavefunction (for open-shell do GWBO, P=Palpha+Pbeta)
 PSmattot=matmul(Ptot,Sbas)
+
+bndmattot=0
 do i=1,ncenter
+	if (basstart(i)==0) cycle
 	do j=i+1,ncenter
+		if (basstart(j)==0) cycle
 		accum=0D0
 		do ii=basstart(i),basend(i)
 			do jj=basstart(j),basend(j)
@@ -199,8 +203,12 @@ end do
 if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	PSmata=matmul(Palpha,Sbas)
 	PSmatb=matmul(Pbeta,Sbas)
+	bndmata=0
+	bndmatb=0
 	do i=1,ncenter
+		if (basstart(i)==0) cycle
 		do j=i+1,ncenter
+			if (basstart(j)==0) cycle
 			accuma=0D0
 			accumb=0D0
 			do ii=basstart(i),basend(i)
@@ -252,6 +260,7 @@ end do
 write(*,*)
 write(*,*) "Total valences and free valences defined by Mayer:"
 do i=1,ncenter
+    if (basstart(i)==0) cycle
 	accum=0D0
 	accum2=0D0
 	do ii=basstart(i),basend(i)
@@ -321,7 +330,9 @@ bndmattot=0D0
 if (wfntype==0.or.wfntype==3) then
 	PSmata=Sbas*Ptot !Condensed to basis function matrix
 	do i=1,ncenter !Contract PSmata to Condensed to "Condensed to atoms" 
+		if (basstart(i)==0) cycle
 		do j=i+1,ncenter
+			if (basstart(j)==0) cycle
 			bndmattot(i,j)=sum(PSmata(basstart(i):basend(i),basstart(j):basend(j)))
 		end do
 	end do
@@ -333,7 +344,9 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then
 	PSmata=Palpha*Sbas
 	PSmatb=Pbeta*Sbas
 	do i=1,ncenter
+		if (basstart(i)==0) cycle
 		do j=i+1,ncenter
+			if (basstart(j)==0) cycle
 			bndmata(i,j)=sum(PSmata(basstart(i):basend(i),basstart(j):basend(j)))
 			bndmatb(i,j)=sum(PSmatb(basstart(i):basend(i),basstart(j):basend(j)))
 		end do
@@ -533,7 +546,7 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then !Open shell
 					do ibas=1,nbasis
 						do jbas=1,nbasis
 							Palphatmp(ibas,jbas)=Palphatmp(ibas,jbas)-1D0*CObasa(ibas,imo)*CObasa(jbas,imo)
-							Pbetatmp(ibas,jbas)=Pbetatmp(ibas,jbas)-1D0*CObasa(ibas,imo)*CObasa(jbas,imo) !For ROHF, Cobasb==Cobasa, and hence Cobasb is not allocated
+							Pbetatmp(ibas,jbas)=Pbetatmp(ibas,jbas)-1D0*CObasa(ibas,imo)*CObasa(jbas,imo) !For ROHF, CObasb==CObasa, and hence CObasb is not allocated
 						end do
 					end do
 				else if (MOtype(imo)==1) then !Alpha orbitals
@@ -875,7 +888,7 @@ do while(.true.)
             iatm=atmlist(idx)
             do jdx=idx+1,natmlist
                 jatm=atmlist(jdx)
-                dist=distmat(iatm,jatm)*b2a
+                dist=atomdist(iatm,jatm,1)*b2a
                 if (dist>distprintthres) cycle
                 IBSImat(idx,jdx)=atmpairdg(idx,jdx)/dist**2/refval
                 write(*,"(i5,'(',a,')',i5,'(',a,')  Dist:',f8.4,'   Int(dg_pair):',f8.5,'   IBSI:',f8.5)") &

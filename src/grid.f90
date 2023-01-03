@@ -2,11 +2,11 @@
 
 
 !!!------ Define property/origin/spacing/grid number and then save to a 3D matrix, infomode=1 means silent
-!! iorb is used to choose the orbital for whose wavefunction will be calculated. This can be an arbitrary value if functype/=4
+!iorb is used to choose the orbital for whose wavefunction will be calculated. This can be an arbitrary value if functype/=4
 subroutine savecubmat(functype,infomode,iorb)
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer :: infomode,functype,iorb !Calculate which orbital wavefunction for fmo routine
 real*8 xarr(nx),yarr(ny),zarr(nz)
@@ -88,7 +88,7 @@ if (ifPBC==0) then
     end do
 end if
 
-call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+call gen_GTFuniq(infomode) !Generate unique GTFs, for faster evaluation in orbderv
 
 !When ESPrhoiso/=0, only calculate ESP for grid around isosurface of rho=ESPrhoiso to save time
 !Now determine which grids will be calculated
@@ -96,7 +96,7 @@ if (functype==12.and.ESPrhoiso/=0) then
 	allocate(corpos(nx,ny,nz),boundgrd(nx,ny,nz))
     write(*,"(' Note: ESP will be calculated only for the grids around isosurface of electron density of ',f10.6,' a.u.')") ESPrhoiso
     write(*,*) "Detecting the grids for calculating ESP..."
-	!$OMP PARALLEL DO SHARED(corpos) PRIVATE(ix,iy,iz) schedule(dynamic) NUM_THREADS(nthreads)
+	!$OMP PARALLEL DO SHARED(corpos) PRIVATE(ix,iy,iz) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
     do iz=1,nz
 		do iy=1,ny
 			do ix=1,nx
@@ -143,10 +143,10 @@ if (ifdoESP(functype).and.(iESPcode==2.or.iESPcode==3)) then
 end if
 
 !Start calculation of grid data!!!!!!!!!!!!
-if (infomode==0) call showprog(0,nz)
+if (infomode==0) call showprog(0,nz*ny)
 ifinish=0
 cubmat=0
-!$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,densval) schedule(dynamic) NUM_THREADS(nthreads)
+!$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,densval) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
@@ -170,14 +170,16 @@ do k=1,nz
 				cubmat(i,j,k)=calcfuncall(functype,tmpx,tmpy,tmpz)
 			end if
 		end do
+		if (infomode==0) then
+		    !$OMP CRITICAL
+		    ifinish=ifinish+1
+		    call showprog(ifinish,nz*ny)
+		    !$OMP END CRITICAL
+		end if
 	end do
-	if (infomode==0) then
-        ifinish=ifinish+1
-        call showprog(ifinish,nz)
-	end if
 end do
 !$OMP END PARALLEL DO
-if (infomode==0.and.ifinish<nz) call showprog(nz,nz)
+if (infomode==0.and.ifinish<nz*ny) call showprog(nz*ny,nz*ny)
 nthreads=nthreads_old
 
 call del_GTFuniq !Destory unique GTF informtaion
@@ -246,9 +248,10 @@ else
 		write(*,*) "8 Use grid setting of another cube file"
 		if (ifPBC>0) write(*,"(a)") " 9 Use translation vectors of current cell, manually specify origin, box lengths and grid spacing"
 		write(*,*) "10 Set box of grid data visually using a GUI window"
-		write(*,*) "11 Select a batch of atoms, set extension distance and grid spacing"
+		write(*,"(a)") " 11 Select a set of atoms, set extension distance around them and grid spacing"
 		if (imode==1) write(*,*) "100 Load a set of points from external file"
 		read(*,*) igridsel
+        
 		if (igridsel/=-10) exit
 		write(*,*) "Input extension distance in Bohr, e.g. 6.5"
 		read(*,*) aug3D
@@ -281,7 +284,7 @@ else
 	molxlen=(maxval(a%x)-minval(a%x))+2*aug3D
 	molylen=(maxval(a%y)-minval(a%y))+2*aug3D
 	molzlen=(maxval(a%z)-minval(a%z))+2*aug3D
-	if (molxlen==0.0D0.or.molylen==0.0D0.or.molzlen==0.0D0) then !Avoid catastrophe when aug3D=0 and system is plane
+	if (molxlen==0D0.or.molylen==0D0.or.molzlen==0D0) then !Avoid catastrophe when aug3D=0 and system is plane
 		write(*,"(a,/)") " WARNING: The box size in one of Cartesian axis is zero, &
 		the calculation cannot be proceeded. Therefore, the size of corresponding direction is automatically set to 3 Bohr"
 		if (molxlen==0D0) then
@@ -293,9 +296,9 @@ else
 		end if
 	end if
 	if (igridsel==1.or.igridsel==2.or.igridsel==3) then
-		if (igridsel==1) dx=(molxlen*molylen*molzlen/dfloat(ntotlow))**(1.0D0/3.0D0)
-		if (igridsel==2) dx=(molxlen*molylen*molzlen/dfloat(ntotmed))**(1.0D0/3.0D0)
-		if (igridsel==3) dx=(molxlen*molylen*molzlen/dfloat(ntothigh))**(1.0D0/3.0D0)
+		if (igridsel==1) dx=(molxlen*molylen*molzlen/dfloat(ntotlow))**(1D0/3D0)
+		if (igridsel==2) dx=(molxlen*molylen*molzlen/dfloat(ntotmed))**(1D0/3D0)
+		if (igridsel==3) dx=(molxlen*molylen*molzlen/dfloat(ntothigh))**(1D0/3D0)
 		dy=dx
 		dz=dx
 		nx=nint(molxlen/dx)+1
@@ -347,9 +350,9 @@ else
 			write(*,*) "Input index of the two atoms, e.g. 2,5"
 			write(*,*) "If the two indices are identical, box center will be placed at the nucleus"
 			read(*,*) indatm1,indatm2
-			cenx=(a(indatm1)%x+a(indatm2)%x)/2.0D0
-			ceny=(a(indatm1)%y+a(indatm2)%y)/2.0D0
-			cenz=(a(indatm1)%z+a(indatm2)%z)/2.0D0
+			cenx=(a(indatm1)%x+a(indatm2)%x)/2D0
+			ceny=(a(indatm1)%y+a(indatm2)%y)/2D0
+			cenz=(a(indatm1)%z+a(indatm2)%z)/2D0
 		end if
 		write(*,*) "Input the number of points in X,Y,Z directions, e.g. 40,40,25"
 		read(*,*) nx,ny,nz
@@ -382,7 +385,7 @@ else
 			end if
 		end do
 	else if (igridsel==9) then
-		call setgrid_for_PBC
+		call setgrid_for_PBC(0.25D0)
 	else if (igridsel==10) then
 		call setboxGUI
 	else if (igridsel==11) then
@@ -412,18 +415,19 @@ else
         gridv1=0;gridv1(1)=dx
         gridv2=0;gridv2(2)=dy
         gridv3=0;gridv3(3)=dz
-    else
+    else if (igridsel==9) then !Grid may be nonorthogonal
         dx=gridv1(1)
         dy=gridv2(2)
         dz=gridv3(3)
     end if
     call getgridend
+    
 	write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6,' Bohr')") orgx,orgy,orgz
 	write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6,' Bohr')") endx,endy,endz
     if (igridsel/=9) then
 	    write(*,"(' Grid spacing in X,Y,Z is',3f12.6,' Bohr')") dx,dy,dz
 	    write(*,"(' Number of points in X,Y,Z is',3i5,'   Total:',i12)") nx,ny,nz,nx*ny*nz
-    else
+    else if (igridsel==9) then !Grid may be nonorthogonal
 	    write(*,"(' Grid vector 1 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv1,dsqrt(sum(gridv1**2))
 	    write(*,"(' Grid vector 2 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv2,dsqrt(sum(gridv2**2))
 	    write(*,"(' Grid vector 3 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv3,dsqrt(sum(gridv3**2))
@@ -435,12 +439,14 @@ end subroutine
 
 
 !!------- A subroutine directly define grid for PBC case, embedded by subroutine setgrid, setgridfixspc, etc.
-!Note that after employing the following rule, then in e.g. X direction,
+!Note that after employing the following rule, then in e.g. X direction, &
 !the first grid not only differs from last grid by translation vector, but also by a grid spacing. See Section 3.6 for illustration
-subroutine setgrid_for_PBC
+!defspc: Default grid spacing if user directly pressing ENTER button
+subroutine setgrid_for_PBC(defspc)
 use defvar
 implicit real*8 (a-h,o-z)
 character c80tmp*80
+real*8 defspc
 
 write(*,*) "Now input X,Y,Z of origin in Bohr, e.g. 0.2,0,-5.5"
 write(*,*) "You can also input in Angstrom by adding ""A"" suffix, e.g. 0.2,0,-5.5 A"
@@ -480,10 +486,10 @@ end if
 write(*,*) "Now input grid spacing in Bohr, e.g. 0.25"
 !write(*,*) "Hint about grid quality: 0.2 is fine, 0.3 is coarse, 0.4 is very poor"
 write(*,"(a)") " Note: The grid spacing will be automatically slightly altered so that number of grids in each direction is integer"
-write(*,*) "If directly pressing ENTER button, 0.25 Bohr will be used"
+write(*,"(a,f6.3,a)") " If directly pressing ENTER button,",defspc," Bohr will be used"
 read(*,"(a)") c80tmp
 if (c80tmp==" ") then
-	grdspc=0.25D0
+	grdspc=defspc
 else
 	read(c80tmp,*) grdspc
 end if
@@ -501,7 +507,7 @@ end subroutine
 
 
 !!---- Set up grid setting with fixed grid spacing
-!Similar to setgridforbasin, but not so specific and complicated, thus may be used for other subroutines
+!Similar with setgridforbasin, but not so specific and complicated, thus may be used for other subroutines
 subroutine setgridfixspc
 use defvar
 use GUI
@@ -633,7 +639,7 @@ else if (igridsel==9) then
 		end if
 	end do
 else if (igridsel==11) then
-	call setgrid_for_PBC
+	call setgrid_for_PBC(0.25D0)
 end if
 
 if (igridsel==10) call setboxGUI
@@ -807,8 +813,8 @@ end subroutine
 !!!------ A concise routine specifically for filling up electron density to "rhocub" array
 subroutine saverhocub
 use defvar
-use function
-implicit real*8(a-h,o-z)
+use functions
+implicit real*8 (a-h,o-z)
 if (allocated(rhocub)) then
     if (size(rhocub,1)==nx.and.size(rhocub,2)==ny.and.size(rhocub,3)==nz) return !Do need to calculate again
 else
@@ -816,18 +822,21 @@ else
 end if
 write(*,*) "Calculating grid data of electron density..."
 ifinish=0
-!$OMP PARALLEL DO SHARED(rhocub,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprho) schedule(dynamic) NUM_THREADS(nthreads)
+!$OMP PARALLEL DO SHARED(rhocub,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprho) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
 			call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 			rhocub(i,j,k)=fdens(tmpx,tmpy,tmpz)
 		end do
+		!$OMP CRITICAL
+		ifinish=ifinish+1
+		call showprog(ifinish,nz*ny)
+		!$OMP END CRITICAL
 	end do
-	ifinish=ifinish+1
-    call showprog(ifinish,nz)
 end do
 !$OMP END PARALLEL DO
+if (ifinish<nz*ny) call showprog(nz*ny,nz*ny)
 end subroutine
 
 
@@ -853,10 +862,10 @@ type(content) maxv,minv
 if (itype==1) then
 	write(*,*)
 	write(*,*) "Grid information:"
-	write(*,"(' Translation vector:        X           Y           Z     (Bohr)')")
-	write(*,"(a20,3f12.6)") "Vector 1: ",gridv1
-	write(*,"(a20,3f12.6)") "Vector 2: ",gridv2
-	write(*,"(a20,3f12.6)") "Vector 3: ",gridv3
+	write(*,"(' Translation vector:        X           Y           Z         Norm   (Bohr)')")
+	write(*,"(a20,4f12.6)") "Vector 1: ",gridv1,dsqrt(sum(gridv1**2))
+	write(*,"(a20,4f12.6)") "Vector 2: ",gridv2,dsqrt(sum(gridv2**2))
+	write(*,"(a20,4f12.6)") "Vector 3: ",gridv3,dsqrt(sum(gridv3**2))
 	call calc_dvol(dvol)
     write(*,"(a,f12.6,' Bohr^3')") " Volume of each grid:",dvol
 	write(*,"(' The range of x is from ',f12.6,' to ',f12.6,' Bohr,' i5,' points')") ,orgx,endx,nx
@@ -915,4 +924,22 @@ else if (itype==2) then
     !    read(*,*)
     !end if
 end if
+end subroutine
+
+
+
+!!----------- Generate cell information from grid data definition
+!Usually used in the case that cube file is used as input, and we want to treat the system as periodic
+subroutine grid2cellinfo
+use defvar
+ifPBC=3
+cellv1=gridv1*nx
+cellv2=gridv2*ny
+cellv3=gridv3*nz
+ifdoPBCx=1
+ifdoPBCy=1
+ifdoPBCz=1
+PBCnx=1
+PBCny=1
+PBCnz=1
 end subroutine

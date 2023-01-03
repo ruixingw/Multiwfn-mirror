@@ -13,7 +13,7 @@ subroutine ETS_NOCV
 use defvar
 use util
 use GUI
-use function
+use functions
 implicit real*8 (a-h,o-z)
 character c80tmp*80,c200tmp*200,c2000tmp*200
 integer :: nfrag=0 !Number of fragments
@@ -109,7 +109,7 @@ do ifrag=1,nfrag
 		if (alive) exit
 		write(*,*) "Cannot find the file, input again!"
     end do
-	call dealloall
+	call dealloall(0)
 	call readinfile(fragfilename(ifrag),1)
     !Check consistency of this fragment with respect to complex
     if (ncenter_comb+ncenter>ncenter_org) then
@@ -117,7 +117,7 @@ do ifrag=1,nfrag
         ") is larger than that of the whole system (",ncenter_org,")!"
         write(*,*) "Press ENTER button to return"
         read(*,*)
-	    call dealloall
+	    call dealloall(0)
 	    call readinfile(firstfilename,1)
 		return
     end if
@@ -126,7 +126,7 @@ do ifrag=1,nfrag
         ") is larger than that of the whole system (",nbasis_org,")!"
         write(*,*) "Press ENTER button to return"
         read(*,*)
-	    call dealloall
+	    call dealloall(0)
 	    call readinfile(firstfilename,1)
 		return
     end if
@@ -139,7 +139,7 @@ do ifrag=1,nfrag
             write(*,"(' X,Y,Z of atom',i5,' in whole system: ',3f10.5,' Angstrom')") ncenter_comb,a_org(ncenter_comb)%x*b2a,a_org(ncenter_comb)%y*b2a,a_org(ncenter_comb)%z*b2a
 			write(*,*) "Press ENTER button to return"
             read(*,*)
-	        call dealloall
+	        call dealloall(0)
 	        call readinfile(firstfilename,1)
 			return
         end if
@@ -152,7 +152,7 @@ do ifrag=1,nfrag
         write(*,*) "Error: Restricted open-shell wavefunction is not supported by this function!"
         write(*,*) "Press ENTER button to return"
         read(*,*)
-	    call dealloall
+	    call dealloall(0)
 	    call readinfile(firstfilename,1)
         return
     end if
@@ -166,7 +166,7 @@ if (iopsh==1) then
 end if
 write(*,*)
 do ifrag=1,nfrag
-	call dealloall
+	call dealloall(0)
 	call readinfile(fragfilename(ifrag),1)
     write(*,"(' Loading wavefunction information from ',a)") trim(fragfilename(ifrag))
     ibeg=ibasfrag(ifrag)
@@ -206,21 +206,21 @@ if (sum(naelec_frag)/=naelec_org) then
     write(*,"(a,i5,a,i5,a)") " Total number of alpha electrons of all fragments (",sum(naelec_frag),") is different to that of the whole system (",naelec_org,")!"
     write(*,*) "Press ENTER button to return"
     read(*,*)
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1)
     return
 else if (sum(nbelec_frag)/=nbelec_org) then
     write(*,"(a,i5,a,i5,a)") " Total number of beta electrons of all fragments (",sum(nbelec_frag),") is different to that of the whole system (",nbelec_org,")!"
     write(*,*) "Press ENTER button to return"
     read(*,*)
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1)
     return
 end if
 
 !Reloading the complex wavefunction
 write(*,"(/,a,a)") " Reloading ",trim(firstfilename)
-call dealloall
+call dealloall(0)
 call readinfile(firstfilename,1) !Recover to the first file
 
 !Backup some arrays, and in the case of open-shell NOCV, split closed-shell complex wavefunction to alpha and beta
@@ -1022,6 +1022,7 @@ write(*,"(a,2x,f10.2,' %',f10.2,' %',f10.2,' %')") "  h:",lcomp_i(5),lcomp_j(5),
 write(ides,"(/,' Contribution of each atom to NOCV pair/orbitals:')")
 write(ides,"('   Atom         Orb.',i5,'   Orb.',i5,'   Pair',i5)") iorb,jorb,ipair
 do iatm=1,ncenter
+    if (basstart(iatm)==0) cycle
     atmcomp_i=sum( bascomp(basstart(iatm):basend(iatm),iorb) )*100
     atmcomp_j=sum( bascomp(basstart(iatm):basend(iatm),jorb) )*100
     if (iorb/=jorb) then

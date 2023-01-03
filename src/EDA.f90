@@ -197,7 +197,7 @@ allocate(parmA(ncenter),parmB(ncenter))
 					c200tmp=c200tmp(:isep-1)
 					inquire(file=c200tmp,exist=alive)
 					if (.not.alive) then
-						write(*,"(' Error: Unable to find ',a)") trim(c200tmp)
+						write(*,"(' Error: Unable to find ',a,', which was specified in the loaded molecular list file')") trim(c200tmp)
 						write(*,*) "Press ENTER button to return"
 						read(*,*)
 						close(10)
@@ -341,7 +341,7 @@ if (ishowatmpair==1) then
 					jatm=frag(jfrag,jdx)
                     call calcAAele(iatm,jatm,eleval)
                     call calcAAvdW(iatm,jatm,repval,dispval)
-					write(10,"(2i7,':  ',f8.3,4f13.2)") iatm,jatm,atomdistA(iatm,jatm),eleval,repval,dispval,eleval+repval+dispval
+					write(10,"(2i7,':  ',f8.3,4f13.2)") iatm,jatm,atomdistA(iatm,jatm,0),eleval,repval,dispval,eleval+repval+dispval
 				end do
 			end do
 		end do
@@ -429,9 +429,9 @@ implicit real*8 (a-h,o-z)
 integer iatm,jatm
 real*8 eleval
 if (ielemode==1) then
-	eleval=a(iatm)%charge*a(jatm)%charge/atomdist(iatm,jatm)
+	eleval=a(iatm)%charge*a(jatm)%charge/atomdist(iatm,jatm,1)
 else
-	eleval=a(iatm)%charge*a(jatm)%charge/atomdist(iatm,jatm)**2
+	eleval=a(iatm)%charge*a(jatm)%charge/atomdist(iatm,jatm,1)**2
 end if
 eleval=eleval*au2kJ
 end subroutine
@@ -451,7 +451,7 @@ else if (ivdwmode==2) then !AMBER99 & GAFF
 	Dij=dsqrt(parmA(iatm)*parmA(jatm))*cal2J !Well depth in kJ/mol
 	Xij=parmB(iatm)+parmB(jatm) !vdW distance obtained by sum of vdW radius
 end if
-tmpval=(Xij/atomdistA(iatm,jatm))**6
+tmpval=(Xij/atomdistA(iatm,jatm,0))**6
 repval=Dij*tmpval**2 !Exchange-repulsion
 dispval=-2*Dij*tmpval !Dispersion
 end subroutine

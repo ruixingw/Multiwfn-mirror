@@ -53,7 +53,7 @@ subroutine aNCI
 use defvar
 use util
 use GUI
-use function
+use functions
 implicit real*8 (a-h,o-z)
 !The first index of avggrad and the first two indices of avghess correspond to components of gradient and Hessian, respectively
 real*8,allocatable :: avgdens(:,:,:),avggrad(:,:,:,:),avghess(:,:,:,:,:)
@@ -93,10 +93,10 @@ end do
 !Default axis range of scatter plot
 xmin=-RDGprodens_maxrho
 xmax=RDGprodens_maxrho
-if (RDGprodens_maxrho==0.0D0) xmin=-2.0D0
-if (RDGprodens_maxrho==0.0D0) xmax=2.0D0
-ymin=0.0D0
-ymax=1.0D0
+if (RDGprodens_maxrho==0D0) xmin=-2D0
+if (RDGprodens_maxrho==0D0) xmax=2D0
+ymin=0D0
+ymax=1D0
 
 do while (.true.)
     write(*,*)
@@ -121,7 +121,7 @@ do while (.true.)
 		isavepic=1
 		call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"Averaged $sign({\lambda}_2)\rho$ (a.u.)","Averaged reduced density gradient")
 		isavepic=0
-		write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""DISLIN"" prefix in current directory"
+		write(*,"(a,a,a)") " Graph have been saved to ",trim(graphformat)," file with ""dislin"" prefix in current directory"
 	else if (isel==3) then
 		write(*,*) "Input lower limit and upper limit of X axis e.g. 0,1.5"
 		read(*,*) xmin,xmax
@@ -184,7 +184,7 @@ end subroutine
 subroutine avg_rhogradhess(avgdens,avggrad,avghess,ifpsstart,ifpsend)
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 avgdens(nx,ny,nz),avggrad(3,nx,ny,nz),avghess(3,3,nx,ny,nz)
 real*8 gradtmp(3),hesstmp(3,3)
@@ -268,7 +268,7 @@ end subroutine
 subroutine calcexport_TFI(avgdens,ifpsstart,ifpsend)
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 thermflu(nx,ny,nz),avgdens(nx,ny,nz)
 
@@ -325,7 +325,7 @@ end subroutine
 !iIGMtype=1: Based on promolecular approximation (original IGM)
 !iIGMtype=2: Based on Hirshfeld partition of actual density (IGMH)
 subroutine IGM(iIGMtype)
-use function
+use functions
 use util
 use defvar
 use GUI
@@ -356,6 +356,8 @@ else if (iIGMtype==2) then
 	write(*,*)
 	write(*,*) "***** Please cite this introductory paper of IGMH: *****"
     write(*,*) "Tian Lu, Qinxue Chen, J. Comput. Chem., 43, 539 (2022) DOI: 10.1002/jcc.26812"
+    write(*,*) "An erratum to the IGMH paper is also suggested to cite together:"
+    write(*,*) "Tian Lu, Qinxue Chen, ChemRxiv (2022) DOI: 10.26434/chemrxiv-2022-g1m34"
 end if
 
 !----- Define fragments
@@ -509,7 +511,7 @@ write(*,"(a,f12.6,' a.u.')") " Integral of delta-g over whole space:      ",dg_i
 write(*,"(a,f12.6,' a.u.')") " Integral of delta-g_inter over whole space:",dginter_int
 write(*,"(a,f12.6,' a.u.')") " Integral of delta-g_intra over whole space:",dgintra_int
 
-ymin=0.0D0
+ymin=0D0
 ymax=maxval(dg)
 xmin=-0.6D0
 xmax=0.2D0
@@ -569,7 +571,7 @@ do while (.true.)
 			if (itype==3) call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","${\delta}g$ (a.u.)")
 			if (itype==4) call drawscatter(scatterx,scattery2,nx*ny*nz,xmin,xmax,ymin,ymax,1,"$sign({\lambda}_2)\rho$ (a.u.)","${\delta}g^{inter/intra}$ (a.u.)",scatterx,scattery,nx*ny*nz)
 			isavepic=0
-			write(*,"(a)") " Figure has been saved to "//trim(graphformat)//" file with ""DISLIN"" prefix in current directory"
+			write(*,"(a)") " Figure has been saved to "//trim(graphformat)//" file with ""dislin"" prefix in current directory"
 		end if
 	else if (isel==-2) then
 		write(*,*) "Input lower limit and upper limit of X axis  e.g. 0,1.5"
@@ -586,6 +588,7 @@ do while (.true.)
 		close(10)
 		write(*,*) "Finished! Column 1/2/3/4 = delta-g_inter/delta-g_intra/delta-g/sign(lambda2)rho"
 	else if (isel==3) then
+		write(*,*) "Exporting..."
 		open(10,file="dg_inter.cub",status="replace")
 		call outcube(dg_inter,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
@@ -647,7 +650,6 @@ do while (.true.)
         
         !Calculate atomic pair delta-g indices
 		allocate(atmpairdg(ni,nj))
-		write(*,*) "Please wait..."
         call calcatmpairdg(iIGMtype,ni,IGMfrag(ifrag,:),nj,IGMfrag(jfrag,:),atmpairdg)
         
 		open(10,file="atmdg.txt",status="replace")
@@ -704,7 +706,7 @@ do while (.true.)
         !Convert atomic pair dg indices to IBSIW
 		do idx=1,ni
 			do jdx=1,nj
-                dist=distmat(IGMfrag(ifrag,idx),IGMfrag(jfrag,jdx))*b2a
+                dist=atomdist(IGMfrag(ifrag,idx),IGMfrag(jfrag,jdx),1)*b2a
                 IBSIWmat(idx,jdx)=atmpairdg(idx,jdx)/dist**2*100
 			end do
 		end do
@@ -755,7 +757,7 @@ do while (.true.)
         
         iouttype=1 !1: atmdg.pdb. 2: atmdg.pqr & atmdg%.pqr. pqr is not good choice because VMD is unable to load elements from it, making determination of bonding often incorrect
         if (iouttype==1) then
-        		write(*,"(/,a)") " If outputting the two fragments as atmdg.pdb in current folder, whose ""Charge"" and ""Occupancy"" &
+        		write(*,"(/,a)") " If outputting the two fragments as atmdg.pdb in current folder, whose ""Beta"" and ""Occupancy"" &
                 atomic properties correspond to atomic delta-g index multiplied by 10 and percentage atomic delta-g index, respectively? (y/n)"
 			read(*,*) selectyn
 			if (selectyn=='y') then
@@ -844,22 +846,28 @@ end subroutine
 subroutine calcatmpairdg(iIGMtype,natm1,atmlist1,natm2,atmlist2,atmpairdg)
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer iIGMtype,natm1,natm2,atmlist1(natm1),atmlist2(natm2),atmpair(2)
-real*8 atmpairdg(natm1,natm2),grad(3),IGM_grad(3)
+real*8 atmpairdg(natm1,natm2),atmpairdg_add(natm1,natm2),atmpairdg_addtmp(natm1,natm2),grad(3),IGM_grad(3)
 type(content),allocatable :: gridatmorg(:),gridatm(:)
-real*8,allocatable :: dgmat(:,:,:),beckeweigrid(:)
+real*8,allocatable :: beckeweigrid(:)
 real*8 atmrho(ncenter),atmgrad(3,ncenter),gradtmp(3),gradnormIGMtmp
 real*8 atmprorho(ncenter),atmprograd(3,ncenter)
 real*8 prorho,prograd(3),realrho,realgrad(3),hess(3,3),Hirshwei(ncenter)
 
+if (ifPBC>0) then
+    write(*,*)
+	write(*,"(a)") " Warning: This function currently does not fully support periodic systems. &
+    To use it for periodic system, the atoms of interest should far from boundary"
+    write(*,*)
+end if
+
 iapprox=1 !Enable use approximation to accelerate calculation
-atmpairdg=0
 
 nradpot_bk=radpot
 nsphpot_bk=sphpot
-write(*,*) "Select grid for integrating the delta-g_pair functions"
+write(*,*) "Please select grid for integrating the delta-g_pair functions"
 !IGMH has higher requirement on integration grid since distribution region is narrow
 if (iIGMtype==2) write(*,*) "Note: Option 1 is deprecated since numerical accuracy is too low for IGMH"
 write(*,*) "1 Medium quality (radial=30, angular=110. Cost=1.0 x)"
@@ -881,22 +889,25 @@ else if (isel==4) then
     radpot=75
     sphpot=434
 end if
-allocate(dgmat(natm1,natm2,radpot*sphpot),beckeweigrid(radpot*sphpot),gridatm(radpot*sphpot),gridatmorg(radpot*sphpot))
+allocate(beckeweigrid(radpot*sphpot),gridatm(radpot*sphpot),gridatmorg(radpot*sphpot))
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 call walltime(iwalltime1)
 call gen1cintgrid(gridatmorg,iradcut)
 call showprog(0,ncenter)
     
 !Becke's multi-center integration, cycle all atoms
+!For each atom grids, calculate atmpairdg_add(:,:), which records all dg_pair contributed by these grids, and added to atmpairdg
+atmpairdg=0
 do icen=1,ncenter
-    !If this center is far from any pair of closely contacted atoms among the two fragment, it will be skipped
+    !If this center is far from any pair of closely contacted atoms among the two fragments, &
+	!then grids centered on this atom should not contribute to any dg_pair, so this center will be skipped
     if (iapprox==1) then
         distmin=1E10
         do itmp=1,natm1
             iatm=atmlist1(itmp)
             do jtmp=1,natm2
                 jatm=atmlist2(jtmp)
-                if (distmat(iatm,jatm)>9) cycle !The two atoms are closely contacted
+                if (atomdist(iatm,jatm,1)>9) cycle !The two atoms are closely contacted
                 xmid=(a(iatm)%x+a(jatm)%x)/2
                 ymid=(a(iatm)%y+a(jatm)%y)/2
                 zmid=(a(iatm)%z+a(jatm)%z)/2
@@ -907,12 +918,15 @@ do icen=1,ncenter
         if (distmin>6) cycle !This is found to be lowest acceptable threshold. The accuracy loss in this case is fully negligible
     end if
         
-    dgmat=0
 	gridatm%x=gridatmorg%x+a(icen)%x !Move quadrature point to actual position in molecule
 	gridatm%y=gridatmorg%y+a(icen)%y
 	gridatm%z=gridatmorg%z+a(icen)%z
-	!$OMP parallel do shared(dgmat) private(ipt,rnowx,rnowy,rnowz,atmrho,atmgrad,itmp,jtmp,iatm,jatm,&
-    !$OMP gradtmp,gradnormIGMtmp,atmprorho,atmprograd,realrho,realgrad,prorho,prograd,Hirshwei,idir,t1,t2,t3,tmp) num_threads(nthreads)
+	call gen1cbeckewei(icen,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+    atmpairdg_add=0
+	!$OMP parallel shared(atmpairdg_add) private(atmpairdg_addtmp,ipt,rnowx,rnowy,rnowz,atmrho,atmgrad,itmp,jtmp,iatm,jatm,&
+    !$OMP gradtmp,gradnormIGMtmp,atmprorho,atmprograd,realrho,realgrad,prorho,prograd,Hirshwei,idir,t1,t2,t3,tmp,dgtmp) num_threads(nthreads)
+	atmpairdg_addtmp=0
+    !$OMP DO schedule(dynamic)
 	do ipt=1+iradcut*sphpot,radpot*sphpot
 		rnowx=gridatm(ipt)%x
         rnowy=gridatm(ipt)%y
@@ -963,7 +977,8 @@ do icen=1,ncenter
                             t2=realrho/prorho*atmprograd(idir,iatm)
                             t3=-realrho*atmprorho(iatm)/prorho**2 * prograd(idir)
                         end if
-                        atmgrad(idir,iatm)=t1+t2+t3
+                        !atmgrad(idir,iatm)=t1+t2+t3 !Mathematically correct free-state atomic gradient but poor effect for IGMH. Older than 2022-Sep-18
+                        atmgrad(idir,iatm)=t1-t2-t3 !IGMH-type "special" free-state atomic gradient
                     end do
                 end if
             end do
@@ -975,15 +990,20 @@ do icen=1,ncenter
                 jatm=atmlist2(jtmp)
                 gradtmp(:)=atmgrad(:,iatm)+atmgrad(:,jatm)
                 gradnormIGMtmp=dsqrt(sum(atmgrad(:,iatm)**2))+dsqrt(sum(atmgrad(:,jatm)**2))
-                dgmat(itmp,jtmp,ipt)=gradnormIGMtmp-dsqrt(sum(gradtmp**2))
+                dgtmp=gradnormIGMtmp-dsqrt(sum(gradtmp**2))
+                atmpairdg_addtmp(itmp,jtmp)=atmpairdg_addtmp(itmp,jtmp)+dgtmp*gridatmorg(ipt)%value*beckeweigrid(ipt)
             end do
         end do
 	end do
-	!$OMP end parallel do
-	call gen1cbeckewei(icen,iradcut,gridatm,beckeweigrid)
-	do ipt=1+iradcut*sphpot,radpot*sphpot
-		atmpairdg(:,:)=atmpairdg(:,:)+dgmat(:,:,ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
-	end do
+	!do ipt=1+iradcut*sphpot,radpot*sphpot
+	!	atmpairdg(:,:)=atmpairdg(:,:)+dgmat(:,:,ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
+	!end do
+	!$OMP END DO
+	!$OMP CRITICAL
+	atmpairdg_add=atmpairdg_add+atmpairdg_addtmp
+	!$OMP END CRITICAL
+	!$OMP END PARALLEL
+    atmpairdg=atmpairdg+atmpairdg_add
     call showprog(icen,ncenter)
 end do
 call walltime(iwalltime2)
@@ -1000,7 +1020,7 @@ subroutine aIGM
 use defvar
 use util
 use GUI
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 gradtmp(3),grad_inter(3),IGM_gradnorm_inter
 integer,allocatable :: IGMfrag(:,:),IGMfragsize(:) !Definition of each fragment used in IGM, and the number of atoms in each fragment
@@ -1124,7 +1144,7 @@ end if
 call walltime(iwalltime2)
 write(*,"(' Calculation totally took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 
-ymin=0.0D0
+ymin=0D0
 ymax=maxval(dg_inter)
 xmin=-0.5D0
 xmax=0.5D0
@@ -1172,7 +1192,7 @@ do while (.true.)
 			isavepic=1
 			call drawscatter(scatterx,scattery,nx*ny*nz,xmin,xmax,ymin,ymax,1,"Averaged $sign({\lambda}_2)\rho$ (a.u.)","Averaged ${\delta}g^{inter}$ (a.u.)")
 			isavepic=0
-			write(*,"(a)") " Figure has been saved to "//trim(graphformat)//" file with ""DISLIN"" prefix in current directory"
+			write(*,"(a)") " Figure has been saved to "//trim(graphformat)//" file with ""dislin"" prefix in current directory"
 		end if
         
     else if (isel==2) then

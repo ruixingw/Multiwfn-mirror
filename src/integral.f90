@@ -1,15 +1,16 @@
-!!!------------------ Evaluate overlap integral for two unnormalized GTFs, a warpper of doSintactual for simplicity
+!!!------------- Evaluate overlap integral for two unnormalized GTFs, a warpper of doSintactual for simplicity
 real*8 function doSint(iGTF,jGTF)
 integer iGTF,jGTF
 real*8,external :: doSintactual
 doSint=doSintactual(iGTF,jGTF,0,0,0,0,0,0)
 end function
-!!!------------------ Evaluate overlap integral for two unnormalized GTFs
+
+!!!------------- Evaluate overlap integral for two unnormalized GTFs
 !~p arguments are the shifts of GTF index, used by doKint, doveloint but not used by doSint
 real*8 function doSintactual(iGTF,jGTF,ix1p,iy1p,iz1p,ix2p,iy2p,iz2p)
 use util
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer iGTF,jGTF,ix1p,iy1p,iz1p,ix2p,iy2p,iz2p
 x1=a(b(iGTF)%center)%x
 y1=a(b(iGTF)%center)%y
@@ -33,7 +34,7 @@ iy2=type2iy(b(jGTF)%type)+iy2p
 iz2=type2iz(b(jGTF)%type)+iz2p
 !chen book,P103
 numx=ceiling( (ix1+ix2+1)/2D0 ) !Need to calculate n points
-sx=0.0D0
+sx=0D0
 do i=1,numx
 	tmp=Rhm(numx,i)/sqrtep+px
 	term1=(tmp-x1)**ix1
@@ -43,7 +44,7 @@ end do
 sx=sx/sqrtep
 
 numy=ceiling( (iy1+iy2+1)/2D0 )
-sy=0.0D0
+sy=0D0
 do i=1,numy
 	tmp=Rhm(numy,i)/sqrtep+py
 	term1=(tmp-y1)**iy1
@@ -53,7 +54,7 @@ end do
 sy=sy/sqrtep
 
 numz=ceiling( (iz1+iz2+1)/2D0 )
-sz=0.0D0
+sz=0D0
 do i=1,numz
 	tmp=Rhm(numz,i)/sqrtep+pz
 	term1=(tmp-z1)**iz1
@@ -64,6 +65,68 @@ sz=sz/sqrtep
 
 doSintactual=sx*sy*sz*expterm
 end function
+
+!!!------------- The same as doSintactual, but allow specify displacement vector for jGTF 
+real*8 function doSintactual_disp(iGTF,jGTF,ix1p,iy1p,iz1p,ix2p,iy2p,iz2p,dispvec)
+use util
+use defvar
+implicit real*8 (a-h,o-z)
+integer iGTF,jGTF,ix1p,iy1p,iz1p,ix2p,iy2p,iz2p
+real*8 dispvec(3)
+x1=a(b(iGTF)%center)%x
+y1=a(b(iGTF)%center)%y
+z1=a(b(iGTF)%center)%z
+x2=a(b(jGTF)%center)%x+dispvec(1)
+y2=a(b(jGTF)%center)%y+dispvec(2)
+z2=a(b(jGTF)%center)%z+dispvec(3)
+ee1=b(iGTF)%exp
+ee2=b(jGTF)%exp
+ep=ee1+ee2
+sqrtep=dsqrt(ep)
+px=(ee1*x1+ee2*x2)/ep
+py=(ee1*y1+ee2*y2)/ep
+pz=(ee1*z1+ee2*z2)/ep		
+expterm=dexp( -ee1*ee2*((x1-x2)**2+(y1-y2)**2+(z1-z2)**2)/ep )
+ix1=type2ix(b(iGTF)%type)+ix1p
+iy1=type2iy(b(iGTF)%type)+iy1p
+iz1=type2iz(b(iGTF)%type)+iz1p
+ix2=type2ix(b(jGTF)%type)+ix2p
+iy2=type2iy(b(jGTF)%type)+iy2p
+iz2=type2iz(b(jGTF)%type)+iz2p
+!chen book,P103
+numx=ceiling( (ix1+ix2+1)/2D0 ) !Need to calculate n points
+sx=0D0
+do i=1,numx
+	tmp=Rhm(numx,i)/sqrtep+px
+	term1=(tmp-x1)**ix1
+	term2=(tmp-x2)**ix2
+	sx=sx+Whm(numx,i)*term1*term2
+end do
+sx=sx/sqrtep
+
+numy=ceiling( (iy1+iy2+1)/2D0 )
+sy=0D0
+do i=1,numy
+	tmp=Rhm(numy,i)/sqrtep+py
+	term1=(tmp-y1)**iy1
+	term2=(tmp-y2)**iy2
+	sy=sy+Whm(numy,i)*term1*term2
+end do
+sy=sy/sqrtep
+
+numz=ceiling( (iz1+iz2+1)/2D0 )
+sz=0D0
+do i=1,numz
+	tmp=Rhm(numz,i)/sqrtep+pz
+	term1=(tmp-z1)**iz1
+	term2=(tmp-z2)**iz2
+	sz=sz+Whm(numz,i)*term1*term2
+end do
+sz=sz/sqrtep
+
+doSintactual_disp=sx*sy*sz*expterm
+end function
+
 !!!------------------ Generate overlap matrix between all GTFs
 !nsize should be nprims*(nprims+1)/2
 subroutine genGTFSmat(GTFSmat,nsize)
@@ -80,27 +143,71 @@ do iGTF=1,nprims
 end do
 !$OMP END PARALLEL DO
 end subroutine
-!!!------------------ Generate overlap matrix between all Cartesian basis functions
+
+!!!------------- Generate overlap matrix between all Cartesian basis functions
 !Sbas should be allocated first
 !If current basis functions contain spherical ones, it must be then converted to spherical-harmonic one before any practical use
 subroutine genSbas
 use defvar
+use util
 implicit real*8 (a-h,o-z)
+real*8 dispvec(3)
+real*8,external :: doSintactual_disp
+
 Sbas=0D0
-!$OMP PARALLEL DO SHARED(Sbas) PRIVATE(i,ii,j,jj) schedule(dynamic) NUM_THREADS(nthreads)
-do i=1,nbasisCar
-	do j=i,nbasisCar
-		do ii=primstart(i),primend(i)
-			do jj=primstart(j),primend(j)
-				Sbas(i,j)=Sbas(i,j)+primconnorm(ii)*primconnorm(jj)*doSint(ii,jj)
+if (ifPBC==0) then
+	!$OMP PARALLEL DO SHARED(Sbas) PRIVATE(i,ii,j,jj) schedule(dynamic) NUM_THREADS(nthreads)
+	do i=1,nbasisCar
+		do j=i,nbasisCar
+			do ii=primstart(i),primend(i)
+				do jj=primstart(j),primend(j)
+					Sbas(i,j)=Sbas(i,j)+primconnorm(ii)*primconnorm(jj)*doSint(ii,jj)
+				end do
+			end do
+			Sbas(j,i)=Sbas(i,j)
+		end do
+	end do
+	!$OMP END PARALLEL DO
+else !PBC case
+	call walltime(iwalltime1)
+	!Summing up all neighbouring cells. This is valid for analysis for periodic system
+	!See (9.4) in p328 of Quantum Chemistry of Solids - The LCAO First Principles Treatment of Crystals
+	ifinish=0
+	!$OMP PARALLEL DO SHARED(Sbas,ifinish) PRIVATE(i,ii,j,jj,icell,jcell,kcell,tmp,dispvec) schedule(dynamic) NUM_THREADS(nthreads)
+	do i=1,nbasisCar
+		do icell=-PBCnx,PBCnx
+			do jcell=-PBCny,PBCny
+				do kcell=-PBCnz,PBCnz
+					call tvec_PBC(icell,jcell,kcell,dispvec)
+					do j=i,nbasisCar
+						do ii=primstart(i),primend(i)
+							tmp=0
+							do jj=primstart(j),primend(j)
+								tmp=tmp+primconnorm(jj)*doSintactual_disp(ii,jj,0,0,0,0,0,0,dispvec)
+							end do
+                            Sbas(i,j)=Sbas(i,j)+primconnorm(ii)*tmp
+						end do
+					end do
+				end do
 			end do
 		end do
-		Sbas(j,i)=Sbas(i,j)
+		!$OMP CRITICAL
+        ifinish=ifinish+1
+        call showprog(ifinish,nbasisCar)
+		!$OMP END CRITICAL
 	end do
-end do
-!$OMP END PARALLEL DO
+	!$OMP END PARALLEL DO
+	do i=1,nbasisCar
+		do j=i,nbasisCar
+			Sbas(j,i)=Sbas(i,j)
+        end do
+    end do
+	call walltime(iwalltime2)
+	write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+end if
 end subroutine
-!!!------------------ Generate overlap matrix between all current basis functions
+
+!!!-------------- Generate overlap matrix between all current basis functions (either pure Cartesian or with spherical type)
 subroutine genSbas_curr
 use defvar
 real*8,allocatable :: mattmp(:,:)
@@ -110,23 +217,32 @@ if (isphergau==0) then
     call genSbas
 else
     allocate(mattmp(nbasisCar,nbasisCar))
-    call genSbas !Generate matrix in purely Cartesian basis
+    call genSbas !Generate matrix in pure Cartesian basis
     mattmp=Sbas
     deallocate(Sbas);allocate(Sbas(nbasis,nbasis))
     call matCar2curr(mattmp,Sbas) !Transform matrix from Cartesian basis to current basis
 end if
 end subroutine
 
+!!!----------- Generate Sbas for PBC if it has not been generated
+subroutine ask_Sbas_PBC
+use defvar
+if (ifPBC>0.and.(.not.allocated(Sbas))) then
+    write(*,*)
+    write(*,*) "Generating overlap matrix..."
+    call genSbas_curr
+end if
+end subroutine
 
 
 
-!!!-------- Evaluate dipole moment integral for two unnormalized GTFs, <GTF|-r|GTF>, the negative charge of electron has been considered!
+!!!-------- Evaluate electric dipole moment integral for two unnormalized GTFs, <GTF|-r|GTF>, the negative charge of electron has been considered!
 !~p arguments are the shifts of GTF index as doSintactual
 !xint/yint/zint correspond to dipole moment integral in X/Y/Z
 subroutine dodipoleint(iGTF,jGTF,ix1p,iy1p,iz1p,ix2p,iy2p,iz2p,xint,yint,zint)
 use util
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 real*8 xint,yint,zint
 integer iGTF,jGTF,ix1p,iy1p,iz1p,ix2p,iy2p,iz2p
 x1=a(b(iGTF)%center)%x
@@ -152,7 +268,7 @@ iz2=type2iz(b(jGTF)%type)+iz2p
 
 !First, calculate sx,sy,sz as usual as doSint
 numx=ceiling( (ix1+ix2+1)/2D0 ) !Need to calculate n points
-sx=0.0D0
+sx=0D0
 do i=1,numx
 	tmp=Rhm(numx,i)/sqrtep+px
 	term1=(tmp-x1)**ix1
@@ -161,7 +277,7 @@ do i=1,numx
 end do
 sx=sx/sqrtep
 numy=ceiling( (iy1+iy2+1)/2D0 )
-sy=0.0D0
+sy=0D0
 do i=1,numy
 	tmp=Rhm(numy,i)/sqrtep+py
 	term1=(tmp-y1)**iy1
@@ -170,7 +286,7 @@ do i=1,numy
 end do
 sy=sy/sqrtep
 numz=ceiling( (iz1+iz2+1)/2D0 )
-sz=0.0D0
+sz=0D0
 do i=1,numz
 	tmp=Rhm(numz,i)/sqrtep+pz
 	term1=(tmp-z1)**iz1
@@ -181,7 +297,7 @@ sz=sz/sqrtep
 
 !Second, calculate overlap integral in X,Y,Z directions but with X,Y,Z coordinate variables (relative to the original point of the whole system) to produce sxx,syy,szz
 numx=ceiling( (ix1+ix2+2)/2D0 ) !Because X variable is introduced, ix1+ix2+2 is used instead of ix1+ix2+1
-sxx=0.0D0
+sxx=0D0
 do i=1,numx
 	tmp=Rhm(numx,i)/sqrtep+px !x coordinate relative to origin
 	term1=(tmp-x1)**ix1
@@ -190,7 +306,7 @@ do i=1,numx
 end do
 sxx=sxx/sqrtep
 numy=ceiling( (iy1+iy2+2)/2D0 )
-syy=0.0D0
+syy=0D0
 do i=1,numy
 	tmp=Rhm(numy,i)/sqrtep+py
 	term1=(tmp-y1)**iy1
@@ -199,7 +315,7 @@ do i=1,numy
 end do
 syy=syy/sqrtep
 numz=ceiling( (iz1+iz2+2)/2D0 )
-szz=0.0D0
+szz=0D0
 do i=1,numz
 	tmp=Rhm(numz,i)/sqrtep+pz
 	term1=(tmp-z1)**iz1
@@ -221,7 +337,7 @@ if (icomp==1) dipintcomp=xcomp
 if (icomp==2) dipintcomp=ycomp
 if (icomp==3) dipintcomp=zcomp
 end function
-!!!--------------- Generate dipole moment integral matrix between all GTFs <{GTF}|-r|{GTF}>
+!!!--------------- Generate electric dipole moment integral matrix between all GTFs <{GTF}|-r|{GTF}>
 !nsize should be nprims*(nprims+1)/2
 subroutine genGTFDmat(GTFdipmat,nsize)
 use defvar
@@ -240,7 +356,7 @@ do iGTF=1,nprims
 end do
 !$OMP END PARALLEL DO
 end subroutine
-!!!--------------- Generate dipole moment integral matrix between all GTFs <{GTF}|-r|{GTF}>, store to "Dprim" matrix
+!!!--------------- Generate electric dipole moment integral matrix between all GTFs <{GTF}|-r|{GTF}>, store to "Dprim" matrix
 subroutine genDprim
 use defvar
 implicit real*8 (a-h,o-z)
@@ -255,7 +371,7 @@ do iGTF=1,nprims
 end do
 !$OMP END PARALLEL DO
 end subroutine
-!!!----------- Generate dipole moment integral matrix between all Cartesian basis functions, <{basis}|-r|{basis}>
+!!!----------- Generate electric dipole moment integral matrix between all Cartesian basis functions, <{basis}|-r|{basis}>
 !Dbas should be allocated first
 !If current basis functions contain spherical ones, it must be then converted to spherical-harmonic one before any practical use
 subroutine genDbas
@@ -278,7 +394,7 @@ do i=1,nbasisCar
 end do
 !$OMP END PARALLEL DO
 end subroutine
-!!!------------------ Generate dipole moment integral matrix between all current basis functions
+!!!--------------- Generate electric dipole moment integral matrix between all current basis functions
 subroutine genDbas_curr
 use defvar
 real*8,allocatable :: mattmp(:,:,:)
@@ -296,7 +412,7 @@ else
     end do
 end if
 end subroutine
-!!!---------- Generate dipole moment integral matrix between all orbitals via unitary transformation of Dbas <{orb}|-r|{orb}>
+!!!---------- Generate electric dipole moment integral matrix between all orbitals via unitary transformation of Dbas <{orb}|-r|{orb}>
 !Dbas must be already filled. DorbA and DorbB are global arrays
 subroutine genDorb
 use defvar
@@ -317,10 +433,10 @@ end subroutine
 
 !!!------- Evaluate magnetic integral for two unnormalized GTFs 
 !The imaginary sign i is ignored. Note that the negative sign of magnetic operator is not occurred here
-!Consult doVelint for the method for evaluation of <a|d/dx|b>, and TCA,6,341 for the formula of magnetic integral
+!Consult doVelint for the method for evaluation of <a|d/dx|b>, and TCA,6,341 (On the Evaluation of Electric and Magnetic Dipole Transition Moments in the ZD0 Approximation) for the formula of magnetic integral
 subroutine doMagint(iGTF,jGTF,xcomp,ycomp,zcomp)
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer iGTF,jGTF
 real*8 xcomp,ycomp,zcomp,term(4)
 ee1=b(iGTF)%exp
@@ -416,6 +532,20 @@ else
     end do
 end if
 end subroutine
+!!!---------- Generate magnetic dipole moment integral matrix between all orbitals via unitary transformation of Magbas
+!Magbas must be already filled. MagorbA and MagorbB are global arrays
+subroutine genMagorb
+use defvar
+integer i
+do i=1,3
+	MagorbA(i,:,:)=matmul(matmul(transpose(CObasa),Magbas(i,:,:)),CObasa)
+end do
+if (allocated(CObasb)) then
+	do i=1,3
+		MagorbB(i,:,:)=matmul(matmul(transpose(CObasb),Magbas(i,:,:)),CObasb)
+	end do
+end if
+end subroutine
 
 
 
@@ -426,7 +556,7 @@ end subroutine
 !One can consult p97 of Chen's book for the derivative of GTF. Namely <a|d/dx|b>=ix2*<a|b-1x>-2*ee2*<a|b+1x>
 subroutine doVelint(iGTF,jGTF,xcomp,ycomp,zcomp)
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer iGTF,jGTF
 real*8 xcomp,ycomp,zcomp
 ee1=b(iGTF)%exp
@@ -520,7 +650,7 @@ end subroutine
 !!!------------------- Evaluate kinetic integral (i.e. -(1/2)der2 )for two unnormalized GTFs, see Chen's book, p104
 real*8 function doTint(iGTF,jGTF)
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer iGTF,jGTF
 real*8 term(4)
 ee1=b(iGTF)%exp
@@ -612,7 +742,7 @@ end subroutine
 subroutine domultipoleint(iGTF,jGTF,D,Quad,Octo,Hexde)
 use util
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 real*8 D(3),Quad(6),Octo(10),Hexde(15)
 integer iGTF,jGTF
 integer,parameter :: maxorder=4 !Maximum order of GTF with respect to a direction
@@ -869,4 +999,110 @@ do ish=1,nshell
 	ipos6D=ipos6D+numshorb6D
 end do
 matcurr=matCar(1:nbasis,1:nbasis)
+end subroutine
+
+
+
+
+!!---------- Print two-electron integral of (ij|kl) for four orbitals by inputting their indices
+!Cost is fairly high even for phenol, because calcGTF_ERI is too naive to calculate all ERIs 
+subroutine showorb_ERI
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c80tmp*80
+
+allocate(COtr(nprims,nmo))
+COtr=transpose(CO)
+
+write(*,"(/,a)") " Note: Please note only cite original paper of Multiwfn but also cite LIBRETA library (Jun Zhang, J. Chem. Theory Comput., 14, 572 (2018)), &
+which provides two-electron integral for this function"
+do while(.true.)
+    write(*,*)
+    write(*,*) "Input four indices of orbitals, e.g. 3,9,6,10"
+    write(*,*) "Pressing ENTER button directly can return"
+    read(*,"(a)") c80tmp
+    if (c80tmp==" ") then
+        return
+    else
+        read(c80tmp,*) iorb,jorb,korb,lorb
+    end if
+    write(*,*) "Calculating..."
+    ERIval=0
+    ifinish=0
+    !$OMP parallel shared(ifinish) private(ERIvaltmp,iGTF,jGTF,kGTF,lGTF,tmpj,tmpk,tmpl,valtmp) num_threads(nthreads)
+    ERIvaltmp=0
+    !$OMP do schedule(dynamic)
+    do iGTF=1,nprims
+        tmpj=0
+        do jGTF=1,nprims
+            tmpk=0
+            do kGTF=1,nprims
+                tmpl=0
+                do lGTF=1,nprims
+                    call calcGTF_ERI(iGTF,jGTF,kGTF,lGTF,valtmp)
+                    !ERIval=ERIval+COtr(iGTF,iorb)*COtr(jGTF,jorb)*COtr(kGTF,korb)*COtr(lGTF,lorb)*valtmp
+                    tmpl=tmpl+COtr(lGTF,lorb)*valtmp
+                end do
+                tmpk=tmpk+COtr(kGTF,korb)*tmpl
+            end do
+            tmpj=tmpj+COtr(jGTF,jorb)*tmpk
+        end do
+        ERIval=ERIval+COtr(iGTF,iorb)*tmpj
+        ifinish=ifinish+1
+        call showprog(ifinish,nprims)
+    end do
+    !$OMP END DO
+    !$OMP CRITICAL
+    ERIval=ERIval+ERIvaltmp
+    !$OMP END CRITICAL
+    !$OMP END PARALLEL
+    write(*,"(/,' Two-electron integral is',1PE16.8,' a.u.')") ERIval
+end do
+end subroutine
+
+    
+
+!!---------- Print two-electron integral of (ij|kl) for four GTFs by inputting their GTF indices
+subroutine showGTF_ERI
+use defvar
+integer iGTF,jGTF,kGTF,lGTF
+real*8 ERIval
+character c80tmp*80
+
+write(*,"(/,a)") " Note: Please note only cite original paper of Multiwfn but also cite LIBRETA library (Jun Zhang, J. Chem. Theory Comput., 14, 572 (2018)), &
+which provides two-electron integral for this function"
+do while(.true.)
+    write(*,*)
+    write(*,*) "Input four indices of GTFs, e.g. 3,9,6,10"
+    write(*,*) "Pressing ENTER button directly can return"
+    read(*,"(a)") c80tmp
+    if (c80tmp==" ") then
+        return
+    else
+        read(c80tmp,*) iGTF,jGTF,kGTF,lGTF
+    end if
+    call calcGTF_ERI(iGTF,jGTF,kGTF,lGTF,ERIval)
+    write(*,"(' Two-electron integral is',1PE16.8,' a.u.')") ERIval
+end do
+end subroutine
+
+!!---------- Calculate two-electron integral of (ij|kl) for four GTFs
+!Supporting angular moment from s to h
+subroutine calcGTF_ERI(iGTF,jGTF,kGTF,lGTF,ERIval)
+use defvar
+integer iGTF,jGTF,kGTF,lGTF
+real*8 ERIval,Ri(3),Rj(3),Rk(3),Rl(3)
+
+Ri(:)=(/ a(b(iGTF)%center)%x, a(b(iGTF)%center)%y, a(b(iGTF)%center)%z /)
+Rj(:)=(/ a(b(jGTF)%center)%x, a(b(jGTF)%center)%y, a(b(jGTF)%center)%z /)
+Rk(:)=(/ a(b(kGTF)%center)%x, a(b(kGTF)%center)%y, a(b(kGTF)%center)%z /)
+Rl(:)=(/ a(b(lGTF)%center)%x, a(b(lGTF)%center)%y, a(b(lGTF)%center)%z /)
+
+call naive_eri(&
+b(iGTF)%exp, Ri(:), type2ix(b(iGTF)%type), type2iy(b(iGTF)%type), type2iz(b(iGTF)%type), &
+b(jGTF)%exp, Rj(:), type2ix(b(jGTF)%type), type2iy(b(jGTF)%type), type2iz(b(jGTF)%type), &
+b(kGTF)%exp, Rk(:), type2ix(b(kGTF)%type), type2iy(b(kGTF)%type), type2iz(b(kGTF)%type), &
+b(lGTF)%exp, Rl(:), type2ix(b(lGTF)%type), type2iy(b(lGTF)%type), type2iz(b(lGTF)%type), &
+ERIval)
 end subroutine

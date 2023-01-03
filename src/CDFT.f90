@@ -2,7 +2,7 @@
 subroutine CDFT
 use defvar
 use GUI
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 character keywords*200,c200tmp*200,inpname*200,selectyn,c3*3,c3p*3,c3q*3
@@ -20,6 +20,11 @@ real*8 OWfposgrid(radpot*sphpot),OWfneggrid(radpot*sphpot),promol(radpot*sphpot)
 real*8,allocatable :: atmcomp(:,:),atmref(:,:)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 cubfac=1D0
+
+write(*,"(/,a)") " !!! NOTE: If this module is used in your research, please NOT ONLY cite original paper of Multiwfn (J. Comput. Chem., 33, 580-592 (2012)), &
+BUT ALSO cite the following book chapter, which comprehensively introduces feature and implementation of this module:"
+write(*,"(a)") " Tian Lu, Qinxue Chen. Realization of Conceptual Density Functional Theory and Information-Theoretic Approach in &
+Multiwfn Program. In Conceptual Density Functional Theory, WILEY-VCH GmbH: Weinheim (2022); pp 631-647 DOI: 10.1002/9783527829941.ch31"
 
 do while(.true.)
     write(*,*)
@@ -113,7 +118,7 @@ do while(.true.)
         wfnfile(1)="N.wfn"
         inquire(file=wfnfile(1),exist=alive)
         if (.not.alive) then
-            write(*,"(/,a)") " Unable to find N.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N electrons state, e.g. /sob/N.fch"
+            write(*,"(/,a)") " Unable to find N.wfn in current folder. Please input path of .wfn/wfx/fch/mwfn file of N electrons state, e.g. /sob/N.fch (Note that molden file should not be used, as it does not record system energy)"
             read(*,"(a)") c200tmp
             inquire(file=c200tmp,exist=alive)
             if (.not.alive) then
@@ -454,7 +459,7 @@ do while(.true.)
     
     else if (isel==2) then
         write(*,"(/,' Radial grids:',i5,'    Angular grids:',i5,'   Total:',i10)") radpot,sphpot,radpot*sphpot
-        call dealloall
+        call dealloall(0)
         !N electrons
         call readinfile(wfnfile(1),1)
         ene(1)=totenergy
@@ -462,7 +467,7 @@ do while(.true.)
         E_HOMO(1)=max(MOene(idxHOMO),MOene(idxHOMOb))
         write(*,*) "Calculating Hirshfeld charges for N electrons state..."
         call genHirshfeld(atmchg(:,1))
-        call dealloall
+        call dealloall(0)
         !N+1 electrons
         call readinfile(wfnfile(2),1)
         ene(2)=totenergy
@@ -470,7 +475,7 @@ do while(.true.)
         E_HOMO(2)=max(MOene(idxHOMO),MOene(idxHOMOb))
         write(*,"(a,i1,a)") " Calculating Hirshfeld charges for N+",np," electrons state..."
         call genHirshfeld(atmchg(:,2))
-        call dealloall
+        call dealloall(0)
         !N-1 electrons
         call readinfile(wfnfile(3),1)
         ene(3)=totenergy
@@ -478,14 +483,14 @@ do while(.true.)
         E_HOMO(3)=max(MOene(idxHOMO),MOene(idxHOMOb))
         write(*,"(a,i1,a)") " Calculating Hirshfeld charges for N-",nq," electrons state..."
         call genHirshfeld(atmchg(:,3))
-        call dealloall
+        call dealloall(0)
         !N-2 electrons
         if (iwcubic==1) then
             call readinfile(wfnfile(4),1)
             ene(4)=totenergy
             call getHOMOidx
             E_HOMO(4)=max(MOene(idxHOMO),MOene(idxHOMOb))
-            call dealloall
+            call dealloall(0)
         end if
         write(*,*) "Reloading the file initially loaded after booting up Multiwfn..."
         call readinfile(firstfilename,1)
@@ -586,7 +591,7 @@ do while(.true.)
         call setgrid(1,inouse)
         aug3D=aug3Dold
         allocate(rhoN(nx,ny,nz),rhoNp1(nx,ny,nz),rhoNn1(nx,ny,nz),cubmat(nx,ny,nz))
-        call dealloall
+        call dealloall(0)
         !N electrons
         call readinfile(wfnfile(1),1)
         allocate(atmref(3,ncenter)) !Used to check consistency of coordinate between different wavefunction files
@@ -594,7 +599,7 @@ do while(.true.)
         write(*,*) "Calculating electron density grid data for N electrons state..."
         call savecubmat(1,1,0)
         rhoN=cubmat
-        call dealloall
+        call dealloall(0)
         !N+1 electrons
         call readinfile(wfnfile(2),1)
         do iatm=1,ncenter
@@ -613,7 +618,7 @@ do while(.true.)
         write(*,*) "Calculating electron density grid data for "//c3p//" electrons state..."
         call savecubmat(1,1,0)
         rhoNp1=cubmat
-        call dealloall
+        call dealloall(0)
         !N-1 electrons
         call readinfile(wfnfile(3),1)
         do iatm=1,ncenter
@@ -632,7 +637,7 @@ do while(.true.)
         write(*,*) "Calculating electron density grid data for "//c3q//" electrons state..."
         call savecubmat(1,1,0)
         rhoNn1=cubmat
-        call dealloall
+        call dealloall(0)
         deallocate(atmref)
         write(*,*) "Loading the file initially loaded after booting up Multiwfn..."
         call readinfile(firstfilename,1)

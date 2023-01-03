@@ -1,0 +1,5 @@
+"CT_multiple\total_spectrum.txt" UV-Vis
+"CT_multiple\Redis_1.txt" Redistribution 1
+"CT_multiple\Redis_2.txt" Redistribution 2
+"CT_multiple\ET_1to2.txt" Electron transfer 1->2
+"CT_multiple\ET_2to1.txt" Electron transfer 1<-2

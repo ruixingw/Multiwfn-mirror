@@ -8,21 +8,15 @@ display depthcue off
 display rendermode GLSL
 light 2 on
 light 3 on
-material change transmode EdgyGlass 1.0
-material change specular EdgyGlass 0.15
-material change shininess EdgyGlass 0.95
-material change opacity EdgyGlass 0.7
-material change outlinewidth EdgyGlass 0.9
-material change outline EdgyGlass 0.5
+material change outline GlassBubble 0.9
+material change opacity GlassBubble 0.26
+material change diffuse GlassBubble 0.7
 
 #The maximum number of systems to be loaded
 set nsystem 4
 #Lower and upper limit of color scale of ESP (a.u.)
 set colorlow -0.03
 set colorhigh 0.03
-#eV as unit
-#set colorlow -0.8
-#set colorhigh 0.8
 
 for {set i 1} {$i<=$nsystem} {incr i} {
 set id [expr $i-1]
@@ -31,7 +25,7 @@ mol addfile ESP$i.cub
 mol modstyle 0 $id CPK 1.000000 0.300000 22.000000 22.000000
 mol addrep $id
 mol modstyle 1 $id Isosurface 0.001000 0 0 0 1 1
-mol modmaterial 1 $id Transparent
+mol modmaterial 1 $id GlassBubble
 mol modcolor 1 $id Volume 1
 mol scaleminmax $id 1 $colorlow $colorhigh
 }

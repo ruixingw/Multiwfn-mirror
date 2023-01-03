@@ -6,7 +6,7 @@ use defvar
 use basinintmod
 use util
 use GUI
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer walltime1,walltime2
 integer :: igridmethod=3
 integer,allocatable :: attconvold(:),realattconv(:),usercluslist(:),tmparr(:)
@@ -24,7 +24,7 @@ ishow3n1=0
 ishow3p1=0
 ishow3p3=0
 !When enter this module, we reset the whole state, which is signified by numatt. Because the user may calculate grid data at external functions,
-!and hence messed up grid setting (orgx/y/z,dx/y/z...), so all of the functions in this module that rely on grid setting will be totally wrong
+!and hence messed up grid setting (orgx/y/z...), so all of the functions in this module that rely on grid setting will be totally wrong
 numatt=0
 
 do while(.true.)
@@ -37,9 +37,7 @@ do while(.true.)
 	if (numatt>0) write(*,*) "-4 Export attractors as pdb/pqr/txt/gjf file"
 	if (numatt>0) write(*,*) "-3 Show information of attractors"
 	if (numatt>0) write(*,*) "-2 Measure distances, angles and dihedral angles between attractors or atoms"
-	if (igridmethod==1) write(*,*) "-1 Select the method for generating basins, current: On-grid"
-	if (igridmethod==2) write(*,*) "-1 Select the method for generating basins, current: Near-grid"
-	if (igridmethod==3) write(*,*) "-1 Select the method for generating basins, current: Near-grid with refinement"
+    write(*,*) "-1 Select the method for generating basins"
 	if (numatt>0) write(*,*) " 0 Visualize attractors and basins"
 	if (numatt>0) then
 		write(*,*) " 1 Regenerate basins and relocate attractors"
@@ -69,8 +67,7 @@ do while(.true.)
 		cycle
 	end if
     
-    if ((isel>=1.and.isel<=3).or.(isel>=7.and.isel<=10)) call delvirorb(1) !For functions do not rely on virtual orbitals, remove high-lying ones to save cost
-	call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+    if ((isel>=1.and.isel<=3).or.(isel>=7.and.isel<=10)) call delvirorb(0) !For functions do not rely on virtual orbitals, remove high-lying ones to save cost
 
 	if (isel==-10) then
 		idrawbasinidx=-10 !Don't display interbasin in any other GUI
@@ -129,9 +126,9 @@ do while(.true.)
 						if (attconvold(itmp)/=attconvold(itmp-1)) realattconv(attconvold(itmp))=attconv(itmp)
 					end if
 				end do
-				do iz=2,nz-1
-					do iy=2,ny-1
-						do ix=2,nx-1
+				do iz=izlow,izup
+					do iy=iylow,iyup
+						do ix=ixlow,ixup
 							gridbas(ix,iy,iz)=realattconv(gridbas(ix,iy,iz))
 						end do
 					end do
@@ -152,10 +149,13 @@ do while(.true.)
         if (index(c2000tmp,'a')/=0) then
 			write(*,*) "Exporting..."
 		    if (allocated(cubmattmp)) deallocate(cubmattmp)
-		    allocate(cubmattmp(nx-2,ny-2,nz-2))
-            cubmattmp=gridbas(2:nx-1,2:ny-1,2:nz-1)
+            nxtmp=ixup-ixlow+1
+            nytmp=iyup-iylow+1
+            nztmp=izup-izlow+1
+		    allocate(cubmattmp(nxtmp,nytmp,nztmp))
+            cubmattmp=gridbas(ixlow:ixup,iylow:iyup,izlow:izup)
             open(10,file="basin.cub",status="replace")
-            call outcube(cubmattmp,nx-2,ny-2,nz-2,orgx+dx,orgy+dy,orgz+dz,gridv1,gridv2,gridv3,10)
+            call outcube(cubmattmp,nxtmp,nytmp,nztmp,orgx+gridv1(1),orgy+gridv2(2),orgz+gridv3(3),gridv1,gridv2,gridv3,10)
             close(10)
 		    deallocate(cubmattmp)
 			write(*,"(a)") " Done! basin.cub has been outputted to current folder. The grid values correspond to basin index"
@@ -210,9 +210,9 @@ do while(.true.)
             read(*,*) tmpval
             allocate(cubmattmp(nx,ny,nz))
             cubmattmp=tmpval
-			do iz=2,nz-1
-				do iy=2,ny-1
-					do ix=2,nx-1
+			do iz=izlow,izup
+				do iy=iylow,iyup
+					do ix=ixlow,ixup
 						if (any(tmparr==gridbas(ix,iy,iz))) cubmattmp(ix,iy,iz)=cubmat(ix,iy,iz)
 					end do
 				end do
@@ -295,8 +295,12 @@ do while(.true.)
             continue
         else if (isel2==1) then
 		    open(10,file="attractors.pdb",status="replace")
+			if (ifPBC>0) then
+				call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+				write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+			end if
 		    do iatt=1,numatt
-			    write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") "HETATM",iatt,' '//"C "//' ',"ATT",'A',attconv(iatt),attxyz(iatt,:)*b2a,1.0,0.0,"C "
+			    write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") "HETATM",iatt,' '//"C "//' ',"ATT",'A',attconv(iatt),attxyz(:,iatt)*b2a,1.0,0.0,"C "
 		    end do
 		    close(10)
 		    write(*,*) "Done, all attractors have been exported to attractors.pdb in current folder"
@@ -304,8 +308,12 @@ do while(.true.)
             while the atomic indices correspond to the raw attractor indices"
         else if (isel2==2) then
 		    open(10,file="attractors.pqr",status="replace")
+			if (ifPBC>0) then
+				call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+				write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
+			end if
 		    do iatt=1,numatt
-			    write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,E18.8E3,f5.2,1x,a2)") "HETATM",iatt,' '//"C "//' ',"ATT",'A',attconv(iatt),attxyz(iatt,:)*b2a,attval(iatt),1.0,"C "
+			    write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,E18.8E3,f5.2,1x,a2)") "HETATM",iatt,' '//"C "//' ',"ATT",'A',attconv(iatt),attxyz(:,iatt)*b2a,attval(iatt),1.0,"C "
 		    end do
 		    close(10)
 		    write(*,*) "Done, all attractors have been exported to attractors.pqr in current folder"
@@ -314,7 +322,7 @@ do while(.true.)
         else if (isel2==3) then
 		    open(10,file="attractors.txt",status="replace")
 		    do iatt=1,numatt
-                write(10,"(3f12.6,1PE18.8E3)") attxyz(iatt,:),attval(iatt)
+                write(10,"(3f12.6,1PE18.8E3)") attxyz(:,iatt),attval(iatt)
             end do
 		    close(10)
 		    write(*,*) "Done, all attractors have been exported to attractors.txt in current folder"
@@ -326,7 +334,7 @@ do while(.true.)
                 write(10,"(a,3f12.6,' H')") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
             end do
 		    do iatt=1,numatt
-                write(10,"('Bq',3f12.6,' L')") attxyz(iatt,:)*b2a
+                write(10,"('Bq',3f12.6,' L')") attxyz(:,iatt)*b2a
             end do
             call genconnmat(1,0)
             write(10,*)
@@ -351,7 +359,7 @@ do while(.true.)
 	else if (isel==-3) then
 		write(*,*) "  Attractor       X,Y,Z coordinate (Angstrom)            Value"
 		do irealatt=1,numrealatt
-			write(*,"(i8,3f14.8,1E18.9)") irealatt,realattxyz(irealatt,1:3)*b2a,realattval(irealatt)
+			write(*,"(i8,3f14.8,1E18.9)") irealatt,realattxyz(:,irealatt)*b2a,realattval(irealatt)
 		end do
 		do irealatt=1,numrealatt
 			if (nrealatthas(irealatt)/=1) then
@@ -359,7 +367,7 @@ do while(.true.)
 				write(*,"(' The members of degenerate attractor',i6,':')") irealatt
 				do itmp=1,nrealatthas(irealatt)
 					iatt=realatttable(irealatt,itmp)
-					write(*,"(i8,'  XYZ:',3f13.7,'  Value:',1E18.9)") iatt,attxyz(iatt,:)*b2a,attval(iatt)
+					write(*,"(i8,'  XYZ:',3f13.7,'  Value:',1E18.9)") iatt,attxyz(:,iatt)*b2a,attval(iatt)
 				end do
 			end if
 		end do
@@ -376,7 +384,7 @@ do while(.true.)
 		        write(*,*) "  Attractor       X,Y,Z coordinate (Angstrom)            Value"
 		        do idx=1,numrealatt
                     irealatt=tmparr(idx)
-			        write(*,"(i8,3f14.8,1E18.9)") irealatt,realattxyz(irealatt,1:3)*b2a,realattval(irealatt)
+			        write(*,"(i8,3f14.8,1E18.9)") irealatt,realattxyz(:,irealatt)*b2a,realattval(irealatt)
                 end do
                 deallocate(tmparrf,tmparr)
             end if
@@ -430,9 +438,9 @@ do while(.true.)
 					tmpz1=a(iatm)%z
 				else if (ctmp1(1:1)=='c') then
 					read(ctmp1(2:),*) irealatt
-					tmpx1=realattxyz(irealatt,1)
-					tmpy1=realattxyz(irealatt,2)
-					tmpz1=realattxyz(irealatt,3)
+					tmpx1=realattxyz(1,irealatt)
+					tmpy1=realattxyz(2,irealatt)
+					tmpz1=realattxyz(3,irealatt)
 				else if (ctmp1(1:1)=='d') then
 					read(ctmp1(2:),*) irealattde
 				end if
@@ -443,9 +451,9 @@ do while(.true.)
 					tmpz2=a(iatm)%z
 				else if (ctmp2(1:1)=='c') then
 					read(ctmp2(2:),*) irealatt
-					tmpx2=realattxyz(irealatt,1)
-					tmpy2=realattxyz(irealatt,2)
-					tmpz2=realattxyz(irealatt,3)
+					tmpx2=realattxyz(1,irealatt)
+					tmpy2=realattxyz(2,irealatt)
+					tmpz2=realattxyz(3,irealatt)
 				end if
 				
 				if (imeasure==1) then
@@ -458,9 +466,9 @@ do while(.true.)
 						distavg=0
 						do itmp=1,nrealatthas(irealattde)
 							iatt=realatttable(irealattde,itmp)
-							tmpx1=attxyz(iatt,1)
-							tmpy1=attxyz(iatt,2)
-							tmpz1=attxyz(iatt,3)
+							tmpx1=attxyz(1,iatt)
+							tmpy1=attxyz(2,iatt)
+							tmpz1=attxyz(3,iatt)
 							distnow=dsqrt((tmpx1-tmpx2)**2+(tmpy1-tmpy2)**2+(tmpz1-tmpz2)**2)
 							distavg=distavg+distnow
 							if (distnow<distmin) distmin=distnow
@@ -482,9 +490,9 @@ do while(.true.)
 						tmpz3=a(iatm)%z
 					else if (ctmp3(1:1)=='c') then
 						read(ctmp3(2:),*) irealatt
-						tmpx3=realattxyz(irealatt,1)
-						tmpy3=realattxyz(irealatt,2)
-						tmpz3=realattxyz(irealatt,3)
+						tmpx3=realattxyz(1,irealatt)
+						tmpy3=realattxyz(2,irealatt)
+						tmpz3=realattxyz(3,irealatt)
 					end if
 				end if
 				if (imeasure==2) then
@@ -502,9 +510,9 @@ do while(.true.)
 						prjz=0
 						do itmp=1,nrealatthas(irealattde)
 							iatt=realatttable(irealattde,itmp)
-							tmpx1=attxyz(iatt,1)
-							tmpy1=attxyz(iatt,2)
-							tmpz1=attxyz(iatt,3)
+							tmpx1=attxyz(1,iatt)
+							tmpy1=attxyz(2,iatt)
+							tmpz1=attxyz(3,iatt)
 							angnow=xyz2angle(tmpx1,tmpy1,tmpz1,tmpx2,tmpy2,tmpz2,tmpx3,tmpy3,tmpz3)
 							angavg=angavg+angnow
 							if (angnow<angmin) angmin=angnow
@@ -543,11 +551,11 @@ do while(.true.)
 						tmpz4=a(iatm)%z
 					else if (ctmp4(1:1)=='c') then
 						read(ctmp4(2:),*) irealatt
-						tmpx4=realattxyz(irealatt,1)
-						tmpy4=realattxyz(irealatt,2)
-						tmpz4=realattxyz(irealatt,3)
+						tmpx4=realattxyz(1,irealatt)
+						tmpy4=realattxyz(2,irealatt)
+						tmpz4=realattxyz(3,irealatt)
 					end if
-					write(*,"(' The dihedral angle is',f12.6,' degree')") xyz2dih(tmpx1,tmpy1,tmpz1,tmpx2,tmpy2,tmpz2,tmpx3,tmpy3,tmpz3,tmpx4,tmpy4,tmpz4)
+					write(*,"(' The dihedral angle is',f12.6,' degree')") xyz2dih_sign(tmpx1,tmpy1,tmpz1,tmpx2,tmpy2,tmpz2,tmpx3,tmpy3,tmpz3,tmpx4,tmpy4,tmpz4)
 				end if
 			else
 				write(*,*) "Error: Invalid input!"
@@ -555,12 +563,32 @@ do while(.true.)
 		end do
 		
 	else if (isel==-1) then
-		write(*,*) "1: On-grid method, Comput .Mat. Sci., 36, 354 (2006)"
-		write(*,*) "2: Near-grid method, J. Phys.: Condens. Matter, 21, 08420 (2009)"
-		write(*,*) "3: Near-grid method with boundary refinement step"
-		write(*,"(a)") " Note: Near-grid method (adapted by Tian Lu) is more accurate than On-grid method and thus is more recommended; with the boundary refinement step, the result will be better"
-		read(*,*) igridmethod
-		
+		do while(.true.)
+			write(*,*)
+			write(*,*) "0 Return"
+			if (igridmethod==1) write(*,*) "1 Select algorithm for generating basins, current: On-grid"
+			if (igridmethod==2) write(*,*) "1 Select algorithm for generating basins, current: Near-grid"
+			if (igridmethod==3) write(*,*) "1 Select algorithm for generating basins, current: Near-grid with refinement"
+			if (ibasinlocmin==0) write(*,*) "2 Switch the object to locate if all grid data are positive, current: Maxima"
+			if (ibasinlocmin==1) write(*,*) "2 Switch the object to locate if all grid data are positive, current: Minima"
+			read(*,*) isel2
+			if (isel2==0) then
+				exit
+			else if (isel2==1) then
+				write(*,*) "1: On-grid method, Comput .Mat. Sci., 36, 354 (2006)"
+				write(*,*) "2: Near-grid method, J. Phys.: Condens. Matter, 21, 08420 (2009)"
+				write(*,*) "3: Near-grid method with boundary refinement step"
+				write(*,"(a)") " Note: Near-grid method (adapted by Tian Lu) is more accurate than On-grid method and thus &
+				is more recommended; with the boundary refinement step, the result will be better"
+				read(*,*) igridmethod
+			else if (isel2==2) then
+				if (ibasinlocmin==0) then
+					ibasinlocmin=1
+				else
+					ibasinlocmin=0
+				end if
+			end if
+		end do
 	else if (isel==0) then
 		ioldtextheigh=textheigh
 		textheigh=40 !Default textheigh is too small
@@ -568,13 +596,19 @@ do while(.true.)
 		textheigh=ioldtextheigh
 		
 	else if (isel==1) then !Regenerate basins and relocate attractors
-		isourcedata=1 !Default status is calculating grid data here
+		!Preparing grid data for partitioning basins
+		isourcedata=1
 		if (allocated(cubmat)) then
 			write(*,"(a)") " Note: There has been a grid data in the memory, please select generating the basins by which manner"
 			write(*,*) "0 Return"
-			write(*,*) "1 Generate the basins by selecting a real space function"
-			write(*,*) "2 Generate the basins by using the grid data stored in memory"
+			write(*,*) "1: Generate the basins by selecting a real space function"
+			write(*,*) "2: Generate the basins by using the grid data stored in memory"
+            if (ifiletype==7.or.ifiletype==8) write(*,*) "3: Same as 2, and perform analysis as three-dimension periodic system" !Can be used if grid data is loaded from input file
 			read(*,*) isourcedata
+            if (isourcedata==3) then
+				isourcedata=2
+				call grid2cellinfo !Add cell information from grid information
+            end if
 		end if
 		if (isourcedata==0) then
 			cycle
@@ -584,15 +618,35 @@ do while(.true.)
 			call setgridforbasin(ifuncbasin)
 			if (allocated(cubmat)) deallocate(cubmat)
 			allocate(cubmat(nx,ny,nz))
+            !For basin analysis of IRI-pi, IRI_rhocut should be set to zero to avoid automatically setting it to 5 in low rho region, which will lead to huge number of artificial extrema
+            ichange=0
+            if (ifuncbasin==100.and.iuserfunc==99.and.IRI_rhocut/=0) then
+				write(*,"(a)") " Note: IRI_rhocut parameter has been temporarily set to 0 during calculating grid data"
+				tmpval=IRI_rhocut
+				IRI_rhocut=0
+                ichange=1
+            end if
+            !call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv. This is automatically done in savecubmat
 			call savecubmat(ifuncbasin,0,iorbsel)
+            if (ichange==1) then
+				write(*,*) "Note: Original IRI_rhocut parameter has been restored"
+				IRI_rhocut=tmpval
+            end if
 		else if (isourcedata==2) then
-			ifuncbasin=1 !I assume that the file loaded records electron density
-			write(*,"(' The range of x is from ',f12.6,' to ',f12.6,' Bohr,' i5,' points')") ,orgx,orgx+(nx-1)*dx,nx
-			write(*,"(' The range of y is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgy,orgy+(ny-1)*dy,ny
-			write(*,"(' The range of z is from ',f12.6,' to ',f12.6,' Bohr,',i5,' points')") ,orgz,orgz+(nz-1)*dz,nz
-			write(*,"(' Total number of grid points is ',i10)") nx*ny*nz
-			write(*,"(' Grid spacing in X,Y,Z (Bohr):',3f12.6)") dx,dy,dz
+			write(*,"(' Grid vector 1 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv1,dsqrt(sum(gridv1**2))
+			write(*,"(' Grid vector 2 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv2,dsqrt(sum(gridv2**2))
+			write(*,"(' Grid vector 3 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv3,dsqrt(sum(gridv3**2))
+			write(*,"(' Number of points in three directions is',3i5,'  Total:',i12)") nx,ny,nz,nx*ny*nz
 		end if
+        
+        !Set range for looping over grids. For isolated case, grids at boundary should be ignored to avoid move outside
+        if (ifPBC==0) then
+			ixlow=2;iylow=2;izlow=2
+			ixup=nx-1;iyup=ny-1;izup=nz-1
+        else
+			ixlow=1;iylow=1;izlow=1
+			ixup=nx;iyup=ny;izup=nz
+        end if
 		
         !For the regions with negative value, invert its sign to positive and locate attractor as usual, then minima of the negative part can be located
 		allocate(grdposneg(nx,ny,nz)) !.true./.false means this grid has positive/negative value
@@ -619,24 +673,65 @@ do while(.true.)
 		        cubmat(:,:,:)=-cubmat(:,:,:)
             end if
         end if
+        
+        !Initialize grid array of recording basin indices
 		if (allocated(gridbas)) deallocate(gridbas)
 		allocate(gridbas(nx,ny,nz))
-		call setupmovevec
+		gridbas=0 !Unassigned state
+        if (ifPBC==0) then
+			gridbas(1,:,:)=-2 !Use index of -2 to identify box boundary grid
+			gridbas(nx,:,:)=-2
+			gridbas(:,1,:)=-2
+			gridbas(:,ny,:)=-2
+			gridbas(:,:,1)=-2
+			gridbas(:,:,nz)=-2
+        end if
+        
+		call setupmovevec !Generate movement vectors, will be used in generatebasin
+        
+        !If .cub file is used, ask if generate core density as corerhogrid(:,:,:), which can be added to current grid &
+        !data of valence electron density, so that attractors occur at nuclear positions
+        ifcorerho=0
+        if (ifiletype==7.and.(index(filename,".cub")/=0.or.index(filename,".cube")/=0)) then
+			if (any(a%index/=a%charge).and.all(a%charge/=0)) then
+				write(*,*)
+				write(*,*) "Consider core electron density during generating AIM basins? (y/n)"
+                write(*,"(a)") " Note: To use this feature, effective charge information of atoms in your cube file must correspond to actual number of valence electrons"
+                write(*,*) "If your grid data does not contain electron density, input ""n"""
+                read(*,*) selectyn
+                if (selectyn=='y') then
+					call getcorerhogrid !Generate core density grid data, for AIM basin partition based on cub file recording valence electron density
+					ifcorerho=1
+                    ifuncbasin=1 !The function used for partitioning is electron density
+                    write(*,*) "Summing up valence density and core density grid data..."
+                    cubmat(:,:,:)=cubmat(:,:,:)+corerhogrid(:,:,:) !Construct all-electron density
+                end if
+            end if
+        end if
+        
+        !Generate basins now!!!!!!
 		write(*,*)
 		write(*,*) "Generating basins, please wait..."
 		call walltime(walltime1)
-		call generatebasin(igridmethod) !Generate basins
+		call generatebasin(igridmethod)
 		call walltime(walltime2)
-		write(*,"(' Generating basins took up wall clock time',i10,' s')") walltime2-walltime1	
-		numunassign=count(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)
+		write(*,"(' Generating basins took up wall clock time',i10,' s')") walltime2-walltime1
+        
+        if (ifcorerho==1) then !Restore to valence electron density
+            write(*,*) "Restoring valence density..."
+			cubmat(:,:,:)=cubmat(:,:,:)-corerhogrid(:,:,:)
+        end if
+        
+		numunassign=count(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==0)
 		write(*,"(' The number of unassigned grids:',i12)") numunassign
-		numgotobound=count(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)
+		numgotobound=count(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==-1)
 		write(*,"(' The number of grids travelled to box boundary:',i12)") numgotobound
 		where (grdposneg.eqv..false.) cubmat=-cubmat !Recover original grid data
 		deallocate(grdposneg)
 		
-		do iatt=1,numatt !Eliminate the attractors with very low value
-			if ( abs(cubmat(attgrid(iatt,1),attgrid(iatt,2),attgrid(iatt,3)))<threslowvalatt ) then
+        !Eliminate the attractors with very low value
+		do iatt=1,numatt
+			if ( abs(cubmat(attgrid(1,iatt),attgrid(2,iatt),attgrid(3,iatt)))<threslowvalatt ) then
 				write(*,"(' Note: There are attractors having very low absolute value (<',1PE8.2,') and thus insignificant, how to deal with them?')") threslowvalatt
 				write(*,*) "1 Do nothing"
 				write(*,*) "2 Set corresponding grids as unassigned status"
@@ -650,38 +745,39 @@ do while(.true.)
 		
 		!Generate actual coordinate of attractors, which will be used to plot in the local GUI, and in any other external GUIs
 		if (allocated(attxyz)) deallocate(attxyz,attval)
-		allocate(attxyz(numatt,3),attval(numatt))
+		allocate(attxyz(3,numatt),attval(numatt))
 		do iatt=1,numatt
-			ix=attgrid(iatt,1)
-			iy=attgrid(iatt,2)
-			iz=attgrid(iatt,3)
-			attxyz(iatt,1)=orgx+(ix-1)*dx
-			attxyz(iatt,2)=orgy+(iy-1)*dy
-			attxyz(iatt,3)=orgz+(iz-1)*dz
+			ix=attgrid(1,iatt)
+			iy=attgrid(2,iatt)
+			iz=attgrid(3,iatt)
+            call getgridxyz(ix,iy,iz,attxyz(1,iatt),attxyz(2,iatt),attxyz(3,iatt))
 			attval(iatt)=cubmat(ix,iy,iz)
 		end do
-		!Currently attractors have been finally determined, one shouldn't perturb them further more
+		!Currently attractors have been finally determined, one should not perturb them anymore
 		
-		call clusdegenatt(0) !Cluster degenerate attractors as "real attractors" and calculate average coordinate and value for the real attractors
+        !Cluster degenerate attractors as "real attractors" and calculate average coordinate and value for the real attractors
+		call clusdegenatt(0)
 
-		call detectinterbasgrd(6) !Detect interbasin grids
+        !Detect interbasin grids
+		call detectinterbasgrd(6)
 		numinterbas=count(interbasgrid.eqv..true.)
 		write(*,"(' The number of interbasin grids:',i12)") numinterbas
 		
 	else if (isel==2) then !Integrate real space function using uniform grid
 		call integratebasin
+        
+    else if (isel==3) then !Output multipole moments
+        call multipolebasin
 		
-	else if (isel==3.or.isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==-7.or.isel==8) then
+	else if (isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==-7.or.isel==8) then
 		if (.not.allocated(b)) then
 			write(*,"(a)") " Note: No GTF (Gaussian type function) information is available in your input file, please input the file &
-			containing GTF information of your system, such as .wfn/.wfx and .fch file. e.g. C:\abc.wfn"
+			containing GTF information of your system, such as .wfn/.wfx/.mwfn/.fch/.molden file. e.g. C:\abc.wfn"
 			read(*,"(a)") c200tmp
 			call readinfile(c200tmp,1)
 			call gen_GTFuniq(1) !Generate unique GTFs, for faster evaluation in orbderv
 		end if
-		if (isel==3) then !Output multipole moments
-			call multipolebasin
-		else if (isel==4) then !Output LI and DI
+		if (isel==4) then !Output LI and DI
 			call LIDIbasin
 		else if (isel==5) then !Output BOM
 			call outBOMAOM(1)
@@ -717,462 +813,378 @@ do while(.true.)
 	end if
     
     !Because delvirorb has been called before using some options, restore previous orbital information here
-    if ((isel>=1.and.isel<=3).or.(isel>=7.and.isel<=10)) call delvirorb_back(1)
-	call del_GTFuniq !Destory unique GTF informtaion
+    if ((isel>=1.and.isel<=3).or.(isel>=7.and.isel<=10)) call delvirorb_back(0)
+	!call del_GTFuniq !Destory unique GTF informtaion
 end do
 
 end subroutine
 
 
 
-!!---- setup move vector and move length for the 26 neighbour
-subroutine setupmovevec
-use defvar
-use basinintmod
-vec26x=0
-vec26y=0
-vec26z=0
-!The nearest neighbours:
-len26(1:2)=dx
-vec26x(1)=1
-vec26x(2)=-1
-len26(3:4)=dy
-vec26y(3)=1
-vec26y(4)=-1
-len26(5:6)=dz
-vec26z(5)=1
-vec26z(6)=-1
-!On the edges:
-len26(7:10)=dsqrt(dx*dx+dy*dy)
-vec26x(7)=1
-vec26y(7)=1
-vec26x(8)=-1
-vec26y(8)=1
-vec26x(9)=-1
-vec26y(9)=-1
-vec26x(10)=1
-vec26y(10)=-1
-len26(11:14)=dsqrt(dx*dx+dz*dz)
-vec26x(11)=1
-vec26z(11)=1
-vec26x(12)=-1
-vec26z(12)=1
-vec26x(13)=-1
-vec26z(13)=-1
-vec26x(14)=1
-vec26z(14)=-1
-len26(15:18)=dsqrt(dy*dy+dz*dz)
-vec26y(15)=1
-vec26z(15)=1
-vec26y(16)=1
-vec26z(16)=-1
-vec26y(17)=-1
-vec26z(17)=-1
-vec26y(18)=-1
-vec26z(18)=1
-!At the vertices:
-len26(19:26)=dsqrt(dx*dx+dy*dy+dz*dz)
-vec26z(19:22)=1
-vec26x(19)=1
-vec26y(19)=1
-vec26x(20)=-1
-vec26y(20)=1
-vec26x(21)=-1
-vec26y(21)=-1
-vec26x(22)=1
-vec26y(22)=-1
-vec26z(23:26)=-1
-vec26x(23)=1
-vec26y(23)=-1
-vec26x(24)=1
-vec26y(24)=1
-vec26x(25)=-1
-vec26y(25)=1
-vec26x(26)=-1
-vec26y(26)=-1
-if (allocated(gridbas)) then
-	gridbas=0 !Unassigned state
-	gridbas(1,:,:)=-2 !Set status for box boundary grids
-	gridbas(nx,:,:)=-2
-	gridbas(:,1,:)=-2
-	gridbas(:,ny,:)=-2
-	gridbas(:,:,1)=-2
-	gridbas(:,:,nz)=-2
-end if
-end subroutine
-
-
-
 !!------- Generate basins from regular grid
-! igridmethod=1: On grid, Comput.Mat.Sci.,36,354    =2: Near-grid method (slower, but more accurate), see J.Phys.:Condens.Matter,21,084204
+! igridmethod=1: On grid, Comput.Mat.Sci.,36,354
+! =2: Near-grid method (slower, but more accurate), see J.Phys.:Condens.Matter,21,084204
 ! =3: Near-grid with refinement
-! The near-grid method is improved by Tian Lu, namely at later stage automatically switch to on-grid method to guarantee convergence
+! The near-grid method was improved by Tian Lu, namely at later stage automatically switches to on-grid method to guarantee convergence
 subroutine generatebasin(igridmethod)
 use defvar
 use basinintmod
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer,parameter :: nmaxtrjgrid=3000
 integer igridmethod
-integer ntrjgrid !Recording trjgrid contains how many elements now
-integer trjgrid(nmaxtrjgrid,3) !The trajectory contains which grids, record their indices sequentially, trjgrid(i,1/2/3) = ix/iy/iz of the ith grid
+integer ntrjgrid !Recording how many members are contained in trjgrid now
+integer trjgrid(3,nmaxtrjgrid) !The trajectory contains which grids, record their indices sequentially, trjgrid(1/2/3,i) = ix/iy/iz of the ith grid
 ! real*8 trjval(nmaxtrjgrid),gradmaxval(nmaxtrjgrid) !******For debugging******
 if (allocated(attgrid)) deallocate(attgrid)
-allocate(attgrid(nint(nx*ny*nz/20D0),3)) !I think the number of attractors in general is impossible to exceeds nx*ny*nz/20
+allocate(attgrid(3,nint(nx*ny*nz/20D0))) !I think the number of attractors in general is impossible to exceeds nx*ny*nz/20
 numatt=0
 write(*,*) "  Attractor       X,Y,Z coordinate (Angstrom)                Value"
 !Cycle all grids, but the box boundary ones are ignored (due to gridbas=-2), since can't evalute its gradients in all directions by finite difference
 
 nsteplimit=min( nmaxtrjgrid,nint(dsqrt(dfloat(nx*nx+ny*ny+nz*nz))*2) )
 nstepdiscorr=nint(nsteplimit/2D0)
-if (igridmethod==1) then
-1	continue
-	!$OMP PARALLEL DO private(ix,iy,iz,ntrjgrid,inowx,inowy,inowz,trjgrid,valnow,imove,gradtmp,igradmax,gradmax,iatt,itrjgrid,idtmp) &
-	!$OMP shared(gridbas,numatt,attgrid) schedule(DYNAMIC) NUM_THREADS(nthreads)
-	do iz=2,nz-1
-		do iy=2,ny-1
-			do ix=2,nx-1
+ntime=1
+if (igridmethod==3) ntime=2 !The second time performs refinement, emit steepest ascent trajectories from every boundary grid
+
+do itime=1,ntime
+!$OMP PARALLEL DO private(ix,iy,iz,corrx,corry,corrz,ntrjgrid,inowx,inowy,inowz,trjgrid,valnow,imove,gradtmp,igradmax,gradmax,iatt,tmpx,tmpy,tmpz,&
+!$OMP itrjgrid,idtmp,icorrx,icorry,icorrz,gradx,grady,gradz,sclgrad,ineiidx,ixtmp,iytmp,iztmp,ixtmp2,iytmp2,iztmp2) shared(gridbas,numatt,attgrid) schedule(DYNAMIC) NUM_THREADS(nthreads)
+do iz=izlow,izup
+	do iy=iylow,iyup
+		do ix=ixlow,ixup
+			if (itime==1) then
 				if (gridbas(ix,iy,iz)/=0) cycle
-! 				if (.not.interbasgrid(ix,iy,iz)) cycle
-				ntrjgrid=0
-				inowx=ix
-				inowy=iy
-				inowz=iz
-				do while(.true.) !Steepest ascent
-					ntrjgrid=ntrjgrid+1
-					if (ntrjgrid>nsteplimit) exit !Unconverged. The gridbas for these unassigned grids will still be 0
-					trjgrid(ntrjgrid,1)=inowx
-					trjgrid(ntrjgrid,2)=inowy
-					trjgrid(ntrjgrid,3)=inowz
-					!Test all 26 directions to find out the maximal gradient direction
-					valnow=cubmat(inowx,inowy,inowz)
-					do imove=1,26
-						gradtmp=(cubmat(inowx+vec26x(imove),inowy+vec26y(imove),inowz+vec26z(imove))-valnow)/len26(imove)
-						if (imove==1.or.gradtmp>gradmax) then
-							igradmax=imove
-							gradmax=gradtmp
-						end if
-					end do
-					!Test if this is an attractor, if yes, assign all grid in this trajectory
-					if (gradmax<=0) then !Equal sign is important, because when system has symmetry, adjacent grid may be degenerate about mirrow plane, now the ascent should be terminated
-						if (valnow==0D0) exit !The region far beyond system, the value may be exactly zero due to cutoff of exponent, these grids shouldn't be regarded as attractors
-						!$OMP CRITICAL
-cyciatt3:				do iatt=1,numatt
-							if (inowx==attgrid(iatt,1).and.inowy==attgrid(iatt,2).and.inowz==attgrid(iatt,3)) then
+            else !Refinement
+				if (.not.interbasgrid(ix,iy,iz)) cycle !Only refine boundary grids
+				if (gridbas(ix,iy,iz)<=0) cycle !Ignored the ones unassigned or gone to box boundary
+            end if
+			ntrjgrid=0 !Number of grids passed by this searching trajectory
+			inowx=ix !Grid index of the first point of trajectory
+			inowy=iy
+			inowz=iz
+			corrx=0D0 !Correction vector
+			corry=0D0
+			corrz=0D0
+			do while(.true.) !Emit steepest ascent trajectory from every grid
+				ntrjgrid=ntrjgrid+1
+				if (ntrjgrid>nsteplimit) exit !These gridbas for these unconverged grids will still be 0
+				trjgrid(1,ntrjgrid)=inowx
+				trjgrid(2,ntrjgrid)=inowy
+				trjgrid(3,ntrjgrid)=inowz
+				!Test all 26 directions to find out the maximal gradient direction
+				valnow=cubmat(inowx,inowy,inowz)
+				do imove=1,26
+					ixtmp=inowx+vec26x(imove)
+					iytmp=inowy+vec26y(imove)
+					iztmp=inowz+vec26z(imove)
+					if (ifPBC>0) call PBCgrididx(ixtmp,iytmp,iztmp) !If this grid is outside cell, wrap its index into the cell
+					gradtmp=(cubmat(ixtmp,iytmp,iztmp)-valnow)/len26(imove)
+					if (imove==1.or.gradtmp>gradmax) then
+						igradmax=imove
+						gradmax=gradtmp
+					end if
+				end do
+				!Test if this is an attractor (maximum gradient is negative)
+				if (gradmax<=0D0) then !Equal sign is important, because when system has symmetry, adjacent grid may be degenerate about mirrow plane, now the ascent should be terminated
+					if (valnow==0D0) exit !The region is far beyond system, the value may be exactly zero due to cutoff of exponent, these grids should not be regarded as attractors
+					!$OMP CRITICAL
+cyciatt:            do iatt=1,numatt !Test if current grid corresponds to an existing attractor 
+						if (inowx==attgrid(1,iatt).and.inowy==attgrid(2,iatt).and.inowz==attgrid(3,iatt)) then
+							if (itime==1) then !Assign all grids in this trajectory
 								do itrjgrid=1,ntrjgrid
-									gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=iatt
+									gridbas(trjgrid(1,itrjgrid),trjgrid(2,itrjgrid),trjgrid(3,itrjgrid))=iatt
 								end do
-								exit cyciatt3
-							end if
-							do imove=1,26
-								if (inowx+vec26x(imove)==attgrid(iatt,1).and.inowy+vec26y(imove)==attgrid(iatt,2).and.inowz+vec26z(imove)==attgrid(iatt,3)) then
+                            else !During refinement, only update the boundary grid
+								gridbas(ix,iy,iz)=iatt
+                            end if
+							exit cyciatt
+						end if
+						!Test if neighbour grid is attractor iatt, is yes, assign all grids in this trajectory
+						!The reason I do this is because when the points are symmetric to Cartesian plane, many adjacent and degenerate attractors will occur,&
+						!while this treatment can combine them as a single one
+						do imove=1,26
+							ixtmp=inowx+vec26x(imove)
+							iytmp=inowy+vec26y(imove)
+							iztmp=inowz+vec26z(imove)
+							if (ifPBC>0) call PBCgrididx(ixtmp,iytmp,iztmp) !If this grid is outside cell, wrap its index into the cell
+							if (ixtmp==attgrid(1,iatt).and.iytmp==attgrid(2,iatt).and.iztmp==attgrid(3,iatt)) then
+								if (itime==1) then
 									do itrjgrid=1,ntrjgrid
-										gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=iatt
+										gridbas(trjgrid(1,itrjgrid),trjgrid(2,itrjgrid),trjgrid(3,itrjgrid))=iatt
 									end do
-									exit cyciatt3
-								end if
-							end do
-						end do cyciatt3
-						if (iatt>numatt) then !A new attractor, iatt=numatt+1 currently
+                                else
+									gridbas(ix,iy,iz)=iatt
+                                end if
+								exit cyciatt
+							end if
+						end do
+					end do cyciatt
+					!Found a new attractor. Add to list, and assign the grids in the current trajectory
+					if (iatt==numatt+1) then
+						if (itime==1) then
 							numatt=numatt+1
 							do itrjgrid=1,ntrjgrid
-								gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=numatt
+								gridbas(trjgrid(1,itrjgrid),trjgrid(2,itrjgrid),trjgrid(3,itrjgrid))=numatt
 							end do
-							attgrid(numatt,1)=inowx
-							attgrid(numatt,2)=inowy
-							attgrid(numatt,3)=inowz
+							attgrid(1,numatt)=inowx
+							attgrid(2,numatt)=inowy
+							attgrid(3,numatt)=inowz
+							call getgridxyz(inowx,inowy,inowz,tmpx,tmpy,tmpz)
 							if (grdposneg(inowx,inowy,inowz)) then
-								write(*,"(i8,3f14.8,f20.8)") numatt,(orgx+(inowx-1)*dx)*b2a,(orgy+(inowy-1)*dy)*b2a,(orgz+(inowz-1)*dz)*b2a,cubmat(inowx,inowy,inowz)
-							else !This grid should has negative value
-								write(*,"(i8,3f14.8,f20.8)") numatt,(orgx+(inowx-1)*dx)*b2a,(orgy+(inowy-1)*dy)*b2a,(orgz+(inowz-1)*dz)*b2a,-cubmat(inowx,inowy,inowz)
+								write(*,"(i8,3f14.8,f20.8)") numatt,tmpx*b2a,tmpy*b2a,tmpz*b2a,cubmat(inowx,inowy,inowz)
+							else !This grid should have negative value
+								write(*,"(i8,3f14.8,f20.8)") numatt,tmpx*b2a,tmpy*b2a,tmpz*b2a,-cubmat(inowx,inowy,inowz)
 							end if
-						end if
-						!$OMP end CRITICAL
-						exit
+                        else if (itime==2) then
+							write(*,*) "Warning: Found new attractor at refining process!"
+                        end if
 					end if
+					!$OMP end CRITICAL
+					exit
+				end if
+
+                !On-grid method
+                if (igridmethod==1) then
 					!Move to next grid
 					inowx=inowx+vec26x(igradmax)
 					inowy=inowy+vec26y(igradmax)
 					inowz=inowz+vec26z(igradmax)
-					!Test if this grid has already been assigned
+					if (ifPBC>0) call PBCgrididx(inowx,inowy,inowz) !If current grid is outside cell, wrap its index into the cell
+					!Test if this grid has already been assigned, if yes, assign all grids in this trajectory with same basin index and terminate this trajectory
 					idtmp=gridbas(inowx,inowy,inowz)
 					if (idtmp>0) then
 						do itrjgrid=1,ntrjgrid
-							gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=idtmp
+							gridbas(trjgrid(1,itrjgrid),trjgrid(2,itrjgrid),trjgrid(3,itrjgrid))=idtmp
 						end do
-						exit
+						exit !Terminate this trajectory
 					end if
-					!Test if encountered box boundary
-					if (inowx==1.or.inowx==nx.or.inowy==1.or.inowy==ny.or.inowz==1.or.inowz==nz) then
-						do itrjgrid=1,ntrjgrid
-							gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=-1
-						end do
-						exit
-					end if
-				end do !End ascent
-			end do !End cycle x
-		end do !End cycle y
-	end do !End cycle z
-	!$OMP END PARALLEL DO
-	
-else if (igridmethod==2.or.igridmethod==3) then
-	!$OMP PARALLEL DO private(ix,iy,iz,corrx,corry,corrz,ntrjgrid,inowx,inowy,inowz,trjgrid,valnow,imove,gradtmp,igradmax,gradmax,iatt,&
-	!$OMP itrjgrid,idtmp,icorrx,icorry,icorrz,gradx,grady,gradz,sclgrad,ineiidx) shared(gridbas,numatt,attgrid) schedule(DYNAMIC) NUM_THREADS(nthreads)
-	do iz=2,nz-1
-		do iy=2,ny-1
-			do ix=2,nx-1
-				if (gridbas(ix,iy,iz)/=0) cycle
-				ntrjgrid=0
-				inowx=ix
-				inowy=iy
-				inowz=iz
-				corrx=0D0 !Correction vector
-				corry=0D0
-				corrz=0D0
-				do while(.true.) !Steepest ascent
-					ntrjgrid=ntrjgrid+1
-					trjgrid(ntrjgrid,1)=inowx
-					trjgrid(ntrjgrid,2)=inowy
-					trjgrid(ntrjgrid,3)=inowz
-					if (ntrjgrid>nsteplimit) then !These gridbas for these unconverged grids will still be 0
-! 						do itmp=1,ntrjgrid-1 !******For debugging******
-! 							write(*,"(i5,3i6,2f16.10)") itmp,trjgrid(itmp,1:3),trjval(itmp),gradmaxval(itmp)
-! 						end do
-						exit
-					end if
-					!Test all 26 directions to find out the maximal gradient direction
-					valnow=cubmat(inowx,inowy,inowz)
-					do imove=1,26
-						gradtmp=(cubmat(inowx+vec26x(imove),inowy+vec26y(imove),inowz+vec26z(imove))-valnow)/len26(imove)
-						if (imove==1.or.gradtmp>gradmax) then
-							igradmax=imove
-							gradmax=gradtmp
-						end if
-					end do
-!  					write(*,"(3i5,2f14.8)") inowx,inowy,inowz,gradmax,valnow !Trace the trajectory !******For debugging******
-					if (gradmax<=0D0) then !Equal sign is important, because when system has symmetry, adjacent grid may be degenerate about mirrow plane, now the ascent should be terminated
-						if (valnow==0D0) exit !The region far beyond system, the value may be exactly zero due to cutoff of exponent, these grids shouldn't be regarded as attractors
-						!$OMP CRITICAL
-cyciatt:				do iatt=1,numatt
-							!Test if current grid is attractor iatt, is yes, assign all grid in this trajectory
-							if (inowx==attgrid(iatt,1).and.inowy==attgrid(iatt,2).and.inowz==attgrid(iatt,3)) then
-								do itrjgrid=1,ntrjgrid
-									gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=iatt
-								end do
-								exit cyciatt
-							end if
-							!Test if neighbour grid (+/-x,+/-y,+/-z) is attractor iatt, is yes, assign all grid in this trajectory
-							!The reason I do this is because when the points are symmetric to Cartesian plane, many adjacent and degenerate attractors will occur,&
-							!while this treatment can combine them as a single one
-							do imove=1,26
-								if (inowx+vec26x(imove)==attgrid(iatt,1).and.inowy+vec26y(imove)==attgrid(iatt,2).and.inowz+vec26z(imove)==attgrid(iatt,3)) then
-									do itrjgrid=1,ntrjgrid
-										gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=iatt
-									end do
-									exit cyciatt
-								end if
-							end do
-						end do cyciatt
-						!A new attractor
-						if (iatt==numatt+1) then
-							numatt=numatt+1
-							do itrjgrid=1,ntrjgrid
-								gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=numatt
-							end do
-							attgrid(numatt,1)=inowx
-							attgrid(numatt,2)=inowy
-							attgrid(numatt,3)=inowz
-							if (grdposneg(inowx,inowy,inowz)) then
-								write(*,"(i8,3f14.8,f20.8)") numatt,(orgx+(inowx-1)*dx)*b2a,(orgy+(inowy-1)*dy)*b2a,(orgz+(inowz-1)*dz)*b2a,cubmat(inowx,inowy,inowz)
-							else !This grid should has negative value
-								write(*,"(i8,3f14.8,f20.8)") numatt,(orgx+(inowx-1)*dx)*b2a,(orgy+(inowy-1)*dy)*b2a,(orgz+(inowz-1)*dz)*b2a,-cubmat(inowx,inowy,inowz)
-							end if
-						end if
-						!$OMP end CRITICAL
-						exit
-					end if
-					!Correction step may lead to oscillator when encountering circular ELF/LOL attractor, so if the current number of step is already large
-					!(larger than half of upper limit of step number), then correction will be disabled (namely switch to on-grid method) to guarantee convergence.
-					if ( ntrjgrid<nstepdiscorr .and. (abs(corrx)>(dx/2D0).or.abs(corry)>(dy/2D0).or.abs(corrz)>(dz/2D0)) ) then !This time we do correction step
+                    
+                !Near-grid method without/with refinement
+                else if (igridmethod==2.or.igridmethod==3) then
+					!Note: Correction step may lead to oscillator when encountering circular ELF/LOL attractor, so if the current number of step is already large
+					!(larger than half of upper limit of step number), then correction will be disabled (namely switch to on-grid method) to guarantee convergence
+					!  Correction vector is already large, this time we do correction step
+					if ( ntrjgrid<nstepdiscorr .and. (abs(corrx)>(dx/2D0).or.abs(corry)>(dy/2D0).or.abs(corrz)>(dz/2D0)) ) then
 						if (abs(corrx)>(dx/2D0)) then
 							icorrx=nint(corrx/abs(corrx)) !Get sign of corrx
 							inowx=inowx+icorrx
+                            call PBCgrididx1(inowx)
 							corrx=corrx-icorrx*dx
 						end if
 						if (abs(corry)>(dy/2D0)) then
 							icorry=nint(corry/abs(corry))
 							inowy=inowy+icorry
+                            call PBCgrididx2(inowy)
 							corry=corry-icorry*dy
 						end if
 						if (abs(corrz)>(dz/2D0)) then
 							icorrz=nint(corrz/abs(corrz))
 							inowz=inowz+icorrz
+                            call PBCgrididx3(inowz)
 							corrz=corrz-icorrz*dz
 						end if
-					else !Move to next grid according to maximal gradient and then update correction vector
+					else !Move to next grid according to maximal gradient and then meantime update correction vector
 						!Calculate true gradient
-						gradx=(cubmat(inowx+1,inowy,inowz)-cubmat(inowx-1,inowy,inowz))/(2*dx)
-						grady=(cubmat(inowx,inowy+1,inowz)-cubmat(inowx,inowy-1,inowz))/(2*dy)
-						gradz=(cubmat(inowx,inowy,inowz+1)-cubmat(inowx,inowy,inowz-1))/(2*dz)
+						ixtmp=inowx+1
+						ixtmp2=inowx-1
+						iytmp=inowy+1
+						iytmp2=inowy-1
+						iztmp=inowz+1
+						iztmp2=inowz-1
+                        if (ifPBC>0) then
+							call PBCgrididx1(ixtmp)
+							call PBCgrididx1(ixtmp2)
+							call PBCgrididx2(iytmp)
+							call PBCgrididx2(iytmp2)
+							call PBCgrididx3(iztmp)
+							call PBCgrididx3(iztmp2)
+                        end if
+						gradx=(cubmat(ixtmp,inowy,inowz)-cubmat(ixtmp2,inowy,inowz))/(2*dx)
+						grady=(cubmat(inowx,iytmp,inowz)-cubmat(inowx,iytmp2,inowz))/(2*dy)
+						gradz=(cubmat(inowx,inowy,iztmp)-cubmat(inowx,inowy,iztmp2))/(2*dz)
 						sclgrad=min(dx/abs(gradx),dy/abs(grady),dz/abs(gradz))
-						inowx=inowx+vec26x(igradmax)
-						inowy=inowy+vec26y(igradmax)
-						inowz=inowz+vec26z(igradmax)
 						corrx=corrx+gradx*sclgrad-vec26x(igradmax)*dx
 						corry=corry+grady*sclgrad-vec26y(igradmax)*dy
 						corrz=corrz+gradz*sclgrad-vec26z(igradmax)*dz
-! 						if (abs(corrx)>(dx/2D0).or.abs(corry)>(dy/2D0).or.abs(corrz)>(dz/2D0)) cycle
+						inowx=inowx+vec26x(igradmax)
+						inowy=inowy+vec26y(igradmax)
+						inowz=inowz+vec26z(igradmax)
+						if (ifPBC>0) call PBCgrididx(inowx,inowy,inowz)
 					end if
+                    
 					!Test if this grid has already been assigned and all of the neighbours were also assigned to the same attractor
 					idtmp=gridbas(inowx,inowy,inowz)
-					if (idtmp>0) then
-						do imove=1,26
-							ineiidx=gridbas(inowx+vec26x(imove),inowy+vec26y(imove),inowz+vec26z(imove))
-							if (ineiidx/=idtmp) exit
-						end do
-						if (imove==27) then
-							do itrjgrid=1,ntrjgrid
-								gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=idtmp
-							end do
-							exit
-						end if
-					end if
-					!Test if encountered box boundary				
-					if (inowx==1.or.inowx==nx.or.inowy==1.or.inowy==ny.or.inowz==1.or.inowz==nz) then
-						do itrjgrid=1,ntrjgrid
-							gridbas(trjgrid(itrjgrid,1),trjgrid(itrjgrid,2),trjgrid(itrjgrid,3))=-1
-						end do
-						exit
-					end if
-				end do !End ascent
-			end do !End cycle x
-		end do !End cycle y
-	end do !End cycle z
-	!$OMP END PARALLEL DO
-	
-	!!!!   Refining the basin boundary
-	if (igridmethod==3) then
-! 		do itime=1,3 !Refine once in general is sufficient
-		write(*,*) "Detecting boundary grids..."
-		call detectinterbasgrd(6) !It seems that using 26 directions to determine boundary grids doesn't bring evident benefit
-		write(*,"(' There are',i12,' grids at basin boundary')") count(interbasgrid.eqv..true.)
-		write(*,*) "Refining basin boundary..."
-		!Below code is the adapted copy of above near-grid code
-		!$OMP PARALLEL DO private(ix,iy,iz,corrx,corry,corrz,ntrjgrid,inowx,inowy,inowz,valnow,imove,gradtmp,igradmax,gradmax,iatt,&
-		!$OMP ineiidx,idtmp,icorrx,icorry,icorrz,gradx,grady,gradz,sclgrad) shared(gridbas,attgrid) schedule(DYNAMIC) NUM_THREADS(nthreads)
-		do iz=2,nz-1
-			do iy=2,ny-1
-				do ix=2,nx-1
-					if (.not.interbasgrid(ix,iy,iz)) cycle
-					if (gridbas(ix,iy,iz)<=0) cycle !Ignored the ones unassigned or gone to box boundary
-					ntrjgrid=0
-					inowx=ix
-					inowy=iy
-					inowz=iz
-					corrx=0D0 !Correction vector
-					corry=0D0
-					corrz=0D0
-					do while(.true.) !Steepest ascent
-						ntrjgrid=ntrjgrid+1
-						if (ntrjgrid>nsteplimit) exit
-						valnow=cubmat(inowx,inowy,inowz)
-						do imove=1,26
-							gradtmp=(cubmat(inowx+vec26x(imove),inowy+vec26y(imove),inowz+vec26z(imove))-valnow)/len26(imove)
-							if (imove==1.or.gradtmp>gradmax) then
-								igradmax=imove
-								gradmax=gradtmp
-							end if
-						end do
-						if (gradmax<=0) then !Equal sign is important, because when system has symmetry, adjacent grid may be degenerate about mirrow plane, now the ascent should be terminated
-cyciatt2:					do iatt=1,numatt
-								if (inowx==attgrid(iatt,1).and.inowy==attgrid(iatt,2).and.inowz==attgrid(iatt,3)) then
-									gridbas(ix,iy,iz)=iatt
-									exit cyciatt2
-								end if
-								do imove=1,26 !Test if neighbour grid (+/-x,+/-y,+/-z) is attractor iatt
-									if (inowx+vec26x(imove)==attgrid(iatt,1).and.inowy+vec26y(imove)==attgrid(iatt,2).and.inowz+vec26z(imove)==attgrid(iatt,3)) then
-										gridbas(ix,iy,iz)=iatt
-										exit cyciatt2
-									end if
-								end do
-							end do cyciatt2
-							if (iatt>numatt) then
-								write(*,*) "Warning: Found new attractor at refining process!"
-							end if
-							exit
-						end if
-						if ( ntrjgrid<nstepdiscorr .and. (abs(corrx)>(dx/2D0).or.abs(corry)>(dy/2D0).or.abs(corrz)>(dz/2D0)) ) then !This time we do correction step
-							if (abs(corrx)>(dx/2D0)) then
-								icorrx=nint(corrx/abs(corrx)) !Get sign of corrx
-								inowx=inowx+icorrx
-								corrx=corrx-icorrx*dx
-							end if
-							if (abs(corry)>(dy/2D0)) then
-								icorry=nint(corry/abs(corry))
-								inowy=inowy+icorry
-								corry=corry-icorry*dy
-							end if
-							if (abs(corrz)>(dz/2D0)) then
-								icorrz=nint(corrz/abs(corrz))
-								inowz=inowz+icorrz
-								corrz=corrz-icorrz*dz
-							end if
-						else !Move to next grid according to maximal gradient and then update correction vector
-							gradx=(cubmat(inowx+1,inowy,inowz)-cubmat(inowx-1,inowy,inowz))/(2*dx)
-							grady=(cubmat(inowx,inowy+1,inowz)-cubmat(inowx,inowy-1,inowz))/(2*dy)
-							gradz=(cubmat(inowx,inowy,inowz+1)-cubmat(inowx,inowy,inowz-1))/(2*dz)
-							sclgrad=min(dx/abs(gradx),dy/abs(grady),dz/abs(gradz))
-							inowx=inowx+vec26x(igradmax)
-							inowy=inowy+vec26y(igradmax)
-							inowz=inowz+vec26z(igradmax)
-							corrx=corrx+gradx*sclgrad-vec26x(igradmax)*dx
-							corry=corry+grady*sclgrad-vec26y(igradmax)*dy
-							corrz=corrz+gradz*sclgrad-vec26z(igradmax)*dz
-						end if
-						idtmp=gridbas(inowx,inowy,inowz)
-						if (ntrjgrid>60.and.idtmp>0) then !If enable this doesn't affect result detectably, but enabling it will evidently reduce computational cost
-							do imove=1,26
-								ineiidx=gridbas(inowx+vec26x(imove),inowy+vec26y(imove),inowz+vec26z(imove))
+					if (idtmp>0) then !This grid has already been assigned
+						if (itime==1.or.(itime==2.and.ntrjgrid>60)) then
+							do imove=1,26 !Check neighbours
+								ixtmp=inowx+vec26x(imove)
+								iytmp=inowy+vec26y(imove)
+								iztmp=inowz+vec26z(imove)
+								if (ifPBC>0) call PBCgrididx(ixtmp,iytmp,iztmp)
+								ineiidx=gridbas(ixtmp,iytmp,iztmp)
 								if (ineiidx/=idtmp) exit
 							end do
+							!All neighbours of current grid have same basin index as current grid, indicating current trajectory &
+							!has fully enter a basin, so all grids in this trajectory can be assigned to that basin index, and the trjectory can be terminated
 							if (imove==27) then
-								gridbas(ix,iy,iz)=idtmp
+								if (itime==1) then
+									do itrjgrid=1,ntrjgrid
+										gridbas(trjgrid(1,itrjgrid),trjgrid(2,itrjgrid),trjgrid(3,itrjgrid))=idtmp
+									end do
+                                else !Refinement
+									gridbas(ix,iy,iz)=idtmp
+                                end if
 								exit
 							end if
-						end if
-						if (inowx==1.or.inowx==nx.or.inowy==1.or.inowy==ny.or.inowz==1.or.inowz==nz) exit
-					end do !End ascent
-				end do !End cycle x
-			end do !End cycle y
-		end do !End cycle z
-		!$OMP END PARALLEL DO
-! 		end do
-	end if
-	
+                        end if
+					end if
+                end if
+                    
+				!Test if encountered box boundary for isolated system
+				if (ifPBC==0.and.(inowx==1.or.inowx==nx.or.inowy==1.or.inowy==ny.or.inowz==1.or.inowz==nz)) then
+					do itrjgrid=1,ntrjgrid
+						gridbas(trjgrid(1,itrjgrid),trjgrid(2,itrjgrid),trjgrid(3,itrjgrid))=-1
+					end do
+					exit !Terminate trajectory
+				end if
+			end do !End steepest ascent trajectory
+		end do !End cycle x
+	end do !End cycle y
+end do !End cycle z
+!$OMP END PARALLEL DO
+if (igridmethod==3.and.itime==1) then
+	write(*,*) "Detecting boundary grids..."
+	call detectinterbasgrd(6) !It seems that using 26 directions to determine boundary grids doesn't bring evident benefit
+	write(*,"(' There are',i12,' grids at basin boundary')") count(interbasgrid.eqv..true.)
+	write(*,*) "Refining basin boundary..."
 end if
+end do
+
+! The following code for refining is not needed, since it is done via above code at itime=2
+!!!! Refining basin boundaries. Emit steepest ascent trajectory from every boundary grid
+!if (igridmethod==3) then
+!! 	do itime=1,3 !Refine once in general is sufficient
+!	write(*,*) "Detecting boundary grids..."
+!	call detectinterbasgrd(6) !It seems that using 26 directions to determine boundary grids doesn't bring evident benefit
+!	write(*,"(' There are',i12,' grids at basin boundary')") count(interbasgrid.eqv..true.)
+!	write(*,*) "Refining basin boundary..."
+!	!Below code is the adapted copy of above near-grid code
+!	!$OMP PARALLEL DO private(ix,iy,iz,corrx,corry,corrz,ntrjgrid,inowx,inowy,inowz,valnow,imove,gradtmp,igradmax,gradmax,iatt,&
+!	!$OMP ineiidx,idtmp,icorrx,icorry,icorrz,gradx,grady,gradz,sclgrad) shared(gridbas,attgrid) schedule(DYNAMIC) NUM_THREADS(nthreads)
+!	do iz=izlow,izup
+!		do iy=iylow,iyup
+!			do ix=ixlow,ixup
+!				if (.not.interbasgrid(ix,iy,iz)) cycle
+!				if (gridbas(ix,iy,iz)<=0) cycle !Ignored the ones unassigned or gone to box boundary
+!				ntrjgrid=0
+!				inowx=ix
+!				inowy=iy
+!				inowz=iz
+!				corrx=0D0 !Correction vector
+!				corry=0D0
+!				corrz=0D0
+!				do while(.true.) !Steepest ascent
+!					ntrjgrid=ntrjgrid+1
+!					if (ntrjgrid>nsteplimit) exit
+!					valnow=cubmat(inowx,inowy,inowz)
+!					do imove=1,26
+!						gradtmp=(cubmat(inowx+vec26x(imove),inowy+vec26y(imove),inowz+vec26z(imove))-valnow)/len26(imove)
+!						if (imove==1.or.gradtmp>gradmax) then
+!							igradmax=imove
+!							gradmax=gradtmp
+!						end if
+!					end do
+!					if (gradmax<=0) then !Equal sign is important, because when system has symmetry, adjacent grid may be degenerate about mirrow plane, now the ascent should be terminated
+!cyciatt2:               do iatt=1,numatt
+!							if (inowx==attgrid(1,iatt).and.inowy==attgrid(2,iatt).and.inowz==attgrid(3,iatt)) then
+!								gridbas(ix,iy,iz)=iatt
+!								exit cyciatt2
+!							end if
+!							do imove=1,26 !Test if neighbour grid (+/-x,+/-y,+/-z) is attractor iatt
+!								if (inowx+vec26x(imove)==attgrid(1,iatt).and.inowy+vec26y(imove)==attgrid(2,iatt).and.inowz+vec26z(imove)==attgrid(3,iatt)) then
+!									gridbas(ix,iy,iz)=iatt
+!									exit cyciatt2
+!								end if
+!							end do
+!						end do cyciatt2
+!						if (iatt>numatt) then
+!							write(*,*) "Warning: Found new attractor at refining process!"
+!						end if
+!						exit
+!					end if
+!					if ( ntrjgrid<nstepdiscorr .and. (abs(corrx)>(dx/2D0).or.abs(corry)>(dy/2D0).or.abs(corrz)>(dz/2D0)) ) then !This time we do correction step
+!						if (abs(corrx)>(dx/2D0)) then
+!							icorrx=nint(corrx/abs(corrx)) !Get sign of corrx
+!							inowx=inowx+icorrx
+!							corrx=corrx-icorrx*dx
+!						end if
+!						if (abs(corry)>(dy/2D0)) then
+!							icorry=nint(corry/abs(corry))
+!							inowy=inowy+icorry
+!							corry=corry-icorry*dy
+!						end if
+!						if (abs(corrz)>(dz/2D0)) then
+!							icorrz=nint(corrz/abs(corrz))
+!							inowz=inowz+icorrz
+!							corrz=corrz-icorrz*dz
+!						end if
+!					else !Move to next grid according to maximal gradient and then update correction vector
+!						gradx=(cubmat(inowx+1,inowy,inowz)-cubmat(inowx-1,inowy,inowz))/(2*dx)
+!						grady=(cubmat(inowx,inowy+1,inowz)-cubmat(inowx,inowy-1,inowz))/(2*dy)
+!						gradz=(cubmat(inowx,inowy,inowz+1)-cubmat(inowx,inowy,inowz-1))/(2*dz)
+!						sclgrad=min(dx/abs(gradx),dy/abs(grady),dz/abs(gradz))
+!						inowx=inowx+vec26x(igradmax)
+!						inowy=inowy+vec26y(igradmax)
+!						inowz=inowz+vec26z(igradmax)
+!						corrx=corrx+gradx*sclgrad-vec26x(igradmax)*dx
+!						corry=corry+grady*sclgrad-vec26y(igradmax)*dy
+!						corrz=corrz+gradz*sclgrad-vec26z(igradmax)*dz
+!					end if
+!					idtmp=gridbas(inowx,inowy,inowz)
+!					if (ntrjgrid>60.and.idtmp>0) then !If enable this doesn't affect result detectably, but enabling it will evidently reduce computational cost
+!						do imove=1,26
+!							ineiidx=gridbas(inowx+vec26x(imove),inowy+vec26y(imove),inowz+vec26z(imove))
+!							if (ineiidx/=idtmp) exit
+!						end do
+!						if (imove==27) then
+!							gridbas(ix,iy,iz)=idtmp
+!							exit
+!						end if
+!					end if
+!					if (inowx==1.or.inowx==nx.or.inowy==1.or.inowy==ny.or.inowz==1.or.inowz==nz) exit
+!				end do !End steepest ascent trajectory
+!			end do !End cycle x
+!		end do !End cycle y
+!	end do !End cycle z
+!	!$OMP END PARALLEL DO
+!! 	end do
+!end if
+
 end subroutine
 
 
 
-!!------- Eliminate low value attractors and the corresponding basin
-! imode=1 Do nothing
-! imode=2 Set corresponding grids as unassigned status
-! imode=3 Assign corresponding grids to the nearest significant attractors
+!!------- Eliminate low value attractors and the corresponding basins
+!imode=1: Do nothing
+!imode=2: Set corresponding grids as unassigned status
+!imode=3: Assign corresponding grids to the nearest significant attractors
 subroutine elimlowvalatt(threslowvalatt,imode)
 use defvar
 use basinintmod
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer imode
 real*8 threslowvalatt
 integer highvalatt(numatt)
 integer att2att(-2:numatt) !Convert indices of old attractors to new ones
 integer atttypelist(numatt)
+
 if (imode==1) then
 	return
 else
 	icounthigh=0
 	atttypelist=0
 	do iatt=1,numatt !Generate list
-		if (abs(cubmat(attgrid(iatt,1),attgrid(iatt,2),attgrid(iatt,3)))>=threslowvalatt) then
+		if (abs(cubmat(attgrid(1,iatt),attgrid(2,iatt),attgrid(3,iatt)))>=threslowvalatt) then
 			icounthigh=icounthigh+1
 			highvalatt(icounthigh)=iatt
 			atttypelist(iatt)=1 !high
@@ -1180,27 +1192,23 @@ else
 	end do
 	nlowvalatt=numatt-icounthigh
 	if (imode==2) then
-		do iz=2,nz-1
-			do iy=2,ny-1
-				do ix=2,nx-1
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
 					if (atttypelist(gridbas(ix,iy,iz))==0) gridbas(ix,iy,iz)=0
 				end do
 			end do
 		end do
 	else if (imode==3) then
-		do iz=2,nz-1
-			rnowz=orgz+(iz-1)*dz
-			do iy=2,ny-1
-				rnowy=orgy+(iy-1)*dy
-				do ix=2,nx-1
-					rnowx=orgx+(ix-1)*dx
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
+					call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 					if (atttypelist(gridbas(ix,iy,iz))==0) then !Find out which grid belongs to insignificant attractors
 						shortmaxsqr=1D20
 						do iatt=1,numatt !Will be attribute to the nearest significant attractors
 							if (atttypelist(iatt)==1) then
-								xatt=orgx+(attgrid(iatt,1)-1)*dx
-								yatt=orgy+(attgrid(iatt,2)-1)*dy
-								zatt=orgz+(attgrid(iatt,3)-1)*dz
+								call getgridxyz(attgrid(1,iatt),attgrid(2,iatt),attgrid(3,iatt),xatt,yatt,zatt)
 								disttmpsqr=(xatt-rnowx)**2+(yatt-rnowy)**2+(zatt-rnowz)**2
 								if (disttmpsqr<shortmaxsqr) then
 									ishortmax=iatt
@@ -1228,12 +1236,12 @@ else
 	numatt=numatt-nlowvalatt
 	!Update attgrid
 	do iatt=1,numatt
-		attgrid(iatt,:)=attgrid(highvalatt(iatt),:)
+		attgrid(:,iatt)=attgrid(:,highvalatt(iatt))
 	end do
 	!Final update of grid attribution
-	do iz=2,nz-1
-		do iy=2,ny-1
-			do ix=2,nx-1
+	do iz=izlow,izup
+		do iy=iylow,iyup
+			do ix=ixlow,ixup
 				gridbas(ix,iy,iz)=att2att(gridbas(ix,iy,iz))
 			end do
 		end do
@@ -1249,17 +1257,21 @@ end subroutine
 subroutine detectinterbasgrd(ndir)
 use defvar
 use basinintmod
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer ndir
 if (allocated(interbasgrid)) deallocate(interbasgrid)
 allocate(interbasgrid(nx,ny,nz))
 interbasgrid=.false.
-do iz=2,nz-1
-	do iy=2,ny-1
-		do ix=2,nx-1
+do iz=izlow,izup
+	do iy=iylow,iyup
+		do ix=ixlow,ixup
 			idxnow=gridbas(ix,iy,iz)
 			do imove=1,ndir !To reduce the number of interbasin grids and thus speed up displaying, I don't use full 26 direction as criterion
-				idxmove=gridbas(ix+vec26x(imove),iy+vec26y(imove),iz+vec26z(imove))
+				ixtmp=ix+vec26x(imove)
+                iytmp=iy+vec26y(imove)
+                iztmp=iz+vec26z(imove)
+                call PBCgrididx(ixtmp,iytmp,iztmp)
+				idxmove=gridbas(ixtmp,iytmp,iztmp)
 				if ((idxmove/=idxnow).and.idxmove/=-2) then !This is a grid between two or more basins, and is not adjacent to box boundary
 					interbasgrid(ix,iy,iz)=.true.
 					exit
@@ -1278,12 +1290,13 @@ end subroutine
 subroutine clusdegenatt(imode)
 use defvar
 use basinintmod
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer imode
 integer neleatt,eleatt(numatt) !eleatt(i)=j means the ith element in clustering stage corresponds to actual jth attractor. nclustlist is its total current elements
 integer passlist(numatt) !if the ith element is 1, means i attractor has passed clustering stage
 integer ncluster,ncluele(numatt),cluele(numatt,numatt) !cluele(i,4/5/9...) means cluster i has element 4,5,9..., ncluele(i) is current size of cluster i, ncluster is total number of cluster
 real*8 attdismat(numatt,numatt),attvalmat(numatt,numatt) !Distance matrix and relative value difference matrix of the original attractors
+real*8 posvec1(3),posvec2(3)
 distcrit=mergeattdist*dsqrt(dx*dx+dy*dy+dz*dz) !Distance criterion
 irefined=0 !If 1, that means this combining process takes effects
 idebugclusdegenatt=0 !If output debug information
@@ -1301,20 +1314,19 @@ attdismat=0D0
 attvalmat=0D0
 do iatt=1,numatt
 	valiatt=attval(iatt)
-	xiatt=attxyz(iatt,1)
-	yiatt=attxyz(iatt,2)
-	ziatt=attxyz(iatt,3)
+    posvec1(:)=attxyz(:,iatt)
 	do jatt=iatt+1,numatt
 		valjatt=attval(jatt)
-		xjatt=attxyz(jatt,1)
-		yjatt=attxyz(jatt,2)
-		zjatt=attxyz(jatt,3)
-		distdiff=dsqrt( (xiatt-xjatt)**2+(yiatt-yjatt)**2+(ziatt-zjatt)**2 )
+		posvec2(:)=attxyz(:,jatt)
+        if (ifPBC==0) then
+			distdiff=dsqrt( sum((posvec1(:)-posvec2(:))**2) )
+        else
+			call nearest_dist(posvec1,posvec2,distdiff)
+        end if
 		attdismat(iatt,jatt)=distdiff
 		valdiff=abs((valiatt-valjatt)/valiatt)
 		attvalmat(iatt,jatt)=valdiff
 		if (valdiff<valcritclus.and.distdiff<distcrit) irefined=1
-! 		write(10,"(2i5,f16.10)") iatt,jatt,attvalmat(iatt,jatt)
 	end do
 end do
 attdismat=attdismat+transpose(attdismat)
@@ -1326,10 +1338,10 @@ end do
 if (irefined==0) then !Nothing to do. Construct real attractor information and then directly return
 	numrealatt=numatt
 	if (allocated(nrealatthas)) deallocate(nrealatthas,realattval,realattxyz,realatttable)
-	allocate(nrealatthas(numrealatt),realattval(numrealatt),realattxyz(numrealatt,3),realatttable(numrealatt,1))
+	allocate(nrealatthas(numrealatt),realattval(numrealatt),realattxyz(3,numrealatt),realatttable(numrealatt,1))
 	nrealatthas=1
 	do iatt=1,numatt
-		realattxyz(iatt,:)=attxyz(iatt,:)
+		realattxyz(:,iatt)=attxyz(:,iatt)
 		realattval(iatt)=attval(iatt)
 		realatttable(iatt,1)=iatt
 	end do
@@ -1400,7 +1412,6 @@ do iatt=1,numatt
 					ishortmax=jclu
 				end if
 			end do
-! 			write(*,"(i3,f16.6,4i5,i2)") ntimeclu,shortmax,iclu,ishortmax,abs(shortmax<distcrit)
 			if (shortmax<distcrit) then !Combine cluster ishortmax to cluster iclu
 				imergeclu=1
 				newlen=ncluele(iclu)+ncluele(ishortmax)
@@ -1463,9 +1474,9 @@ call updaterealattprop
 
 if (imode==1) return
 !Update basin attribution
-do iz=2,nz-1
-	do iy=2,ny-1
-		do ix=2,nx-1
+do iz=izlow,izup
+	do iy=iylow,iyup
+		do ix=ixlow,ixup
 			gridbas(ix,iy,iz)=attconv(gridbas(ix,iy,iz))
 		end do
 	end do
@@ -1474,7 +1485,7 @@ end do
 write(*,*) "The attractors after clustering:"
 write(*,*) "   Index      Average X,Y,Z coordinate (Angstrom)               Value"
 do irealatt=1,numrealatt
-	write(*,"(i8,3f15.8,f20.8)") irealatt,realattxyz(irealatt,:)*b2a,realattval(irealatt)
+	write(*,"(i8,3f15.8,f20.8)") irealatt,realattxyz(:,irealatt)*b2a,realattval(irealatt)
 end do
 end subroutine
 
@@ -1484,9 +1495,9 @@ end subroutine
 subroutine updaterealattprop
 use defvar
 use basinintmod
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 if (allocated(nrealatthas)) deallocate(nrealatthas,realattval,realattxyz,realatttable)
-allocate(nrealatthas(numrealatt),realattval(numrealatt),realattxyz(numrealatt,3),realatttable(numrealatt,numatt))
+allocate(nrealatthas(numrealatt),realattval(numrealatt),realattxyz(3,numrealatt),realatttable(numrealatt,numatt))
 nrealatthas=0
 realattval=0D0
 realattxyz=0D0
@@ -1494,12 +1505,12 @@ do iatt=1,numatt
 	irealatt=attconv(iatt)
 	nrealatthas(irealatt)=nrealatthas(irealatt)+1
 	realatttable(irealatt,nrealatthas(irealatt))=iatt
-	realattxyz(irealatt,:)=realattxyz(irealatt,:)+attxyz(iatt,:)
+	realattxyz(:,irealatt)=realattxyz(:,irealatt)+attxyz(:,iatt)
 	realattval(irealatt)=realattval(irealatt)+attval(iatt)
 end do
 do irealatt=1,numrealatt
 	realattval(irealatt)=realattval(irealatt)/nrealatthas(irealatt)
-	realattxyz(irealatt,:)=realattxyz(irealatt,:)/nrealatthas(irealatt)
+	realattxyz(:,irealatt)=realattxyz(:,irealatt)/nrealatthas(irealatt)
 end do
 end subroutine
 
@@ -1514,6 +1525,7 @@ integer :: iselexttype=3,ifuncsel
 real*8 :: molxlen,molylen,molzlen,tmpx,tmpy,tmpz,rhocrit=1D-6
 real*8 :: gridextdist=5D0,enlarbox=2.1D0,spclowqual=0.2D0,spcmedqual=0.1D0,spchighqual=0.06D0,spclunaqual=0.04D0,tmparr6(6)
 character c80tmp*80,cubefilename*200
+
 if (.not.allocated(b)) iselexttype=2 !Unable to set box using rho
 do while(.true.)
 	if (iselexttype==1) then
@@ -1560,11 +1572,10 @@ do while(.true.)
 	write(*,*) "8 Set center position, grid spacing and box length"
 	write(*,*) "9 Use grid setting of another cube file"
 	write(*,*) "10 Set box of grid data visually using a GUI window"
-	
+    if (ifPBC>0) write(*,"(a)") " 11 Use translation vectors of current cell, manually specify origin, box lengths and grid spacing"
 	read(*,*) igridsel
-	if (igridsel/=-10) then
-		exit
-	else
+    
+    if (igridsel==-10) then
 		write(*,*) "Please select the type of extension distance:"
 		write(*,*) "1 Use fixed value in each direction"
 		write(*,*) "2 Adaptively determined according to van der Waals radius"
@@ -1613,16 +1624,19 @@ do while(.true.)
 				read(*,*) rhocrit
 			end if
 		end if
+	else
+		exit
 	end if
 end do
 
+!Properly set aug3D for some modes
 if (igridsel==1.or.igridsel==2.or.igridsel==3.or.igridsel==4.or.igridsel==5.or.igridsel==6) then
 	if (iselexttype==1) then
 		aug3D=gridextdist !Set aug3D, which only affects GUI display, so that the scope of the axis is wide enough to contain the whole grid region
 	else if (iselexttype==2) then
 		aug3D=maxval(enlarbox*vdwr_tianlu(a(:)%index))*1.35D0
 	else if (iselexttype==3) then
-		call detectboxrho(rhocrit) !determine orgx/y/z and endx/y/z
+		call detectboxrho(rhocrit) !Determine orgx/y/z and endx/y/z
 		molxlen=endx-orgx
 		molylen=endy-orgy
 		molzlen=endz-orgz
@@ -1636,6 +1650,7 @@ if (igridsel==1.or.igridsel==2.or.igridsel==3.or.igridsel==4.or.igridsel==5.or.i
 	end if
 end if
 
+!Input information for various grid setting modes
 !Note: orgx,orgy,orgz,endx,endy,endz as well as molx/y/zlen for igridsel==1~6 have already been set above
 if (igridsel==1.or.igridsel==2.or.igridsel==3.or.igridsel==4.or.igridsel==5) then
 	if (igridsel==1) dx=spclowqual
@@ -1707,7 +1722,7 @@ else if (igridsel==8) then
 	ny=nint(molylen/dy)+1
 	nz=nint(molzlen/dz)+1
 else if (igridsel==9) then
-	write(*,*) "Input path of a cube file, C:\Fate_Saber.cub"
+	write(*,*) "Input path of a cube file, e.g. C:\Fate\Saber.cub"
 	do while(.true.)
 		read(*,"(a)") cubefilename
 		inquire(file=cubefilename,exist=alive)
@@ -1725,18 +1740,19 @@ else if (igridsel==9) then
 			write(*,*) "Error: File cannot be found, input again"
 		end if
 	end do
+else if (igridsel==10) then
+	call setboxGUI
 else if (igridsel==11) then
-	call setgrid_for_PBC
+	call setgrid_for_PBC(0.1D0)
 end if
 
-if (igridsel==10) call setboxGUI
 
-!If system is symmetric to Cartesian plane, then slightly adjust grid setting, so that the distribution of grids are symmetric to Cartesian plane
+!For some modes, if system is symmetric to Cartesian plane, then slightly adjust grid setting, so that the distribution of grids are symmetric to Cartesian plane
 !This treatment will make the integrals have much better symmetry
-diffx=abs(orgx+endx)
-diffy=abs(orgy+endy)
-diffz=abs(orgz+endz)
 if (igridsel>=1.and.igridsel<=6) then
+	diffx=abs(orgx+endx)
+	diffy=abs(orgy+endy)
+	diffz=abs(orgz+endz)
 	if (diffx<0.05D0) then !The system is symmetry to YZ plane
 		distxmin=1D10
 		do ix=1,nx
@@ -1765,26 +1781,29 @@ if (igridsel>=1.and.igridsel<=6) then
 	end if
 end if
 
-if (igridsel/=11) then
-    gridv1=0;gridv1(1)=dx
-    gridv2=0;gridv2(2)=dy
-    gridv3=0;gridv3(3)=dz
-else
+!Make dx,dy,dz and gridv1/2/3 available for all cases
+if (igridsel==9.or.igridsel==11) then
     dx=gridv1(1)
     dy=gridv2(2)
     dz=gridv3(3)
+else
+    gridv1=0;gridv1(1)=dx
+    gridv2=0;gridv2(2)=dy
+    gridv3=0;gridv3(3)=dz
 end if
+
 call getgridend !Generate endx,endy,endz
+
 write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6,' Bohr')") orgx,orgy,orgz
 write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6,' Bohr')") endx,endy,endz
-if (igridsel/=11) then
-	write(*,"(' Grid spacing in X,Y,Z is',3f12.6,' Bohr')") dx,dy,dz
-	write(*,"(' Number of points in X,Y,Z is',3i5,'   Total:',i12)") nx,ny,nz,nx*ny*nz
-else
+if (igridsel==9.or.igridsel==11) then !Grid may be nonorthogonal
 	write(*,"(' Grid vector 1 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv1,dsqrt(sum(gridv1**2))
 	write(*,"(' Grid vector 2 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv2,dsqrt(sum(gridv2**2))
 	write(*,"(' Grid vector 3 in X,Y,Z is',3f10.6,' Bohr, norm:',f10.6)") gridv3,dsqrt(sum(gridv3**2))
 	write(*,"(' Number of points in three directions is',3i5,'  Total:',i12)") nx,ny,nz,nx*ny*nz
+else
+	write(*,"(' Grid spacing in X,Y,Z is',3f12.6,' Bohr')") dx,dy,dz
+	write(*,"(' Number of points in X,Y,Z is',3i5,'   Total:',i12)") nx,ny,nz,nx*ny*nz
 end if
 
 ! do i=1,nx
@@ -1809,10 +1828,10 @@ end subroutine
 !!-- Detect proper box (namely set orgx/y/z,endx/y/z) so that the box can just enclose the isosurface of rho=rhocrit
 subroutine detectboxrho(rhocrit)
 use defvar
-use function
-implicit real*8(a-h,o-z)
+use functions
+implicit real*8 (a-h,o-z)
 real*8 rhocrit
-tmpfac=1.0D0
+tmpfac=1D0
 orgxtmp=minval( a(:)%x-tmpfac*vdwr_tianlu(a(:)%index) ) !Define a too small box, extend each side (to obtain orgx/y/z,endx/y/z) by detecting rho
 orgytmp=minval( a(:)%y-tmpfac*vdwr_tianlu(a(:)%index) )
 orgztmp=minval( a(:)%z-tmpfac*vdwr_tianlu(a(:)%index) )
@@ -1927,24 +1946,24 @@ yh:do ix=1,nstpx
 	if (iok==1) exit
 	endy=endy+0.2D0
 end do
-
 end subroutine
 
 
 
-
 !!------- Integrate a real space function in the basins already partitioned
+!It is not assumed that wavefunction information is available. This routine also works purely based on grid data
 subroutine integratebasin
 use defvar
 use util
-use function
+use functions
 use basinintmod
-implicit real*8(a-h,o-z)
-real*8 intval(-1:numatt),basinvol(-1:numatt),intvalpriv(-1:numatt),basinvolpriv(-1:numatt)
+implicit real*8 (a-h,o-z)
+real*8 intval(-1:numatt),intvalpriv(-1:numatt),basinvol(-1:numatt),basinvolpriv(-1:numatt),basinvdwvol(-1:numatt),basinvdwvolpriv(-1:numatt),posvec(3)
+integer att2atm(numrealatt) !The attractor corresponds to which atom. If =0, means this is a NNA
 integer walltime1,walltime2
 character grdfilename*200
 
-if (ifuncbasin==1) then
+if (ifuncbasin==1.and.ifPBC==0) then
 	write(*,"(a)") " IMPORTANT NOTE: To integrate AIM basins, it is significantly better to use function 7 &
     to integrate the basins based on uniform + atomic center grid, the accuracy is much better than using the present function!"
 end if
@@ -1955,13 +1974,13 @@ write(*,*) "-2 Return"
 write(*,*) "-1 The values of the grid data stored in an external file (.cub/.grd)"
 write(*,*) "0 The values of the grid data stored in memory"
 call selfunc_interface(1,ifuncint)
-if (ifuncint==-1) then
+if (ifuncint==-1) then !Load external grid data to cubmattmp
 	do while(.true.)
 		write(*,*) "Input another .cub or .grd file name, e.g. C:\CODE_GEASS\CC.cub"
 		read(*,"(a)") grdfilename
 		inquire(file=grdfilename,exist=alive)
 		if (alive) exit
-		write(*,*) "File not found, input again"
+		write(*,*) "Error: File not found, input again"
 		write(*,*)
 	end do
 	inamelen=len_trim(grdfilename)
@@ -1980,17 +1999,17 @@ call walltime(walltime1)
 write(*,*) "Integrating, please wait..."
 intval=0D0
 basinvol=0D0
+basinvdwvol=0D0
 ifinish=0
-!$OMP PARALLEL private(ix,iy,iz,irealatt,rnowx,rnowy,rnowz,tmpval,intvalpriv,basinvolpriv) shared(intval,basinvol,ifinish) NUM_THREADS(nthreads)
+!$OMP PARALLEL private(ix,iy,iz,irealatt,rnowx,rnowy,rnowz,tmpval,intvalpriv,basinvolpriv,basinvdwvolpriv) shared(intval,basinvol,basinvdwvol,ifinish) NUM_THREADS(nthreads)
 intvalpriv=0D0
 basinvolpriv=0D0
+basinvdwvolpriv=0D0
 !$OMP do schedule(DYNAMIC)
-do iz=2,nz-1
-	do iy=2,ny-1
-		do ix=2,nx-1
-			rnowx=orgx+(ix-1)*dx
-			rnowy=orgy+(iy-1)*dy
-			rnowz=orgz+(iz-1)*dz
+do iz=izlow,izup
+	do iy=iylow,iyup
+		do ix=ixlow,ixup
+			call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 			if (ifuncint==-1) then
 				tmpval=cubmattmp(ix,iy,iz)
 			else if (ifuncint==0) then
@@ -2001,30 +2020,72 @@ do iz=2,nz-1
 			irealatt=gridbas(ix,iy,iz)
 			intvalpriv(irealatt)=intvalpriv(irealatt)+tmpval
 			basinvolpriv(irealatt)=basinvolpriv(irealatt)+1
+			if (tmpval>=0.001D0) basinvdwvolpriv(irealatt)=basinvdwvolpriv(irealatt)+1
 		end do
 	end do
+    !$OMP CRITICAL
     ifinish=ifinish+1
     if (ifuncint>=1) call showprog(ifinish,nz-2)
+    !$OMP END CRITICAL
 end do
 !$OMP end do
 !$OMP CRITICAL
     intval=intval+intvalpriv
     basinvol=basinvol+basinvolpriv
+    basinvdwvol=basinvdwvol+basinvdwvolpriv
 !$OMP end CRITICAL
 !$OMP END PARALLEL
 call calc_dvol(dvol)
 intval=intval*dvol
 basinvol=basinvol*dvol !Basin volume
+basinvdwvol=basinvdwvol*dvol !Basin volume within isosurface of 0.001 a.u.
 write(*,*) "  #Basin        Integral(a.u.)      Volume(a.u.^3)"
 do irealatt=1,numrealatt
 	write(*,"(i8,f22.10,f20.8)") irealatt,intval(irealatt),basinvol(irealatt)
 end do
 write(*,"(' Sum of above values:',f20.8)") sum(intval(1:numrealatt))
-if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0)
-if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1)
+if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0)
+if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1)
 
 call walltime(walltime2)
 write(*,"(' Integrating basins took up wall clock time',i10,' s')") walltime2-walltime1
+
+if (ifuncbasin==1.and.(ifuncint==-1.or.ifuncint==0.or.ifuncint==1)) then
+	!Wavefunction information may be not available, so the correspondence between attractors and atoms are only crudely determined
+    att2atm=0
+	do iatt=1,numrealatt !Cycle each attractors
+		do iatm=1,ncenter !Try to find corresponding atom
+			if (ifPBC==0) then
+				disttest=dsqrt( (realattxyz(1,iatt)-a(iatm)%x)**2+(realattxyz(2,iatt)-a(iatm)%y)**2+(realattxyz(3,iatt)-a(iatm)%z)**2 )
+            else
+				posvec(1)=a(iatm)%x
+				posvec(2)=a(iatm)%y
+				posvec(3)=a(iatm)%z
+				call nearest_dist(realattxyz(:,iatt),posvec,disttest)
+            end if
+			if (disttest<0.3D0) att2atm(iatt)=iatm !If distance between attractor and a nucleus is smaller than 0.3 Bohr, then the attractor will belong to the atom
+        end do
+    end do
+    !Print atomic charges
+	write(*,"(/,a)") " Because the basins are partitioned based on electron density, and the integrand is electron density, &
+    atomic charges together with basin volumes and the atomic vdW volumes (within rho=0.001 a.u. isosurface) are printed below"
+    rnormfac=1 !It is not possible to determine normalization factor of number of electron, since if purely grid data is used, we do not know net charge at all
+    write(*,*)
+	write(*,*) "    Atom      Basin       Charge (e)     Volume (Bohr^3)   vdW Volume (Bohr^3)"
+    do iatm=0,ncenter
+		do iatt=1,numrealatt
+			if (att2atm(iatt)==iatm.and.iatm==0) then
+				write(*,"(7x,'(NNA)',i7,4x,f14.8,f16.3,3x,f16.3)") iatt,-intval(iatt)/rnormfac,basinvol(iatt),basinvdwvol(iatt)
+			else if (att2atm(iatt)==iatm.and.iatm/=0) then
+				if (nEDFelec==0) then !Normal case, all electron basis or using pseudopotential but not accompanied by EDF
+					write(*,"(i7,' (',a,')',i7,4x,f14.8,f16.3,3x,f16.3)") iatm,a(iatm)%name,iatt,a(iatm)%charge-intval(iatt)/rnormfac,basinvol(iatt),basinvdwvol(iatt)
+				else !EDF is used, so using a(iatm)%index instead of a(iatm)%charge
+					write(*,"(i7,' (',a,')',i7,4x,f14.8,f16.3,3x,f16.3)") iatm,a(iatm)%name,iatt,a(iatm)%index-intval(iatt)/rnormfac,basinvol(iatt),basinvdwvol(iatt)
+				end if
+			end if
+		end do
+	end do
+end if
 end subroutine
 
 
@@ -2034,8 +2095,8 @@ subroutine basinorbcomp
 use defvar
 use util
 use basinintmod
-use function
-implicit real*8(a-h,o-z)
+use functions
+implicit real*8 (a-h,o-z)
 real*8 intval(-1:numatt),intvalpriv(-1:numatt),orbcomp(ncenter)
 real*8 comparr(nmo,numrealatt),comparrpriv(nmo,numrealatt),orbval(nmo)
 integer att2atm(numrealatt),atm2att(ncenter)
@@ -2088,23 +2149,23 @@ do while(.true.)
         !$OMP PARALLEL private(ix,iy,iz,irealatt,rnowx,rnowy,rnowz,comparrpriv,orbval) shared(ifinish,comparr) NUM_THREADS(nthreads)
         comparrpriv=0D0
         !$OMP do schedule(DYNAMIC)
-        do iz=2,nz-1
-	        do iy=2,ny-1
-		        do ix=2,nx-1
-			        rnowx=orgx+(ix-1)*dx
-			        rnowy=orgy+(iy-1)*dy
-			        rnowz=orgz+(iz-1)*dz
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
+					call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 				    call orbderv(1,1,nmo,rnowx,rnowy,rnowz,orbval(:))
 			        irealatt=gridbas(ix,iy,iz)
 			        comparrpriv(:,irealatt)=comparrpriv(:,irealatt)+orbval(:)**2
 		        end do
 	        end do
+			!$OMP CRITICAL
             ifinish=ifinish+1
             call showprog(ifinish,nz-2)
+			!$OMP END CRITICAL
         end do
         !$OMP end do
         !$OMP CRITICAL
-            comparr=comparr+comparrpriv
+        comparr=comparr+comparrpriv
         !$OMP end CRITICAL
         !$OMP END PARALLEL
         comparr=comparr*dvol
@@ -2160,23 +2221,23 @@ do while(.true.)
         !$OMP PARALLEL private(ix,iy,iz,irealatt,rnowx,rnowy,rnowz,tmpval,intvalpriv) shared(intval,ifinish) NUM_THREADS(nthreads)
         intvalpriv=0D0
         !$OMP do schedule(DYNAMIC)
-        do iz=2,nz-1
-	        do iy=2,ny-1
-		        do ix=2,nx-1
-			        rnowx=orgx+(ix-1)*dx
-			        rnowy=orgy+(iy-1)*dy
-			        rnowz=orgz+(iz-1)*dz
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
+                    call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 				    tmpval=fmo(rnowx,rnowy,rnowz,ishowmo)**2
 			        irealatt=gridbas(ix,iy,iz)
 			        intvalpriv(irealatt)=intvalpriv(irealatt)+tmpval
 		        end do
 	        end do
+			!$OMP CRITICAL
             ifinish=ifinish+1
             call showprog(ifinish,nz-2)
+			!$OMP END CRITICAL
         end do
         !$OMP end do
         !$OMP CRITICAL
-            intval=intval+intvalpriv
+        intval=intval+intvalpriv
         !$OMP end CRITICAL
         !$OMP END PARALLEL
         intval=intval*dvol
@@ -2224,7 +2285,7 @@ end subroutine
 subroutine atmpopinbasin
 use defvar
 use basinintmod
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 inquire(file="basin.cub",exist=alive)
 if (.not.alive) then
 	write(*,*) "Error: basin.cub is not existed in current folder!"
@@ -2252,9 +2313,9 @@ do while(.true.)
 	write(*,*) "Study its population in which basin of the basin.cub file? e.g. 6"
 	read(*,*) ibasin
 	atmpop=0
-	do iz=2,nz-1
-		do iy=2,ny-1
-			do ix=2,nx-1
+	do iz=izlow,izup
+		do iy=iylow,iyup
+			do ix=ixlow,ixup
 				if (nint(cubmattmp(ix,iy,iz))==ibasin.and.gridbas(ix,iy,iz)==iatt) atmpop=atmpop+cubmat(ix,iy,iz)
 			end do
 		end do
@@ -2268,14 +2329,14 @@ end subroutine
 
 
 
-!!----------------- Calculate multipole moment in the basins
+!!----------------- Calculate multipole moment in the basins via uniform grid
 subroutine multipolebasin
 use defvar
 use basinintmod
-use function
+use functions
 implicit real*8 (a-h,o-z)
 
-if (ifuncbasin==1) then
+if (ifuncbasin==1.and.ifPBC==0.and.allocated(b)) then
 	write(*,"(a)") " IMPORTANT NOTE: To calculate multipole moments for AIM basins, it is significantly better to use function 8 &
     to employ uniform + atomic center grid, the accuracy is much better than the present function!"
 end if
@@ -2283,21 +2344,21 @@ end if
 do while(.true.)
 	write(*,*)
 	write(*,*) "Input the index of the basin, e.g. 5"
-	write(*,"(a)") " Note: -1 means printing all basin results on screen, -2 means printing to multipol.txt in current folder. Input 0 can return"
+	write(*,"(a)") " Note: -1 means printing all basin results on screen, -2 means printing to multipole.txt in current folder. Input 0 can return"
 	read(*,*) itmp
+    ioutid=6
 	if (itmp==-1.or.itmp==-2) then
 		ibegin=1
 		iend=numrealatt
 		if (itmp==-2) then
 			ioutid=10
-			open(10,file="multipol.txt",status="replace")
+			open(10,file="multipole.txt",status="replace")
 		end if
 	else if (itmp==0) then
 		return
 	else
 		ibegin=itmp
 		iend=itmp
-		ioutid=6
 	end if
 	write(*,*) "Calculating, please wait..."
 	write(ioutid,*) "Note: All data shown below are in a.u.!"
@@ -2312,14 +2373,12 @@ do while(.true.)
 	! 	ycen=0
 	! 	zcen=0
 	! 	nbasgrid=0
-	! 	do iz=2,nz-1
-	! 		do iy=2,ny-1
-	! 			do ix=2,nx-1
+	!	do iz=izlow,izup
+	!		do iy=iylow,iyup
+	!			do ix=ixlow,ixup
 	! 				if (gridbas(ix,iy,iz)==ibas) then
 	! 					nbasgrid=nbasgrid+1
-	! 					rnowx=orgx+(ix-1)*dx
-	! 					rnowy=orgy+(iy-1)*dy
-	! 					rnowz=orgz+(iz-1)*dz
+	! 					call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 	! 					tmpdens=ELF_LOL(rnowx,rnowy,rnowz,"ELF")
 	! 					xcen=xcen+rnowx*tmpdens
 	! 					ycen=ycen+rnowy*tmpdens
@@ -2331,9 +2390,9 @@ do while(.true.)
 	! 	xcen=xcen/nbasgrid
 	! 	ycen=ycen/nbasgrid
 	! 	zcen=zcen/nbasgrid
-		xcen=realattxyz(ibas,1)
-		ycen=realattxyz(ibas,2)
-		zcen=realattxyz(ibas,3)
+		xcen=realattxyz(1,ibas)
+		ycen=realattxyz(2,ibas)
+		zcen=realattxyz(3,ibas)
 		call calc_dvol(dvol)
 	! 	write(*,"(' The X,Y,Z of the center of the basin:')")
 	! 	write(*,"(3f14.8,' Bohr',/)") xcen,ycen,zcen
@@ -2360,13 +2419,11 @@ do while(.true.)
 		yzintp=0D0
 		xzintp=0D0
 		!$OMP do schedule(DYNAMIC)
-		do iz=2,nz-1
-			rnowz=orgz+(iz-1)*dz
-			do iy=2,ny-1
-				rnowy=orgy+(iy-1)*dy
-				do ix=2,nx-1
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
 					if (gridbas(ix,iy,iz)==ibas) then
-						rnowx=orgx+(ix-1)*dx
+                        call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 						if (ifuncbasin==1) then
 							tmpmul=dvol*cubmat(ix,iy,iz) !The cubmat currently is just electron density
 						else
@@ -2403,11 +2460,11 @@ do while(.true.)
 		xzint=xzint+xzintP
 		!$OMP end CRITICAL
 		!$OMP END PARALLEL
-		if (itmp==-1.or.itmp==-2) write(ioutid,"(' Basin',i8)") ibas
+		if (itmp==-1.or.itmp==-2) write(ioutid,"(/,' ***** Basin',i8)") ibas
 		if (itmp==-2) write(*,"(' Outputting basin',i8)") ibas
-		write(ioutid,"(' Basin electric monopole moment:',f12.6)") -eleint
-		write(ioutid,"(' Basin electric dipole moment:')") 
-		write(ioutid,"('  X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Magnitude=',f12.6)") -xint,-yint,-zint,sqrt(xint**2+yint**2+zint**2)
+		write(ioutid,"(' Basin monopole moment:',f12.6)") -eleint
+		write(ioutid,"(' Basin dipole moment:')") 
+		write(ioutid,"(' X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Norm=',f12.6)") -xint,-yint,-zint,sqrt(xint**2+yint**2+zint**2)
 		eleinttot=eleinttot+eleint
 		dipelex=-eleint*xcen+(-xint) !Contribution to molecular total dipole moment
 		dipeley=-eleint*ycen+(-yint)
@@ -2416,45 +2473,45 @@ do while(.true.)
 		dipeleytot=dipeleytot+dipeley
 		dipeleztot=dipeleztot+dipelez
 		write(ioutid,"(' Basin electron contribution to molecular dipole moment:')")
-		write(ioutid,"('  X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Magnitude=',f12.6)") dipelex,dipeley,dipelez,sqrt(dipelex**2+dipeley**2+dipelez**2)
-		write(ioutid,"(' Basin electric quadrupole moment (Cartesian form):')")
+		write(ioutid,"(' X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Norm=',f12.6)") dipelex,dipeley,dipelez,sqrt(dipelex**2+dipeley**2+dipelez**2)
+		write(ioutid,"(' Basin quadrupole moment (Traceless Cartesian form):')")
 		rrint=xxint+yyint+zzint
 		QXX=-(3*xxint-rrint)/2
 		QYY=-(3*yyint-rrint)/2
 		QZZ=-(3*zzint-rrint)/2
-		write(ioutid,"(' QXX=',f12.6,'  QXY=',f12.6,'  QXZ=',f12.6)") QXX,-(3*xyint)/2,-(3*xzint)/2
-		write(ioutid,"(' QYX=',f12.6,'  QYY=',f12.6,'  QYZ=',f12.6)") -(3*xyint)/2,QYY,-(3*yzint)/2
-		write(ioutid,"(' QZX=',f12.6,'  QZY=',f12.6,'  QZZ=',f12.6)") -(3*xzint)/2,-(3*yzint)/2,QZZ
-		write(ioutid,"( ' The magnitude of electric quadrupole moment (Cartesian form):',f12.6)") dsqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
+		write(ioutid,"(' XX=',f12.6,'  XY=',f12.6,'  XZ=',f12.6)") QXX,-(3*xyint)/2,-(3*xzint)/2
+		write(ioutid,"(' YX=',f12.6,'  YY=',f12.6,'  YZ=',f12.6)") -(3*xyint)/2,QYY,-(3*yzint)/2
+		write(ioutid,"(' ZX=',f12.6,'  ZY=',f12.6,'  ZZ=',f12.6)") -(3*xzint)/2,-(3*yzint)/2,QZZ
+		write(ioutid,"(' Magnitude of the traceless quadrupole moment tensor:',f12.6)") dsqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
 		R20=-(3*zzint-rrint)/2D0 !Notice that the negative sign, because electrons carry negative charge
 		R2n1=-dsqrt(3D0)*yzint
 		R2p1=-dsqrt(3D0)*xzint
 		R2n2=-dsqrt(3D0)*xyint
 		R2p2=-dsqrt(3D0)/2D0*(xxint-yyint)
-		write(ioutid,"(' Electric quadrupole moments (Spherical harmonic form):')")
+		write(ioutid,"(' Basin quadrupole moments (Spherical harmonic form):')")
 		write(ioutid,"(' Q_2,0 =',f11.6,'   Q_2,-1=',f11.6,'   Q_2,1=',f11.6)") R20,R2n1,R2p1
 		write(ioutid,"(' Q_2,-2=',f11.6,'   Q_2,2 =',f11.6)") R2n2,R2p2
-		write(ioutid,"( ' Magnitude: |Q_2|=',f12.6)") dsqrt(R20**2+R2n1**2+R2p1**2+R2n2**2+R2p2**2)
+		write(ioutid,"(' Magnitude: |Q_2|=',f12.6)") dsqrt(R20**2+R2n1**2+R2p1**2+R2n2**2+R2p2**2)
         ESEx=xxint;ESEy=yyint;ESEz=zzint
         ESE=ESEx+ESEy+ESEz
         	write(ioutid,"(a,f16.6)") " Basin electronic spatial extent <r^2>:",ESE
 		write(ioutid,"(' Components of <r^2>:  X=',f15.6,'  Y=',f15.6,'  Z=',f15.6)") ESEx,ESEy,ESEz
-		write(ioutid,*)
 	end do
 	if (itmp==-1.or.itmp==-2) then !Output overall properties, most users are not interested in them
 		dipnucx=sum(a(:)%x*a(:)%charge)
 		dipnucy=sum(a(:)%y*a(:)%charge)
 		dipnucz=sum(a(:)%z*a(:)%charge)
+		write(ioutid,*)
 		write(ioutid,"( ' Molecular net charge:',f12.6)") sum(a%charge)-eleinttot
 		write(ioutid,"( ' Nuclear contribution to molecular dipole moment:')") 
-		write(ioutid,"(' X=',f12.6,' Y=',f12.6,' Z=',f12.6,' Norm=',f12.6)") dipnucx,dipnucy,dipnucz,sqrt(dipnucx**2+dipnucy**2+dipnucz**2)
+		write(ioutid,"(' X=',f14.6,'  Y=',f14.6,'  Z=',f14.6,'  Norm=',f14.6)") dipnucx,dipnucy,dipnucz,sqrt(dipnucx**2+dipnucy**2+dipnucz**2)
 		write(ioutid,"( ' Electron contribution to molecular dipole moment:')") 
-		write(ioutid,"(' X=',f12.6,' Y=',f12.6,' Z=',f12.6,' Norm=',f12.6)") dipelextot,dipeleytot,dipeleztot,sqrt(dipelextot**2+dipeleytot**2+dipeleztot**2)
+		write(ioutid,"(' X=',f14.6,'  Y=',f14.6,'  Z=',f14.6,'  Norm=',f14.6)") dipelextot,dipeleytot,dipeleztot,sqrt(dipelextot**2+dipeleytot**2+dipeleztot**2)
 		dipmolx=dipnucx+dipelextot
 		dipmoly=dipnucy+dipeleytot
 		dipmolz=dipnucz+dipeleztot
 		write(ioutid,"( ' Molecular dipole moment:')")
-		write(ioutid,"(' X=',f12.6,' Y=',f12.6,' Z=',f12.6,' Norm=',f12.6)") dipmolx,dipmoly,dipmolz,sqrt(dipmolx**2+dipmoly**2+dipmolz**2)
+		write(ioutid,"(' X=',f14.6,'  Y=',f14.6,'  Z=',f14.6,'  Norm=',f14.6)") dipmolx,dipmoly,dipmolz,sqrt(dipmolx**2+dipmoly**2+dipmolz**2)
 	end if
 	if (itmp==-2) then
 		close(10)
@@ -2720,7 +2777,7 @@ maplist=0
 if (info==1) write(ioutid,*) "Detecting correspondence between basin and atom indices (criterion: <0.3 Bohr)"
 do iatm=1,ncenter
 	do ibas=1,numrealatt
-        disttest=dsqrt( (realattxyz(ibas,1)-a(iatm)%x)**2+(realattxyz(ibas,2)-a(iatm)%y)**2+(realattxyz(ibas,3)-a(iatm)%z)**2 )
+        disttest=dsqrt( (realattxyz(1,ibas)-a(iatm)%x)**2+(realattxyz(2,ibas)-a(iatm)%y)**2+(realattxyz(3,ibas)-a(iatm)%z)**2 )
         if (disttest<distcrit) then
             if (info==1) write(ioutid,"(' Basin',i6,' corresponds to atom',i6,' (',a,')')") ibas,iatm,a(iatm)%name 
             maplist(iatm)=ibas
@@ -2735,129 +2792,128 @@ end subroutine
 
 !!------- Integrate a real space function in the basins with multi-level refinement, indenspensible for Laplacian
 !DEPRECATED, since mixed type of grids perform better and faster
-subroutine integratebasinrefine
-use defvar
-use util
-use function
-use basinintmod
-implicit real*8(a-h,o-z)
-character c200tmp*200
-real*8 intval(-1:numatt),basinvol(-1:numatt),intvalpriv(-1:numatt),basinvolpriv(-1:numatt)
-integer walltime1,walltime2
-real*8 :: critlevel1=0.1D0,critlevel2=0.5D0,critlevel3=1D0
-integer :: nrefine1=1,nrefine2=2,nrefine3=5,nrefine4=7
-if (ifuncbasin/=1) then
-	write(*,*) "Error: This function is only applicable to AIM basins!"
-	return
-end if
-
-do while(.true.)
-	write(*,*) "-2 Return"
-	write(*,*) "-1 Print and set parameters for multi-level refinement"
-	call selfunc_interface(1,ifuncint)
-	if (ifuncint==-2) then
-		return
-	else if (ifuncint==-1) then
-		write(*,"(a)") " Note: A number n means each grid in corresponding value range will be transformed &
-		as n^3 grids around it during the integration to gain a higher integration accuracy. n=1 means the grids will remain unchanged. &
-		The ""value range"" referred here is the value range of the function used to generate basins"
-		write(*,*) "The value range and the times of refinement:"
-		write(*,"(' Smaller than ',f10.5,' :',i4)") critlevel1,nrefine1
-		write(*,"(' Between',f10.5,' and ',f10.5,' :',i4)") critlevel1,critlevel2,nrefine2
-		write(*,"(' Between',f10.5,' and ',f10.5,' :',i4)") critlevel2,critlevel3,nrefine3
-		write(*,"(' Larger than  ',f10.5,' :',i4)") critlevel3,nrefine4
-		write(*,*)
-		write(*,*) "Please input three thresholds to define the four ranges, e.g. 0.1,0.5,1"
-		write(*,*) "Note: Press ENTER button can retain current values unchanged"
-		read(*,"(a)") c200tmp
-		if (c200tmp/=' ') read(c200tmp,*) critlevel1,critlevel2,critlevel3
-		write(*,*) "Input the times of refinement for the grids in the four ranges, e.g. 1,2,5,7"
-		write(*,*) "Note: Press ENTER button can retain current values unchanged"
-		read(*,"(a)") c200tmp
-		if (c200tmp/=' ') read(c200tmp,*) nrefine1,nrefine2,nrefine3,nrefine4
-		write(*,*) "Done!"
-		write(*,*)
-	end if
-end do
-
-call walltime(walltime1)
-write(*,*) "Integrating, please wait..."
-intval=0D0
-basinvol=0D0
-ifinish=0
-!$OMP PARALLEL private(ix,iy,iz,ixref,iyref,izref,ndiv,irealatt,rnowx,rnowy,rnowz,rnowxtmp,rnowytmp,rnowztmp,orgxref,orgyref,orgzref,dxref,dyref,dzref,&
-!$OMP tmpval,tmpvalrefine,intvalpriv,basinvolpriv,nrefine) shared(intval,basinvol,ifinish) NUM_THREADS(nthreads)
-intvalpriv=0D0
-basinvolpriv=0D0
-!$OMP do schedule(DYNAMIC)
-do iz=2,nz-1
-	do iy=2,ny-1
-		do ix=2,nx-1
-			if (cubmat(ix,iy,iz)<critlevel1) then
-				nrefine=nrefine1 !The number of point to represent each edge
-			else if (cubmat(ix,iy,iz)<critlevel2) then
-				nrefine=nrefine2
-			else if (cubmat(ix,iy,iz)<critlevel3) then
-				nrefine=nrefine3
-			else
-				nrefine=nrefine4
-			end if
-			ndiv=nrefine**3
-			rnowx=orgx+(ix-1)*dx
-			rnowy=orgy+(iy-1)*dy
-			rnowz=orgz+(iz-1)*dz
-			orgxref=rnowx-dx/2 !Take corner position as original point of microcycle
-			orgyref=rnowy-dy/2
-			orgzref=rnowz-dz/2
-			dxref=dx/nrefine
-			dyref=dy/nrefine
-			dzref=dz/nrefine
-			tmpval=0D0
-			do ixref=1,nrefine
-				do iyref=1,nrefine
-					do izref=1,nrefine
-						rnowxtmp=orgxref+(ixref-0.5D0)*dxref
-						rnowytmp=orgyref+(iyref-0.5D0)*dyref
-						rnowztmp=orgzref+(izref-0.5D0)*dzref
-						if (ifuncint==-1) then
-							tmpvalrefine=cubmattmp(ix,iy,iz)
-						else if (ifuncint==0) then
-							tmpvalrefine=cubmat(ix,iy,iz)
-						else
-							tmpvalrefine=calcfuncall(ifuncint,rnowxtmp,rnowytmp,rnowztmp)
-						end if
-						tmpval=tmpval+tmpvalrefine/ndiv
-					end do
-				end do
-			end do
-			irealatt=gridbas(ix,iy,iz)
-			intvalpriv(irealatt)=intvalpriv(irealatt)+tmpval
-			basinvolpriv(irealatt)=basinvolpriv(irealatt)+1
-		end do
-	end do
-    ifinish=ifinish+1
-    call showprog(ifinish,nz-2)
-end do
-!$OMP end do
-!$OMP CRITICAL
-    intval=intval+intvalpriv
-    basinvol=basinvol+basinvolpriv
-!$OMP end CRITICAL
-!$OMP END PARALLEL
-call calc_dvol(dvol)
-intval=intval*dvol
-basinvol=basinvol*dvol !Basin volume
-write(*,*) "  #Basin          Integral        Volume(a.u.^3)"
-do irealatt=1,numrealatt
-	write(*,"(i8,f22.10,f20.8)") irealatt,intval(irealatt),basinvol(irealatt)
-end do
-write(*,"(' Sum of above values:',f20.8)") sum(intval(1:numrealatt))
-if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0)
-if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1)
-
-call walltime(walltime2)
-write(*,"(' Integrating basins took up wall clock time',i10,' s')") walltime2-walltime1
-end subroutine
+!Also, this routine is not compatible with nonorthogonal grid
+!subroutine integratebasinrefine
+!use defvar
+!use util
+!use function
+!use basinintmod
+!implicit real*8 (a-h,o-z)
+!character c200tmp*200
+!real*8 intval(-1:numatt),basinvol(-1:numatt),intvalpriv(-1:numatt),basinvolpriv(-1:numatt)
+!integer walltime1,walltime2
+!real*8 :: critlevel1=0.1D0,critlevel2=0.5D0,critlevel3=1D0
+!integer :: nrefine1=1,nrefine2=2,nrefine3=5,nrefine4=7
+!if (ifuncbasin/=1) then
+!	write(*,*) "Error: This function is only applicable to AIM basins!"
+!	return
+!end if
+!
+!do while(.true.)
+!	write(*,*) "-2 Return"
+!	write(*,*) "-1 Print and set parameters for multi-level refinement"
+!	call selfunc_interface(1,ifuncint)
+!	if (ifuncint==-2) then
+!		return
+!	else if (ifuncint==-1) then
+!		write(*,"(a)") " Note: A number n means each grid in corresponding value range will be transformed &
+!		as n^3 grids around it during the integration to gain a higher integration accuracy. n=1 means the grids will remain unchanged. &
+!		The ""value range"" referred here is the value range of the function used to generate basins"
+!		write(*,*) "The value range and the times of refinement:"
+!		write(*,"(' Smaller than ',f10.5,' :',i4)") critlevel1,nrefine1
+!		write(*,"(' Between',f10.5,' and ',f10.5,' :',i4)") critlevel1,critlevel2,nrefine2
+!		write(*,"(' Between',f10.5,' and ',f10.5,' :',i4)") critlevel2,critlevel3,nrefine3
+!		write(*,"(' Larger than  ',f10.5,' :',i4)") critlevel3,nrefine4
+!		write(*,*)
+!		write(*,*) "Please input three thresholds to define the four ranges, e.g. 0.1,0.5,1"
+!		write(*,*) "Note: Press ENTER button can retain current values unchanged"
+!		read(*,"(a)") c200tmp
+!		if (c200tmp/=' ') read(c200tmp,*) critlevel1,critlevel2,critlevel3
+!		write(*,*) "Input the times of refinement for the grids in the four ranges, e.g. 1,2,5,7"
+!		write(*,*) "Note: Press ENTER button can retain current values unchanged"
+!		read(*,"(a)") c200tmp
+!		if (c200tmp/=' ') read(c200tmp,*) nrefine1,nrefine2,nrefine3,nrefine4
+!		write(*,*) "Done!"
+!		write(*,*)
+!	end if
+!end do
+!
+!call walltime(walltime1)
+!write(*,*) "Integrating, please wait..."
+!intval=0D0
+!basinvol=0D0
+!ifinish=0
+!!$OMP PARALLEL private(ix,iy,iz,ixref,iyref,izref,ndiv,irealatt,rnowx,rnowy,rnowz,rnowxtmp,rnowytmp,rnowztmp,orgxref,orgyref,orgzref,dxref,dyref,dzref,&
+!!$OMP tmpval,tmpvalrefine,intvalpriv,basinvolpriv,nrefine) shared(intval,basinvol,ifinish) NUM_THREADS(nthreads)
+!intvalpriv=0D0
+!basinvolpriv=0D0
+!!$OMP do schedule(DYNAMIC)
+!do iz=izlow,izup
+!	do iy=iylow,iyup
+!		do ix=ixlow,ixup
+!			if (cubmat(ix,iy,iz)<critlevel1) then
+!				nrefine=nrefine1 !The number of point to represent each edge
+!			else if (cubmat(ix,iy,iz)<critlevel2) then
+!				nrefine=nrefine2
+!			else if (cubmat(ix,iy,iz)<critlevel3) then
+!				nrefine=nrefine3
+!			else
+!				nrefine=nrefine4
+!			end if
+!			ndiv=nrefine**3
+!            call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
+!			orgxref=rnowx-dx/2 !Take corner position as original point of microcycle
+!			orgyref=rnowy-dy/2
+!			orgzref=rnowz-dz/2
+!			dxref=dx/nrefine
+!			dyref=dy/nrefine
+!			dzref=dz/nrefine
+!			tmpval=0D0
+!			do ixref=1,nrefine
+!				do iyref=1,nrefine
+!					do izref=1,nrefine
+!						rnowxtmp=orgxref+(ixref-0.5D0)*dxref
+!						rnowytmp=orgyref+(iyref-0.5D0)*dyref
+!						rnowztmp=orgzref+(izref-0.5D0)*dzref
+!						if (ifuncint==-1) then
+!							tmpvalrefine=cubmattmp(ix,iy,iz)
+!						else if (ifuncint==0) then
+!							tmpvalrefine=cubmat(ix,iy,iz)
+!						else
+!							tmpvalrefine=calcfuncall(ifuncint,rnowxtmp,rnowytmp,rnowztmp)
+!						end if
+!						tmpval=tmpval+tmpvalrefine/ndiv
+!					end do
+!				end do
+!			end do
+!			irealatt=gridbas(ix,iy,iz)
+!			intvalpriv(irealatt)=intvalpriv(irealatt)+tmpval
+!			basinvolpriv(irealatt)=basinvolpriv(irealatt)+1
+!		end do
+!	end do
+!    ifinish=ifinish+1
+!    call showprog(ifinish,nz-2)
+!end do
+!!$OMP end do
+!!$OMP CRITICAL
+!    intval=intval+intvalpriv
+!    basinvol=basinvol+basinvolpriv
+!!$OMP end CRITICAL
+!!$OMP END PARALLEL
+!call calc_dvol(dvol)
+!intval=intval*dvol
+!basinvol=basinvol*dvol !Basin volume
+!write(*,*) "  #Basin          Integral        Volume(a.u.^3)"
+!do irealatt=1,numrealatt
+!	write(*,"(i8,f22.10,f20.8)") irealatt,intval(irealatt),basinvol(irealatt)
+!end do
+!write(*,"(' Sum of above values:',f20.8)") sum(intval(1:numrealatt))
+!if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0)
+!if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1)
+!
+!call walltime(walltime2)
+!write(*,"(' Integrating basins took up wall clock time',i10,' s')") walltime2-walltime1
+!end subroutine
 
 
 
@@ -2868,13 +2924,14 @@ end subroutine
 ! itype=10: Produce electric multipole moments
 !NNA and ECP are supported
 !Notice that the grid generated must cover the whole space!
+!It is assumed that wavefunction information is available
 subroutine integratebasinmix(itype)
 use defvar
 use util
-use function
+use functions
 use basinintmod
 use topo
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 !p suffix means private variable for parallel mode
 real*8 intval(-1:numrealatt,20),intvalp(-1:numrealatt,20) !Up to 20 functions can be evaluated and stored simultaneously
 real*8 basinvol(-1:numrealatt),basinvolp(-1:numrealatt),basinvdwvol(-1:numrealatt),basinvdwvolp(-1:numrealatt) !vdW is used to obtain the basin volume enclosed by 0.001 isosurface of rho
@@ -2892,6 +2949,8 @@ xxintp(-1:numrealatt),yyintp(-1:numrealatt),zzintp(-1:numrealatt),xyintp(-1:numr
 integer radpotAIM,sphpotAIM
 real*8 prodensgrad(0:4),gridval(100000,6) !Used for storing various information during integrating inside sphere
 character c80tmp*80,selectyn
+real*8 quadmom(3,3),tmpmat(3,3),tmpvec(3)
+
 nbeckeiter=8
 if (ifuncbasin/=1) then
 	write(*,"(a)") " Error: This function is only applicable to AIM basins! That means in option 1, you should select electron density to construct the basins."
@@ -2909,6 +2968,9 @@ if (ispecial==0) then
 		else if (ifuncint==-1) then
 			call setpromol
 		end if
+    else if (itype==10) then
+		write(*,"(a)") " Note: Atomic dipole/multipole moments will be calculated with respect to attractor of &
+        electron density rather than nuclear position, the discrepancy is usually very small"
 	end if
 else if (ispecial==1) then
 	continue !Don't let user to select integrand
@@ -2938,13 +3000,14 @@ call walltime(iwalltime1)
 !Determine trust radius and then integrate in the trust sphere
 !For each electron attractor determined by basin analysis, we identify its corresponding atom, then use Newton method to obtain exact NCP position
 !The grid employed in this stage is centered from NCP
+write(*,*)
 write(*,*) "Integrating in trust sphere..."
 do iatt=1,numrealatt !Cycle each attractors
 	do iatm=1,ncenter !Try to find corresponding atom
-		disttest=dsqrt( (realattxyz(iatt,1)-a(iatm)%x)**2+(realattxyz(iatt,2)-a(iatm)%y)**2+(realattxyz(iatt,3)-a(iatm)%z)**2 )
+		disttest=dsqrt( (realattxyz(1,iatt)-a(iatm)%x)**2+(realattxyz(2,iatt)-a(iatm)%y)**2+(realattxyz(3,iatt)-a(iatm)%z)**2 )
 		if (disttest<0.3D0) then !If distance between attractor and a nucleus is smaller than 0.3 Bohr, then the attractor will belong to the atom
 			att2atm(iatt)=iatm
-			write(*,"(' Attractor',i6,' corresponds to atom',i6,' (',a,')')") iatt,iatm,a(iatm)%name
+			write(*,"(/,' Attractor',i6,' corresponds to atom',i6,' (',a,')')") iatt,iatm,a(iatm)%name
             !Find exact NCP position from the nucleus and record to CPpos
 			numcpold=numcp
 			call findcp(a(iatm)%x,a(iatm)%y,a(iatm)%z,1) !If successfully converge to a NCP, the position is write to CPpos(:,numcp)
@@ -2960,7 +3023,7 @@ do iatt=1,numrealatt !Cycle each attractors
 		end if
 	end do
 	if (att2atm(iatt)==0) then !No real atom corresponds to this attractor
-		write(*,"(a,i6,a)") " Warning: Unable to determine the attractor",iatt," belongs to which atom!"
+		write(*,"(/,a,i6,a)") " Warning: Unable to determine the attractor",iatt," belongs to which atom!"
 		write(*,"(a)") " If this is a non-nuclear attractor, simply press ENTER button to continue. If you used pseudopotential &
 		and this attractor corresponds to the cluster of all maxima of its valence electron, then input the index of this atom (e.g. 9). &
 		Else you should input q to return and regenerate basins with smaller grid spacing"
@@ -2969,11 +3032,11 @@ do iatt=1,numrealatt !Cycle each attractors
 			return
 		else if (c80tmp==" ") then
 			numcpold=numcp
-			call findcp(realattxyz(iatt,1),realattxyz(iatt,2),realattxyz(iatt,3),1)
+			call findcp(realattxyz(1,iatt),realattxyz(2,iatt),realattxyz(3,iatt),1)
 			if (numcp==numcpold) then
 				write(*,*) "Unable to locate exact CP position! Use attractor position instead"
 				numcp=numcp+1
-				CPpos(1:3,numcp)=realattxyz(iatt,1:3)
+				CPpos(:,numcp)=realattxyz(:,iatt)
 			end if
 		else !ECP, input corresponding atom by user and directly use its nuclear position as grid center
 			read(c80tmp,*) iatmtmp
@@ -3049,7 +3112,7 @@ do iatt=1,numrealatt !Cycle each attractors
 				angtmp=vecang(dirx,diry,dirz,grad(1),grad(2),grad(3))
 				if (angtmp>angmax) angmax=angtmp
 				if (angtmp>45) then
-					write(*,"(' The trust radius of attractor',i6,' is',f10.3,' Bohr',/)") iatt,trustrad(iatt)
+					write(*,"(' The trust radius of attractor',i6,' is',f10.3,' Bohr')") iatt,trustrad(iatt)
 					isettrustrad=1 !The radius of last shell should be the final trust radius. Now exit
 					exit
 				end if
@@ -3061,7 +3124,7 @@ do iatt=1,numrealatt !Cycle each attractors
 	if (isettrustrad==0) then !Trust radius was not set after run over all shells
 		trustrad(iatt)=1000 !Infinite, for isolated atom
 		if (ispecial==2) trustrad(iatt)=20 !For Shubin's 2nd project, should not be as large as 1000, because for a point very far from nucleus the relative entropy cannot be evaluated
-		write(*,"(' The trust radius of attractor',i6,' is',f10.3,' Bohr',/)") iatt,trustrad(iatt)
+		write(*,"(' The trust radius of attractor',i6,' is',f10.3,' Bohr')") iatt,trustrad(iatt)
 	end if
 	
 	!Use DFT integration algorithm to integrate the region inside trust radius
@@ -3159,7 +3222,7 @@ do iatt=1,numrealatt !Cycle each attractors
 	!Some special cases:
 	if (ispecial==2) then !Shubin's 2nd project, integrate relative Shannon and Fisher information
 		!Current gridval content: 1=rho, 2=gradrho^2, 3=switchwei, 4=gradrho_x, 5=gradrho_y, 6=gradrho_z
-		call dealloall
+		call dealloall(0)
 		write(*,"(' Loading ',a,/)") trim(custommapname(att2atm(iatt)))
 		call readwfn(custommapname(att2atm(iatt)),1)
 		do ipt=1,nintgrid
@@ -3184,12 +3247,12 @@ do iatt=1,numrealatt !Cycle each attractors
 			tmpval=gridval(ipt,1)*(tmpvalx**2+tmpvaly**2+tmpvalz**2)
 			intval(iatt,3)=intval(iatt,3)+gridatt(ipt)%value*tmpval*switchwei
 		end do
-		call dealloall
+		call dealloall(0)
 		call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule) to calc real rho again
 	else if (ifuncint==-1) then !Integrate deformation density
 		gridval(:,2)=0D0
 		do iatm=1,ncenter_org !Cycle each atom to calculate deformation density at all integration grid
-			call dealloall
+			call dealloall(0)
 			call readwfn(custommapname(iatm),1)
 			do ipt=1,nintgrid
 				switchwei=gridval(ipt,3)
@@ -3201,7 +3264,7 @@ do iatt=1,numrealatt !Cycle each attractors
 			defdens=gridval(ipt,1)-gridval(ipt,2)
 			intval(iatt,1)=intval(iatt,1)+gridatt(ipt)%value*defdens*gridval(ipt,3)
 		end do
-		call dealloall
+		call dealloall(0)
 		call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule) to calc real rho again
 	end if
 end do !End cycle attractors
@@ -3260,20 +3323,17 @@ xyintp=0D0
 yzintp=0D0
 xzintp=0D0
 !$OMP do schedule(DYNAMIC)
-do iz=2,nz-1
-	rnowz=zarr(iz)
-	do iy=2,ny-1
-		rnowy=yarr(iy)
-		do ix=2,nx-1
-			rnowx=xarr(ix)
+do iz=izlow,izup
+	do iy=iylow,iyup
+		do ix=ixlow,ixup
 			if ((itype==2.or.itype==3).and.interbasgrid(ix,iy,iz)) cycle !If refine boundary grid at next stage, we don't calculate them at present stage
-! 			if (iz==nint(nz/2D0)) write(1,"('C',3f14.8)") rnowx*b2a,rnowy*b2a,rnowz*b2a !Examine grid distribution
+            call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 			iatt=gridbas(ix,iy,iz)
 ! 			do icp=1,numcp
 ! 				dist=dsqrt( (rnowx-CPpos(1,icp))**2+(rnowy-CPpos(2,icp))**2+(rnowz-CPpos(3,icp))**2 )
 ! 				if (disttest<trustrad(icp)) cycle cycix !The function inside trust radius is integrated by DFT integration
 ! 			end do
-			rx=rnowx-CPpos(1,iatt) !The relative distance between current point to corresponding attractor
+			rx=rnowx-CPpos(1,iatt) !The relative distance between current point to exact position of corresponding attractor
 			ry=rnowy-CPpos(2,iatt)
 			rz=rnowz-CPpos(3,iatt)
 			!Calculate switching function at current grid
@@ -3301,7 +3361,7 @@ do iz=2,nz-1
 						tmpval=calcfuncall(ifuncint,rnowx,rnowy,rnowz)
 					end if
 					intvalp(iatt,1)=intvalp(iatt,1)+tmpval*switchwei
-				else if (ispecial==1) then !For RCY
+				else if (ispecial==1) then !For Chunying Rong
 					tmpval=infoentro(2,rnowx,rnowy,rnowz) !Shannon entropy density, see JCP,126,191107 for example
 					tmpval2=Fisherinfo(1,rnowx,rnowy,rnowz) !Fisher information density, see JCP,126,191107 for example
 					tmpval3=weizsacker(rnowx,rnowy,rnowz) !Steric energy
@@ -3326,8 +3386,10 @@ do iz=2,nz-1
 			end if
 		end do
 	end do
+	!$OMP CRITICAL
     ifinish=ifinish+1
     if (ifuncint/=1) call showprog(ifinish,nz-2)
+	!$OMP end CRITICAL
 end do
 !$OMP end do
 !$OMP CRITICAL
@@ -3361,6 +3423,9 @@ if (itype==2.or.itype==3) then
 	nrk4gradswitch=40
 	hsizeinit=0.25D0
 	ifinish=0
+    gridd1=dsqrt(sum(gridv1**2))
+    gridd2=dsqrt(sum(gridv2**2))
+    gridd3=dsqrt(sum(gridv3**2))
 	!$OMP PARALLEL private(ix,iy,iz,iatt,rnowx,rnowy,rnowz,rx,ry,rz,tmpval,tmpval2,tmpval3,intvalp,basinvolp,basinvdwvolp,dist,tmps,iter,switchwei,&
 	!$OMP rnowxtmp,rnowytmp,rnowztmp,orgxref,orgyref,orgzref,dxref,dyref,dzref,ixref,iyref,izref,nrefine,ndiv,&
 	!$OMP k1,k2,k3,k4,dens,denshold,grad,hess,iattref,xtmp,ytmp,ztmp,irk4,hsize,ixtest,iytest,iztest,tmpdist) shared(intval,basinvol,basinvdwvol,ifinish) NUM_THREADS(nthreads)
@@ -3368,13 +3433,11 @@ if (itype==2.or.itype==3) then
 	basinvolp=0D0
 	basinvdwvolp=0D0
 	!$OMP do schedule(DYNAMIC)
-	do iz=2,nz-1
-		rnowz=zarr(iz)
-		do iy=2,ny-1
-			rnowy=yarr(iy)
-			do ix=2,nx-1
-				rnowx=xarr(ix)
+	do iz=izlow,izup
+		do iy=iylow,iyup
+			do ix=ixlow,ixup
 				if (.not.interbasgrid(ix,iy,iz)) cycle
+                call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 ! 				if (cubmat(ix,iy,iz)>0.001D0) then
 ! 					nrefine=2 !3 is the best
 ! 				else if (cubmat(ix,iy,iz)>0.001D0) then !0.0001 is the best
@@ -3458,17 +3521,17 @@ if (itype==2.or.itype==3) then
 									end do
 									!Check if the closest grid and its 26 neighbours have the same attribution, if yes, employ its attribution then exit
                                     !Find the closest grid to current position as (ixtest,iytest,iztest)
-									do ixtest=2,nx-1
+									do ixtest=ixlow,ixup !Find closest grid to current in direction 1
 										tmpdist=abs(xtmp-xarr(ixtest))
-										if (tmpdist<1.01D0*dx/2D0) exit
+										if (tmpdist<1.01D0*gridd1/2D0) exit
 									end do
-									do iytest=2,ny-1
+									do iytest=iylow,iyup !Find closest grid to current in direction 2
 										tmpdist=abs(ytmp-yarr(iytest))
-										if (tmpdist<1.01D0*dy/2D0) exit
+										if (tmpdist<1.01D0*gridd2/2D0) exit
 									end do
-									do iztest=2,nz-1
+									do iztest=izlow,izup !Find closest grid to current in direction 3
 										tmpdist=abs(ztmp-zarr(iztest))
-										if (tmpdist<1.01D0*dz/2D0) exit
+										if (tmpdist<1.01D0*gridd3/2D0) exit
 									end do
                                     if (ixtest==nx.or.iytest==ny.or.iztest==nz) cycle !Current position is far away from any grid, usually the initial case
 									iattref=gridbas(ixtest,iytest,iztest)
@@ -3523,8 +3586,10 @@ if (itype==2.or.itype==3) then
 				
 			end do !End cycle ix grid
 		end do
+		!$OMP CRITICAL
 		ifinish=ifinish+1
 		call showprog(ifinish,nz-2)
+		!$OMP end CRITICAL
 	end do
 	!$OMP end do
 	!$OMP CRITICAL
@@ -3546,18 +3611,16 @@ if (ispecial==2) then !Shubin's 2nd project, integrate relative Shannon and rela
 	write(*,*)
 	write(*,*) "Calculating electron density and its gradient for actual system at each grid"
 	!$OMP PARALLEL DO SHARED(rhogrid,rhogradgrid,ifinish) PRIVATE(ix,iy,iz,ptx,pty,ptz) schedule(dynamic) NUM_THREADS(nthreads)
-	do iz=2,nz-1
-		ptz=zarr(iz)
-		do iy=2,ny-1
-			pty=yarr(iy)
-			do ix=2,nx-1
-				ptx=xarr(ix)
+	do iz=izlow,izup
+		do iy=iylow,iyup
+			do ix=ixlow,ixup
+				call getgridxyz(ix,iy,iz,ptx,pty,ptz)
 				call calchessmat_dens(1,ptx,pty,ptz,rhogrid(ix,iy,iz),rhogradgrid(:,ix,iy,iz),hess)
 			end do
 		end do
 		!$OMP CRITICAL
 		ifinish=ifinish+1
-		write(*,"(' Finished',i6,' /',i6)") ifinish,nz-1
+		write(*,"(' Finished',i6,' /',i6)") ifinish,izup-izlow+1
 		!$OMP end CRITICAL
 	end do
 	!$OMP end PARALLEL DO
@@ -3565,20 +3628,18 @@ if (ispecial==2) then !Shubin's 2nd project, integrate relative Shannon and rela
 	write(*,*) "Calculating electron density and its gradient for free-state atom at each grid"
 	do iatt=1,numrealatt !Cycle each attractors
 		write(*,"(' Processing ',a)") trim(custommapname(att2atm(iatt)))
-		call dealloall
+		call dealloall(0)
 		call readwfn(custommapname(att2atm(iatt)),1)
 		!$OMP PARALLEL private(intvalp,ix,iy,iz,ptx,pty,ptz,rx,ry,rz,dist,tmps,switchwei,&
 		!$OMP rho,rhograd2,prodens,prodensgrad,prodensgrad2,tmpval1,tmpval2,tmpval3,tmpx,tmpy,tmpz) shared(intval) NUM_THREADS(nthreads)
 		intvalp=0D0
 		!$OMP do schedule(DYNAMIC)
-		do iz=2,nz-1
-			ptz=zarr(iz)
-			do iy=2,ny-1
-				pty=yarr(iy)
-				do ix=2,nx-1
-					ptx=xarr(ix)
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
 					if (gridbas(ix,iy,iz)==iatt) then
 						!Calculate switching function at current grid
+						call getgridxyz(ix,iy,iz,ptx,pty,ptz)
 						rx=ptx-CPpos(1,iatt) !The relative distance between current point to corresponding attractor
 						ry=pty-CPpos(2,iatt)
 						rz=ptz-CPpos(3,iatt)
@@ -3622,7 +3683,7 @@ if (ispecial==2) then !Shubin's 2nd project, integrate relative Shannon and rela
 		!$OMP END PARALLEL
 	end do
 	deallocate(rhogrid,rhogradgrid)
-	call dealloall
+	call dealloall(0)
 	write(*,"(' Reloading ',a)") trim(firstfilename)
 	call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule)
 else if (ifuncint==-1) then !Deformation density
@@ -3632,27 +3693,29 @@ else if (ifuncint==-1) then !Deformation density
 	prorhogrid=0D0
 	do iatm=1,ncenter_org !Cycle each atom
 		write(*,"(' Processing atom',i6,a,'...')") iatm,a_org(iatm)%name
-		call dealloall
+		call dealloall(0)
 		call readwfn(custommapname(iatm),1)
-		!$OMP PARALLEL DO SHARED(prorhogrid) PRIVATE(ix,iy,iz) schedule(dynamic) NUM_THREADS(nthreads)
-		do iz=2,nz-1
-			do iy=2,ny-1
-				do ix=2,nx-1
-					prorhogrid(ix,iy,iz)=prorhogrid(ix,iy,iz)+fdens(xarr(ix),yarr(iy),zarr(iz))
+		!$OMP PARALLEL DO SHARED(prorhogrid) PRIVATE(tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
+					call getgridxyz(ix,iy,iz,tmpx,tmpy,tmpz)
+					prorhogrid(ix,iy,iz)=prorhogrid(ix,iy,iz)+fdens(tmpx,tmpy,tmpz)
 				end do
 			end do
 		end do
 		!$OMP end PARALLEL DO
 	end do
 	do iatt=1,numrealatt !Cycle each attractors
-		do iz=2,nz-1
-			do iy=2,ny-1
-				do ix=2,nx-1
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
 					if (gridbas(ix,iy,iz)==iatt) then
 						!Calculate switching function at current grid
-						rx=xarr(ix)-CPpos(1,iatt) !The relative distance between current point to corresponding attractor
-						ry=yarr(iy)-CPpos(2,iatt)
-						rz=zarr(iz)-CPpos(3,iatt)
+						call getgridxyz(ix,iy,iz,tmpx,tmpy,tmpz)
+						rx=tmpx-CPpos(1,iatt) !Relative distance between current point to corresponding attractor
+						ry=tmpy-CPpos(2,iatt)
+						rz=tmpz-CPpos(3,iatt)
 						dist=dsqrt(rx*rx+ry*ry+rz*rz)
 						tmps=dist-trustrad(iatt)
 						if (tmps>1) then
@@ -3674,7 +3737,7 @@ else if (ifuncint==-1) then !Deformation density
 		end do
 	end do
 	deallocate(prorhogrid)
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule) to calc real rho again
 end if
 
@@ -3689,8 +3752,8 @@ if (itype==1.or.itype==2.or.itype==3) then !Integrate specific real space functi
 		end do
 		write(*,"(' Sum of above integrals:',f20.8)") sum(intval(1:numrealatt,1))
 		write(*,"(' Sum of basin volumes (rho>0.001):',f12.3,' Bohr^3')") sum(basinvdwvol(1:numrealatt))
-		if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0,1)
-		if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1,1)
+		if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0,1)
+		if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1,1)
 		write(*,*)
 		rnormfac=sum(intval(1:numrealatt,1))/(nelec+nEDFelec) !The electrons represented by EDF must be taken into account!
 		write(*,"(' Normalization factor of the integral of electron density is',f12.6)") rnormfac
@@ -3723,8 +3786,8 @@ if (itype==1.or.itype==2.or.itype==3) then !Integrate specific real space functi
 			end do
 			write(*,"(' Sum of above integrals:',f23.8)") sum(intval(1:numrealatt,1))
 			write(*,"(' Sum of basin volumes (rho>0.001):',f12.3,' Bohr^3')") sum(basinvdwvol(1:numrealatt))
-			if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0,1)
-			if (any(gridbas(2:nx-1,2:ny-1,2:nz-1)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1,1)
+			if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==0)) write(*,"(' Integral of unassigned grids:',f20.8)") intval(0,1)
+			if (any(gridbas(ixlow:ixup,iylow:iyup,izlow:izup)==-1)) write(*,"(' Integral of the grids travelled to box boundary:',f20.8)") intval(-1,1)
 		else if (ispecial==1) then
 			write(*,*) "Total result:"
 			write(*,*) "    Atom       Basin     Shannon       Fisher      Steric ene  Vol(rho>0.001)"
@@ -3784,13 +3847,21 @@ else if (itype==10) then !Electric multipole moment
 		do iatt=1,numrealatt
 			if (att2atm(iatt)/=iatm) cycle
 			if (iatm==0) then
-				write(ioutid,"(' Result of NNA',i6)") iatt
+				write(ioutid,"(' *****  Result of NNA',i6)") iatt
 			else
-				write(ioutid,"(' Result of atom',i6,' (',a,')')") iatm,a(iatm)%name
+				write(ioutid,"(' *****  Result of atom',i6,' (',a,'), corresponding to basin',i6)") iatm,a(iatm)%name,iatt
 			end if
-			write(ioutid,"(' Basin electric monopole moment:',f12.6)") -eleint(iatt)
-			write(ioutid,"(' Basin electric dipole moment:')") 
-			write(ioutid,"('  X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Magnitude=',f12.6)") -xint(iatt),-yint(iatt),-zint(iatt),sqrt(xint(iatt)**2+yint(iatt)**2+zint(iatt)**2)
+			write(ioutid,"(' Basin monopole moments (from electrons):',f12.6)") -eleint(iatt)
+			if (iatm/=0) then
+				if (nEDFelec==0) then !Normal case, all electron basis or using pseudopotential but not accompanied by EDF
+					atmchgtmp=a(iatm)%charge-eleint(iatt)
+				else !EDF is used, so using a(iatm)%index instead of a(iatm)%charge
+					atmchgtmp=a(iatm)%index-eleint(iatt)
+				end if
+				write(ioutid,"(' Atomic charge:',f12.6)") atmchgtmp
+            end if
+			write(ioutid,"(' Basin dipole moments:')") 
+			write(ioutid,"(' X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Norm=',f12.6)") -xint(iatt),-yint(iatt),-zint(iatt),sqrt(xint(iatt)**2+yint(iatt)**2+zint(iatt)**2)
 			eleinttot=eleinttot+eleint(iatt)
 			dipelex=-eleint(iatt)*CPpos(1,iatt)+(-xint(iatt)) !Contribution to molecular total dipole moment
 			dipeley=-eleint(iatt)*CPpos(2,iatt)+(-yint(iatt))
@@ -3799,30 +3870,50 @@ else if (itype==10) then !Electric multipole moment
 			dipeleytot=dipeleytot+dipeley
 			dipeleztot=dipeleztot+dipelez
 			write(ioutid,"(' Basin electron contribution to molecular dipole moment:')")
-			write(ioutid,"('  X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Magnitude=',f12.6)") dipelex,dipeley,dipelez,sqrt(dipelex**2+dipeley**2+dipelez**2)
-			write(ioutid,"(' Basin electric quadrupole moment (Cartesian form):')")
+			write(ioutid,"(' X=',f12.6,'  Y=',f12.6,'  Z=',f12.6,'  Norm=',f12.6)") dipelex,dipeley,dipelez,sqrt(dipelex**2+dipeley**2+dipelez**2)
+			write(ioutid,"(' Basin quadrupole moments (Traceless Cartesian form):')")
 			rrint=xxint(iatt)+yyint(iatt)+zzint(iatt)
 			QXX=-(3*xxint(iatt)-rrint)/2
 			QYY=-(3*yyint(iatt)-rrint)/2
 			QZZ=-(3*zzint(iatt)-rrint)/2
-			write(ioutid,"(' QXX=',f12.6,'  QXY=',f12.6,'  QXZ=',f12.6)") QXX,-(3*xyint(iatt))/2,-(3*xzint(iatt))/2
-			write(ioutid,"(' QYX=',f12.6,'  QYY=',f12.6,'  QYZ=',f12.6)") -(3*xyint(iatt))/2,QYY,-(3*yzint(iatt))/2
-			write(ioutid,"(' QZX=',f12.6,'  QZY=',f12.6,'  QZZ=',f12.6)") -(3*xzint(iatt))/2,-(3*yzint(iatt))/2,QZZ
-			write(ioutid,"( ' The magnitude of electric quadrupole moment (Cartesian form):',f12.6)") dsqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
-			R20=-(3*zzint(iatt)-rrint)/2D0 !Notice that the negative sign, because electrons carry negative charge
+			quadmom(1,1)=QXX
+			quadmom(1,2)=(-3*xyint(iatt))/2
+			quadmom(1,3)=(-3*xzint(iatt))/2
+			quadmom(2,1)=(-3*xyint(iatt))/2
+			quadmom(2,2)=QYY
+			quadmom(2,3)=(-3*yzint(iatt))/2
+			quadmom(3,1)=(-3*xzint(iatt))/2
+			quadmom(3,2)=(-3*yzint(iatt))/2
+			quadmom(3,3)=QZZ
+			write(ioutid,"(' XX=',f12.6,'  XY=',f12.6,'  XZ=',f12.6)") quadmom(1,:)
+			write(ioutid,"(' YX=',f12.6,'  YY=',f12.6,'  YZ=',f12.6)") quadmom(2,:)
+			write(ioutid,"(' ZX=',f12.6,'  ZY=',f12.6,'  ZZ=',f12.6)") quadmom(3,:)
+			write(ioutid,"(' Magnitude of the traceless quadrupole moment tensor:',f12.6)") sqrt(2D0/3D0*(QXX**2+QYY**2+QZZ**2))
+			R20=-(3*zzint(iatt)-rrint)/2D0 !Notice the negative sign, because electrons carry negative charge
 			R2n1=-dsqrt(3D0)*yzint(iatt)
 			R2p1=-dsqrt(3D0)*xzint(iatt)
 			R2n2=-dsqrt(3D0)*xyint(iatt)
 			R2p2=-dsqrt(3D0)/2D0*(xxint(iatt)-yyint(iatt))
-			write(ioutid,"(' Electric quadrupole moments (Spherical harmonic form):')")
+			write(ioutid,"(' Basin quadrupole moments (Spherical harmonic form):')")
 			write(ioutid,"(' Q_2,0 =',f11.6,'   Q_2,-1=',f11.6,'   Q_2,1=',f11.6)") R20,R2n1,R2p1
 			write(ioutid,"(' Q_2,-2=',f11.6,'   Q_2,2 =',f11.6)") R2n2,R2p2
-			write(ioutid,"( ' Magnitude: |Q_2|=',f12.6)") dsqrt(R20**2+R2n1**2+R2p1**2+R2n2**2+R2p2**2)
+			write(ioutid,"(' Magnitude: |Q_2|=',f12.6)") dsqrt(R20**2+R2n1**2+R2p1**2+R2n2**2+R2p2**2)
 			ESEx=xxint(iatt);ESEy=yyint(iatt);ESEz=zzint(iatt)
 			ESE=ESEx+ESEy+ESEz
         		write(ioutid,"(a,f16.6)") " Basin electronic spatial extent <r^2>:",ESE
 			write(ioutid,"(' Components of <r^2>:  X=',f15.6,'  Y=',f15.6,'  Z=',f15.6)") ESEx,ESEy,ESEz
 			write(ioutid,*)
+			!Output dipole and quadrupole moments
+            if (ioutid==10.and.iatm/=0) then
+				write(20,"(' Atom',i6,' (',a,')')") iatm,a(iatm)%name
+				write(20,"(' Atomic dipole moment:',3f12.6)") -xint(iatt),-yint(iatt),-zint(iatt)
+				call diagsymat(quadmom,tmpmat,tmpvec,istat)
+				write(20,"(' Information of atomic quadrupole moment (Traceless Cartesian):')")
+				write(20,"(' Eigenvalue 1:',f12.6,'  Eigenvector:',3f12.6)") tmpvec(1),tmpmat(:,1)
+				write(20,"(' Eigenvalue 2:',f12.6,'  Eigenvector:',3f12.6)") tmpvec(2),tmpmat(:,2)
+				write(20,"(' Eigenvalue 3:',f12.6,'  Eigenvector:',3f12.6)") tmpvec(3),tmpmat(:,3)
+				write(20,*)
+            end if
 		end do
 	end do
 	!Output overall electric properties
@@ -3839,24 +3930,27 @@ else if (itype==10) then !Electric multipole moment
 	dipmolz=dipnucz+dipeleztot
 	write(ioutid,"( ' Molecular dipole moment:')")
 	write(ioutid,"(' X=',f12.6,' Y=',f12.6,' Z=',f12.6,' Norm=',f12.6)") dipmolx,dipmoly,dipmolz,sqrt(dipmolx**2+dipmoly**2+dipmolz**2)
-	if (ioutid==6) write(*,*)
 	if (ioutid==10) then
 		close(10)
-		write(*,*) "Done!"
+        close(20)
+		write(*,*) "Outputting finished!"
 		return
 	end if
 end if
 
 call walltime(iwalltime2)
-write(*,"(' Integrating basins took up wall clock time',i10, 's')") iwalltime2-iwalltime1
+write(*,"(/,' Integrating basins took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 
 if (itype==10) then
 	write(*,*)
-	write(*,*) "If also outputting the result to multipol.txt in current folder? (y/n)"
+	write(*,*) "If also outputting the above result to multipole.txt in current folder? (y/n)"
+    write(*,"(a)") " If choose ""y"", atom_moment.txt will also be outputted in current folder, &
+    which contains electric dipole moments as well as eigenvalues and eigenvectors of quadrupole moment tensors of all atoms"
 	read(*,*) selectyn
 	if (selectyn=='y'.or.selectyn=='Y') then
 		ioutid=10
-		open(10,file="multipol.txt",status="replace")
+		open(10,file="multipole.txt",status="replace")
+        open(20,file="atom_moment.txt",status="replace")
 		goto 101
 	end if
 end if
@@ -3870,7 +3964,7 @@ end subroutine
 subroutine gengradmat
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 wfnval(nmo),wfnderv(3,nmo),gradrho(3),EDFgrad(3),sumgrad2
 if (allocated(cubmatvec)) then
@@ -3882,11 +3976,9 @@ ifinish=0
 write(*,*) "Generating grid data of gradient of electron density..."
 !$OMP PARALLEL DO SHARED(cubmatvec,ifinish) PRIVATE(ix,iy,iz,tmpx,tmpy,tmpz,wfnval,wfnderv,gradrho,imo) schedule(dynamic) NUM_THREADS(nthreads)
 do iz=1,nz
-	tmpz=orgz+(iz-1)*dz
 	do iy=1,ny
-		tmpy=orgy+(iy-1)*dy
 		do ix=1,nx
-			tmpx=orgx+(ix-1)*dx
+            call getgridxyz(ix,iy,iz,tmpx,tmpy,tmpz)
 			call orbderv(2,1,nmo,tmpx,tmpy,tmpz,wfnval,wfnderv)
 			gradrho=0D0
 			do imo=1,nmo
@@ -3895,8 +3987,10 @@ do iz=1,nz
 			cubmatvec(:,ix,iy,iz)=2*gradrho(:)
 		end do
 	end do
+    !$OMP CRITICAL
     ifinish=ifinish+1
     call showprog(ifinish,nz)
+    !$OMP END CRITICAL
 end do
 !$OMP END PARALLEL DO
 end subroutine
@@ -3906,10 +4000,10 @@ end subroutine
 !!------- Calculate high ELF localization domain populations and volumes (HELP and HELV), ChemPhysChem, 14, 3714 (2013)
 subroutine HELP_HELV
 use defvar
-use function
+use functions
 use basinintmod
 use util
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 real*8 :: ELFthres=0.5D0,rhothres=0.001D0
 real*8 HELP,HELV,HELP_priv,HELV_priv
 character c2000tmp*2000
@@ -3951,12 +4045,10 @@ do while(.true.)
             basinpop_priv=0
             basinvol_priv=0
             !$OMP do schedule(DYNAMIC)
-            do iz=2,nz-1
-	            do iy=2,ny-1
-		            do ix=2,nx-1
-			            rnowx=orgx+(ix-1)*dx
-			            rnowy=orgy+(iy-1)*dy
-			            rnowz=orgz+(iz-1)*dz
+			do iz=izlow,izup
+				do iy=iylow,iyup
+					do ix=ixlow,ixup
+			            call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 			            irealatt=gridbas(ix,iy,iz)
                         rhotmp=fdens(rnowx,rnowy,rnowz)
                         ELFtmp=ELF_LOL(rnowx,rnowy,rnowz,"ELF")
@@ -4010,7 +4102,7 @@ att2atm=0
 crit=0.3D0 !If distance between attractor and a nucleus is smaller than 0.3 Bohr, then the attractor will belong to the atom
 do iatt=1,numrealatt !Cycle each attractors
 	do iatm=1,ncenter
-        disttest=dsqrt( (realattxyz(iatt,1)-a(iatm)%x)**2+(realattxyz(iatt,2)-a(iatm)%y)**2+(realattxyz(iatt,3)-a(iatm)%z)**2 )
+        disttest=dsqrt( (realattxyz(1,iatt)-a(iatm)%x)**2+(realattxyz(2,iatt)-a(iatm)%y)**2+(realattxyz(3,iatt)-a(iatm)%z)**2 )
         if (disttest<0.3D0) then 
 	        att2atm(iatt)=iatm
             exit
@@ -4056,14 +4148,14 @@ use defvar
 use util
 use basinintmod
 use topo
-use function
+use functions
 implicit real*8 (a-h,o-z)
 character c80tmp*80
 real*8 orbval(nmo)
 real*8,allocatable :: BOMsum(:,:),BOMsumb(:,:),BOMtmp(:,:),BOMtmpb(:,:)
 !Below are used by uniform + atomic center grid integration
 real*8 trustrad(numrealatt)
-real*8 dens,grad(3),hess(3,3),xarr(nx),yarr(ny),zarr(nz)
+real*8 dens,grad(3),hess(3,3)
 real*8,allocatable :: potx(:),poty(:),potz(:),potw(:)
 type(content),allocatable :: gridatt(:) !Record correspondence between attractor and grid
 integer att2atm(numrealatt) !The attractor corresponds to which atom. If =0, means this is a NNA
@@ -4140,13 +4232,11 @@ if (igridkind==1) then
 		BOMtmp=0D0
 		if (nmatsizeb>0) BOMtmpb=0D0
 		!$OMP do schedule(DYNAMIC)
-		do iz=2,nz-1
-			do iy=2,ny-1
-				do ix=2,nx-1
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
 					if (gridbas(ix,iy,iz)==ibas) then
-						rnowx=orgx+(ix-1)*dx
-						rnowy=orgy+(iy-1)*dy
-						rnowz=orgz+(iz-1)*dz
+						call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
                         !Total or alpha part
 						call orbderv(1,1,nmatsize,rnowx,rnowy,rnowz,orbval)
 						do imo=1,nmatsize
@@ -4190,7 +4280,7 @@ else if (igridkind==2) then
 	do iatt=1,numrealatt !Cycle each electron density attractor
     
 		do iatm=1,ncenter !Try to find corresponding atom
-			disttest=dsqrt( (realattxyz(iatt,1)-a(iatm)%x)**2+(realattxyz(iatt,2)-a(iatm)%y)**2+(realattxyz(iatt,3)-a(iatm)%z)**2 )
+			disttest=dsqrt( (realattxyz(1,iatt)-a(iatm)%x)**2+(realattxyz(2,iatt)-a(iatm)%y)**2+(realattxyz(3,iatt)-a(iatm)%z)**2 )
 			if (disttest<0.3D0) then !If distance between attractor and a nucleus is smaller than 0.3 Bohr, then the attractor corresponds to the atom
 				att2atm(iatt)=iatm
 				write(*,"(' Attractor',i6,' corresponds to atom',i6,' (',a,')')") iatt,iatm,a(iatm)%name
@@ -4217,11 +4307,11 @@ else if (igridkind==2) then
 				return
 			else if (c80tmp==" ") then
 				numcpold=numcp
-				call findcp(realattxyz(iatt,1),realattxyz(iatt,2),realattxyz(iatt,3),1)
+				call findcp(realattxyz(1,iatt),realattxyz(2,iatt),realattxyz(3,iatt),1)
 				if (numcp==numcpold) then
 					write(*,*) "Unable to locate exact CP position! Use attractor position instead"
 					numcp=numcp+1
-					CPpos(1:3,numcp)=realattxyz(iatt,1:3)
+					CPpos(:,numcp)=realattxyz(:,iatt)
 				end if
 			else !ECP, input corresponding atom by user and directly use its nuclear position as grid center
 				read(c80tmp,*) iatmtmp
@@ -4361,17 +4451,6 @@ else if (igridkind==2) then
 		!$OMP END PARALLEL
 	end do !End cycle attractors
 
-	!Set coordinate of uniform grids
-	do ix=1,nx
-		xarr(ix)=orgx+(ix-1)*dx
-	end do
-	do iy=1,ny
-		yarr(iy)=orgy+(iy-1)*dy
-	end do
-	do iz=1,nz
-		zarr(iz)=orgz+(iz-1)*dz
-	end do
-
     	!Integrating uniform grids
 	write(*,*) "Integrating uniform grids..."
 	ifinish=0
@@ -4382,12 +4461,10 @@ else if (igridkind==2) then
 		BOMtmp=0D0
 		if (nmatsizeb>0) BOMtmpb=0D0
 		!$OMP do schedule(DYNAMIC)
-		do iz=2,nz-1
-			rnowz=zarr(iz)
-			do iy=2,ny-1
-				rnowy=yarr(iy)
-				do ix=2,nx-1
-					rnowx=xarr(ix)
+		do iz=izlow,izup
+			do iy=iylow,iyup
+				do ix=ixlow,ixup
+                    call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 					iatt=gridbas(ix,iy,iz)
                     if (iatt/=ibas) cycle
 					rx=rnowx-CPpos(1,iatt) !The relative distance between current point to corresponding attractor
@@ -4561,10 +4638,11 @@ end subroutine
 
 
 !!-------- Assign ELF basin labels
+!This function can be used only when wavefunction information is available
 subroutine assignELFbasinlab
 use defvar
 use basinintmod
-use function
+use functions
 implicit real*8 (a-h,o-z)
 character(len=200) :: basinlab(numrealatt) !Label of each basin
 character c80tmp*80,c200tmp*200,c10000tmp*10000
@@ -4589,7 +4667,7 @@ real*8 :: ELFcore_r(0:nelesupp)=(/ 0D0,0D0,1D0,& !Ghost,H,He(1~2). Arbitrarily d
 3.906D0,3.330D0,2.998D0,2.938D0,3.084D0,3.036D0,2.990D0,2.948D0,2.912D0,2.682D0,2.830D0,& !Cs~Tb(55~65)
 2.794D0,2.760D0,2.730D0,2.700D0,2.672D0,2.412D0,2.368D0,2.338D0,2.344D0,2.364D0,2.370D0,2.442D0,& !Dy~Ir(66~77)
 2.513D0,2.513D0,2.584D0,2.310D0,1.942D0,1.736D0,1.634D0,1.540D0,1.454D0,4.112D0,3.402D0,& !Pt~Ra(78~88)
-3.182D0,2.990D0,3.036D0,3.088D0,3.036D0,3.136D0,3.086D0,2.750D0,2.994D0,2.956D0,2.916D0,2.874D0,2.836D0,2.802D0,2.448D0,(3.0D0,i=104,nelesupp) /) !Ac~Lr(89~103),~all
+3.182D0,2.990D0,3.036D0,3.088D0,3.036D0,3.136D0,3.086D0,2.750D0,2.994D0,2.956D0,2.916D0,2.874D0,2.836D0,2.802D0,2.448D0,(3D0,i=104,nelesupp) /) !Ac~Lr(89~103),~all
 
 if (any(a%index>103)) then
 	write(*,"(/,a)") " Error: There are atom(s) with element index larger than 103, this function is unable to use in this case"
@@ -4604,9 +4682,9 @@ write(*,*) "Assigning labels for core basins..."
 do irealatt=1,numrealatt !Cycle each real attractor
     cycatt: do idx=1,nrealatthas(irealatt) !Cycle each sub attractor
 		iatt=realatttable(irealatt,idx)
-		attx=attxyz(iatt,1)
-		atty=attxyz(iatt,2)
-		attz=attxyz(iatt,3)
+		attx=attxyz(1,iatt)
+		atty=attxyz(2,iatt)
+		attz=attxyz(3,iatt)
 		do iatm=1,ncenter
 			dist=dsqrt((attx-a(iatm)%x)**2+(atty-a(iatm)%y)**2+(attz-a(iatm)%z)**2)
 			thres=ELFcore_r(a(iatm)%index)
@@ -4632,9 +4710,9 @@ do irealatt=1,numrealatt !Cycle all attractors
     if (nrealatthas(irealatt)==1) then !Check if this attractor correspond to any H or He, if yes, add to member list
 		do iatm=1,ncenter
 			if (a(iatm)%index<=2) then
-				attx=realattxyz(irealatt,1)
-				atty=realattxyz(irealatt,2)
-				attz=realattxyz(irealatt,3)
+				attx=realattxyz(1,irealatt)
+				atty=realattxyz(2,irealatt)
+				attz=realattxyz(3,irealatt)
 				dist=dsqrt((attx-a(iatm)%x)**2+(atty-a(iatm)%y)**2+(attz-a(iatm)%z)**2)
                 if (dist<0.2D0) then
 					basinnatm(irealatt)=1
@@ -4644,9 +4722,9 @@ do irealatt=1,numrealatt !Cycle all attractors
 			end if
         end do
     end if
-	do iz=2,nz-1
-		do iy=2,ny-1
-			do ix=2,nx-1
+	do iz=izlow,izup
+		do iy=iylow,iyup
+			do ix=ixlow,ixup
 				!This is a boundary grid and belongs to this attractor
 				if (interbasgrid(ix,iy,iz).and.gridbas(ix,iy,iz)==irealatt) then
 					call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
@@ -4724,9 +4802,9 @@ ifinish=0
 basinpop_priv=0D0
 basinvol_priv=0D0
 !$OMP do schedule(DYNAMIC)
-do iz=2,nz-1
-	do iy=2,ny-1
-		do ix=2,nx-1
+do iz=izlow,izup
+	do iy=iylow,iyup
+		do ix=ixlow,ixup
 			call getgridxyz(ix,iy,iz,rnowx,rnowy,rnowz)
 			irealatt=gridbas(ix,iy,iz)
 			basinpop_priv(irealatt)=basinpop_priv(irealatt)+fdens(rnowx,rnowy,rnowz)
@@ -4734,7 +4812,7 @@ do iz=2,nz-1
 		end do
 	end do
     ifinish=ifinish+1
-    call showprog(ifinish,nz-2)
+    call showprog(ifinish,izup-izlow+1)
 end do
 !$OMP end do
 !$OMP CRITICAL
@@ -4749,7 +4827,7 @@ basinvol=basinvol*dvol
 !Output result according to basin indices
 write(*,*)
 write(*,*) "The following information is printed according to basin indices"
-write(*,*) "Basin indices, populations (e), volumes (Angstrom^3) and assigned labels"
+write(*,*) "Basin indices, populations (e), volumes (Angstrom^3) and assigned labels:"
 sumcore=0
 sumval=0
 do iatt=1,numrealatt
@@ -4846,7 +4924,7 @@ end subroutine
 !!-------- Find outermost minimum of spherically averaged ELF for current system
 !Mainly used to construct ELFcore_r in subroutine assignELFbasinlab
 subroutine get_ELF_outer_minimum
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: potx(:),poty(:),potz(:),potw(:),radpos(:)
 nsphpt=170
@@ -4875,3 +4953,36 @@ do while (radr>0.1D0)
 end do
 end subroutine
 
+
+
+!!--------- Generate core electron density grid data, store to corerhogrid(:,:,:)
+subroutine getcorerhogrid
+use defvar
+use functions
+use basinintmod
+use util
+implicit real*8 (a-h,o-z)
+call readEDFlib(0)
+write(*,*) "Generating grid data of core density..."
+if (allocated(corerhogrid)) deallocate(corerhogrid)
+allocate(corerhogrid(nx,ny,nz))
+ifinish=0
+!$OMP PARALLEL DO SHARED(corerhogrid,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
+do k=1,nz
+	do j=1,ny
+		do i=1,nx
+			call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+			call EDFrho(1,tmpx,tmpy,tmpz,corerhogrid(i,j,k))
+		end do
+	end do
+	!$OMP CRITICAL
+    ifinish=ifinish+1
+    call showprog(ifinish,nz)
+    !$OMP END CRITICAL
+end do
+!$OMP END PARALLEL DO
+call dealloEDF
+!open(12,file="corerhogrid.cub",status="replace")
+!call outcube(corerhogrid,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,12)
+!close(12)
+end subroutine

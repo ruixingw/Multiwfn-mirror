@@ -79,13 +79,13 @@ do while(.true.)
 	if (irdfreq==1) write(*,*) "-1 Toggle loading frequency-dependent result for options 1 and 7, current: Yes"
 	if (irdfreq==0) write(*,*) "-1 Toggle loading frequency-dependent result for options 1 and 7, current: No"
 	write(*,*) "0 Return"
-	write(*,*) "1 ""Polar"" + analytic 3-order deriv. (HF/DFT/Semi-empirical)"
-	write(*,*) "2 ""Polar"" + analytic 2-order deriv. (MP2...)"
+	write(*,*) "1 ""Polar"" + analytic 3-order deriv. (HF,DFT,semi-empirical)"
+	write(*,*) "2 ""Polar"" + analytic 2-order deriv. (MP2,TDDFT,CIS...)"
 	write(*,*) "3 ""Polar=Cubic"" + analytic 2-order deriv."
 	write(*,*) "4 ""Polar"" + analytic 1-order deriv. (CISD,QCISD,CCSD,MP3,MP4(SDQ)...)"
 	write(*,*) "5 ""Polar=DoubleNumer"" or ""Polar=EnOnly"" + analytic 1-order deriv."
 	write(*,*) "6 ""Polar"" + energy only (CCSD(T),QCISD(T),MP4(SDTQ),MP5...)"
-	write(*,*) "7 ""Polar=gamma"" + analytic 3-order deriv. (HF/DFT/Semi-empirical)"
+	write(*,*) "7 ""Polar=gamma"" + analytic 3-order deriv. (HF,DFT,semi-empirical)"
 	read(*,*) isel
 	if (isel==-1) then
 		if (irdfreq==1) then

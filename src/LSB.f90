@@ -9,16 +9,16 @@
 subroutine fuzzySBL
 use defvar
 use util
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer,parameter :: nfunc=8,nquant=7 !The number of real space function, the number of quantities to be calculated
-real*8 smat(ncenter,ncenter),Pvec(ncenter),atmBeckewei(radpot*sphpot),atmHirshwei(radpot*sphpot,ncenter)
+real*8 Pvec(ncenter),atmBeckewei(radpot*sphpot),atmHirshwei(radpot*sphpot,ncenter)
 real*8 atmcontri(ncenter,0:nfunc,0:nquant)
 real*8 promol(radpot*sphpot),atomdens(radpot*sphpot,ncenter),selfdens(radpot*sphpot)
 real*8 promolgrad(radpot*sphpot,3),atomgrad(radpot*sphpot,3)
 real*8 funcval(radpot*sphpot,0:nfunc),funcgrdn(radpot*sphpot,0:nfunc) !Store function value and gradient norm, respectively
 real*8 funcref(radpot*sphpot,0:nfunc) !Store function value of promolecular state (reference state)
-real*8 covr_becke(0:nelesupp) !covalent radii used for Becke partition
+real*8 covr_becke(0:nelesupp) !Covalent radii used for Becke partition
 type(content) gridatm(radpot*sphpot)
 real*8 potx(sphpot),poty(sphpot),potz(sphpot),potw(sphpot)
 real*8 arrtmp(nfunc),arrtmp2(nfunc),gradrho(3)
@@ -107,7 +107,7 @@ do iatm=1,ncenter !! Cycle each atom
 	promol=0D0
 	promolgrad=0D0
 	do jatm=1,ncenter_org
-		call dealloall
+		call dealloall(0)
 		call readwfn(custommapname(jatm),1)
 		!$OMP parallel do shared(atomdens,atomgrad,funcref) private(ipt,rnowx,rnowy,rnowz,arrtmp,rho,gradrho) num_threads(nthreads)
 		do ipt=1+iradcut*sphpot,radpot*sphpot
@@ -126,7 +126,7 @@ do iatm=1,ncenter !! Cycle each atom
 		promolgrad=promolgrad+atomgrad(:,:)
 		if (jatm==iatm) selfdens=atomdens(:,jatm)
 	end do
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1) !Retrieve the firstly loaded file(whole molecule)
 	
     
@@ -158,42 +158,10 @@ do iatm=1,ncenter !! Cycle each atom
 	!$OMP end parallel do
     
 	
-	!! Calculate atomic Becke space weight for present atom at all of its points
-	!$OMP parallel do shared(atmpartwei) private(i,rnowx,rnowy,rnowz,smat,&
-	!$OMP ii,ri,jj,rj,rmiu,chi,uij,aij,tmps,iter,Pvec) num_threads(nthreads) schedule(dynamic)
+	!! Calculate atomic Becke weight for present atom at all of its points
+	!$OMP parallel do shared(atmpartwei) private(i) num_threads(nthreads) schedule(dynamic)
 	do i=1+iradcut*sphpot,radpot*sphpot
-		rnowx=gridatm(i)%x
-		rnowy=gridatm(i)%y
-		rnowz=gridatm(i)%z
-		!Calculate weight, by using Eq. 11,21,13,22 in Becke's paper (JCP 88,15)
-		smat=1.0D0
-		do ii=1,ncenter
-			ri=dsqrt( (rnowx-a(ii)%x)**2+(rnowy-a(ii)%y)**2+(rnowz-a(ii)%z)**2 )
-			do jj=1,ncenter
-				if (ii==jj) cycle
-				rj=dsqrt( (rnowx-a(jj)%x)**2+(rnowy-a(jj)%y)**2+(rnowz-a(jj)%z)**2 )
-				rmiu=(ri-rj)/distmat(ii,jj)
-				!Adjust for heteronuclear
-				chi=covr_becke(a(ii)%index)/covr_becke(a(jj)%index)
-				uij=(chi-1)/(chi+1)
-				aij=uij/(uij**2-1)
-				if (aij>0.5D0) aij=0.5D0
-				if (aij<-0.5D0) aij=-0.5D0
-				rmiu=rmiu+aij*(1-rmiu**2)
-				
-				tmps=rmiu
-				do iter=1,nbeckeiter
-					tmps=1.5D0*(tmps)-0.5D0*(tmps)**3
-				end do
-				smat(ii,jj)=0.5D0*(1-tmps)
-			end do
-		end do
-		Pvec=1.0D0
-		do ii=1,ncenter
-			Pvec=Pvec*smat(:,ii)
-		end do
-		Pvec=Pvec/sum(Pvec)
-		atmBeckewei(i)=Pvec(iatm) !Normalized Pvec. Pvec contains partition weight of each atom in current point, namely i
+        call Beckeatmwei(iatm,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,atmBeckewei(i),covr_becke,nbeckeiter)
 	end do
 	!$OMP end parallel do
 	
@@ -332,7 +300,7 @@ end subroutine
 !slot=8: (tau-t_w)/t_w
 subroutine valaryyLSB(x,y,z,valarr,rho,gradrho)
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer,parameter :: nfunc=8
 real*8 x,y,z,wfnval(nmo),wfnderv(3,nmo),wfnhess(3,3,nmo),gradrho(3),hess(3,3),valarr(nfunc)
@@ -380,8 +348,8 @@ if (wfntype==0.or.wfntype==3) then !spin-unpolarized case
 	do i=1,nmo
 		D=D+MOocc(i)*(sum(wfnderv(:,i)**2)) !Calculate actual kinetic term
 	end do
-	D=D/2.0D0
-	Dh=Fc*rho**(5.0D0/3.0D0) !Thomas-Fermi uniform electron gas kinetic energy
+	D=D/2D0
+	Dh=Fc*rho**(5D0/3D0) !Thomas-Fermi uniform electron gas kinetic energy
 	if (iKEDsel/=0) D=KED(x,y,z,iKEDsel) !Special case proposed by LSB, use other KED instead of exact KED
     t_w=0
 	if (rho/=0D0) t_w=sum(gradrho(:)**2)/rho/8D0
@@ -391,16 +359,16 @@ else if (wfntype==1.or.wfntype==2.or.wfntype==4) then !spin-polarized case
 		if (MOtype(i)==0) MOoccnow=MOocc(i)/2D0 !double occupied, present when wfntype==2 (ROHF), alpha and beta get half part
 		if (MOtype(i)==1.or.MOtype(i)==0) then
 			rhoa=rhoa+MOoccnow*wfnval(i)**2
-			gradrhoa(:)=gradrhoa(:)+2.0D0*MOoccnow*wfnval(i)*wfnderv(:,i)
+			gradrhoa(:)=gradrhoa(:)+2D0*MOoccnow*wfnval(i)*wfnderv(:,i)
 		end if
 		if (MOtype(i)==2.or.MOtype(i)==0) then
 			rhob=rhob+MOoccnow*wfnval(i)**2
-			gradrhob(:)=gradrhob(:)+2.0D0*MOoccnow*wfnval(i)*wfnderv(:,i)
+			gradrhob(:)=gradrhob(:)+2D0*MOoccnow*wfnval(i)*wfnderv(:,i)
 		end if
 		D=D+MOocc(i)*(sum(wfnderv(:,i)**2)) !Calculate actual kinetic term
 	end do
-	D=D/2.0D0
-	Dh=Fc_pol*(rhoa**(5.0D0/3.0D0)+rhob**(5.0D0/3.0D0))
+	D=D/2D0
+	Dh=Fc_pol*(rhoa**(5D0/3D0)+rhob**(5D0/3D0))
 	if (iKEDsel/=0) D=KED(x,y,z,iKEDsel) !Special case proposed by LSB, use other KED instead of exact KED
     t_w_a=0
 	if (rhoa/=0D0) t_w_a=sum(gradrhoa(:)**2)/rhoa/8
@@ -424,8 +392,8 @@ valarr(5)=4/rho**8*( (tmp1_1-tmp1_2)**2 + (tmp2_1-tmp2_2)**2 + (tmp3_1-tmp3_2)**
 valarr(6)=4/dersqr**3*( (tmp1_1-tmp1_2)**2 + (tmp2_1-tmp2_2)**2 + (tmp3_1-tmp3_2)**2 )
 
 !Spin density
-rhoa=0.0D0
-rhob=0.0D0
+rhoa=0D0
+rhob=0D0
 do i=1,nmo
 	if (MOtype(i)==1) then
 		rhoa=rhoa+MOocc(i)*wfnval(i)**2
@@ -468,15 +436,15 @@ end subroutine
 
 
 
-
+!***** This code is fully useless now, because integrating a function in fuzzy analysis module has already used molecular grid by default
 !!------ Integrate real space function in Hirshfeld space with molecular grid (i.e. the grid is the same as integating over the whole space)
-!! The grid used in function 1 of fuzzy space analysis is only the grid centered at the atom to be studied, this lead to inaccurate integration result
-!! when the integrand varies fast at the tail region of the Hirshfeld atom (commonly close to the other nuclei). In this case we must use the molecular grid.
-!! Because incorporate molecular grid integration into "intatomspace" routine will break the structure of the routine, I decide to write this new routine
-!! dedicated to this purpose. This routine is mainly used in shubin's study.
+! The grid used in function 1 of fuzzy space analysis is only the grid centered at the atom to be studied, this lead to inaccurate integration result
+! when the integrand varies fast at the tail region of the Hirshfeld atom (commonly close to the other nuclei). In this case we must use the molecular grid.
+! Because incorporate molecular grid integration into "intatomspace" routine will break the structure of the routine, I decide to write this new routine
+! dedicated to this purpose. This routine is mainly used in Shubin's study.
 subroutine intHirsh_molgrid
 use defvar
-use function
+use functions
 use util
 implicit real*8 (a-h,o-z)
 real*8 funcval(radpot*sphpot),beckeweigrid(radpot*sphpot),atmdens(radpot*sphpot,ncenter),atmintval(ncenter) !Integration value of each atom
@@ -489,7 +457,6 @@ call setpromol
 call gen1cintgrid(gridatmorg,iradcut)
 
 !funcval: real space function at all grid of current center
-!weival: Becke * single-center integraton weight at all grid of current center
 !atmdens: Free-state density of every atom at all grid of current center
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 
@@ -509,11 +476,11 @@ do iatm=1,ncenter !Cycle each atom
 	!$OMP end parallel do
 	
 	!Calculate Becke weight
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
 	
 	!Calculate Hirshfeld weight
 	do jatm=1,ncenter_org
-		call dealloall
+		call dealloall(0)
 		call readwfn(custommapname(jatm),1)
 		!$OMP parallel do shared(atmdens) private(ipt) num_threads(nthreads)
 		do ipt=1+iradcut*sphpot,radpot*sphpot
@@ -521,7 +488,7 @@ do iatm=1,ncenter !Cycle each atom
 		end do
 		!$OMP end parallel do
 	end do
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1) !Retrieve to the first loaded file(whole molecule) to calc real rho again
 	
 	!Generate Hirshfeld weight and integrate the function
@@ -554,10 +521,10 @@ end subroutine
 subroutine integratebasinmix_LSB
 use defvar
 use util
-use function
+use functions
 use basinintmod
 use topo
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 real*8 trustrad(numrealatt),grad(3),hess(3,3),k1(3),k2(3),k3(3),k4(3),xarr(nx),yarr(ny),zarr(nz)
 real*8,allocatable :: potx(:),poty(:),potz(:),potw(:)
 type(content),allocatable :: gridatt(:) !Record x,y,z,weight of grids in trust radius
@@ -609,7 +576,7 @@ do iatt=1,numrealatt !Cycle each attractors
 
 	!Find one-to-one correspondence between NCP and atom, then the NCP position is defined as nuclear position
 	do iatm=1,ncenter
-		disttest=dsqrt( (realattxyz(iatt,1)-a(iatm)%x)**2+(realattxyz(iatt,2)-a(iatm)%y)**2+(realattxyz(iatt,3)-a(iatm)%z)**2 )
+		disttest=dsqrt( (realattxyz(1,iatt)-a(iatm)%x)**2+(realattxyz(2,iatt)-a(iatm)%y)**2+(realattxyz(3,iatt)-a(iatm)%z)**2 )
 		if (disttest<0.3D0) then
 			att2atm(iatt)=iatm
 			write(*,"(' Attractor',i6,' corresponds to atom',i6,' (',a,')')") iatt,iatm,a(iatm)%name
@@ -709,7 +676,7 @@ do iatt=1,numrealatt !Cycle each attractors
 	promol=0D0
 	promolgrad=0D0
 	do jatm=1,ncenter_org
-		call dealloall
+		call dealloall(0)
 		call readwfn(custommapname(jatm),1)
 		!$OMP parallel do shared(atomdens,atomgrad,funcref) private(ipt,arrtmp,rho,gradrho) num_threads(nthreads)
 		do ipt=1,nintgrid
@@ -724,7 +691,7 @@ do iatt=1,numrealatt !Cycle each attractors
 		promol=promol+atomdens(:)
 		promolgrad=promolgrad+atomgrad(:,:)
 	end do
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1) !Retrieve the firstly loaded file(whole molecule)
 	
     !! Calculate function value and gradient norm for present molecule, then store them in funcval/funcgrdn
@@ -977,7 +944,7 @@ do iatt=1,numrealatt !Cycle each attractors
 	promol=0D0
 	promolgrad=0D0
 	do jatm=1,ncenter_org
-		call dealloall
+		call dealloall(0)
 		call readwfn(custommapname(jatm),1)
 		!$OMP parallel do shared(atomdens,atomgrad,funcref) private(ipt,ptx,pty,ptz,arrtmp,rho,gradrho) num_threads(nthreads)
 		do ipt=1,nintgrid
@@ -995,7 +962,7 @@ do iatt=1,numrealatt !Cycle each attractors
 		promol=promol+atomdens(:)
 		promolgrad=promolgrad+atomgrad(:,:)
 	end do
-	call dealloall
+	call dealloall(0)
 	call readinfile(firstfilename,1) !Retrieve the firstly loaded file(whole molecule)
 	
 	!Calculate information for present actual state
@@ -1109,7 +1076,7 @@ end subroutine
 !!!------------ Integrate various forms of kinetic energy density (KED) over the whole space
 subroutine intKED
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 intval(nKEDmax),funcval(radpot*sphpot,nKEDmax),beckeweigrid(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
@@ -1126,7 +1093,7 @@ do iatm=1,ncenter
 		call KEDall(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,funcval(i,:))
 	end do
 	!$OMP end parallel do
-	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid)
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
 	do i=1+iradcut*sphpot,radpot*sphpot
 		intval=intval+funcval(i,:)*gridatmorg(i)%value*beckeweigrid(i)
 	end do
@@ -1167,7 +1134,7 @@ end subroutine
 !itype=3: Calculate the difference between total relative Shannon entropy and deformation density
 subroutine genentroplane(itype)
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 integer itype
 real*8 planeprodens(ngridnum1,ngridnum2),planedens(ngridnum1,ngridnum2)
@@ -1187,7 +1154,7 @@ do i=1,ngridnum1
 end do
 !$OMP END PARALLEL DO
 do jatm=1,ncenter_org !Calculate promolecular density in the plane and store it to planeprodens
-	call dealloall
+	call dealloall(0)
 	call readwfn(custommapname(jatm),1)
 	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planeprodens) schedule(dynamic) NUM_THREADS(nthreads)
 	do i=1,ngridnum1
@@ -1202,7 +1169,7 @@ do jatm=1,ncenter_org !Calculate promolecular density in the plane and store it 
 end do
 !Calculate Hirshfeld weight, relative Shannon entropy and x=[rhoA-rho0A]/rhoA for each atom in the plane and accumulate them to planemat
 do jatm=1,ncenter_org !Cycle each atom, calculate its contribution in the plane
-	call dealloall
+	call dealloall(0)
 	call readwfn(custommapname(jatm),1)
 	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz,rho0A,rhoA,tmpval) shared(planemat) schedule(dynamic) NUM_THREADS(nthreads)
 	do i=1,ngridnum1
@@ -1219,7 +1186,7 @@ do jatm=1,ncenter_org !Cycle each atom, calculate its contribution in the plane
 	end do
 	!$OMP END PARALLEL DO
 end do
-call dealloall
+call dealloall(0)
 call readinfile(firstfilename,1) !Retrieve the first loaded file(whole molecule)
 if (itype==3) planemat=planemat-(planedens-planeprodens) !Diff between total relative Shannon entropy and deformation density
 end subroutine
@@ -1229,7 +1196,7 @@ end subroutine
 !!---------- Calculate g1, g2, g3 terms along a line, all of them rely on promolecular density calculated based on atom .wfn files
 subroutine g1g2g3line(orgx1D,orgy1D,orgz1D,transx,transy,transz)
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 orgx1D,orgy1D,orgz1D,transx,transy,transz
 real*8 rho(num1Dpoints),derrho(3,num1Dpoints),hessrho(3,3,num1Dpoints),rho0(num1Dpoints),derrho0(3,num1Dpoints),hessrho0(3,3,num1Dpoints)
@@ -1256,7 +1223,7 @@ derrho0=0
 hessrho0=0
 do ipro=1,ncustommap
     filename=custommapname(ipro)
-	call dealloall
+	call dealloall(0)
 	write(*,"(' Loading: ',a)") trim(filename)
 	call readinfile(filename,1)
     !$OMP parallel do shared(rho0,derrho0,hessrho0) private(ipt,tmprho,tmparr,tmpmat) num_threads(nthreads)
@@ -1269,7 +1236,7 @@ do ipro=1,ncustommap
     !$OMP end parallel do
 end do
 
-call dealloall
+call dealloall(0)
 write(*,"(' Reloading: ',a)") trim(firstfilename)
 call readinfile(firstfilename,1)
 
@@ -1295,7 +1262,7 @@ end subroutine
 !!---------- Calculate g1, g2, g3 terms in the plane, all of them rely on promolecular density calculated based on atom .wfn files
 subroutine g1g2g3plane
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 rho(ngridnum1,ngridnum2),derrho(3,ngridnum1,ngridnum2),hessrho(3,3,ngridnum1,ngridnum2)
 real*8 rho0(ngridnum1,ngridnum2),derrho0(3,ngridnum1,ngridnum2),hessrho0(3,3,ngridnum1,ngridnum2)
@@ -1320,7 +1287,7 @@ derrho0=0
 hessrho0=0
 do ipro=1,ncustommap
     filename=custommapname(ipro)
-	call dealloall
+	call dealloall(0)
 	write(*,"(' Loading: ',a)") trim(filename)
 	call readinfile(filename,1)
     !$OMP parallel do shared(rho,derrho,hessrho) private(i,j,rnowx,rnowy,rnowz,tmprho,tmparr,tmpmat) num_threads(nthreads)
@@ -1338,7 +1305,7 @@ do ipro=1,ncustommap
     !$OMP end parallel do
 end do
 
-call dealloall
+call dealloall(0)
 write(*,"(' Reloading: ',a)") trim(firstfilename)
 call readinfile(firstfilename,1)
 
@@ -1366,7 +1333,7 @@ end subroutine
 !!---------- Calculate g1, g2, g3 terms as grid data, all of them rely on promolecular density calculated based on atom .wfn files
 subroutine g1g2g3grid
 use defvar
-use function
+use functions
 implicit real*8 (a-h,o-z)
 real*8 rho(nx,ny,nz),derrho(3,nx,ny,nz),rholapl(nx,ny,nz)
 real*8 rho0(nx,ny,nz),derrho0(3,nx,ny,nz),rholapl0(nx,ny,nz)
@@ -1393,7 +1360,7 @@ derrho0=0
 rholapl0=0
 do ipro=1,ncustommap
     filename=custommapname(ipro)
-	call dealloall
+	call dealloall(0)
 	write(*,"(' Loading: ',a)") trim(filename)
 	call readinfile(filename,1)
     !$OMP parallel do shared(rho0,derrho0,rholapl0) private(i,j,k,tmpx,tmpy,tmpz,tmprho,tmparr,tmpmat) num_threads(nthreads)
@@ -1411,7 +1378,7 @@ do ipro=1,ncustommap
     !$OMP end parallel do
 end do
 
-call dealloall
+call dealloall(0)
 write(*,"(' Reloading: ',a)") trim(firstfilename)
 call readinfile(firstfilename,1)
 
@@ -1433,4 +1400,377 @@ do k=1,nz
         end do
     end do
 end do
+end subroutine
+
+
+
+
+
+!------ Obtain information quantities for density difference between two wavefunctions. Adapted from intdiff
+subroutine info_rhodiff
+use defvar
+use functions
+use util
+implicit real*8 (a-h,o-z)
+real*8 intval,intvalold,intvalneg,intvaloldneg,funcval1(radpot*sphpot),funcval2(radpot*sphpot),beckeweigrid(radpot*sphpot)
+type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+character c80tmp*80,filename2*200,sep
+character(len=2) :: statname(-4:4)=(/ "-4","-3","-2","-1","_0","+1","+2","+3","+4" /)
+real*8 atmradrho_Np1(ncenter,200),atmradrho_N(ncenter,200),atmradrho_Nn1(ncenter,200) !Radial density of each atom in N+1, N, N-1 states
+integer atmradnpt_Np1(ncenter),atmradnpt_N(ncenter),atmradnpt_Nn1(ncenter) !Number of radial density points of each atom in N+1, N, N-1 states
+
+write(*,"(a)") " The first wavefunction file is that you loaded after booting up Multiwfn, now input the path of the second wavefunction file, e.g. C:\yuri.wfn"
+read(*,"(a)") filename2
+
+!write(*,"(a)") " Select the type of calculation. The electron density in original formula is replaced with ""f=rho(wfn1)-rho(wfn2)"""
+!write(*,*) "1 Fukui Shannon entropy"
+!write(*,*) "2 Fukui relative Shannon entropy"
+!write(*,*) "2 Fisher information density"
+!write(*,*) "3 Second Fisher information density"
+!read(*,*) itype
+itype=1
+
+!Prepare atomic .rad files for involved states
+if (itype==2) then
+	write(*,*) "How to calculate f0 in relative Shannon entropy?"
+	write(*,*) "1 f0 is calculated as rho0(N+1) - rho0(N)"
+	write(*,*) "2 f0 is calculated as rho0(N) - rho0(N-1)"
+    read(*,*) if0
+	if (if0==1) then
+		ilow=-1
+        ihigh=0
+    else
+		ilow=0
+        ihigh=1
+    end if
+	sep='/'
+	if (isys==1) sep='\'
+	do iatm=1,ncenter
+		iele=a_org(iatm)%index
+		do istat=ilow,ihigh
+			c80tmp="atmrad_spec"//sep//trim(a_org(iatm)%name)//statname(istat)
+			inquire(file=trim(c80tmp)//".rad",exist=alive)
+			if (alive) cycle
+			inquire(file=trim(c80tmp)//".wfn",exist=alive)
+			if (.not.alive) then
+				write(*,"(' Error: ',a,' was not found!')") trim(c80tmp)//".wfn"
+                write(*,*) "Press ENTER button to return"
+                read(*,*)
+				return
+			end if
+			write(*,"(' Converting ',a,' to ',a)") trim(c80tmp)//".wfn",trim(c80tmp)//".rad"
+			call atmwfn2atmrad(trim(c80tmp)//".wfn",trim(c80tmp)//".rad")
+		end do
+	end do
+    
+    !Load radial density and points for each atom of N state
+	do iatm=1,ncenter_org
+		c80tmp="atmrad_spec"//sep//trim(a_org(iatm)%name)//"_0.rad"
+		open(10,file=c80tmp,status="old")
+		read(10,*) atmradnpt_N(iatm)
+		do ipt=1,atmradnpt_N(iatm)
+			read(10,*) rnouse,atmradrho_N(iatm,ipt)
+		end do
+		close(10)
+	end do
+    do iatm=1,ncenter_org
+		if (if0==1) then !Load radial density and points for each atom of N+1 state
+			c80tmp="atmrad_spec"//sep//trim(a_org(iatm)%name)//"-1.rad"
+			open(10,file=c80tmp,status="old")
+			read(10,*) atmradnpt_Np1(iatm)
+			do ipt=1,atmradnpt_Np1(iatm)
+				read(10,*) rnouse,atmradrho_Np1(iatm,ipt)
+			end do
+		else if (if0==2) then !Load radial density and points for each atom of N-1 state
+			c80tmp="atmrad_spec"//sep//trim(a_org(iatm)%name)//"+1.rad"
+			open(10,file=c80tmp,status="old")
+			read(10,*) atmradnpt_Nn1(iatm)
+			do ipt=1,atmradnpt_Nn1(iatm)
+				read(10,*) rnouse,atmradrho_Nn1(iatm,ipt)
+			end do
+		end if
+        close(10)
+    end do
+	call dealloall(0)
+	call readinfile(firstfilename,1)
+end if
+
+!Start calculation
+open(11,file="integrate.txt",status="replace")
+write(*,"(/,' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+call gen1cintgrid(gridatmorg,iradcut)
+call walltime(iwalltime1)
+intval=0
+intvalold=0
+intvalneg=0
+intvaloldneg=0
+izero=0
+ineg=0
+do iatm=1,ncenter
+	write(*,"(/,' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+	gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+	
+	!Calculate data for wfn1
+	!$OMP parallel do shared(funcval1) private(i) num_threads(nthreads) schedule(DYNAMIC)
+	do i=1+iradcut*sphpot,radpot*sphpot
+		if (itype==1) funcval1(i)=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
+	end do
+	!$OMP end parallel do
+	
+	!Calculate data for wfn2
+	call dealloall(0)
+	call readinfile(filename2,1)
+	!$OMP parallel do shared(funcval2) private(i) num_threads(nthreads) schedule(DYNAMIC)
+	do i=1+iradcut*sphpot,radpot*sphpot
+		if (itype==1) funcval2(i)=fdens(gridatm(i)%x,gridatm(i)%y,gridatm(i)%z)
+	end do
+	!$OMP end parallel do
+    
+	!Recover to wfn1
+	call dealloall(0)
+	call readinfile(firstfilename,1)
+	
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+	do i=1+iradcut*sphpot,radpot*sphpot
+		rhodiff=funcval1(i)-funcval2(i)
+        accum=0
+        if (rhodiff==0) then
+			izero=izero+1
+            inquire(file="zero_rhodiff.txt",number=ifilezero)
+            if (ifilezero==-1) open(12,file="zero_rhodiff.txt",status="replace")
+            write(12,"(i7,3f12.5,4(1PE16.8))") i,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,accum,rhodiff,gridatmorg(i)%value,beckeweigrid(i) 
+        else if (rhodiff<0) then !Negative delta rho
+			ineg=ineg+1
+			if (itype==1) tmpval=-abs(rhodiff)*log(abs(rhodiff))
+			accum=tmpval*gridatmorg(i)%value*beckeweigrid(i)
+			intvalneg=intvalneg+accum
+            inquire(file="neg_rhodiff.txt",number=ifileneg)
+            if (ifileneg==-1) open(13,file="neg_rhodiff.txt",status="replace")
+            write(13,"(i7,3f12.5,4(1PE16.8))") i,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,accum,rhodiff,gridatmorg(i)%value,beckeweigrid(i) 
+        else !Positive delta rho
+			if (itype==1) tmpval=-rhodiff*log(rhodiff)
+			accum=tmpval*gridatmorg(i)%value*beckeweigrid(i)
+			intval=intval+accum
+			write(11,"(i7,3f12.5,4(1PE16.8))") i,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,accum,rhodiff,gridatmorg(i)%value,beckeweigrid(i)
+		end if
+	end do
+	write(*,"(' Accumulated (+ delta_rho):',f20.10,'  This cen.:',f20.10)") intval,intval-intvalold
+	write(*,"(' Accumulated (- delta_rho):',f20.10,'  This cen.:',f20.10)") intvalneg,intvalneg-intvaloldneg
+	intvalold=intval
+	intvaloldneg=intvalneg
+end do
+
+call walltime(iwalltime2)
+write(*,"(/,' Calculation took up wall clock time',i10,'s',/)") iwalltime2-iwalltime1
+write(*,"(' Final result (based on positive delta_rho):       ',f24.12)") intval
+if (ineg>0) write(*,"(' Final result (based on abs of negative delta_rho):',f24.12)") intvalneg
+write(*,*)
+write(*,*) "integrate.txt has been exported to current folder"
+write(*,*) "Column 1: Index of integration points"
+write(*,*) "Columns 2~4: X, Y, Z of integration points in Bohr"
+write(*,*) "Column 5: Contribution of this point to integral"
+write(*,*) "Column 6: Density difference"
+write(*,*) "Column 7: Lebedev integration weighting"
+write(*,*) "Column 8: Atom weighting function"
+write(*,*)
+close(11)
+if (izero>0) then
+	close(12)
+	write(*,"(a,i9,a)") " Note:",izero," points have zero density difference, these points were skipped &
+	during calculation. Please check zero_rhodiff.txt in current folder for information of these points"
+end if
+if (ineg>0) then
+	close(13)
+	write(*,"(a,i9,a)") " Note:",ineg," points have negative density difference, their absolute values were considered &
+	during integration. Please check neg_rhodiff.txt in current folder for information of these points"
+end if
+end subroutine
+
+
+
+!------ Calculate Fukui Shannon density as |¦¤¦Ñ|*ln(|¦¤¦Ñ|) and store to cubmat. cubmat must contain ¦¤¦Ñ before entering this subroutine
+subroutine info_rhodiff_grid
+use defvar
+implicit real*8 (a-h,o-z)
+do k=1,nz
+	do j=1,ny
+		do i=1,nx
+			absrho=abs(cubmat(i,j,k))
+			cubmat(i,j,k)=-absrho*log(absrho)
+		end do
+	end do
+end do
+write(*,*) "Done!"
+end subroutine
+
+
+
+
+
+!!--------- The Energetic Information Project    
+subroutine energy_info_project
+use defvar
+use util
+use functions
+implicit real*8 (a-h,o-z)
+character refsysname*200
+real*8 intval,funcval(radpot*sphpot),beckeweigrid(radpot*sphpot)
+type(content) gridatmorg(radpot*sphpot),gridatm(radpot*sphpot)
+real*8 eval(radpot*sphpot),egrad(3,radpot*sphpot),elapl(radpot*sphpot)
+real*8 e0val(radpot*sphpot),e0grad(3,radpot*sphpot),e0lapl(radpot*sphpot)
+real*8 vectmp(3),hess(3,3)
+
+do while(.true.)
+write(*,*)
+call menutitle("Energetic Information Project",10,1)
+write(*,*) "0 Return"
+write(*,*) "Select type of energetic information"
+write(*,*) "1 Shannon entropy"
+write(*,*) "2 Fisher information"
+write(*,*) "3 Alternative Fisher information"
+write(*,*) "4 Relative Shannon entropy"
+write(*,*) "5 Relative Fisher information"
+write(*,*) "6 Alternative relative Fisher information"
+read(*,*) ieneinfo
+if (ieneinfo==0) return
+
+ider=0 !Evaluate value
+if (ieneinfo==2.or.ieneinfo==5) ider=1 !Evaluate value and gradient
+if (ieneinfo==3.or.ieneinfo==6) ider=2 !Evaluate value, gradient and Hessian
+
+if (ieneinfo==4.or.ieneinfo==5.or.ieneinfo==6) then
+	write(*,*) "Choose type of reference wavefunction"
+	write(*,*) "1 Promolecule"
+	write(*,*) "2 Another system"
+	read(*,*) ireftype
+	if (ireftype==1) then
+		call generate_promolwfn !Generate promolecular wavefunction and store to CO_pmol, MOocc_pmol, etc.
+	else
+		write(*,*) "Input path of wavefunction file of another system, e.g. /sob/test.wfn"
+		do while(.true.)
+			read(*,"(a)") refsysname
+			inquire(file=refsysname,exist=alive)
+			if (alive) exit
+			write(*,*) "Cannot find the file, input again!"
+		end do
+	end if
+end if
+
+write(*,*) "Select type of energy density"
+write(*,"(a)") " 1 Total energy E (electronic energy density)"
+write(*,"(a)") " 2 Total kinetic energy Ts (Hamiltonian kinetic energy density)"
+write(*,"(a)") " -2 Total kinetic energy Ts (Lagrangian kinetic energy density)"
+write(*,"(a)") " 3 Electrostatic energy Ee (negative ESP multiplied by electron density)"
+write(*,"(a)") " 4 Exchange-correlation energy Exc (Integrand of Exc. The form is determined by ""iDFTxcsel"" in settings.ini)"
+write(*,"(a)") " 5 Weizsacker kinetic energy Tw (closed-shell form)"
+write(*,"(a)") " 6 Pauli energy Tp=Ts-Tw (the form of Ts is determined by ""iKEDsel"" in settings.ini)"
+write(*,"(a)") " 7 Fermionic quantum energy Eq=Tp+Exc (evaluating Tp based on Hamiltonian kinetic energy density)"
+write(*,"(a)") " -7 Fermionic quantum energy Eq=Tp+Exc (evaluating Tp based on Lagrangian kinetic energy density)"
+read(*,*) ienedens
+
+if (ienedens==2) then
+	ifunc=6
+else if (ienedens==-2) then
+	ifunc=7
+else
+	ifunc=100
+	if (ienedens==1) iuserfunc=11
+	if (ienedens==3) iuserfunc=68
+	if (ienedens==4) iuserfunc=1000
+	if (ienedens==5) iuserfunc=5
+	if (ienedens==6) iuserfunc=114
+	if (ienedens==7) iuserfunc=69
+	if (ienedens==-7) iuserfunc=-69
+end if
+
+write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
+call gen1cintgrid(gridatmorg,iradcut)
+call walltime(iwalltime1)
+intval=0
+do iatm=1,ncenter
+	write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+	gridatm%x=gridatmorg%x+a(iatm)%x
+	gridatm%y=gridatmorg%y+a(iatm)%y
+	gridatm%z=gridatmorg%z+a(iatm)%z
+    
+    if (ienedens==3) call doinitlibreta(2)
+    !Calculate value, gradiant and Laplacian of energy density for present system
+	!$OMP parallel do shared(eval,egrad,elapl) private(ipt,x,y,z,hess) num_threads(nthreads)
+	do ipt=1+iradcut*sphpot,radpot*sphpot
+		x=gridatm(ipt)%x
+		y=gridatm(ipt)%y
+		z=gridatm(ipt)%z
+        if (ider==0) then !Only need value
+			eval(ipt)=calcfuncall(ifunc,x,y,z)
+        else !Need derivative
+			call gencalchessmat(ider,ifunc,x,y,z,eval(ipt),egrad(:,ipt),hess(:,:),1)
+			elapl(ipt)=hess(1,1)+hess(2,2)+hess(3,3)
+        end if
+	end do
+	!$OMP end parallel do
+    
+    !Calculate reference part
+    if (ieneinfo==4.or.ieneinfo==5.or.ieneinfo==6) then
+		if (ireftype==1) then
+			deallocate(MOocc,MOtype,MOene,CO)
+			allocate(MOocc(nmo_pmol),MOene(nmo_pmol),MOtype(nmo_pmol),CO(nmo_pmol,nprims))
+			nmo=nmo_pmol
+			MOocc=MOocc_pmol
+			MOene=MOene_pmol
+			MOtype=MOtype_pmol
+			CO=CO_pmol
+        else if (ireftype==2) then
+			call dealloall(0)
+            call readinfile(refsysname,1)
+        end if
+        if (ienedens==3) call doinitlibreta(2)
+		!$OMP parallel do shared(e0val,e0grad,e0lapl) private(ipt,x,y,z,hess) num_threads(nthreads)
+		do ipt=1+iradcut*sphpot,radpot*sphpot
+			x=gridatm(ipt)%x
+			y=gridatm(ipt)%y
+			z=gridatm(ipt)%z
+			if (ider==0) then !Only need value
+				e0val(ipt)=calcfuncall(ifunc,x,y,z)
+			else !Need derivative
+				call gencalchessmat(ider,ifunc,x,y,z,e0val(ipt),e0grad(:,ipt),hess(:,:),1)
+				e0lapl(ipt)=hess(1,1)+hess(2,2)+hess(3,3)
+			end if
+		end do
+		!$OMP end parallel do
+		call dealloall(0)
+		call readinfile(firstfilename,1) !Retrieve the first loaded file
+    end if
+    
+    !Calculate function value at every point
+	do ipt=1+iradcut*sphpot,radpot*sphpot
+        if (ieneinfo==1) then
+			funcval(ipt)=-eval(ipt)*log(eval(ipt))
+        else if (ieneinfo==2) then
+			funcval(ipt)=sum(egrad(:,ipt)**2)/eval(ipt)
+        else if (ieneinfo==3) then
+			funcval(ipt)=-elapl(ipt)*log(eval(ipt))
+        else if (ieneinfo==4) then
+			funcval(ipt)=eval(ipt)*log(eval(ipt)/e0val(ipt))
+        else if (ieneinfo==5) then
+			vectmp(:)=egrad(:,ipt)/eval(ipt)-e0grad(:,ipt)/e0val(ipt)
+            funcval(ipt)=eval(ipt)*sum(vectmp(:)**2)
+        else if (ieneinfo==6) then
+			funcval(ipt)=elapl(ipt)*log(eval(ipt)/e0val(ipt))
+        end if
+	end do
+    
+	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+	do ipt=1+iradcut*sphpot,radpot*sphpot
+		intval=intval+funcval(ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
+	end do
+end do
+call walltime(iwalltime2)
+write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+
+write(*,"(/,' Result is',1PE20.10)") intval
+
+end do
+
 end subroutine

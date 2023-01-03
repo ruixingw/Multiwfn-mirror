@@ -18,9 +18,9 @@ use defvar
 implicit real*8 (a-h,o-z)
 
 do while(.true.)
-    write(*,"(/,a)") " If this module is used in your work, please cite below paper together with &
-    Multiwfn original paper, in which all methods employed in this module are described"
-    write(*,"(a)") " Tian Lu, Feiwu Chen, Acta Chimica Sinica, 69, 2393 (2011) http://sioc-journal.cn/Jwk_hxxb/CN/abstract/abstract340458.shtml"
+    write(*,"(/,a)") " If this module is used in your work, please cite the following paper together with &
+    Multiwfn original paper (J. Comput. Chem., 33, 580 (2012)), as the methods employed in this module are comprehensively described in this paper:"
+    write(*,"(a)") " Tian Lu, Feiwu Chen, Acta Chimica Sinica, 69, 2393-2406 (2011) http://sioc-journal.cn/Jwk_hxxb/CN/abstract/abstract340458.shtml"
     write(*,*)
 	write(*,*) "       ================ Orbital composition analysis ==============="
 	write(*,*) "-10 Return"
@@ -199,22 +199,33 @@ do while(.true.)
 		the basis functions satisfying all conditions will be added to current fragment"
 		write(*,*)
 		write(*,*) "Condition 1: Input range of atoms, e.g. 2,5-8,12"
-		write(*,*) "To select all atoms, simply input ""a"""
+        write(*,*) "You can also input one element name (case sensitive), e.g. Fe"
+		write(*,*) "If you press ENTER button directly, the atom will be arbitrary"
 		read(*,"(a)") c2000tmp
-		if (index(c2000tmp,'a')/=0) then
+		if (c2000tmp==" ".or.index(c2000tmp,'a')/=0) then
 			nselatm=ncenter
 			forall(i=1:nselatm) atmsellist(i)=i
 		else
-			call str2arr(c2000tmp,nselatm,atmsellist)
-			if (any(atmsellist(1:nselatm)>ncenter)) then
-				write(*,*) "Error: One or more atom indices exceeded valid range!"
-				cycle
-			end if
+			if (iachar(c2000tmp(1:1))>=48.and.iachar(c2000tmp(1:1))<=57) then !Inputted number
+				call str2arr(c2000tmp,nselatm,atmsellist)
+				if (any(atmsellist(1:nselatm)>ncenter)) then
+					write(*,*) "Error: One or more atom indices exceeded valid range!"
+					cycle
+				end if
+            else !Inputted element
+				nselatm=0
+				do iatm=1,ncenter
+					if (a(iatm)%name==c2000tmp) then
+						nselatm=nselatm+1
+                        atmsellist(nselatm)=iatm
+                    end if
+                end do
+            end if
 		end if
 		write(*,*) "Condition 2: Input range of basis functions, e.g. 2,5-8,12"
-		write(*,*) "To select all basis functions, simply input ""a"""
+		write(*,*) "If you press ENTER button directly, the basis function index will be arbitrary"
 		read(*,"(a)") c2000tmp
-		if (index(c2000tmp,'a')/=0) then
+		if (c2000tmp==" ".or.index(c2000tmp,'a')/=0) then
 			nselbas=nbasis
 			forall(i=1:nselbas) bassellist(i)=i
 		else
@@ -227,7 +238,7 @@ do while(.true.)
 		write(*,*) "Condition 3: Choose basis function type"
         write(*,*) "Could be one of such as S, Y, Z, XY, YY, ZZZ, D+1, D 0 ..."
 		write(*,*) "You can also choose shell type, one of S, P, D, F, G, H"
-		write(*,*) """a"" means all types"
+		write(*,*) "If you press ENTER button directly, the type will be arbitrary"
 		read(*,"(a)") c2000tmp
 		naddbas=0
 		do ibasidx=1,nselbas !Examine all basis functions
@@ -235,7 +246,9 @@ do while(.true.)
 			iadd=0
 			if ( any(fragtmp==ibas) ) cycle !Skip if already presented in current fragment
 			if ( all(atmsellist(1:nselatm)/=bascen(ibas)) ) cycle !Atom index condition
-			if ( index(c2000tmp,'a')==0) then !Basis function type condition
+			if ( index(c2000tmp,'a')/=0.or.c2000tmp==" ") then
+				iadd=1
+			else !Basis function type condition is defined
 				itype=bastype(ibas)
 				if ( trim(c2000tmp)=='P' .and. ( itype>=2.and.itype<=4 ) ) iadd=1
 				if ( trim(c2000tmp)=='D' .and. ( (itype>=-5 .and.itype<=-1 ).or.(itype>=5 .and.itype<=10) ) ) iadd=1
@@ -243,8 +256,6 @@ do while(.true.)
 				if ( trim(c2000tmp)=='G' .and. ( (itype>=-21.and.itype<=-13).or.(itype>=21.and.itype<=35) ) ) iadd=1
 				if ( trim(c2000tmp)=='H' .and. ( (itype>=-32.and.itype<=-22).or.(itype>=36.and.itype<=56) ) ) iadd=1
 				if ( trim(c2000tmp)==GTFtype2name(bastype(ibas)) ) iadd=1 !Inputted is detailed type
-			else
-				iadd=1
 			end if
 			if (iadd==1) then
 				do i=1,nbasis !Find space slot to save this basis function
@@ -262,11 +273,13 @@ do while(.true.)
 		call str2arr(c2000tmp(3:),nterm,termtmp)
 		if (c2000tmp(1:2)=="a ") then
 			if (any(termtmp(1:nterm)<=0).or.any(termtmp(1:nterm)>ncenter)) then
-				write(*,*) "Atom index exceeded valid range! Ignoring..."
+				write(*,*) "Error: Atom index exceeded valid range! Ignored"
 				cycle
 			end if
-			do iatm=1,nterm
-				do ibas=basstart(termtmp(iatm)),basend(termtmp(iatm))
+			do iterm=1,nterm
+				iatm=termtmp(iterm)
+                if (basstart(iatm)==0) cycle
+				do ibas=basstart(iatm),basend(iatm)
 					if (all(fragtmp/=ibas)) then
 						do i=1,nbasis !Find an empty slot to record this basis function
 							if (fragtmp(i)==0) then
@@ -304,8 +317,10 @@ do while(.true.)
 				where(fragtmp==termtmp(i)) fragtmp=0
 			end do
 		else if (c2000tmp(1:2)=="da") then
-			do iatm=1,nterm
-				do ibas=basstart(termtmp(iatm)),basend(termtmp(iatm))
+			do idx=1,nterm
+				iatm=termtmp(idx)
+				if (basstart(iatm)==0) cycle
+				do ibas=basstart(iatm),basend(iatm)
 					where(fragtmp==ibas) fragtmp=0
 				end do
 			end do
@@ -335,7 +350,7 @@ do while(.true.)
 		end do
 		write(*,"(' Done!',i6,' new basis functions have been added to current fragment')") naddbas
 	else
-		write(*,*) "Error: Unrecognized command, ignoring..."
+		write(*,*) "Error: Unrecognized command! Ignored"
 	end if
 end do
 if (allocated(frag1).and.allocated(frag2)) then
@@ -551,7 +566,11 @@ do while(.true.)
 		write(*,*)
 		write(*,*) "Composition of each atom:"
 		do i=1,ncenter
-            atmcomp(i)=sum(bastot(basstart(i):basend(i)))*100
+			if (basstart(i)==0) then
+				atmcomp(i)=0
+			else
+	            atmcomp(i)=sum(bastot(basstart(i):basend(i)))*100
+            end if
 			write(*,"(' Atom',i6,'(',a,') :',f12.5,' %')") i,a(i)%name,atmcomp(i)
 		end do
         write(*,"(/,' Orbital delocalization index:',f8.2)") sum(atmcomp**2)/100
@@ -581,6 +600,7 @@ else if (iorbin>nbasis) then
 	iorb=iorbin-nbasis
 end if
 
+atmcomp=0
 if (imethod==1) then !Mulliken
 	do ibas=1,nbasis
 		bascross=0D0
@@ -591,11 +611,13 @@ if (imethod==1) then !Mulliken
 		bastot(ibas)=tmpmat(ibas,iorb)**2+bascross
 	end do
 	do iatm=1,ncenter
+		if (basstart(iatm)==0) cycle
 		atmcomp(iatm)=sum(bastot(basstart(iatm):basend(iatm)))
 	end do
 else if (imethod==2) then !SCPA
 	sumsqr=sum(tmpmat(:,iorb)**2)
 	do iatm=1,ncenter
+		if (basstart(iatm)==0) cycle
 		atmcomp(iatm)=sum(tmpmat(basstart(iatm):basend(iatm),iorb)**2)/sumsqr
 	end do
 end if
@@ -608,8 +630,8 @@ end subroutine
 subroutine orbatmcomp_space(itype)
 use defvar
 use util
-use function
-implicit real*8(a-h,o-z)
+use functions
+implicit real*8 (a-h,o-z)
 type(content) gridorg(radpot*sphpot),gridatm(radpot*sphpot)
 real*8 resultvec(ncenter)
 real*8 allpotx(ncenter,radpot*sphpot),allpoty(ncenter,radpot*sphpot),allpotz(ncenter,radpot*sphpot),allpotw(ncenter,radpot*sphpot)
@@ -693,7 +715,7 @@ if (itype==1.or.itype==3) then !Hirshfeld or Hirshfeld-I partition
 		do iatm=1,ncenter_org
 			promol=0D0
 			do jatm=1,ncenter_org
-				call dealloall
+				call dealloall(0)
 				call readwfn(custommapname(jatm),1)
 				!$OMP parallel do shared(tmpdens) private(ipt) num_threads(nthreads)
 				do ipt=1+iradcut*sphpot,radpot*sphpot
@@ -714,7 +736,7 @@ if (itype==1.or.itype==3) then !Hirshfeld or Hirshfeld-I partition
             
             call showprog(iatm,ncenter_org)
 		end do
-		call dealloall
+		call dealloall(0)
 		call readinfile(firstfilename,1) !Retrieve the firstly loaded file(whole molecule) in order to calculate real rho later
 	end if
 
@@ -724,7 +746,7 @@ else if (itype==2) then !Becke partition
 		gridatm%x=gridorg%x+a(iatm)%x
 		gridatm%y=gridorg%y+a(iatm)%y
 		gridatm%z=gridorg%z+a(iatm)%z
-		call gen1cbeckewei(iatm,iradcut,gridatm,allpotw(iatm,:))
+		call gen1cbeckewei(iatm,iradcut,gridatm,allpotw(iatm,:),covr_tianlu,3)
 		allpotw(iatm,:)=allpotw(iatm,:)*gridorg%value !Combine Becke weight with single-center integration weight
         call showprog(iatm,ncenter)
 	end do
@@ -979,8 +1001,8 @@ end subroutine
 subroutine gen_orbatmcomp_space(itype,atmcomp,ibeg,iend,info,igrid)
 use defvar
 use util
-use function
-implicit real*8(a-h,o-z)
+use functions
+implicit real*8 (a-h,o-z)
 real*8 atmcomp(ncenter,iend-ibeg+1),comptmp(iend-ibeg+1)
 type(content) gridorg(radpot*sphpot),gridatm(radpot*sphpot)
 real*8 allpotx(ncenter,radpot*sphpot),allpoty(ncenter,radpot*sphpot),allpotz(ncenter,radpot*sphpot),allpotw(ncenter,radpot*sphpot)
@@ -1046,7 +1068,7 @@ else if (itype==2) then !Becke partition
 		gridatm%x=gridorg%x+a(iatm)%x
 		gridatm%y=gridorg%y+a(iatm)%y
 		gridatm%z=gridorg%z+a(iatm)%z
-		call gen1cbeckewei(iatm,iradcut,gridatm,allpotw(iatm,:))
+		call gen1cbeckewei(iatm,iradcut,gridatm,allpotw(iatm,:),covr_tianlu,3)
 		allpotw(iatm,:)=allpotw(iatm,:)*gridorg%value !Combine Becke weight with single-center integration weight
 	end do
 end if
@@ -1510,6 +1532,8 @@ subroutine gen_allorbatmcomp_SCPA(atmcomp)
 use defvar
 implicit real*8 (a-h,o-z)
 real*8 atmcomp(ncenter,nmo)
+
+atmcomp=0
 inquire(file="orbcomp.txt",exist=alive)
 if (alive) then !Load atomic contribution from orbcomp.txt, which may be outputted by option -4 of Hirshfeld/Becke composition analysis
 	write(*,"(a)") " orbcomp.txt was found in current folder, now load atomic contribution to all orbitals from this file..."
@@ -1534,12 +1558,14 @@ else
 		if (MOtype(imo)==0.or.MOtype(imo)==1) then !Closed-shell or alpha part of open-shell
 			sumsqr=sum(CObasa(:,imo)**2)
 			do iatm=1,ncenter
+				if (basstart(iatm)==0) cycle
 				atmcomp(iatm,imo)=sum(CObasa(basstart(iatm):basend(iatm),imo)**2)/sumsqr
 			end do
 		else !Beta part of open-shell
 			iimo=imo-nbasis
 			sumsqr=sum(CObasb(:,iimo)**2)
 			do iatm=1,ncenter
+				if (basstart(iatm)==0) cycle
 				atmcomp(iatm,imo)=sum(CObasb(basstart(iatm):basend(iatm),iimo)**2)/sumsqr
 			end do
 		end if

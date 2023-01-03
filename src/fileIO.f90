@@ -51,6 +51,8 @@ else if (thisfilename(inamelen-3:inamelen)=="mol2") then
 	call readmol2(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="gjf".or.thisfilename(inamelen-2:inamelen)=="com") then
 	call readgjf(thisfilename,infomode)
+else if (thisfilename(inamelen-2:inamelen)=="mop".or.thisfilename(inamelen-2:inamelen)=="MOP") then
+	call readmop(thisfilename,infomode)
 else if (thisfilename(inamelen-2:inamelen)=="cif") then
 	call readcif(thisfilename,infomode)
 else if (index(thisfilename,".molden")/=0.or.index(thisfilename,".molden.input")/=0.or.index(thisfilename,"molden.inp")/=0.or.filenameonly=="MOLDEN") then
@@ -150,7 +152,7 @@ else !Plain text file
             call readORCAinp(thisfilename,infomode)
         end if
     end if
-    !Try to load as Turobmole input file ($coord in the first line)
+    !Try to load as Turbomole input file ($coord in the first line)
     open(10,file=thisfilename,status="old")
     read(10,"(a)") c80tmp
     close(10)
@@ -182,6 +184,10 @@ end if
 call genfragatm !Generate fragatm array containing all atoms
 
 call init_PBC !Initialize some PBC information and settings
+if (ifPBC/=0) then
+	ishowcell=1 !Show cell
+    iorthoview=1 !Use orthographic view
+end if
 
 call init_func !Some user-defined real space functions need special initialization for an system
 
@@ -317,16 +323,9 @@ if (iloadORCAgeom>0) then
         end do
         call loclabel(ifileid,locstr,ifound,0)
         call skiplines(ifileid,2)
-        do iatm=1,ncenter
-            read(ifileid,*) a(iatm)%name,a(iatm)%x,a(iatm)%y,a(iatm)%z
-	        call lc2uc(a(iatm)%name(1:1)) !Convert to upper case
-	        call uc2lc(a(iatm)%name(2:2)) !Convert to lower case
-	        do iele=0,nelesupp
-		        if ( a(iatm)%name==ind2name(iele) ) then
-			        a(iatm)%index=iele
-			        exit
-		        end if
-	        end do
+        do i=1,ncenter
+            read(ifileid,*) a(i)%name,a(i)%x,a(i)%y,a(i)%z
+			call elename2idx(a(i)%name,a(i)%index)
         end do
         a%charge=a%index !Incompatible with ECP case
         a%x=a%x/b2a
@@ -441,14 +440,17 @@ if (index(levelstr,"  ZDO")/=0) then
 end if
 if (levelstr(11:11)=="R") wfntype=0
 if (levelstr(11:11)=="U") wfntype=1
-if (levelstr(11:12)=="RO") then
-    wfntype=2
-    if (levelstr(13:13)=='3') wfntype=0 !RO3LYP means R form of O3LYP
-end if
+if (levelstr(11:12)=="RO") wfntype=2
+
 call loclabel(10,'Number of electrons')
 read(10,"(49x,f12.0)") nelec
 read(10,"(49x,f12.0)") naelec
 read(10,"(49x,f12.0)") nbelec
+
+!Because closed-shell calculation of OPBE, O3LYP, etc. also has RO prefix, so need to check spin multiplicity. &
+!RO must correspond to naelec>nbelec
+if (naelec==nbelec.and.wfntype==2) wfntype=0 !Should change to restricted form
+
 if (naelec/=nbelec.and.wfntype==0) wfntype=1 !This is often redundant, but considering that sometimes U is not properly recognized, this maybe useful
 if (index(levelstr,"CASSCF")/=0.and.naelec/=nbelec.and.isaveNO/=1) then !Suitable for CASSCF calculation of spin multiplicity >1
     wfntype=2
@@ -515,7 +517,7 @@ if (infomode==0) write(*,"(' The highest angular moment basis functions is ',a)"
 isphergau=0
 if (any(shelltype<=-2)) isphergau=1
 if (any(abs(shelltype)>5).and.infomode==0) then
-	write(*,"(a)") " Error: GTFs with angular moment higher than h are found, while Multiwfn currently only supports up to h. Press Enter button to exit"
+	write(*,"(a)") " Error: GTFs with angular moment higher than h are found, while Multiwfn currently only supports up to h. Press ENTER button to exit"
 	read(*,*)
 	stop
 end if
@@ -560,9 +562,9 @@ if (wfntype==0.or.wfntype==2.or.wfntype==3) then !Restricted/restricted open-she
 	MOene=0D0
 	amocoeff=0D0
 	if (wfntype==0.or.wfntype==3) then
-		MOocc(1:nint(nelec/2))=2.0D0
+		MOocc(1:nint(nelec/2))=2D0
 	else if (wfntype==2) then
-		MOocc(1:nbelec)=2.0D0  !Alpha electrons is always more than beta counterpart
+		MOocc(1:nbelec)=2D0  !Alpha electrons is always more than beta counterpart
 		MOocc(nbelec+1:naelec)=1D0
 		MOtype(nbelec+1:naelec)=1
 	end if
@@ -622,11 +624,11 @@ end if
 
 if (isaveNBOocc==1.or.isaveNO==1) then
 	MOocc=MOene
-	MOene=0.0D0
+	MOene=0D0
 end if
-if (isaveNBOene==1) MOocc=0.0D0 !For saveNBO, the automatically determined occupation number is meaningless
-where (MOocc==1000) MOocc=0.0D0 !When saveNBO is used, the latest several occupation/energy of NBO are 1000, we modify them to zero
-where (MOene==1000) MOene=0.0D0
+if (isaveNBOene==1) MOocc=0D0 !For saveNBO, the automatically determined occupation number is meaningless
+where (MOocc==1000) MOocc=0D0 !When saveNBO is used, the latest several occupation/energy of NBO are 1000, we modify them to zero
+where (MOene==1000) MOene=0D0
 
 close(10)
 
@@ -655,7 +657,7 @@ do i=1,nshell
 end do
 allocate(b(nprims),CO(nmo,nprims),basshell(nbasis),bascen(nbasis),bastype(nbasis),primstart(nbasis),&
 primend(nbasis),primconnorm(nprims),basstart(ncenter),basend(ncenter))
-!Fill Cobasa and CObasb
+!Fill CObasa and CObasb
 if (isphergau==0) then
 	allocate(CObasa(nbasis,nbasis))
 	CObasa=transpose(amocoeff)
@@ -856,19 +858,7 @@ do ish=1,noldshell !Finally determine global arrays shtype,shcen,shcon,primshexp
 end do
 
 !Generate basstart and basend
-nowcen=0
-indcen=0
-basstart=0 !Bq atom without basis function will have 0 for basstart and basend
-basend=0
-do ibasis=1,nbasis
-	if (bascen(ibasis)/=nowcen) then
-		nowcen=bascen(ibasis)
-		indcen=indcen+1
-		basstart(indcen)=ibasis
-		if (indcen/=1) basend(indcen-1)=ibasis-1
-	end if
-end do
-basend(ncenter)=nbasis
+call bascen2basstart_end
 
 !Generate one-particle matrix in basis functions
 if (igenP==1) then
@@ -879,8 +869,7 @@ if (igenP==1) then
 	call genP
 end if
 
-!Generate overlap matrix and check wavefunction sanity. It is meaningless to generate Sbas in usual way for PBC systems
-if (ifPBC==0) then
+if (ifPBC==0) then !For PBC case, Sbas will be generated when need it because it may be relatively expensive
     if (infomode==0) write(*,*) "Generating overlap matrix..."
     call genSbas_curr
     devtmp=abs(sum(Sbas*Ptot)-nint(nelec))
@@ -928,7 +917,7 @@ end subroutine
 
 !!--------------------------------------------------------------------
 !!-------------- Read Gaussian formatted check file for AdNDP analysis
-!Cobasa is not read from .fch file, which has already written by AdNDP module, which contains AO expansion coefficients of candidate or saved orbitals
+!CObasa is not read from .fch file, which has already written by AdNDP module, which contains AO expansion coefficients of candidate or saved orbitals
 subroutine readfchadndp(fchfilename,iusespin,orbocc,adndpCObas,numorb)
 use defvar
 use util
@@ -1160,13 +1149,7 @@ ncenter=totlinenum(10,1)
 allocate(a(ncenter))
 do i=1,ncenter
 	read(10,*) a(i)%name,a(i)%x,a(i)%y,a(i)%z,a(i)%charge
-	do j=0,nelesupp
-		if (a(i)%name==ind2name(j)) then
-			a(i)%index=j
-			exit
-		end if
-		if (j==nelesupp) write(*,*) "Warning: Found unknown element!"
-	end do
+    call elename2idx(a(i)%name,a(i)%index)
 end do
 close(10)
 a%x=a%x/b2a
@@ -1207,6 +1190,7 @@ ncenter=0
 do while(.true.)
 	read(10,"(a6)",iostat=ierror) test
 	if (ierror/=0) exit
+	if (test(1:3)=="END") exit
 	if (test=="HETATM".OR.test=="ATOM  ") ncenter=ncenter+1
 end do
 rewind(10)
@@ -1215,6 +1199,7 @@ i=0
 do while(.true.)
 	read(10,"(a6)",iostat=ierror) test
 	if (ierror/=0) exit
+	if (test(1:3)=="END") exit
 	if (test=="HETATM".or.test=="ATOM  ") then
 		backspace(10)
 		i=i+1
@@ -1306,7 +1291,7 @@ use util
 implicit real*8 (a-h,o-z)
 integer infomode,iopen
 character(len=*) name
-character titleline*200,pdbpath*200,teststr*6
+character titleline*200,pdbpath*200,teststr*6,c200tmp*200
 
 ifiletype=5
 if (iopen==1) open(10,file=name,status="old")
@@ -1368,8 +1353,13 @@ end if
 do i=1,ncenter
 	read(10,*) a(i)%name,a(i)%x,a(i)%y,a(i)%z
     if (alive) then
-        read(11,"(76x,a2)") teststr(1:2) !Load element from pdb file
-        if (teststr(1:2)/=" ") a(i)%name=adjustl(teststr(1:2)) !If pdb file doesn't provide element name, still use name in .xyz 
+        do while(.true.) !Read next atom from pdb (the line must have HETATM or ATOM)
+            read(11,"(a)") c200tmp
+            if (index(c200tmp,"HETATM")==0.and.index(c200tmp,"ATOM")==0) cycle
+            read(c200tmp,"(76x,a2)") teststr(1:2) !Load element from pdb file
+            if (teststr(1:2)/=" ") a(i)%name=adjustl(teststr(1:2)) !If pdb file doesn't provide element name, still use name in .xyz
+            exit
+        end do
     end if
     call elename2idx(a(i)%name,idx)
     if (idx/=0) then
@@ -1620,14 +1610,9 @@ do i=1,ncenter
 		call uc2lc(a(i)%name(2:2)) !Convert to lower case
         if (a(i)%name(1:2)=='X ') then !Dummy atom will be finally recognized as Bq
             a(i)%index=0
-            cycle
+        else
+			call elename2idx(a(i)%name,a(i)%index)
         end if
-		do j=0,nelesupp
-			if ( a(i)%name==ind2name(j) ) then
-				a(i)%index=j
-				exit
-			end if
-		end do
 	end if
 end do
 !Try to load translation vector (Tv)
@@ -1713,14 +1698,84 @@ do i=1,ncenter
         a(i)%index=0
         cycle
     end if
-	call lc2uc(a(i)%name(1:1)) !Convert to upper case
-	call uc2lc(a(i)%name(2:2)) !Convert to lower case
-	do j=0,nelesupp
-		if ( a(i)%name==ind2name(j) ) then
-			a(i)%index=j
-			exit
-		end if
-	end do
+    call elename2idx(a(i)%name,a(i)%index)
+end do
+close(10)
+a%x=a%x/b2a
+a%y=a%y/b2a
+a%z=a%z/b2a
+a%charge=a%index
+a%name=ind2name(a%index)
+nelec=sum(a%index)-loadcharge
+naelec=(nint(nelec)+loadmulti-1)/2
+nbelec=nelec-naelec
+if (infomode==0) then
+	write(*,"(' Totally',i8,' atoms')") ncenter
+	write(*,"(' The number of alpha and beta electrons:',2i8)") nint(naelec),nint(nbelec)
+end if
+end subroutine
+
+
+
+!!--------------------------------------------------------
+!!------------------- Read MOPAC .mop file ---------------
+! Only support Cartesian coordinate currently
+! infomode=0: Output summary, =1: Do not
+subroutine readmop(name,infomode) 
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer infomode
+character(len=*) name
+character c40tmp*40,c200tmp*200
+
+ifiletype=12
+open(10,file=name,status="old")
+read(10,"(a)") c200tmp
+
+!Load net charge
+loadcharge=0
+i1=index(c200tmp,"charge")
+if (i1/=0) then
+	read(c200tmp(i1+7:),*) loadcharge
+else
+	i2=index(c200tmp,"CHARGE")
+    if (i2/=0) read(c200tmp(i2+7:),*) loadcharge
+end if
+
+!Load spin multiplicity
+loadmulti=1
+if (index(c200tmp,"doublet")/=0.or.index(c200tmp,"DOUBLET")/=0) loadmulti=2
+if (index(c200tmp,"triplet")/=0.or.index(c200tmp,"TRIPLET")/=0) loadmulti=3
+if (index(c200tmp,"quartet")/=0.or.index(c200tmp,"QUARTET")/=0) loadmulti=4
+if (index(c200tmp,"quintet")/=0.or.index(c200tmp,"QUINTET")/=0) loadmulti=5
+if (index(c200tmp,"sextet")/=0 .or.index(c200tmp,"SEXTET")/=0 ) loadmulti=6
+
+!Test how many centers
+call skiplines(10,2)
+ncenter=0
+do while(.true.)
+	read(10,"(a)",iostat=ierror) c200tmp
+	if (c200tmp==" ".or.ierror/=0) exit
+	ncenter=ncenter+1
+end do
+if (allocated(a)) deallocate(a)
+allocate(a(ncenter))
+
+!Load atom information
+rewind(10)
+call skiplines(10,3)
+do i=1,ncenter
+    read(10,"(a)") c200tmp
+    read(c200tmp,*,iostat=ierror) a(i)%name,a(i)%x,i1,a(i)%y,i2,a(i)%z,i3 !The line may contain integer for controlling optimization
+    if (ierror/=0) read(c200tmp,*,iostat=ierror) a(i)%name,a(i)%x,a(i)%y,a(i)%z
+	if (ierror/=0) then
+		write(*,"(a)") " Error: Unable to successfully load atom information. The input file may be too non-standard"
+		write(*,*) "Press ENTER button to exit program"
+		read(*,*)
+		stop
+	end if
+    call elename2idx(a(i)%name,a(i)%index)
 end do
 close(10)
 a%x=a%x/b2a
@@ -1749,12 +1804,23 @@ implicit real*8 (a-h,o-z)
 integer infomode
 character(len=*) name
 character c40tmp*40,c200tmp*200
+real*8 vec1(3),vec2(3)
+
 ifiletype=16
 open(10,file=name,status="old")
 
 call loclabel(10,"&CELL ",ifound) !Must be "&CELL " rather than "&CELL", the latter may locate to e.g. &CELL_OPT
 do while(.true.)
     read(10,"(a)") c200tmp
+    if (index(c200tmp,'&CELL_REF')/=0) then !Skip &CELL_REF part
+        do while(.true.)
+            read(10,"(a)") c200tmp
+            if (index(c200tmp,'&END')/=0) then
+                read(10,*) c200tmp
+                exit
+            end if
+        end do
+    end if
     if (index(c200tmp,'&END')/=0) exit
     if (index(trim(c200tmp),'A ')/=0) read(c200tmp,*) c40tmp,cellv1
     if (index(trim(c200tmp),'B ')/=0) read(c200tmp,*) c40tmp,cellv2
@@ -1773,9 +1839,12 @@ cellv2=cellv2/b2a
 cellv3=cellv3/b2a
 ifPBC=3
 
-
-call loclabel(10,"&SUBSYS")
-call loclabel(10,"&COORD",ifound,0)
+call loclabel(10,"&SUBSYS",ifound)
+if (ifound==1) then !Load &COORD within &SUBSYS
+    call loclabel(10,"&COORD",ifound,0)
+else !Locate to &COORD (may be a native CP2K input file, only containing geometry and cell information)
+    call loclabel(10,"&COORD",ifound,1)
+end if
 if (ifound==0) then
     write(*,*) "Error: Unable to find &COORD field, this file cannot be loaded!"
     write(*,*) "Press ENTER button to exit"
@@ -1794,27 +1863,53 @@ end do
 if (allocated(a)) deallocate(a)
 allocate(a(ncenter))
 
-call loclabel(10,"&SUBSYS")
-call loclabel(10,"&COORD",ifound,0)
+call loclabel(10,"&SUBSYS",ifound)
+if (ifound==1) then !Load &COORD within &SUBSYS
+    call loclabel(10,"&COORD",ifound,0)
+else !Locate to &COORD (may be a native CP2K input file, only containing geometry and cell information)
+    call loclabel(10,"&COORD",ifound,1)
+end if
 read(10,*)
+iscale=0
 do i=1,ncenter
     read(10,"(a)") c200tmp
-	read(c200tmp,*,iostat=ierror) a(i)%name,xtmp,ytmp,ztmp
-	call lc2uc(a(i)%name(1:1)) !Convert to upper case
-	call uc2lc(a(i)%name(2:2)) !Convert to lower case
-	do j=0,nelesupp
-		if ( a(i)%name==ind2name(j) ) then
-			a(i)%index=j
-			exit
-		end if
-	end do
-    a(i)%x=xtmp/b2a
-    a(i)%y=ytmp/b2a
-    a(i)%z=ztmp/b2a
+    if (index(c200tmp,"scaled")/=0.or.index(c200tmp,"SCALED")/=0) then
+        if (index(c200tmp,"f")==0.and.index(c200tmp,"F")==0) then !Not set to false
+            iscale=1
+            read(10,"(a)") c200tmp
+        end if
+    end if
+	read(c200tmp,*,iostat=ierror) a(i)%name,a(i)%x,a(i)%y,a(i)%z
+    call elename2idx(a(i)%name,a(i)%index)
 end do
-
+do while(.true.) !User may put SCALED after coordinates
+    read(10,"(a)") c200tmp
+    if (index(c200tmp,'&')/=0) exit
+    if (index(c200tmp,"scaled")/=0.or.index(c200tmp,"SCALED")/=0) then
+        if (index(c200tmp,"f")==0.and.index(c200tmp,"F")==0) then !Not set to false
+            iscale=1
+            exit
+        end if
+    end if
+end do
 close(10)
 
+if (iscale==1) then !Fractional coordinate to Cartesian coordinate
+    do iatm=1,ncenter
+        vec1(1)=a(iatm)%x
+        vec1(2)=a(iatm)%y
+        vec1(3)=a(iatm)%z
+        call fract2Cart(vec1,vec2)
+        a(iatm)%x=vec2(1)
+        a(iatm)%y=vec2(2)
+        a(iatm)%z=vec2(3)
+    end do
+else !Directly loaded Cartesian coordinate in Angstrom, convert to Bohr
+    a(:)%x=a(:)%x/b2a
+    a(:)%y=a(:)%y/b2a
+    a(:)%z=a(:)%z/b2a
+end if
+    
 a%charge=a%index
 a%name=ind2name(a%index)
 call guessnelec
@@ -1927,7 +2022,7 @@ end subroutine
 !!------------- Read grid data of VASP, CHGCAR/CHG/ELFCAR/LOCPOT files are supported
 !CHGCAR/CHG (electron density multipled by cell volume) is outputted by VASP by default
 !ELFCAR (ELF) can be generated by using LELF=.TRUE.
-!LOCPOT can be generated by using LVTOT=.TRUE. If LVHAR=.TRUE., V_XC is not included, and the grid data &
+!LOCPOT (recorded in eV) can be generated by using LVTOT=.TRUE. If LVHAR=.TRUE., V_XC is not included, and the grid data &
 !  corresponds to Hartree potential, namely negative of ESP. If LVHAR=.FALSE., the grid data corresponds to external potential in KS operator
 !In spin polarized case (ISPIN=2), there are two sets of data:
 !  CHGCAR/CHG records total density and spin density, ELFCAR records ELF for alpha and beta, LOCPOT records potential for alpha and beta
@@ -1963,28 +2058,31 @@ call loclabel(10,trim(c80tmp),ifound,0)
 if (ifound==1) then
     write(*,*)
     if (index(name,"CHG")/=0) then
-        write(*,"(a)") " This file also contains spin density, do you want to load it instead of loaded data (total density)? (y/n)"
+        write(*,"(a)") " This file also contains spin density, do you want to load it instead of the loaded data (total electron density)? (y/n)"
     else if (index(name,"ELFCAR")/=0) then
-        write(*,"(a)") " This file also contains ELF for beta electron, do you want to load it instead of loaded data (ELF for alpha electron)? (y/n)"
+        write(*,"(a)") " This file also contains ELF of beta electrons, do you want to load it instead of the loaded data (ELF of alpha electrons)? (y/n)"
     else if (index(name,"LOCPOT")/=0) then
-        write(*,"(a)") " This file also contains potential for beta electron, do you want to load it instead of potential for alpha electron? (y/n)"
+        write(*,"(a)") " This file also contains potential for beta electrons, do you want to load it instead of potential for alpha electrons? (y/n)"
     end if
     read(*,*) selectyn
     if (selectyn=='y'.or.selectyn=='Y') read(10,*) (((cubmat(ix,iy,iz),ix=1,nx),iy=1,ny),iz=1,nz)
 end if
 
 if (index(name,"CHG")/=0) then
-    write(*,"(a)") " The CHGCAR/CHG file originally records rho*V_cell, do you want to convert it to rho? (y/n)"
+    write(*,"(a)") " The CHGCAR/CHG file originally records rho*V_cell, do you want to convert it to electron density (rho, in a.u.)? (y/n)"
     read(*,*) selectyn
     if (selectyn=='y'.or.selectyn=='Y') then
         call calc_cellvol(cellvol)
         cubmat=cubmat/cellvol
     end if
 else if (index(name,"LOCPOT")/=0) then
-    write(*,"(a)") " The LOCPOT file originally records potential felt by single electron, &
-    do you want to convert it to electrostatic potential (taking negative of that)? (y/n)"
+    write(*,"(/,a)") " The LOCPOT file originally records potential felt by single electron, &
+    do you want to convert it to electrostatic potential (namely taking negative of that)? (y/n)"
     read(*,*) selectyn
     if (selectyn=='y'.or.selectyn=='Y') cubmat=-cubmat
+    write(*,"(/,a)") " The grid data in LOCPOT file was originally recorded in eV, do you want to convert it to a.u. to follow common convention? (y/n)"
+    read(*,*) selectyn
+    if (selectyn=='y'.or.selectyn=='Y') cubmat=cubmat/au2eV
 end if
 close(10)
 
@@ -2827,7 +2925,7 @@ if (infomode<2) write(*,*)
 if (infomode<2) write(*,*) "Loading grid data, please wait..."
 !Load data
 ii=0
-do i=1,nx !a(x,y,z)
+do i=1,nx
 	do j=1,ny
 		if (mo_number==0.or.mo_number==1) then
 			read(10,*) cubmattmp(i,j,:)
@@ -2836,13 +2934,8 @@ do i=1,nx !a(x,y,z)
 			cubmattmp(i,j,:)=temp_readdata(mo_select:size(temp_readdata):mo_number)
 		end if
 	end do
-	progress=dfloat(i)/nx*100
-	if (progress>ii.and.infomode<2) then
-		ii=ii+10
-		write(*,"(f6.1,'%')") progress
-	end if
+	call showprog(i,nx)
 end do
-if (infomode<2) write(*,*) "Done!"
 close(10)
 end subroutine
 
@@ -3136,22 +3229,15 @@ allocate(MOocc(nmo),MOene(nmo),MOtype(nmo),orbidx(nmo))
 do i=1,ncenter
 	read(10,"(a24,3f12.8,10x,f5.1)") c80tmp,a(i)%x,a(i)%y,a(i)%z,a(i)%charge
 	read(c80tmp,*) a(i)%name
-	call lc2uc(a(i)%name(1:1))
-	call uc2lc(a(i)%name(2:2))
-	do j=0,nelesupp
-		if (a(i)%name==ind2name(j)) then
-			a(i)%index=j
-			exit
-		end if
-		if (j==nelesupp) then
-            if (infomode==0) then
-			    write(*,"(/,3a,i5,'!')") " Warning: Found unknown element ",a(i)%name," with atom index of",i
-			    write(*,*) "This atom now is recognized as Bq (ghost atom)"
-            end if
-			a(i)%index=0
-            a(i)%name=ind2name(0)
-		end if
-	end do
+    call elename2idx(a(i)%name,a(i)%index)
+	if (a(i)%index==0) then
+        if (infomode==0) then
+			write(*,"(/,3a,i5,'!')") " Warning: Found unknown element ",a(i)%name," with atom index of",i
+			write(*,*) "This atom now is recognized as Bq (ghost atom)"
+        end if
+		a(i)%index=0
+        a(i)%name=ind2name(0)
+	end if
 end do
 read(10,"(20x,20i3)") (b(i)%center,i=1,nprims)
 read(10,"(20x,20i3)") (b(i)%type,i=1,nprims)
@@ -3192,7 +3278,8 @@ end if
 !Read orbitals
 do i=1,nmo
 	read(10,"(a)") c80tmp
-    read(c80tmp,*) c80tmp2,orbidx(i)
+    ipos=index(c80tmp,"MO")
+    read(c80tmp(ipos+2:),*) orbidx(i)
     ipos=index(c80tmp,'=')
     read(c80tmp(ipos+1:),*) MOocc(i)
     ipos=index(c80tmp,'=',back=.true.)
@@ -3318,7 +3405,7 @@ if (ifoundmospin==1.and.(wfntype==1.or.wfntype==4)) then
 	MOocc=tmpMOocc
 	MOene=tmpMOene
 	MOtype=tmpMOtype
-	write(*,*) "Note: Sequence of orbitals has been sorted according to spin type"
+	if (infomode==0) write(*,*) "Note: Sequence of orbitals has been sorted according to spin type"
 	deallocate(tmpCO,tmpMOocc,tmpMOene,tmpMOtype)
 end if
 
@@ -3643,8 +3730,10 @@ subroutine readEDFlib(infomode)
 use defvar
 implicit real*8 (a-h,o-z)
 real*8 EDFcoeff(100),EDFexp(100)
-if (infomode==0) write(*,"(a)") " Loading electron density functions (EDF) information from &
-built-in EDF library... The library is freely available at https://github.com/zorkzou/Molden2AIM"
+if (infomode==0) then
+    write(*,*) "Loading electron density functions (EDF) information from built-in EDF library"
+    write(*,*) "(The library is available at https://github.com/zorkzou/Molden2AIM)"
+end if
 nEDFprims=0
 nEDFelec=0
 !First time, find total number of EDF GTFs so that b_EDF and CO_EDF can be allocated
@@ -3657,13 +3746,15 @@ do iatm=1,ncenter
 	if (infomode==0) write(*,"(1x,a,'(',i5,')      Core electrons:',i3,'     EDF primitive GTFs:',i3)") a(iatm)%name,iatm,natmcore,nfun
 	if (nfun==0.and.infomode==0) then
 		write(*,*) "Warning: Unable to find proper EDF information for this atom!"
-		write(*,*) "Press Enter button to skip loading EDF information for this atom"
-		read(*,*)
+		!write(*,*) "Pressing ENTER button to skip loading EDF information for this atom"
+		!read(*,*)
 	end if
 	nEDFprims=nEDFprims+nfun
 end do
-if (infomode==0) write(*,"(' The number of total inner-core electrons:',i6)") nEDFelec
-if (infomode==0) write(*,"(' The number of total EDF primitive GTFs:',i6)") nEDFprims
+if (infomode==0) then
+    write(*,"(' The number of total inner-core electrons:',i6)") nEDFelec
+    write(*,"(' The number of total EDF primitive GTFs:',i6)") nEDFprims
+end if
 
 allocate(b_EDF(nEDFprims),CO_EDF(nEDFprims))
 ifun=0
@@ -3678,7 +3769,7 @@ do iatm=1,ncenter
 	CO_EDF(ifun+1:ifun+nfun)=EDFcoeff(1:nfun)
 	ifun=ifun+nfun
 end do
-if (infomode==0) write(*,*) " Loading EDF library finished!"
+if (infomode==0) write(*,*) "Loading EDF library finished!"
 end subroutine
 
 
@@ -3748,23 +3839,32 @@ if (ifound==0) call loclabel(10,"[cell]",ifound,maxline=50)
 if (ifound==0) call loclabel(10,"[CELL]",ifound,maxline=50)
 if (ifound==1) then
     read(10,*)
-    read(10,*) cellv1
-    ifPBC=1
-    read(10,*,iostat=ierror) cellv2
-    if (ierror/=0) then
-        cellv2=0
-    else
-        ifPBC=ifPBC+1
-        read(10,*,iostat=ierror) cellv3
+    read(10,"(a)") c80tmp
+    read(c80tmp,*,iostat=ierror) alen,blen,clen,anga,angb,angc
+    if (ierror==0) then !Load as cell parameters
+        call abc2cellv(alen/b2a,blen/b2a,clen/b2a,anga,angb,angc)
+        ifPBC=3
+    else !Load as cell vectors
+        read(c80tmp,*) cellv1
+        ifPBC=1
+        read(10,*,iostat=ierror) cellv2
         if (ierror/=0) then
-            cellv3=0
+            cellv2=0
         else
             ifPBC=ifPBC+1
+            read(10,*,iostat=ierror) cellv3
+            if (ierror/=0) then
+                cellv3=0
+            else
+                ifPBC=ifPBC+1
+            end if
         end if
+        cellv1=cellv1/b2a
+        cellv2=cellv2/b2a
+        cellv3=cellv3/b2a
     end if
-    cellv1=cellv1/b2a
-    cellv2=cellv2/b2a
-    cellv3=cellv3/b2a
+else
+	call loadcellinfo_txt !Load cell information from [Cell].txt in current folder if available
 end if
 
 !!!!! Load atom information
@@ -3818,6 +3918,7 @@ end if
 
 !If user manually specified number of valence electrons of specific element, use it
 call loclabel(10,"[Nval]",ifound,maxline=500)
+if (ifound==0) call loclabel(10,"[nval]",ifound)
 if (ifound==1) then
     read(10,*)
     do while(.true.)
@@ -4278,7 +4379,7 @@ end do
 allocate(b(nprims),CO(nmo,nprims),basshell(nbasis),bascen(nbasis),bastype(nbasis),primstart(nbasis),&
 primend(nbasis),primconnorm(nprims),basstart(ncenter),basend(ncenter))
 
-!Fill Cobasa and CObasb
+!Fill CObasa and CObasb
 if (isphergau==0) then
 	allocate(CObasa(nbasis,nbasis))
 	CObasa=transpose(amocoeff)
@@ -4296,7 +4397,7 @@ else if (isphergau==1) then !Since we have artifically converted spherical shell
 		CObasb=0D0
 	end if
 	!Map 5D coefficient to 6D coefficient. Since the number of spherical basis functions is more than Cartesian ones, 
-	!therefore Cobasa (6D) will have some orbitals with vacant coefficients, only orbitals (1~nbasis5D) are filled
+	!therefore CObasa (6D) will have some orbitals with vacant coefficients, only orbitals (1~nbasis5D) are filled
 	ipos5D=1
 	ipos6D=1
 	do ish=1,nshell
@@ -4451,35 +4552,26 @@ primshexp=primexp
 primshcoeff=concoeff
 
 !Generate basstart and basend
-nowcen=0
-indcen=0
-do ibasis=1,nbasis
-	if (bascen(ibasis)/=nowcen) then
-		nowcen=bascen(ibasis)
-		indcen=indcen+1
-		basstart(indcen)=ibasis
-		if (indcen/=1) basend(indcen-1)=ibasis-1
-	end if
-end do
-basend(ncenter)=nbasis
+call bascen2basstart_end
 
 !Generate one-particle density matrix for basis functions
 if (igenP==1) then
 	if (infomode==0) write(*,*) "Generating density matrix..."
 	call genP
 end if
-if (ifPBC==0) then !It is meaningless to generate Sbas in usual way for PBC systems
+if (ifPBC==0) then !For PBC case, Sbas will be generated when need it because it may be relatively expensive
     if (infomode==0) write(*,*) "Generating overlap matrix..."
     call genSbas_curr
 end if
 
 !Check wavefunction sanity for non-PBC case
-if (iorca==0.and.ifPBC==0) then !For ORCA with angular moment >f, warning has already been shown before
+if (infomode==0.and.iorca==0.and.ifPBC==0) then !For ORCA with angular moment >f, warning has already been shown before
 	devtmp=abs(sum(Sbas*Ptot)-nint(nelec))
 	if (devtmp>0.01D0) then
 		write(*,"( ' Deviation of Tr(S*P) to the total number of electrons:',f12.6)") devtmp
-		write(*,"(/,a)") " Warning: The wavefunction loaded is problematic! That means this Molden input file cannot be well supported by Multiwfn. &
-		I strongly suggest you use Molden2AIM program to standardize this file before loading into Multiwfn. Please check Section 5.1 of the manual for detail"
+		write(*,"(/,a)") " Warning: The wavefunction loaded is problematic! That means this Molden input file cannot be well supported by Multiwfn"
+        write(*,"(a)") " If the input file was generated by CP2K, please carefully check Section 2.9.2.1 of Multiwfn manual on how to properly modify this file. &
+        For other cases, perhaps the molden file is non-standard, try to use Molden2AIM program to standardize this file before loading it into Multiwfn, see Section 5.1 of Multiwfn manual for detail"
 		!write(*,"(a)") " If you really want to proceed, press ENTER button, but notice that the result will not be correct"
 		!read(*,*)
 	end if
@@ -4513,7 +4605,7 @@ end if
 call getHOMOidx !Find out index of HOMO, will be used in some cases
 
 tmpnet=sum(a%charge)-nelec
-if (tmpnet>18.and.any(a%index>18)) then
+if (infomode==0.and.tmpnet>18.and.any(a%index>18)) then
     write(*,"(/,a)") " !! Warning! Warning! Warning! Warning! Warning! Warning! Warning! Warning !!"
     write(*,"(a,i5,a)") " The net charge of this system is quite large (",nint(tmpnet),")! Probably ECP is employed while you &
     forgot to modify the atomic indices in [atoms] field of the .molden file to actual nuclear charges, in this case some &
@@ -4654,6 +4746,10 @@ do iatm=1,ncenter
 			if (iachar(c80(2:2))>=65) exit !The second column of next line is a letter, indicating that reading present atom has finished
 			if (c80==" ") exit !The next line is blank (may occur in the case of Firefly), indicating the whole field of basis set definition has finished
 		else
+            if (c80(2:2)/=" ") then
+                backspace(10)
+                exit
+            end if
 			nprimshell=nprimshell+1
 			if (index(c80,"L")/=0) then
 				nprimshell=nprimshell+1 !sp shell will be separated as s and p
@@ -4674,8 +4770,9 @@ shcon=0
 ishell=1
 iprimshell=0
 do iatm=1,ncenter
-	read(10,*) !Atom name
-	read(10,*)
+    !write(*,"(' Loading atom',i6,' (',a,')')") iatm,ind2name(a(iatm)%index)
+	read(10,"(a)") c80 !Atom name
+	read(10,"(a)") c80
 	do while(.true.)
 		read(10,"(a)") c80
 		if (c80==" ") then !Finished loading last basis shell
@@ -4702,12 +4799,28 @@ do iatm=1,ncenter
 			end if
 			ishell=ishell+1
 			read(10,"(a)") c80;backspace(10)
-			if (iachar(c80(2:2))>=65) exit !The second column of next line is a letter, indicating that reading present atom has finished
+			if (iachar(c80(2:2))>=65.or.c80(2:2)=='*') exit !The second column of next line is a letter, indicating that reading present atom has finished
 			if (c80==" ") exit !The next line is blank (may occur in the case of Firefly), indicating the whole field of basis set definition has finished
-		else !Loading a new basis shell
+		else !Loading next primitive shell in current basis function shell
+            !In very special case, there are two Bq successively occur at the end, below is an example. &
+            !In this case Bq doesn't have any line defining primitive shell, so we need to exit according to the second character
+            !...
+            ! 84   L     251             1.1695961    0.399512826089    0.607683718598
+            ! 84   L     252             0.3803890    0.700115468880    0.391957393099
+            !
+            ! *         
+            !
+            ! *         
+            !
+            ! TOTAL NUMBER OF BASIS SET SHELLS             =   84
+            !...
+            if (c80(2:2)/=" ") then
+                backspace(10)
+                exit
+            end if
 			iprimshell=iprimshell+1
 			shcon(ishell)=shcon(ishell)+1
-			if (ifirefly==0) then
+			if (ifirefly==0) then !GAMESS-US
 				read(c80,*) inouse,chartmp,inouse,primshexp(iprimshell),primshcoeff(iprimshell)
 			else
 				read(c80,*) inouse,chartmp,inouse,primshexp(iprimshell)
@@ -4862,7 +4975,7 @@ end do
 allocate(b(nprims),CO(nmo,nprims),basshell(nbasis),bascen(nbasis),bastype(nbasis),primstart(nbasis),&
 primend(nbasis),primconnorm(nprims),basstart(ncenter),basend(ncenter))
 
-!Fill Cobasa and CObasb, the gap spaces due to difference between Cartesian and spherical harmonic functions are filled by zero
+!Fill CObasa and CObasb, the gap spaces due to difference between Cartesian and spherical harmonic functions are filled by zero
 allocate(CObasa(nbasis,nbasis))
 CObasa=0
 CObasa(:,1:nmoactual)=amocoeff
@@ -4909,17 +5022,7 @@ do i=1,nshell !cycle each basis shell
 end do
 
 !Generate basstart and basend
-nowcen=0
-indcen=0
-do ibasis=1,nbasis
-	if (bascen(ibasis)/=nowcen) then
-		nowcen=bascen(ibasis)
-		indcen=indcen+1
-		basstart(indcen)=ibasis
-		if (indcen/=1) basend(indcen-1)=ibasis-1
-	end if
-end do
-basend(ncenter)=nbasis
+call bascen2basstart_end
 
 !Generate one-particle matrices for basis functions
 if (igenP==1) then
@@ -4928,6 +5031,15 @@ if (igenP==1) then
 end if
 if (infomode==0) write(*,*) "Generating overlap matrix..."
 call genSbas_curr
+
+!Check wavefunction sanity
+if (infomode==0) then
+	devtmp=abs(sum(Sbas*Ptot)-nint(nelec))
+	if (devtmp>0.01D0) then
+		write(*,"( ' Deviation of Tr(S*P) to the total number of electrons:',f12.6)") devtmp
+		write(*,"(/,a)") " Warning: The wavefunction loaded is problematic! That means this Molden input file cannot be well supported by Multiwfn"
+	end if
+end if
  
 !Output summary of present wavefunction
 if (infomode==0) then
@@ -4959,7 +5071,7 @@ end subroutine
 
 !----- A routine used to read GAMESS-US LCAO matrix. One should first move pointer to the line containing "EIGENVECTORS"
 subroutine readgmsLCAO(fileid,ifirefly,n1,n2,mat,ene,sym)
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer fileid,ifirefly,n1,n2
 real*8 :: mat(n1,n2),ene(n2)
 character(len=4) :: sym(n2)
@@ -5219,9 +5331,9 @@ do while(.true.)
             if you want to output geometry parameters with variable names, input ""zmat1"""
         end if
     end if
-    if (icoordtype==1) write(*,"(a)") " Hint: If template.gjf is presented in current folder, &
-    then it will be used as template file and the line containing [geometry] or [GEOMETRY]  will be replaced with the present coordinate, &
-    and [name] will be replaced with name (without suffix) of the new input file"
+    write(*,"(a)") " Hint: If template.gjf is presented in current folder, &
+    then it will be used as template file, the line containing [geometry] or [GEOMETRY] will be replaced with the present coordinate, &
+    [name] will be replaced with name of the new input file (without suffix), net charge and spin multiplicity will correspond to present system"
     read(*,"(a)") outname
     if (outname=="zmat".or.outname=="zmat1") then
         icoordtype=2
@@ -5238,7 +5350,7 @@ do while(.true.)
 end do
 call outgjf(outname,10,icoordtype)
 end subroutine
-!!---------- Output current coordinate to Gaussian input file
+!!---------- Output current coordinates and cell information to Gaussian input file
 !1=Cartesian   2=Z-matrix with variable names   -2=Z-matrix directly with geometry parameters
 subroutine outgjf(outgjfname,ifileid,icoordtype)
 use defvar
@@ -5248,38 +5360,6 @@ character selectyn,c10tmp*10,tmpname*200,c200tmp*200
 integer icoordtype,Zmat(ncenter,3)
 character(len=6) bondstr(ncenter),anglestr(ncenter),dihstr(ncenter)
 real*8 bondval(ncenter),angleval(ncenter),dihval(ncenter)
-
-if (icoordtype==1) then !In the case of Cartesian coordinate, if template.gjf exists, using it as template
-    inquire(file="template.gjf",exist=alive)
-    if (alive) then
-        write(*,"(a)") " Note: template.gjf was found in current folder, it will be used as template file to generate new .gjf file"
-        open(ifileid,file=outgjfname,status="replace")
-        open(ifileid+1,file="template.gjf",status="old")
-        do while(.true.)
-            read(ifileid+1,"(a)",iostat=ierror) c200tmp
-            if (ierror==0) then
-                if (index(c200tmp,"[geometry]")/=0.or.index(c200tmp,"[GEOMETRY]")/=0) then
-                    do i=1,ncenter
-	                    write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
-                    end do
-                else
-                    itmp=index(c200tmp,"[name]")
-                    if (itmp/=0) then
-                        call path2filename(outgjfname,tmpname)
-                        c200tmp=c200tmp(1:itmp-1)//trim(tmpname)//trim(c200tmp(itmp+6:))
-                    end if
-                    write(ifileid,"(a)") trim(c200tmp)
-                end if
-            else
-                exit
-            end if
-        end do
-        close(ifileid)
-        close(ifileid+1)
-        write(*,"(a)") " Exporting Gaussian input file finished!"
-        return
-    end if
-end if
 
 selectyn='n'
 if (allocated(CObasa).and.wfntype<=2) then
@@ -5299,12 +5379,8 @@ end if
 
 call path2filename(outgjfname,tmpname)
 open(ifileid,file=outgjfname,status="replace")
-write(ifileid,"(a)") "%chk="//trim(tmpname)//".chk"
-if (selectyn=='y'.or.selectyn=='Y') then
-    write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G* guess=cards","Generated by Multiwfn"
-else
-    write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G*","Generated by Multiwfn"
-end if
+
+!Determine net charge and spin multiplicity
 if (loadcharge==-99) then !Not loaded from input file
     netcharge=nint(sum(a%charge)-nelec)
     if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb file
@@ -5316,8 +5392,44 @@ if (loadmulti==-99) then !Not loaded from input file
 else
     multi=loadmulti
 end if
-write(ifileid,"(2i3)") netcharge,multi
 
+!Write information before atomic coordinates
+inquire(file="template.gjf",exist=alive)
+if (alive) then !Write information in template.gjf to current gjf file except for coordinate part
+    write(*,"(a)") " Note: template.gjf was found in current folder, it will be used as template file to generate new .gjf file"
+    open(ifileid+1,file="template.gjf",status="old")
+    nspace=0
+    do while(.true.)
+        read(ifileid+1,"(a)",iostat=ierror) c200tmp
+        if (c200tmp==" ".and.nspace<2) nspace=nspace+1
+        if (nspace==2) then !Write charge and spin multiplicity of present system
+			read(ifileid+1,*) !Skip charge and spin multiplicity line
+            write(ifileid,"(/,2i3)") netcharge,multi
+            nspace=nspace+1
+            cycle
+        end if
+		if (index(c200tmp,"[geometry]")==0.and.index(c200tmp,"[GEOMETRY]")==0) then
+			itmp=index(c200tmp,"[name]")
+			if (itmp/=0) then
+				call path2filename(outgjfname,tmpname)
+				c200tmp=c200tmp(1:itmp-1)//trim(tmpname)//trim(c200tmp(itmp+6:))
+			end if
+			write(ifileid,"(a)") trim(c200tmp)
+		else
+			exit !Encountered [geometry] or [GEOMETRY]
+		end if
+    end do
+else !Common case
+    write(ifileid,"(a)") "%chk="//trim(tmpname)//".chk"
+    if (selectyn=='y'.or.selectyn=='Y') then
+        write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G* guess=cards","Generated by Multiwfn"
+    else
+        write(ifileid,"(a,/,/,a,/)") "#P B3LYP/6-31G*","Generated by Multiwfn"
+    end if
+    write(ifileid,"(2i3)") netcharge,multi
+end if
+
+!Write atomic coordinates
 if (icoordtype==1) then !Cartesian
     do i=1,ncenter
 	    write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
@@ -5333,23 +5445,21 @@ else if (icoordtype==2) then !Z-matrix with variable names
         write(c10tmp,"(i5)") nbond
         bondstr(nbond)="B"//trim(adjustl(c10tmp))
         i1=zmat(iatm,1)
-        bondval(nbond)=atomdist(iatm,i1)*b2a
+        bondval(nbond)=atomdist(iatm,i1,0)*b2a
         write(ifileid,"(i5,3x,a)",advance="no") zmat(iatm,1),bondstr(nbond)
         if (iatm>=3) then
             nangle=nangle+1
             write(c10tmp,"(i5)") nangle
             anglestr(nangle)="A"//trim(adjustl(c10tmp))
             i2=zmat(iatm,2)
-            angleval(nangle)=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(i1)%x,a(i1)%y,a(i1)%z,a(i2)%x,a(i2)%y,a(i2)%z)
+            angleval(nangle)=atomang(iatm,i1,i2,0)
             write(ifileid,"(3x,i5,3x,a)",advance="no") zmat(iatm,2),anglestr(nangle)
             if (iatm>=4) then
                 ndih=ndih+1
                 write(c10tmp,"(i5)") ndih
                 dihstr(ndih)="D"//trim(adjustl(c10tmp))
                 i3=zmat(iatm,3)
-                !write(*,*) iatm,i1,i2,i3
-                dihval(ndih)=xyz2dih_sign(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(i1)%x,a(i1)%y,a(i1)%z,a(i2)%x,a(i2)%y,a(i2)%z,a(i3)%x,a(i3)%y,a(i3)%z)
-                !write(*,*) ndih,dihval(ndih)
+                dihval(ndih)=atomdih(iatm,i1,i2,i3,0)
                 write(ifileid,"(3x,i5,3x,a)",advance="no") zmat(iatm,3),trim(dihstr(ndih))
             end if
         end if
@@ -5370,14 +5480,14 @@ else if (icoordtype==-2) then !Z-matrix directly with geometry parameters
     do iatm=2,ncenter
         write(ifileid,"(a)",advance="no") a(iatm)%name
         i1=zmat(iatm,1)
-        write(ifileid,"(i5,f12.6)",advance="no") zmat(iatm,1),atomdist(iatm,i1)*b2a
+        write(ifileid,"(i5,f12.6)",advance="no") zmat(iatm,1),atomdist(iatm,i1,0)*b2a
         if (iatm>=3) then
             i2=zmat(iatm,2)
-            tmpval=xyz2angle(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(i1)%x,a(i1)%y,a(i1)%z,a(i2)%x,a(i2)%y,a(i2)%z)
+            tmpval=atomang(iatm,i1,i2,0)
             write(ifileid,"(3x,i5,f10.4)",advance="no") zmat(iatm,2),tmpval
             if (iatm>=4) then
                 i3=zmat(iatm,3)
-                tmpval=xyz2dih_sign(a(iatm)%x,a(iatm)%y,a(iatm)%z,a(i1)%x,a(i1)%y,a(i1)%z,a(i2)%x,a(i2)%y,a(i2)%z,a(i3)%x,a(i3)%y,a(i3)%z)
+                tmpval=atomdih(iatm,i1,i2,i3,0)
                 write(ifileid,"(3x,i5,f10.4)",advance="no") zmat(iatm,3),tmpval
             end if
         end if
@@ -5385,9 +5495,16 @@ else if (icoordtype==-2) then !Z-matrix directly with geometry parameters
     end do
 end if
 
-if (any(cellv1/=0)) write(ifileid,"('Tv',3f12.6)") cellv1*b2a
-if (any(cellv2/=0)) write(ifileid,"('Tv',3f12.6)") cellv2*b2a
-if (any(cellv3/=0)) write(ifileid,"('Tv',3f12.6)") cellv3*b2a
+!Write translation vectors
+if (ifPBC>=1) then
+	write(ifileid,"('Tv',3f12.6)") cellv1*b2a
+	if (ifPBC>=2) then
+		write(ifileid,"('Tv',3f12.6)") cellv2*b2a
+		if (ifPBC==3) write(ifileid,"('Tv',3f12.6)") cellv3*b2a
+    end if
+end if
+
+!Write initial guess
 if (selectyn=='y') then
     write(ifileid,"(/,'(5E16.9)',/,'-1')")
     do i=1,nbasis
@@ -5404,7 +5521,27 @@ if (selectyn=='y') then
     end if
     write(ifileid,"('0',/)")
 end if
-write(ifileid,*)  !Two blank lines at the end of the file
+
+!Write rest part of template.gjf into present gjf file
+if (alive) then
+    do while(.true.)
+        read(ifileid+1,"(a)",iostat=ierror) c200tmp
+        if (ierror/=0) then
+            exit
+        else
+            itmp=index(c200tmp,"[name]")
+            if (itmp/=0) then
+                call path2filename(outgjfname,tmpname)
+                c200tmp=c200tmp(1:itmp-1)//trim(tmpname)//trim(c200tmp(itmp+6:))
+            end if
+            write(ifileid,"(a)") trim(c200tmp)
+        end if
+    end do
+    close(ifileid+1)
+else
+    write(ifileid,*)  !Two blank lines at the end of the file
+end if
+
 close(ifileid)
 write(*,"(a)") " Exporting Gaussian input file finished! It corresponds to single point task at B3LYP/6-31G* level"
 if (selectyn=='y') write(*,"(a)") " Note that you must specify the basis set to the one &
@@ -5506,7 +5643,7 @@ use util
 character(len=*) outname
 character keyword*200,c80tmp*80,c200tmp*200,solvname*30,c2000tmp*2000,grd4str*20,grd5str*20
 character(len=50) atmbasname(ncenter)
-integer :: itask=1,idiffuse=0,frozenatm(ncenter),CPfrag1(ncenter),CPfrag2(ncenter),ioptHonly=0,idxarr(ncenter)
+integer :: itask=1,idiffuse=0,frozenatm(ncenter),CPfrag1(ncenter),CPfrag2(ncenter),ioptHonly=0,idxarr(ncenter),ifixHbond=0
 integer :: maxcore=1000
 integer :: iORCAver=1 !ORCA version, =0: 4.x, =1: 5.0
 real*8 efield(3)
@@ -5553,7 +5690,10 @@ do while(.true.)
     write(*,*) "3 RI-B3LYP-D3(BJ)/def2-TZVP(-f)     4 RI-B3LYP-D3(BJ)/def2-TZVP"
     write(*,*) "5 RI-wB97M-V/def2-TZVP"
     write(*,*) "6 RI-PWPB95-D3(BJ)/def2-TZVPP       7 RI-PWPB95-D3(BJ)/def2-QZVPP"
-    if (iORCAver==1) write(*,*) "6b RI-wB97X-2-D3(BJ)/def2-TZVPP     7b RI-wB97X-2-D3(BJ)/def2-QZVPP"
+    if (iORCAver==1) then
+        write(*,*) "6b RI-wB97X-2-D3(BJ)/def2-TZVPP     7b RI-wB97X-2-D3(BJ)/def2-QZVPP"
+        write(*,*) "6c RI-revDSD-PBEP86-D4/def2-TZVPP   7c RI-revDSD-PBEP86-D4/def2-QZVPP"
+    end if
     write(*,*) "8 DLPNO-CCSD(T)/cc-pVTZ with normalPNO and RIJK"
     write(*,*) "9 DLPNO-CCSD(T)/cc-pVTZ with tightPNO and RIJK"
     write(*,*) "10 CCSD(T)/cc-pVTZ"
@@ -5573,6 +5713,10 @@ do while(.true.)
         ilevel=1006
     else if (c80tmp=="7b") then
         ilevel=1007
+    else if (c80tmp=="6c") then
+        ilevel=1008
+    else if (c80tmp=="7c") then
+        ilevel=1009
     else
         read(c80tmp,*) ilevel
     end if
@@ -5618,12 +5762,20 @@ do while(.true.)
         write(*,*) "3 Frequency"
         write(*,*) "4 Optimization + Frequency"
         write(*,*) "5 Optimization for transition state + Frequency"
-        write(*,*) "6 Molecular dynamics"
+        write(*,*) "6 Molecular dynamics (MD)   6a MD with fixing all H related bond lengths"
         write(*,*) "7 Interaction energy with counterpoise correction"
         write(*,*) "-7 Interaction energy and complex energy with counterpoise correction"
         write(*,*) "8 NMR"
         write(*,*) "9 Wavefunction stability test"
-        read(*,*) itask
+        read(*,*) c80tmp
+        ifixHbond=0
+        if (c80tmp=="6a") then
+            ifixHbond=1
+            c80tmp(2:2)=" "
+            write(*,"(a)") " Note: Lengths of all hydrogen related bonds will be constraint to initial values. &
+            The existence of the bonds are in line with that observed in current status of main function 0"
+        end if
+        read(c80tmp,*) itask
         if (itask==7.or.itask==-7) then
             write(*,*) "Input indices of the atoms in fragment 1, e.g. 3,6-10,14"
             read(*,"(a)") c2000tmp
@@ -5765,6 +5917,8 @@ if (idiffuse==0) then
     if (ilevel==7) c200tmp="! PWPB95 D3 def2-QZVPP def2/J def2-QZVPP/C RIJCOSX tightSCF"//trim(grd4str)
     if (ilevel==1006) c200tmp="! wB97X-2 D3 def2-TZVPP def2/J def2-TZVPP/C RIJCOSX tightSCF"//trim(grd4str)
     if (ilevel==1007) c200tmp="! wB97X-2 D3 def2-QZVPP def2/J def2-QZVPP/C RIJCOSX tightSCF"//trim(grd4str)
+    if (ilevel==1008) c200tmp="! D4 def2-TZVPP def2/J def2-TZVPP/C RIJCOSX tightSCF"//trim(grd4str)
+    if (ilevel==1009) c200tmp="! D4 def2-QZVPP def2/J def2-QZVPP/C RIJCOSX tightSCF"//trim(grd4str)
     if (ilevel==8) c200tmp="! DLPNO-CCSD(T) normalPNO RIJK cc-pVTZ cc-pVTZ/JK cc-pVTZ/C tightSCF"
     if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO RIJK cc-pVTZ cc-pVTZ/JK cc-pVTZ/C tightSCF"
     if (ilevel==10) c200tmp="! CCSD(T) cc-pVTZ tightSCF"
@@ -5790,6 +5944,8 @@ else
     if (ilevel==7) c200tmp="! PWPB95 D3 ma-def2-QZVPP autoaux RIJCOSX tightSCF"//trim(grd4str)
     if (ilevel==1006) c200tmp="! wB97X-2 D3 ma-def2-TZVPP autoaux RIJCOSX tightSCF"//trim(grd4str)
     if (ilevel==1007) c200tmp="! wB97X-2 D3 ma-def2-QZVPP autoaux RIJCOSX tightSCF"//trim(grd4str)
+    if (ilevel==1008) c200tmp="! D4 ma-def2-TZVPP autoaux RIJCOSX tightSCF"//trim(grd4str)
+    if (ilevel==1009) c200tmp="! D4 ma-def2-QZVPP autoaux RIJCOSX tightSCF"//trim(grd4str)
     if (ilevel==8) c200tmp="! DLPNO-CCSD(T) normalPNO RIJK aug-cc-pVTZ aug-cc-pVTZ/JK aug-cc-pVTZ/C tightSCF"
     if (ilevel==9) c200tmp="! DLPNO-CCSD(T) tightPNO RIJK aug-cc-pVTZ aug-cc-pVTZ/JK aug-cc-pVTZ/C tightSCF"
     if (ilevel==10) c200tmp="! CCSD(T) aug-cc-pVTZ tightSCF"
@@ -5875,6 +6031,7 @@ if (itask==7.or.itask==-7) then
     write(ifileid,"('%pal nprocs',i4,' end')") nprocs
     write(ifileid,"(/,a)") trim(keyword)
     if (ilevel==1006.or.ilevel==1007) call ORCA_DFT_D3_parm(ifileid)
+    if (ilevel==1008.or.ilevel==1009) call ORCA_revDSD_PBEP86_D4_parm(ifileid)
     write(ifileid,"(a,i6)") "%maxcore",maxcore
     write(ifileid,"('* xyz',2i4)") netcharge,multi
     do i=1,ncenter
@@ -5889,6 +6046,7 @@ if (itask==7.or.itask==-7) then
         write(ifileid,"(/,a)") "$new_job"
         write(ifileid,"(a)") trim(keyword)//" Pmodel" !Use Pmodel to regenerate new initial guess rather than use the previous wavefunction
         if (ilevel==1006.or.ilevel==1007) call ORCA_DFT_D3_parm(ifileid)
+        if (ilevel==1008.or.ilevel==1009) call ORCA_revDSD_PBEP86_D4_parm(ifileid)
         write(ifileid,"(a,i6)") "%maxcore",maxcore
         write(ifileid,"('* xyz',2i4)") netcharge,multi
         do i=1,ncenter
@@ -5913,6 +6071,7 @@ if (itask==7.or.itask==-7) then
             write(ifileid,"(/,a)") "$new_job"
             write(ifileid,"(a)") trim(keyword)//" Pmodel" !Use Pmodel to regenerate new initial guess rather than use the previous wavefunction
             if (ilevel==1006.or.ilevel==1007) call ORCA_DFT_D3_parm(ifileid)
+            if (ilevel==1008.or.ilevel==1009) call ORCA_revDSD_PBEP86_D4_parm(ifileid)
             write(ifileid,"(a,i6)") "%maxcore",maxcore
             write(ifileid,"('* xyz',2i4)") netcharge,multi
             do i=1,ncenter
@@ -5958,8 +6117,9 @@ else if (isolv>0) then
     write(ifileid,"(a)") "end"
 end if
 
-!Write additional D3 parameter
+!Write additional D3 parameter or functional definition
 if (ilevel==1006.or.ilevel==1007) call ORCA_DFT_D3_parm(ifileid)
+if (ilevel==1008.or.ilevel==1009) call ORCA_revDSD_PBEP86_D4_parm(ifileid)
 
 !Write task specific information
 if (itask==5) then !Calculate Hessian for optTS
@@ -5985,6 +6145,24 @@ else if (itask==6) then !MD
         write(ifileid,"(a)") " run 2000  # Number of MD steps"
     else if (iORCAver==1) then
         write(ifileid,"(a)") " run 2000 CenterCOM # Number of MD steps. Remove motion of center of mass"
+    end if
+    if (ifixHbond==1) then
+        do iatm=1,ncenter
+            if (a(iatm)%index==1) then
+                do jatm=1,ncenter
+                    if (iatm==jatm) cycle
+                    if (a(iatm)%index==1.and.a(jatm)%index==1.and.jatm<iatm) cycle !Avoiding double counting if H-H bond exists
+                    iaddcons=0
+                    dist=atomdist(iatm,jatm,0)
+                    if (allocated(connmat)) then
+                        if (connmat(iatm,jatm)/=0) iaddcons=1
+                    else
+                        if ( dist < ( covr(a(iatm)%index)+covr(a(jatm)%index) )*bondcrit) iaddcons=1
+                    end if
+                    if (iaddcons==1) write(ifileid,"(a,2i6,a,f9.5,'_A')") " constraint add distance",iatm-1,jatm-1,"  target",dist*b2a
+                end do
+            end if
+        end do
     end if
     write(ifileid,"(a)") "end"
 end if
@@ -6064,6 +6242,30 @@ write(ifileid,"(a)") "D3S8 0.0"
 write(ifileid,"(a)") "D3A2 7.795"
 write(ifileid,"(a)") "end"
 end subroutine
+!Write functional definition for revDSD-PBEP86-D4
+!See https://www.compchem.me/revdsd-pbep86-functional
+subroutine ORCA_revDSD_PBEP86_D4_parm(ifileid)
+integer ifileid
+write(ifileid,"(a)") "%method"
+write(ifileid,"(a)") "   Exchange X_PBE"
+write(ifileid,"(a)") "   Correlation C_P86"
+write(ifileid,"(a)") "   ScalHFX 0.69"
+write(ifileid,"(a)") "   ScalDFX 0.31"
+write(ifileid,"(a)") "   ScalGGAC 0.4210"
+write(ifileid,"(a)") "   ScalLDAC 0.4210"
+write(ifileid,"(a)") "   ScalMP2C 1.0"
+write(ifileid,"(a)") "   LDAOpt C_VWN5"
+write(ifileid,"(a)") "   D3S6 0.5132"
+write(ifileid,"(a)") "   D3S8 0.0"
+write(ifileid,"(a)") "   D3A1 0.44"
+write(ifileid,"(a)") "   D3A2 3.60"
+write(ifileid,"(a)") "end"
+write(ifileid,"(a)") "%mp2"
+write(ifileid,"(a)") "   DoSCS true"
+write(ifileid,"(a)") "   PS 0.5922"
+write(ifileid,"(a)") "   PT 0.0636"
+write(ifileid,"(a)") "end"
+end subroutine
 
 
 
@@ -6130,7 +6332,7 @@ do while(.true.)
     if (itask==3) write(*,*) " 0 Select task, current: Frequency analysis"
     write(*,*) " 1 PM6"
     write(*,*) " 2 PM6-DH+"
-    write(*,*) " 3 PM6-D3H4"
+    write(*,*) " 3 PM6-D3H4X"
     write(*,*) " 4 PM7"
     read(*,*) isel
     
@@ -6173,7 +6375,7 @@ open(ifileid,file=outname,status="replace")
 
 if (isel==1) keyword="PM6"
 if (isel==2) keyword="PM6-DH+"
-if (isel==3) keyword="PM6-D3H4"
+if (isel==3) keyword="PM6-D3H4X"
 if (isel==4) keyword="PM7"
 if (iMOZYME==1) keyword=trim(keyword)//" MOZYME"
 
@@ -6493,7 +6695,7 @@ if (nelec==0) netcharge=0 !nelec==0 means no electron informations, e.g. pdb fil
 write(ifileid,"(a)") "basis=cc-pVDZ"
 write(ifileid,"(a)") "calc=CCSDT(Q)"
 write(ifileid,"(a,i2)") "charge=",netcharge
-write(ifileid,"(a,i2)") "multi=",nint(naelec-nbelec)+1
+write(ifileid,"(a,i2)") "mult=",nint(naelec-nbelec)+1
 write(ifileid,"(a)") "mem=2500MB"
 write(ifileid,*)
 write(ifileid,"(a)") "geom=xyz"
@@ -6665,1812 +6867,6 @@ end subroutine
 
 
 
-!!---------- Interface of outputting CP2K input file
-subroutine outCP2Kinp_wrapper
-use util
-use defvar
-character(len=200) outname,c200tmp
-call path2filename(filename,c200tmp)
-write(*,"(/,a)") " Note: Please mention Multiwfn and cite original paper of Multiwfn if you benefits from this function in your study, thank you!"
-write(*,*) 
-write(*,*) "Input path for generating CP2K input file, e.g. C:\ltwd.inp"
-write(*,"(a)") " If press ENTER button directly, will export to "//trim(c200tmp)//".inp"
-read(*,"(a)") outname
-if (outname==" ") outname=trim(c200tmp)//".inp"
-call outCP2Kinp(outname,10)
-end subroutine
-!!---------- Output current coordinate to CP2K input file
-!TODO: Support BSSE, BAND, TDDFTPT
-subroutine outCP2Kinp(outname,ifileid)
-use defvar
-use util
-character(len=*) outname
-integer :: ifileid,ibas=2,tmparr(ncenter)
-character selectyn,c80tmp*80,c80tmp2*80,c200tmp*200,c2000tmp*2000
-character :: method*20="PBE",PBCdir*4="XYZ "
-character(len=30) :: basname(-10:30)=" "
-integer :: itask=1,idispcorr=0,imolden=0,ioutvibmol=1,ithermostat=0,ibarostat=0,iSCCS=0,idipcorr=0,iMP2=0,imoment=0,ioptmethod=1,iprintlevel=1
-integer :: iTDDFT=0,nstates_TD=3,iTDtriplet=0,isTDA=0,iNTO=0,nADDED_MOS=0
-integer :: iMDformat=1,nMDsavefreq=1,ioutcube=0,idiagOT=1,imixing=2,ismear=0,iatomcharge=0,ifineXCgrid=0,iouterSCF=0,iDFTplusU=0,NHOMO=0,NLUMO=0
-integer :: natmcons=0,nthermoatm=0,ikpoint1=1,ikpoint2=1,ikpoint3=1,nrep1=1,nrep2=1,nrep3=1
-integer,allocatable :: atmcons(:),thermoatm(:)
-real*8 :: efieldvec(3)=0
-
-!Status information of current system. ",save" is used so that for the same system we can enter this interface multiple times to generate various input files
-integer,save :: netchg,multispin
-integer,allocatable,save :: atmkind(:) !The kind that atoms belonging to
-integer,parameter :: nkindmax=200
-integer,save :: nkind=0 !Current number of kinds
-character(len=5),save :: kindname(nkindmax) !Name of each kind
-integer,save :: kindeleidx(nkindmax) !Element idx of each kind
-integer,save :: kindmag(nkindmax) !Magnetization of each kind
-character,save :: lastinpname*200 !Input file of last time in this interface
-
-rbuffer=5D0/b2a !10 Angstrom buffer size around isolated system, adequate even for QZ basis set
-iconvtest=0
-ikpconvtest=0
-if (index(outname,"cutconv.inp")/=0) then
-    iconvtest=1
-    iprintlevel=2 !Medium printing level
-    !ifineXCgrid=1 !I found this effectively often improves smoothness of convergence with respect to cutoff
-    write(*,*) "Note: The generated file is dedicated to cutoff convergence testing purpose"
-else if (index(outname,"kpconv.inp")/=0) then
-    ikpconvtest=1
-    write(*,*) "Note: The generated file is dedicated to k-point convergence testing purpose"
-end if
-
-!Conversion of basis set index to basis set name
-basname(-1)="SZV-GTH"
-basname(-2)="DZVP-GTH"
-basname(-3)="TZVP-GTH"
-basname(-4)="TZV2P-GTH"
-basname(-5)="QZV2P-GTH"
-basname(-6)="QZV3P-GTH"
-basname(1)="SZV-MOLOPT-SR-GTH"
-basname(2)="DZVP-MOLOPT-SR-GTH"
-basname(3)="TZVP-MOLOPT-GTH"
-basname(4)="TZV2P-MOLOPT-GTH"
-basname(5)="TZV2PX-MOLOPT-GTH"
-basname(10)="6-31G*"
-basname(11)="6-311G**"
-basname(12)="Ahlrichs-def2-TZVP"
-basname(13)="pob-TZVP"
-basname(14)="Ahlrichs-def2-QZVP"
-basname(20)="cc-DZ with RI_DZ"
-basname(21)="cc-TZ with RI_TZ"
-
-!Construct kind information, charge and multiplicity
-10 if (allocated(atmkind).and.filename/=lastinpname) deallocate(atmkind) !Has allocated last time, need to regenerate if the last system is different to the present one
-if (.not.allocated(atmkind)) then !Haven't been constructed, namely first time use this function for present system, or this system it not identical to the last one
-    write(*,*) "Generating KIND information..."
-    allocate(atmkind(ncenter))
-    !Build initial kind list
-    nkind=1
-    kindeleidx(1)=a(1)%index
-    kindname(1)=a(1)%name
-    do iatm=2,ncenter
-        if (all(kindeleidx(:nkind)/=a(iatm)%index)) then
-            nkind=nkind+1
-            kindeleidx(nkind)=a(iatm)%index
-            kindname(nkind)=a(iatm)%name
-        end if
-    end do
-    !Assign each atom by a kind
-    do iatm=1,ncenter
-        do ikind=1,nkind
-            if (a(iatm)%index==kindeleidx(ikind)) then
-                atmkind(iatm)=ikind
-                exit
-            end if
-        end do
-    end do
-    kindmag=0
-    netchg=sum(a%charge)-nint(nelec)
-    multispin=nint(naelec-nbelec)+1
-    if (ifPBC==0) PBCdir="NONE"
-    if (ncenter>300) ioptmethod=2 !LBFGS is more suitable for large system than BFGS
-    lastinpname=filename
-end if
-
-do while(.true.)
-    !do iatm=1,ncenter
-    !    ikind=atmkind(iatm)
-    !    write(*,"(' Atom',i6,1x,a,'  Kind index:',i3,'  Kind name: ',a,'  Kind elem idx:',i3)") iatm,a(iatm)%name,ikind,kindname(ikind),kindeleidx(ikind)
-    !end do
-    write(*,*)
-    write(*,*) "-11 Enter the interface for geometry operations"
-    write(*,*) "-10 Return"
-    write(*,*) "-9 Other settings"
-    write(*,*) "-7 Set direction(s) of applying periodic boundary condition, current: "//PBCdir
-    if (itask==6) then
-        write(*,"(a,i6)") " -6 Set frequency of writing molecular dynamics trajectory, current:",nMDsavefreq
-        if (iMDformat==1) write(*,*) "-5 Choose molecular dynamics format, current: xyz"
-        if (iMDformat==2) write(*,*) "-5 Choose molecular dynamics format, current: dcd"
-        if (iMDformat==3) write(*,*) "-5 Choose molecular dynamics format, current: pdb"
-    end if
-    if (iatomcharge==0) write(*,*) "-4 Calculate atomic charges, current: None"
-    if (iatomcharge==1) write(*,*) "-4 Calculate atomic charges, current: Mulliken"
-    if (iatomcharge==2) write(*,*) "-4 Calculate atomic charges, current: Lowdin"
-    if (iatomcharge==3) write(*,*) "-4 Calculate atomic charges, current: Hirshfeld"
-    if (iatomcharge==4) write(*,*) "-4 Calculate atomic charges, current: Hirshfeld-I"
-    if (iatomcharge==5) write(*,*) "-4 Calculate atomic charges, current: Voronoi"
-    if (iatomcharge==6) write(*,*) "-4 Calculate atomic charges, current: RESP"
-    if (iatomcharge==7) write(*,*) "-4 Calculate atomic charges, current: REPEAT"
-    if (ioutcube==0) write(*,*) "-3 Set exporting cube file, current: None"
-    if (ioutcube==1) write(*,*) "-3 Set exporting cube file, current: Electron density"
-    if (ioutcube==2) write(*,*) "-3 Set exporting cube file, current: ELF"
-    if (ioutcube==3) write(*,*) "-3 Set exporting cube file, current: XC potential"
-    if (ioutcube==4) write(*,*) "-3 Set exporting cube file, current: Hartree potential (negative of ESP)"
-    if (ioutcube==5) write(*,*) "-3 Set exporting cube file, current: Electric field"
-    if (ioutcube==6) write(*,"(a,i6,a,i6)") " -3 Set exporting cube file, current: MOs, with NHOMO=",NHOMO,", NLUMO=",NLUMO
-    if (imolden==0) write(*,*) "-2 Toggle exporting .molden file for Multiwfn, current: No"
-    if (imolden==1) write(*,*) "-2 Toggle exporting .molden file for Multiwfn, current: Yes"
-    if (itask==1) write(*,*) "-1 Choose task, current: Energy"
-    if (itask==2) write(*,*) "-1 Choose task, current: Energy + force"
-    if (itask==3) write(*,*) "-1 Choose task, current: Optimizing structure"
-    if (itask==4) write(*,*) "-1 Choose task, current: Optimizing structure and cell"
-    if (itask==5) write(*,*) "-1 Choose task, current: Vibrational analysis"
-    if (itask==6) write(*,*) "-1 Choose task, current: Molecular dynamics"
-    if (itask==7) write(*,*) "-1 Choose task, current: Searching transition state"
-    if (itask==8) write(*,*) "-1 Choose task, current: Nudge-elastic band"
-    if (itask==9) write(*,*) "-1 Choose task, current: NMR"
-    if (itask==10) write(*,*) "-1 Choose task, current: Polarizability"
-    write(*,*) " 0 Generate input file now!"
-    write(*,*) " 1 Choose theoretical method, current: "//trim(method)
-    if (method/="GFN1-xTB".and.method/="PM6") write(*,*) " 2 Choose basis set and pseudopotential, current: "//trim(basname(ibas))
-    if (method/="MP2".and.method/="GFN1-xTB".and.method/="PM6".and.method/="BEEFVDW") then
-        if (idispcorr==0) write(*,*) " 3 Set dispersion correction, current: None"
-        if (idispcorr==1) write(*,*) " 3 Set dispersion correction, current: DFT-D3"
-        if (idispcorr==2) write(*,*) " 3 Set dispersion correction, current: DFT-D3(BJ)"
-        if (idispcorr==5) write(*,*) " 3 Set dispersion correction, current: rVV10"
-    end if
-    if (idiagOT==1) then
-        write(*,*) " 4 Switching between diagonalization and OT, current: Diagonalization"
-        if (method/="PM6") then !I found PM6 can only use Direct mixing
-            if (imixing==1) write(*,*) " 5 Set density matrix mixing, current: Direct mixing + DIIS"
-            if (imixing==2) write(*,*) " 5 Set density matrix mixing, current: Broyden mixing"
-            if (imixing==3) write(*,*) " 5 Set density matrix mixing, current: Pulay mixing"
-        end if
-        if (ismear==0) write(*,*) " 6 Toggle smearing electron occupation, current: No"
-        if (ismear==1) write(*,*) " 6 Toggle smearing electron occupation, current: Yes"
-    else if (idiagOT==2) then
-        write(*,*) " 4 Switching between diagonalization and OT, current: OT"
-        if (iouterSCF==0) write(*,*) " 5 Toggle using outer SCF process, current: No"
-        if (iouterSCF==1) write(*,*) " 5 Toggle using outer SCF process, current: Yes"
-    end if
-    if (iSCCS==0) write(*,*) " 7 Toggle using self-consistent continuum solvation (SCCS), current: No"
-    if (iSCCS==1) write(*,*) " 7 Toggle using self-consistent continuum solvation (SCCS), current: Yes"
-    if (ikpoint1==1.and.ikpoint2==1.and.ikpoint3==1) then
-        write(*,*) " 8 Set k-points, current: GAMMA only"
-    else
-        write(*,"(a,3i3)") "  8 Set k-points, current: MONKHORST-PACK",ikpoint1,ikpoint2,ikpoint3
-    end if
-    !!!! Below are task specific options
-    if (itask>=3.and.itask<=7) then
-        if (natmcons==0) then
-            write(*,*) " 9 Set atom position constraint, current: None"
-        else
-            write(*,"(a,i6)") "  9 Set atom position constraint, current:",natmcons
-        end if
-    end if
-    if (itask==6) then
-        if (ithermostat==0) write(*,*) "10 Set thermostat, current: None"
-        if (ithermostat==1) write(*,*) "10 Set thermostat, current: Adaptive-Langevin"
-        if (ithermostat==2) write(*,*) "10 Set thermostat, current: Canonical sampling through velocity rescaling"
-        if (ithermostat==3) write(*,*) "10 Set thermostat, current: Generalized Langevin Equation (GLE)"
-        if (ithermostat==4) write(*,*) "10 Set thermostat, current: Nose-Hoover"
-        if (ithermostat>0) then
-            if (nthermoatm==ncenter) then
-                write(*,*) "11 Set region for the thermostat, current: All atoms"
-            else
-                write(*,"(a,i6,' atoms')") " 11 Set region for the thermostat, number of current atoms:",nthermoatm
-            end if
-        end if
-        if (ibarostat==0) write(*,*) "12 Set barostat, current: None"
-        if (ibarostat==1) write(*,*) "12 Set barostat, current: Yes, flexible cell"
-        if (ibarostat==2) write(*,*) "12 Set barostat, current: Yes, isotropic cell"
-    else if (itask==3.or.itask==4) then
-        if (ioptmethod==1) write(*,*) "10 Set optimization method, current: BFGS"
-        if (ioptmethod==2) write(*,*) "10 Set optimization method, current: LBFGS"
-        if (ioptmethod==3) write(*,*) "10 Set optimization method, current: CG"
-    else if (itask==5) then
-        if (ioutvibmol==0) write(*,*) "10 Toggle exporting Molden file recording vibrational modes, current: No"
-        if (ioutvibmol==1) write(*,*) "10 Toggle exporting Molden file recording vibrational modes, current: Yes"
-    end if
-    if (iTDDFT==0) then
-        write(*,*) "15 Toggle calculating excited states via TDDFT, current: No"
-    else if (iTDDFT==1) then
-        write(*,*) "15 Toggle calculating excited states via TDDFT, current: Yes"
-        write(*,"(' 16 Set number of excited states to solve by TDDFT, current:',i5)") nstates_TD
-        if (.not.(multispin>1.or.any(kindmag(1:nkind)/=0))) then !Current is closed-shell
-            if (iTDtriplet==0) write(*,*) "17 Toggle spin of the excited states to be calculated, current: Singlet"
-            if (iTDtriplet==1) write(*,*) "17 Toggle spin of the excited states to be calculated, current: Triplet"
-        end if
-        if (isTDA==0) write(*,*) "18 Toggle using sTDA approximation in TDDFT, current: No"
-        if (isTDA==1) write(*,*) "18 Toggle using sTDA approximation in TDDFT, current: Yes"
-        !At least for CP2K 8.1, 9.1, the occupied NTOs are wrong, so do not let user know this feature
-        !if (iNTO==0) write(*,*) "19 Toggle if performing NTO analysis, current: No"
-        !if (iNTO==1) write(*,*) "19 Toggle if performing NTO analysis, current: Yes"
-    end if
-    read(*,*) isel
-    
-    if (isel==-11) then
-        natmold=ncenter
-        call geom_operation
-        !User may use geometry operation interface to reorder atoms or construct supercell, so we need to rebuild atom kind information
-        if (any(a(1:size(a_org))%index/=a_org%index).or.ncenter/=natmold) then
-            deallocate(atmkind)
-            if (allocated(atmcons)) deallocate(atmcons)
-            natmcons=0
-            if (allocated(thermoatm)) deallocate(thermoatm)
-            nthermoatm=0
-            ithermostat=0
-            goto 10 
-        end if
-    else if (isel==-10) then
-        return
-    else if (isel==-9) then
-        do while(.true.)
-            write(*,*)
-            write(*,*) "                     ---------- Other settings ----------"
-            write(*,*) "0 Return"
-            write(*,"(a,i5)") " 1 Set net charge, current:",netchg
-            write(*,"(a,i3)") " 2 Set spin multiplicity, current:",multispin
-            write(*,"(a,3i3)") " 3 Set number of repetitions of the cell in X, Y, Z, current:",nrep1,nrep2,nrep3
-            if (ifineXCgrid==0) write(*,"(a)") " 4 Toggle using finer grid for exchange-correlation part, current: No"
-            if (ifineXCgrid==1) write(*,"(a)") " 4 Toggle using finer grid for exchange-correlation part, current: Yes"
-            if (idipcorr==0) write(*,*) "5 Set surface dipole correction, current: None"
-            if (idipcorr==1) write(*,*) "5 Set surface dipole correction, current: X direction"
-            if (idipcorr==2) write(*,*) "5 Set surface dipole correction, current: Y direction"
-            if (idipcorr==3) write(*,*) "5 Set surface dipole correction, current: Z direction"
-            if (imoment==0) write(*,*) "6 Print moments, current: No"
-            if (imoment==1) write(*,*) "6 Print moments, current: Yes"
-            if (ifPBC==0) write(*,"(a,f8.3,' Angstrom')") " 7 Set buffer distance for determining cell size, current:",rbuffer*b2a
-            if (iDFTplusU==0) write(*,*) "8 Toggle using DFT+U, current: No"
-            if (iDFTplusU==1) write(*,*) "8 Toggle using DFT+U, current: Yes"
-            if (all(kindmag(1:nkind)==0)) then
-                write(*,*) "9 Define atomic magnetization"
-            else
-                nmagset=count(kindmag(1:nkind)/=0)
-                write(*,"(a,i3,a)") " 9 Redefine atomic magnetization, current: Manually defined",nmagset," kinds"
-            end if
-            if (iprintlevel==0) write(*,*) "10 Choose printing level of output information, current: Silent"
-            if (iprintlevel==1) write(*,*) "10 Choose printing level of output information, current: Low"
-            if (iprintlevel==2) write(*,*) "10 Choose printing level of output information, current: Medium"
-            if (iprintlevel==3) write(*,*) "10 Choose printing level of output information, current: High"
-            if (all(efieldvec==0)) then
-                write(*,"(a)") " 11 Set electric field vector"
-            else
-                write(*,"(a,3f8.5,' a.u.')") " 11 Set electric field vector, current:",efieldvec
-            end if
-            if (nADDED_MOS==-1) then
-                write(*,*) "12 Set number of virtual orbitals to solve, current: All"
-            else
-                write(*,"(a,i6)") " 12 Set number of virtual orbitals to solve, current:",nADDED_MOS
-            end if
-            read(*,*) isel2
-            if (isel2==0) then
-                exit
-            else if (isel2==1) then
-                write(*,*) "Input net charge, e.g. 1"
-                read(*,*) netchg
-            else if (isel2==2) then
-                write(*,*) "Input spin multiplicity, e.g. 3"
-                read(*,*) multispin
-            else if (isel2==3) then
-                write(*,*) "Input number of repetitions of the cell in X, Y, Z, e.g. 2,1,2"
-                read(*,*) nrep1,nrep2,nrep3
-            else if (isel2==4) then
-                if (ifineXCgrid==0) then
-                    ifineXCgrid=1
-                else
-                    ifineXCgrid=0
-                end if
-            else if (isel2==5) then
-                write(*,*) "0 Do not use surface dipole correction"
-                write(*,*) "1 Use surface dipole correction in X direction"
-                write(*,*) "2 Use surface dipole correction in Y direction"
-                write(*,*) "3 Use surface dipole correction in Z direction"
-                read(*,*) idipcorr
-            else if (isel2==6) then
-                if (imoment==1) then
-                    imoment=0
-                else
-                    imoment=1
-                end if
-            else if (isel2==7) then
-                write(*,*) "Input buffer size around the system in Angstrom, e.g. 5.5"
-                read(*,*) rbuffer
-                rbuffer=rbuffer/b2a
-            else if (isel2==8) then
-                if (iDFTplusU==1) then
-                    iDFTplusU=0
-                else
-                    iDFTplusU=1
-                    write(*,"(a)") " IMPORTANT NOTE: DO NOT forget to manually replace the default DFT+U parameters in the generated input file with proper value!"
-                end if
-            else if (isel2==9) then
-                !do ikind=1,nkind
-                !    write(*,"(' #',i3,':  Kind name: ',a5,' Element: ',a,'  Magnetization:',i3,'   Natoms:',i5)") &
-                !    ikind,kindname(ikind),ind2name(kindeleidx(ikind)),kindmag(ikind),count(atmkind(:)==ikind)
-                !end do
-                do while(.true.)
-                    write(*,*)
-                    write(*,*) "Current magnetization status:"
-                    idx=0
-                    do ikind=1,nkind
-                        ncount=count(atmkind(:)==ikind)
-                        if (ncount>0) then
-                            idx=idx+1
-                            write(*,"(' #',i3,':  Kind name: ',a5,' Element: ',a,'  Magnetization:',i3,'   Natoms:',i5)") &
-                            idx,kindname(ikind),ind2name(kindeleidx(ikind)),kindmag(ikind),ncount
-                        end if
-                    end do
-                    write(*,*)
-                    write(*,*) "Input indices of the atoms to define magnetization, e.g. 1,5-10,13,19"
-                    write(*,*) "To change kind name, input old and new name, e.g. Fe_1 Fe_B"
-                    write(*,*) "To exit, inputting ""q"""
-                    read(*,"(a)") c2000tmp
-                    if (c2000tmp=="q") then
-                        multispin=sum(kindmag(atmkind(:)))+1
-                        exit
-                    else if (iachar(c2000tmp(1:1))<48.or.iachar(c2000tmp(1:1))>57) then !The first character is not a number
-                        read(c2000tmp,*) c80tmp,c80tmp2
-                        do ikind=1,nkind
-                            if (trim(kindname(ikind))==trim(c80tmp)) kindname(ikind)=trim(c80tmp2)
-                        end do
-                        cycle
-                    end if
-                    call str2arr(c2000tmp,ntmp,tmparr)
-                    if (all(a(tmparr(1:ntmp))%index==a(tmparr(1))%index)) then
-                        nkind=nkind+1
-                        write(*,*) "Input magnetization (difference of alpha and beta electrons), e.g. 4"
-                        read(*,*) kindmag(nkind)
-                        atmkind(tmparr(1:ntmp))=nkind
-                        iele=a(tmparr(1))%index
-                        kindeleidx(nkind)=iele
-                        isuffix=0
-                        do while(.true.) !Test which suffix can be used
-                            if (isuffix>0) then
-                                write(c80tmp,"(i5)") isuffix
-                                c80tmp=trim(ind2name(iele))//'_'//trim(adjustl(c80tmp))
-                            else
-                                c80tmp=ind2name(iele)
-                            end if
-                            if (all(kindname(1:nkind-1)/=trim(c80tmp))) then !New kind name
-                                exit
-                            else
-                                ncount=count(kindname(atmkind(:))==trim(c80tmp))
-                                if (ncount==0) exit
-                            end if
-                            isuffix=isuffix+1
-                        end do
-                        kindname(nkind)=trim(c80tmp)
-                        write(*,*) "Done!"
-                    else
-                        write(*,*) "Error: Not all atoms you selected belong to the same element!"
-                    end if
-                end do
-            else if (isel2==10) then
-                write(*,*) "Choose printing level"
-                write(*,*) "0 Silent"
-                write(*,*) "1 Low"
-                write(*,*) "2 Medium"
-                write(*,*) "3 High"
-                read(*,*) iprintlevel
-            else if (isel2==11) then
-                write(*,*) "Input external electric field vector in a.u., e.g. 0.0,0.0,0.025"
-                read(*,*) efieldvec
-            else if (isel2==12) then
-                write(*,*) "Input number of virtual orbitals to solve, e.g. 30"
-                write(*,*) "If inputting -1, then all virtual orbitals will be solved" !Work since CP2K 9.1
-                read(*,*) nADDED_MOS
-            end if
-        end do
-    else if (isel==-7) then
-        write(*,*) "Input one of following string to specify periodic boundary condition (PBC)"
-        write(*,*) "NONE, X, XY, XYZ, XZ, Y, YZ, Z"
-        read(*,*) PBCdir
-    else if (isel==-6) then
-        write(*,*) "Input frequency of writing molecular dynamics trajectory, 1 means every step"
-        read(*,*) nMDsavefreq
-    else if (isel==-5) then
-        write(*,*) "Choose the format for recording MD trajectory"
-        write(*,*) "1 xyz"
-        write(*,*) "2 dcd (binary, small)"
-        write(*,*) "3 pdb"
-        read(*,*) iMDformat
-    else if (isel==-4) then
-        write(*,*) "Printing which kind of atomic charge?"
-        write(*,*) "0 None"
-        write(*,*) "1 Mulliken"
-        write(*,*) "2 Lowdin"
-        write(*,*) "3 Hirshfeld"
-        write(*,*) "4 Hirshfeld-I"
-        write(*,*) "5 Voronoi"
-        write(*,*) "6 RESP"
-        write(*,*) "7 REPEAT"
-        read(*,*) iatomcharge
-        if (ifPBC==0.and.iatomcharge==7) then
-            write(*,*) "Error: REPEAT can only be used for periodic system"
-            write(*,*) "Press ENTER button to continue"
-            read(*,*)
-            iatomcharge=0
-        end if
-    else if (isel==-3) then
-        write(*,*) "Output cube file for which real space function?"
-        write(*,"(a)") " -1 Just for printing HOMO and LUMO energies as well as HOMO-LUMO gap (i.e. Outputting HOMO and LUMO cubes only)"
-        write(*,*) "0 None"
-        write(*,*) "1 Electron density (also with spin density for unrestricted calculation)"
-        write(*,*) "2 Electron localization function (ELF)"
-        write(*,*) "3 Exchange-correlation potential"
-        write(*,*) "4 Hartree potential (negative of ESP)"
-        write(*,*) "5 Each component of electric field"
-        write(*,*) "6 Molecular orbital(s)"
-        read(*,*) ioutcube
-        if (ioutcube==6) then
-            write(*,*) "Output how many highest occupied orbitals? e.g. 5"
-            write(*,*) "If inputting -1, all occupied orbitals will be outputted"
-            read(*,*) NHOMO
-            write(*,*) "Output how many lowest unoccupied orbitals? e.g. 5"
-            write(*,*) "If inputting -1, all unoccupied orbitals will be outputted"
-            read(*,*) NLUMO
-        else if (ioutcube==-1) then
-            ioutcube=6
-            NHOMO=1
-            NLUMO=1
-        end if
-    else if (isel==-2) then
-        if (imolden==0) then
-            imolden=1
-        else
-            imolden=0
-        end if
-    else if (isel==-1) then
-        write(*,*) "Please select task"
-        write(*,*) "1 Energy"
-        write(*,*) "2 Energy + force"
-        write(*,*) "3 Optimizing structure (cell is fixed)"
-        write(*,*) "4 Optimizing both structure and cell"
-        write(*,*) "5 Vibrational analysis"
-        write(*,*) "6 Molecular dynamics"
-        write(*,*) "7 Searching transition state using dimer algorithm"
-        !write(*,*) "8 Nudge-elastic band"
-        write(*,*) "9 NMR"
-        write(*,*) "10 Polarizability"
-        write(*,*) "11 Excited state (TDDFT)"
-        read(*,*) itask
-        if (itask==9.and.ibas<=5) then
-            ibas=10 !Use 6-31G* if current basis set is pseudopotential basis set
-        else if (itask==5) then
-            iprintlevel=2 !Use medium printing level
-        end if
-    else if (isel==1) then !Functionals description: https://manual.cp2k.org/trunk/CP2K_INPUT/ATOM/METHOD/XC/XC_FUNCTIONAL.html
-        !write(*,*) "-1 Molecular mechanism (MM)"
-        write(*,*) "1 Pade (LDA)"
-        write(*,*) "2 PBE        -2 revPBE     -3 PBEsol"
-        write(*,*) "3 TPSS        4 BP86        5 BLYP"
-        write(*,*) "6 PBE0       -6 PBE0 with ADMM"
-        write(*,*) "7 B3LYP      -7 B3LYP with ADMM"
-        write(*,*) "8 HSE06      -8 HSE06 with ADMM"
-        write(*,*) "9 BEEF-vdW"
-        !write(*,*) "11 PBEsol (via &LIBXC)" !I found the result is identical to native implementation, so do not appear here
-        write(*,*) "11 B97M-rV (via &LIBXC)       12 MN15L (via &LIBXC)"
-        write(*,*) "13 SCAN (via &LIBXC)          14 r2SCAN (via &LIBXC)"
-        write(*,*) "15 RPBE (via &LIBXC)"
-        write(*,*) "20 RI-MP2        21 RI-SCS-MP2"
-        write(*,*) "25 RI-B2PLYP     26 RI-B2GP-PLYP     27 RI-DSD-BLYP"
-        write(*,*) "30 GFN1-xTB      40 PM6"
-        read(*,*) isel2
-        iMP2=0 !Do not involve MP2 part
-        if (isel2==1) method="Pade"
-        if (isel2==2) method="PBE"
-        if (isel2==-2) method="revPBE"
-        if (isel2==-3) method="PBEsol"
-        if (isel2==3) method="TPSS"
-        if (isel2==4) method="BP"
-        if (isel2==5) method="BLYP"
-        if (isel2==6) method="PBE0"
-        if (isel2==-6) method="PBE0_ADMM"
-        if (isel2==7) method="B3LYP"
-        if (isel2==-7) method="B3LYP_ADMM"
-        if (isel2==8) method="HSE06"
-        if (isel2==-8) method="HSE06_ADMM"
-        if (isel2==9) then
-            method="BEEFVDW"
-            idispcorr=0
-        end if
-        !if (isel2==11) method="PBEsol_LIBXC"
-        if (isel2==11) then
-            method="B97M-rV_LIBXC"
-            idispcorr=5
-        end if
-        if (isel2==12) method="MN15L_LIBXC"
-        if (isel2==13) method="SCAN_LIBXC"
-        if (isel2==14) method="r2SCAN_LIBXC"
-        if (isel2==15) method="RPBE_LIBXC"
-        if (isel2>=20.and.isel2<30) then !Involve MP2
-            if (isel2==20) method="RI-MP2"
-            if (isel2==21) method="RI-SCS-MP2"
-            if (isel2==25) method="RI-B2PLYP"
-            if (isel2==26) method="RI-B2GP-PLYP"
-            if (isel2==27) method="RI-DSD-BLYP"
-            iMP2=1
-            ibas=21
-        end if
-        if (isel2==30) method="GFN1-xTB"
-        if (isel2==40) method="PM6"
-        if (isel2==-6.or.isel2==-7.or.isel2==30) idiagOT=2 !When ADMM is used, OT must also be used. OT is suggested for xTB dealing with large system
-        if (isel2==40) imixing=1
-        if (index(method,"SCAN")/=0) then
-            write(*,"(a)") " NOTE: If you are using CP2K >=9.1, in the generated CP2K input file, it is highly suggested to replace &
-            ""POTENTIAL_FILE_NAME  POTENTIAL"" with ""POTENTIAL_FILE_NAME  POTENTIAL_UZH"", and replace ""BASIS_SET_FILE_NAME  BASIS_MOLOPT"" with ""BASIS_SET_FILE_NAME  BASIS_MOLOPT_UZH"", &
-            and manually specify proper GTH potential and corresponding valence basis set optimized for SCAN calculation"
-        else if (index(method,"PBE0")/=0) then
-            write(*,"(a)") " NOTE: If you are using CP2K >=9.1, in the generated CP2K input file, it is highly suggested to replace &
-            ""POTENTIAL_FILE_NAME  POTENTIAL"" with ""POTENTIAL_FILE_NAME  POTENTIAL_UZH"", and replace ""BASIS_SET_FILE_NAME  BASIS_MOLOPT"" with ""BASIS_SET_FILE_NAME  BASIS_MOLOPT_UZH"", &
-            and manually specify proper GTH potential and corresponding valence basis set optimized for PBE0 calculation"
-        end if
-        
-    else if (isel==2) then
-        write(*,"(a)") " Note: <=5, 20, 21 correspond to GPW calculation using GTH pseudopotential, the other ones correspond to full electron GAPW calculation"
-        do i=-10,30
-            if (basname(i)/=" ") write(*,"(1x,i2,1x,a)") i,trim(basname(i))
-        end do
-        read(*,*) ibassel
-        if (iMP2==1.and.ibassel/=20.and.ibassel/=21) then
-            write(*,"(a)") " Error: To perform RI calculation, you must choose 20 or 21, because they are accompanied by auxiliary basis set" 
-            write(*,*) "Press ENTER button to continue"
-            read(*,*)
-            pause
-        end if
-        ibas=ibassel
-    else if (isel==3) then
-        write(*,*) "Choose dispersion correction method"
-        write(*,*) "0 None"
-        write(*,*) "1 DFT-D3"
-        write(*,*) "2 DFT-D3(BJ)"
-        write(*,*) "5 rVV10"
-        read(*,*) idispcorr
-    else if (isel==4) then
-        if (idiagOT==1) then
-            if (ikpoint1/=1.or.ikpoint2/=1.or.ikpoint3/=1) then
-                write(*,*) "Error: OT can only be used for Gamma point!"
-                write(*,*) "Press ENTER button to continue"
-                read(*,*)
-                cycle
-            end if
-            if (ismear==1) then
-                write(*,*) "Error: OT cannot be used in combination with smearing!"
-                write(*,*) "Press ENTER button to continue"
-                read(*,*)
-                cycle
-            end if
-            idiagOT=2
-        else if (idiagOT==2) then
-            idiagOT=1
-        end if
-    else if (isel==5) then
-        if (idiagOT==1) then
-            write(*,*) "Choose how to mixing old and new density matrices"
-            write(*,*) "1 Direct mixing with DIIS (default, usually poor)"
-            write(*,*) "2 Broyden mixing"
-            write(*,*) "3 Pulay mixing"
-            read(*,*) imixing
-        else if (idiagOT==2) then
-            if (iouterSCF==0) then
-                iouterSCF=1
-            else
-                iouterSCF=0
-            end if
-        end if
-    else if (isel==6) then
-        if (ismear==0) then
-            ismear=1
-            nADDED_MOS=30
-            write(*,"(a)") " Note: The number of virtual orbitals to solve has been changed to 30, please properly adjust if needed"
-        else
-            ismear=0
-            nADDED_MOS=0
-            write(*,"(a)") " Note: The number of virtual orbitals to solve has been changed to 0"
-        end if
-    else if (isel==7) then
-        if (iSCCS==0) then
-            iSCCS=1
-        else
-            iSCCS=0
-        end if
-    else if (isel==8) then
-        write(*,*) "Input number of k-points of MONKHORST-PACK in three directions, e.g. 8,6,2"
-        read(*,*) ikpoint1,ikpoint2,ikpoint3
-        if (idiagOT==2.and.(ikpoint1/=1.or.ikpoint2/=1.or.ikpoint3/=1)) then
-            write(*,"(a)") " Warning: OT can be used for Gamma point only! Now diagonalization is used instead"
-            write(*,*) "Press ENTER button to continue"
-            read(*,*)
-            idiagOT=1
-        end if
-    else if (isel==9) then
-        do while(.true.)
-            write(*,*) "Input indices of the atoms to be constraint (fixed), e.g. 1,5,9-12,14-18"
-            write(*,"(a)") " If inputting ""optH"", then only hydrogens will be optimized while others will be fixed"
-            read(*,"(a)") c2000tmp
-            if (.not.allocated(atmcons)) allocate(atmcons(ncenter))
-            if (index(c2000tmp,"optH")/=0) then
-                natmcons=0
-                do iatm=1,ncenter
-                    if (a(iatm)%index==1) cycle
-                    natmcons=natmcons+1
-                    atmcons(natmcons)=iatm
-                end do
-            else
-                call str2arr(c2000tmp,natmcons,atmcons)
-                if (natmcons>ncenter) then
-                    write(*,*) "Error: The indices you inputted is invalid!"
-                    cycle
-                end if
-            end if
-            write(*,"(i8,' atoms will be fixed')") natmcons
-            exit
-        end do
-    else if (isel==10) then
-        if (itask==6) then
-            write(*,*) "0 Do not use thermostat"
-            write(*,*) "1 Adaptive-Langevin thermostat"
-            write(*,"(a)") " 2 Canonical sampling through velocity rescaling (CSVR, also known as V-rescale, recommended!)"
-            write(*,*) "3 Generalized Langevin Equation (GLE) thermostat"
-            write(*,*) "4 Nose-Hoover thermostat"
-            read(*,*) ithermostat
-            if (ithermostat>0) then
-                if (.not.allocated(thermoatm)) allocate(thermoatm(ncenter))
-                nthermoatm=ncenter
-                forall(iatm=1:ncenter) thermoatm(iatm)=iatm
-            end if
-        else if (itask==3.or.itask==4) then
-            write(*,*) "Choose optimization method"
-            write(*,*) "1 BFGS (Best choice for most situations)"
-            write(*,*) "2 LBFGS (Suitable for very large systems)"
-            write(*,"(a)") " 3 Conjugate gradient (More robust than BFGS and LBFGS especially when initial geometry &
-            is far from minimum, unfortunately more expensive. Try it for difficult cases)"
-            read(*,*) ioptmethod
-        else if (itask==5) then
-            if (ioutvibmol==0) then
-                ioutvibmol=1
-            else
-                ioutvibmol=0
-            end if
-        end if
-    else if (isel==11) then
-        if (itask==6) then
-            write(*,*) "Input indices of the atoms to whom the thermostat will be applied"
-            write(*,*) "For example: 1,5,9-12,14-18"
-            read(*,"(a)") c2000tmp
-            if (.not.allocated(thermoatm)) allocate(thermoatm(ncenter))
-            call str2arr(c2000tmp,nthermoatm,thermoatm)
-        end if
-    else if (isel==12) then
-        if (itask==6) then
-            write(*,*) "0 Do not use barostat"
-            write(*,*) "1 Use barostat, flexible cell"
-            write(*,*) "2 Use barostat, isotropic cell"
-            read(*,*) ibarostat
-        end if
-    else if (isel==15) then
-        if (iTDDFT==0) then
-            iTDDFT=1
-            write(*,"(a)") " If outputting .molden file containing all occupied and a batch of virtual orbitals for post-processing analysis? (y/n)"
-            read(*,*) selectyn
-            if (selectyn=='y') then
-                write(*,"(a)") " How many virtual orbitals to solve and record in the .molden file? e.g. 40"
-                write(*,*) "You can input -1 or a very large number to solve all virtual orbitals"
-                read(*,*) nADDED_MOS
-                imolden=1
-                idiagOT=1
-            end if
-        else
-            iTDDFT=0
-        end if
-    !Below are specific for TDDFT
-    else if (isel==16) then
-        write(*,*) "Input number of excited states to solve, e.g. 5"
-        read(*,*) nstates_TD
-    else if (isel==17) then
-        if (iTDtriplet==0) then
-            iTDtriplet=1
-        else
-            iTDtriplet=0
-        end if
-    else if (isel==18) then
-        if (isTDA==0) then
-            isTDA=1
-        else
-            isTDA=0
-        end if
-    else if (isel==19) then
-        if (iNTO==0) then
-            iNTO=1
-        else
-            iNTO=0
-        end if
-    
-    else if (isel==0) then
-        exit
-    end if
-end do
-
-open(ifileid,file=outname,status="replace")
-write(ifileid,"(a)") "#Generated by Multiwfn"
-call path2filename(filename,c200tmp)
-write(ifileid,"(a)") "&GLOBAL"
-call path2filename(outname,c200tmp)
-write(ifileid,"(a)") "  PROJECT "//trim(c200tmp)
-if (iprintlevel==0) write(ifileid,"(a)") "  PRINT_LEVEL SILENT"
-if (iprintlevel==1) write(ifileid,"(a)") "  PRINT_LEVEL LOW"
-if (iprintlevel==2) write(ifileid,"(a)") "  PRINT_LEVEL MEDIUM"
-if (iprintlevel==3) write(ifileid,"(a)") "  PRINT_LEVEL HIGH"
-if (itask==1) write(ifileid,"(a)") "  RUN_TYPE ENERGY"
-if (itask==2) write(ifileid,"(a)") "  RUN_TYPE ENERGY_FORCE"
-if (itask==3) write(ifileid,"(a)") "  RUN_TYPE GEO_OPT"
-if (itask==4) write(ifileid,"(a)") "  RUN_TYPE CELL_OPT"
-if (itask==5) write(ifileid,"(a)") "  RUN_TYPE VIBRATIONAL_ANALYSIS"
-if (itask==6) write(ifileid,"(a)") "  RUN_TYPE MD"
-if (itask==7) write(ifileid,"(a)") "  RUN_TYPE GEO_OPT"
-if (itask==9.or.itask==10) write(ifileid,"(a)") "  RUN_TYPE LR"
-write(ifileid,"(a)") "&END GLOBAL"
-write(ifileid,"(/,a)") "&FORCE_EVAL"
-write(ifileid,"(a)") "  METHOD Quickstep"
-write(ifileid,"(a)") "  &SUBSYS"
-if (nrep1/=1.or.nrep2/=1.or.nrep3/=1) then
-    write(ifileid,"(a)") "    &TOPOLOGY"
-    write(ifileid,"(a,3i3)") "      MULTIPLE_UNIT_CELL",nrep1,nrep2,nrep3
-    write(ifileid,"(a)") "    &END TOPOLOGY"
-end if
-
-!---- &CELL
-write(ifileid,"(a)") "    &CELL"
-if (ifPBC>0) then
-    write(ifileid,"(a,3f15.8)") "      A",cellv1(:)*b2a
-    write(ifileid,"(a,3f15.8)") "      B",cellv2(:)*b2a
-    write(ifileid,"(a,3f15.8)") "      C",cellv3(:)*b2a
-    if (nrep1/=1.or.nrep2/=1.or.nrep3/=1) write(ifileid,"(a,3i3)") "      MULTIPLE_UNIT_CELL",nrep1,nrep2,nrep3
-    write(ifileid,"(a)") "      PERIODIC "//trim(PBCdir)//" #Direction of applied PBC (geometry aspect)"
-else if (ifPBC==0) then
-    extdist=2*rbuffer
-    flenx=ceiling((maxval(a%x)-minval(a%x)+extdist)*b2a)
-    fleny=ceiling((maxval(a%y)-minval(a%y)+extdist)*b2a)
-    flenz=ceiling((maxval(a%z)-minval(a%z)+extdist)*b2a)
-    !Cubic box, needed by Wavelet Poisson solver
-    !flen=max(max(flenx,fleny),fenlz)
-    !write(ifileid,"(a,3f10.3)") "      ABC",flen,flen,flen
-    !Rectangle box, compatible with ANALYTIC Poisson solver
-    write(ifileid,"(a,3f10.3)") "      ABC",flenx,fleny,flenz
-    write(ifileid,"(a)") "      PERIODIC "//trim(PBCdir)//" #Direction of applied PBC (geometry aspect)"
-end if
-write(ifileid,"(a)") "    &END CELL"
-if (ifPBC==0) then
-    write(ifileid,"(a)") "    &TOPOLOGY"
-    write(ifileid,"(a)") "      &CENTER_COORDINATES #Centering the atoms in the box"
-    write(ifileid,"(a)") "      &END"
-    write(ifileid,"(a)") "    &END"
-end if
-
-!---- &COORD
-write(ifileid,"(a)") "    &COORD"
-do iatm=1,ncenter
-    write(ifileid,"(6x,a,3f14.8)") kindname(atmkind(iatm)),a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
-end do
-write(ifileid,"(a)") "    &END COORD"
-if (itask==6) then
-    write(ifileid,"(a)") "#   &VELOCITY #You can set initial atomic velocities in this section"
-    write(ifileid,"(a)") "#   &END VELOCITY"
-end if
-
-!---- &KIND
-if (method=="GFN1-xTB".or.method=="PM6") then
-    !write(ifileid,"(a)") "    &KIND"
-    !write(ifileid,"(a)") "      BASIS_SET"
-    !write(ifileid,"(a)") "    &END KIND"
-else
-    do ikind=1,nkind
-        if (count(atmkind(:)==ikind)==0) cycle
-        write(ifileid,"(a)") "    &KIND "//kindname(ikind)
-        write(ifileid,"(a)") "      ELEMENT "//ind2name(kindeleidx(ikind))
-        if (ibas==20) then
-            write(ifileid,"(a)") "      BASIS_SET cc-DZ"
-            write(ifileid,"(a)") "      BASIS_SET RI_AUX RI_DZ"
-        else if (ibas==21) then
-            write(ifileid,"(a)") "      BASIS_SET cc-TZ"
-            write(ifileid,"(a)") "      BASIS_SET RI_AUX RI_TZ"
-        else
-            write(ifileid,"(a)") "      BASIS_SET "//trim(basname(ibas))
-        end if
-        if (index(method,"ADMM")/=0) write(ifileid,"(a)") "      BASIS_SET AUX_FIT cFIT3" !Use ADMM
-        if (ibas<=5.or.ibas==20.or.ibas==21) then !GPW
-            if (method=="Pade") then
-                write(ifileid,"(a)") "      POTENTIAL GTH-PADE"
-            else if (method=="BP") then          
-                write(ifileid,"(a)") "      POTENTIAL GTH-BP"
-            else if (method=="BLYP".or.method=="B3LYP") then
-                write(ifileid,"(a)") "      POTENTIAL GTH-BLYP"
-            !else if (index(method,"SCAN")/=0) then
-            !    write(ifileid,"(a)") "      POTENTIAL GTH-SCAN"
-            !else if (index(method,"PBE0")/=0) then
-            !    write(ifileid,"(a)") "      POTENTIAL GTH-PBE0"
-            else if (index(method,"MP2")/=0) then
-                write(ifileid,"(a)") "      POTENTIAL GTH-HF"
-            else                           
-                write(ifileid,"(a)") "      POTENTIAL GTH-PBE"
-            end if
-        else !GAPW
-            write(ifileid,"(a)") "      POTENTIAL ALL"
-        end if
-        if (iDFTplusU==1) then
-            ie=kindeleidx(ikind)
-            if ((ie>=21.and.ie<=28).or.(ie>=39.and.ie<=46).or.(ie>=57.and.ie<=78).or.ie>=89) then !Only +U for d or f element
-                if (ie/=24.and.ie/=25.and.ie/=42.and.ie/=43.and.ie/=46.and.ie/=75) then !Ignore half-occupied d shell elements
-                    write(ifileid,"(a)") "      &DFT_PLUS_U T"
-                    write(ifileid,"(a)") "        L 2 #Quantum number of angular momentum the atomic orbitals to +U. 2=d, 3=f"
-                    write(ifileid,"(a)") "        U_MINUS_J [eV] 3.9 #Effective on-site Coulomb interaction parameter U(eff) = U - J"
-                    write(ifileid,"(a)") "      &END DFT_PLUS_U"
-                end if
-            end if
-        end if
-        if (kindmag(ikind)/=0) write(ifileid,"(a,i3)") "      MAGNETIZATION",kindmag(ikind)
-        write(ifileid,"(a)") "    &END KIND"
-    end do
-end if
-write(ifileid,"(a)") "  &END SUBSYS"
-
-!---- &DFT
-write(ifileid,"(/,a)") "  &DFT"
-if (method/="GFN1-xTB".and.method/="PM6") then
-    if (ibas<0) then
-        write(ifileid,"(a)") "    BASIS_SET_FILE_NAME  GTH_BASIS_SETS"
-    else if (ibas<=5) then
-        write(ifileid,"(a)") "    BASIS_SET_FILE_NAME  BASIS_MOLOPT"
-    else if (ibas==10.or.ibas==11.or.ibas==12.or.ibas==14) then
-        write(ifileid,"(a)") "    BASIS_SET_FILE_NAME  EMSL_BASIS_SETS"
-    else if (ibas==13) then
-        write(ifileid,"(a)") "    BASIS_SET_FILE_NAME  BASIS_pob"
-    else if (ibas==20.or.ibas==21) then
-        write(ifileid,"(a)") "    BASIS_SET_FILE_NAME  BASIS_RI_cc-TZ"
-    end if
-    if (index(method,"ADMM")/=0) then !Set basis set file for ADMM
-        write(ifileid,"(a)") "    BASIS_SET_FILE_NAME  BASIS_ADMM"
-    end if
-    if (index(method,"MP2")/=0) then
-        write(ifileid,"(a)") "    POTENTIAL_FILE_NAME  HF_POTENTIALS"
-    !else if (index(method,"SCAN")/=0.or.index(method,"r2SCAN")/=0.or.index(method,"PBE0")/=0) then
-    !    write(ifileid,"(a)") "    POTENTIAL_FILE_NAME  POTENTIAL_UZH"
-    else
-        write(ifileid,"(a)") "    POTENTIAL_FILE_NAME  POTENTIAL"
-    end if
-end if
-write(ifileid,"(a)") "#   WFN_RESTART_FILE_NAME "//trim(c200tmp)//"-RESTART.wfn"
-write(ifileid,"(a,i5,a)") "    CHARGE",netchg," #Net charge"
-write(ifileid,"(a,i5,a)") "    MULTIPLICITY",multispin," #Spin multiplicity"
-if (multispin>1.or.any(kindmag(1:nkind)/=0)) write(ifileid,"(a)") "    UKS"
-if (any(efieldvec/=0)) then
-    efieldmag=dsqrt(sum(efieldvec**2))
-    write(ifileid,"(a)") "    &EFIELD"
-    write(ifileid,"(a,f8.5)") "      INTENSITY",efieldmag
-    write(ifileid,"(a,3f8.5)") "      POLARISATION",efieldvec/efieldmag
-    write(ifileid,"(a)") "    &END EFIELD"
-end if
-if (ikpconvtest==1) then
-    write(ifileid,"(a)") "    &KPOINTS"
-    write(ifileid,"(a)") "      SCHEME MONKHORST-PACK kp_test"
-    write(ifileid,"(a)") "      SYMMETRY F #If using symmetry to reduce the number of k-points"
-    write(ifileid,"(a)") "    &END KPOINTS"
-else if (ikpoint1/=1.or.ikpoint2/=1.or.ikpoint3/=1) then
-    write(ifileid,"(a)") "    &KPOINTS"
-    write(ifileid,"(a,3i3)") "      SCHEME MONKHORST-PACK",ikpoint1,ikpoint2,ikpoint3
-    write(ifileid,"(a)") "      SYMMETRY F #If using symmetry to reduce the number of k-points"
-    !write(ifileid,"(a)") "      KPOINT X Y Z weight" !Manually specify XYZ and weight of k-points
-    !write(ifileid,"(a)") "      FULL_GRID T" !If using full non-reduced kpoint grid. Default is false
-    write(ifileid,"(a)") "    &END KPOINTS"
-end if
-if (iDFTplusU==1) write(ifileid,"(a)") "    PLUS_U_METHOD MULLIKEN #The method used in DFT+U. Can also be Lowdin"
-
-!---- &QS
-write(ifileid,"(a)") "    &QS"
-if (itask==9.or.itask==10) then !Use better setting for NMR and polar
-    write(ifileid,"(a)") "      EPS_DEFAULT 1E-12 #Set all EPS_xxx to values such that the energy will be correct up to this value"
-else
-    write(ifileid,"(a)") "      EPS_DEFAULT 1E-10 #This is default. Set all EPS_xxx to values such that the energy will be correct up to this value"
-end if
-if (index(method,"B3LYP")/=0.or.index(method,"PBE0")/=0.or.index(method,"HSE06")/=0.or.index(method,"MP2")/=0) then
-    write(ifileid,"(a)") "    # EPS_PGF_ORB 1E-8 #If seeing ""Kohn Sham matrix not 100% occupied"" when using HF, MP2 or hybrid functional, uncomment this"
-end if
-if (itask==6) then
-    write(ifileid,"(a)") "      EXTRAPOLATION ASPC #Extrapolation for wavefunction during e.g. MD. ASPC is default, PS also be used"
-    write(ifileid,"(a)") "      EXTRAPOLATION_ORDER 3 #Order for PS or ASPC extrapolation. 3 is default"
-end if
-if (method=="GFN1-xTB") then
-    write(ifileid,"(a)") "      METHOD xTB"
-    write(ifileid,"(a)") "      &xTB"
-    if (ifPBC>0) write(ifileid,"(a)") "        DO_EWALD T" !Default is Coulomb way to calculate electrostatic interaction
-    write(ifileid,"(a)") "        CHECK_ATOMIC_CHARGES F #xTB calculation often crashes without setting this to false"
-    write(ifileid,"(a)") "        &PARAMETER"
-    write(ifileid,"(a)") "          DISPERSION_PARAMETER_FILE dftd3.dat"
-    write(ifileid,"(a)") "          PARAM_FILE_NAME xTB_parameters"
-    write(ifileid,"(a)") "        &END PARAMETER"
-    write(ifileid,"(a)") "      &END xTB"
-else if (method=="PM6") then
-    write(ifileid,"(a)") "      METHOD PM6"
-    if (ifPBC>0) then
-        write(ifileid,"(a)") "      &SE"
-        write(ifileid,"(a)") "        PERIODIC EWALD"
-        write(ifileid,"(a)") "      &END SE"
-    end if
-else if (ibas>=10.and.ibas<=19) then !These are all-electron basis sets
-    write(ifileid,"(a)") "      METHOD GAPW"
-else !Default is GPW using GTH pseudopotential, do no need to explicitly write
-    continue
-end if
-write(ifileid,"(a)") "    &END QS"
-
-!---- &POISSON
-write(ifileid,"(a)") "    &POISSON" !How to deal with electrostatic part
-if (method=="PM6") then !Very special
-    write(ifileid,"(a)") "      &EWALD"
-    write(ifileid,"(a)") "        &MULTIPOLES"
-    write(ifileid,"(a)") "          MAX_MULTIPOLE_EXPANSION QUADRUPOLE"
-    write(ifileid,"(a)") "        &END"
-    write(ifileid,"(a)") "        EWALD_TYPE ewald"
-    write(ifileid,"(a)") "        ALPHA  .5" !See e.g. https://github.com/misteliy/cp2k/blob/master/tests/SE/regtest-3/Al2O3.inp
-    write(ifileid,"(a)") "        GMAX   31"
-    write(ifileid,"(a)") "      &END EWALD"
-else !Common case
-    write(ifileid,"(a)") "      PERIODIC "//trim(PBCdir)//" #Direction(s) of PBC for calculating electrostatics"
-    if (PBCdir=="NONE") then
-        !WAVELET solver allows for non-periodic (PERIODIC NONE) conditions and slab-boundary conditions (but only PERIODIC XZ)
-        !write(ifileid,"(a)") "       PSOLVER MT" !Martyna-Tuckerman poisson solver. Exact results are only guaranteed if the unit cell is twice as large as charge density
-        !write(ifileid,"(a)") "      PSOLVER WAVELET #The way to solve Poisson equation. Can also be MT, ANALYTIC ..."
-        write(ifileid,"(a)") "      PSOLVER ANALYTIC #The way to solve Poisson equation" !I found ANALYTIC is faster than WAVELET, and do not need cubic box, so best
-    else if (PBCdir=="XYZ") then
-        write(ifileid,"(a)") "      PSOLVER PERIODIC #The way to solve Poisson equation"
-    else
-        write(ifileid,"(a)") "      PSOLVER ANALYTIC #The way to solve Poisson equation"
-    end if
-end if
-write(ifileid,"(a)") "    &END POISSON"
-
-if (index(method,"ADMM")/=0) then !Use ADMM
-    write(ifileid,"(a)") "    &AUXILIARY_DENSITY_MATRIX_METHOD"
-    write(ifileid,"(a)") "      METHOD BASIS_PROJECTION"
-    write(ifileid,"(a)") "      ADMM_PURIFICATION_METHOD MO_DIAG"
-    write(ifileid,"(a)") "    &END AUXILIARY_DENSITY_MATRIX_METHOD"
-end if
-
-!---- &XC
-if (method=="PM6".or.method=="GFN1-xTB") goto 100
-write(ifileid,"(a)") "    &XC"
-if (index(method,"LIBXC")/=0) then
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL"
-    write(ifileid,"(a)") "        &LIBXC"
-    !if (method=="PBEsol_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  GGA_X_PBE_SOL"
-    if (method=="B97M-rV_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  MGGA_XC_B97M_V"
-    if (method=="MN15L_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  MGGA_X_MN15_L"
-    if (method=="SCAN_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  MGGA_X_SCAN"
-    if (method=="r2SCAN_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  MGGA_X_R2SCAN"
-    if (method=="RPBE_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  GGA_X_RPBE"
-    write(ifileid,"(a)") "        &END LIBXC"
-    if (method/="B97M-rV_LIBXC") then !Also need to define correlation part
-        write(ifileid,"(a)") "        &LIBXC"
-        !if (method=="PBEsol_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  GGA_C_PBE_SOL"
-        if (method=="MN15L_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  MGGA_C_MN15_L"
-        if (method=="SCAN_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  MGGA_C_SCAN"
-        if (method=="r2SCAN_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  MGGA_C_R2SCAN"
-        if (method=="RPBE_LIBXC") write(ifileid,"(a)") "          FUNCTIONAL  GGA_C_PBE"
-        write(ifileid,"(a)") "        &END LIBXC"
-    end if
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (method=="GFN1-xTB".or.method=="PM6") then
-    continue
-else if (index(method,"PBE0")/=0) then
-        !write(ifileid,"(a)") "      &XC_FUNCTIONAL PBE0" !In fact simply writing this is adequate, and "FRACTION 0.25" can be ignored
-        write(ifileid,"(a)") "      &XC_FUNCTIONAL"
-        write(ifileid,"(a)") "        &PBE"
-        write(ifileid,"(a)") "          SCALE_X 0.75 #75% GGA exchange"
-        write(ifileid,"(a)") "          SCALE_C 1.0 #100% GGA correlation"
-        write(ifileid,"(a)") "        &END PBE"
-        write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (index(method,"B3LYP")/=0) then
-        write(ifileid,"(a)") "      &XC_FUNCTIONAL"
-        write(ifileid,"(a)") "        &LYP"
-        write(ifileid,"(a)") "          SCALE_C 0.81"
-        write(ifileid,"(a)") "        &END "
-        write(ifileid,"(a)") "        &BECKE88"
-        write(ifileid,"(a)") "          SCALE_X 0.72"
-        write(ifileid,"(a)") "        &END"
-        write(ifileid,"(a)") "        &VWN"
-        write(ifileid,"(a)") "          FUNCTIONAL_TYPE VWN3 #Adapt Gaussian's B3LYP definition"
-        write(ifileid,"(a)") "          SCALE_C 0.19"
-        write(ifileid,"(a)") "        &END"
-        write(ifileid,"(a)") "        &XALPHA"
-        write(ifileid,"(a)") "          SCALE_X 0.08"
-        write(ifileid,"(a)") "        &END"
-        write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (method=="revPBE".or.method=="PBEsol") then
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL PBE"
-    write(ifileid,"(a)") "        &PBE"
-    if (method=="revPBE") write(ifileid,"(a)") "          PARAMETRIZATION REVPBE"
-    if (method=="PBEsol") write(ifileid,"(a)") "          PARAMETRIZATION PBESOL"
-    write(ifileid,"(a)") "        &END PBE"
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (index(method,"HSE")/=0) then
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL"
-    write(ifileid,"(a)") "        &XWPBE"
-    write(ifileid,"(a)") "          SCALE_X -0.25"
-    write(ifileid,"(a)") "          SCALE_X0 1.0"
-    write(ifileid,"(a)") "          OMEGA 0.11"
-    write(ifileid,"(a)") "        &END XWPBE"
-    write(ifileid,"(a)") "        &PBE"
-    write(ifileid,"(a)") "          SCALE_X 0.0"
-    write(ifileid,"(a)") "          SCALE_C 1.0"
-    write(ifileid,"(a)") "        &END PBE"
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (index(method,"MP2")/=0) then
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL NONE"
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (index(method,"B2PLYP")/=0) then
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL"
-    write(ifileid,"(a)") "        &LYP"
-    write(ifileid,"(a)") "          SCALE_C  0.73"
-    write(ifileid,"(a)") "        &END"
-    write(ifileid,"(a)") "        &BECKE88"
-    write(ifileid,"(a)") "          SCALE_X  0.47"
-    write(ifileid,"(a)") "        &END"
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (index(method,"B2GP-PLYP")/=0) then
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL"
-    write(ifileid,"(a)") "        &LYP"
-    write(ifileid,"(a)") "          SCALE_C  0.64"
-    write(ifileid,"(a)") "        &END"
-    write(ifileid,"(a)") "        &BECKE88"
-    write(ifileid,"(a)") "          SCALE_X  0.35"
-    write(ifileid,"(a)") "        &END"
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else if (index(method,"DSD-BLYP")/=0) then
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL"
-    write(ifileid,"(a)") "        &LYP"
-    write(ifileid,"(a)") "          SCALE_C  0.69"
-    write(ifileid,"(a)") "        &END"
-    write(ifileid,"(a)") "        &BECKE88"
-    write(ifileid,"(a)") "          SCALE_X  0.31"
-    write(ifileid,"(a)") "        &END"
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-else !Common native GGA functionals
-    write(ifileid,"(a)") "      &XC_FUNCTIONAL "//trim(method)
-    write(ifileid,"(a)") "      &END XC_FUNCTIONAL"
-end if
-!HF part for hybrid functionals
-if (index(method,"PBE0")/=0.or.index(method,"B3LYP")/=0.or.index(method,"HSE")/=0.or.iMP2==1) then !Truncate HFX potential
-    write(ifileid,"(a)") "      &HF"
-    if (index(method,"PBE0")/=0.or.index(method,"HSE")/=0) write(ifileid,"(a)") "        FRACTION 0.25"
-    if (index(method,"B3LYP")/=0) write(ifileid,"(a)") "        FRACTION 0.20"
-    if (index(method,"MP2")/=0) write(ifileid,"(a)") "        FRACTION 1.0"
-    if (index(method,"B2PLYP")/=0) write(ifileid,"(a)") "        FRACTION 0.53"
-    if (index(method,"B2GP-PLYP")/=0) write(ifileid,"(a)") "        FRACTION 0.65"
-    if (index(method,"DSD-BLYP")/=0) write(ifileid,"(a)") "        FRACTION 0.69"
-    write(ifileid,"(a)") "        &SCREENING"
-    if (iMP2==1) then !For double-hybrid or MP2 calculation, use tighter threshold for screening
-        write(ifileid,"(a)") "          EPS_SCHWARZ 1E-10 #Important to improve scaling. The larger the value, the lower the cost and lower the accuracy"
-    else
-        write(ifileid,"(a)") "          EPS_SCHWARZ 1E-8 #Important to improve scaling. The larger the value, the lower the cost and lower the accuracy"
-    end if
-    write(ifileid,"(a)") "          SCREEN_ON_INITIAL_P T #Screening on product between maximum of density matrix elements and ERI"
-    write(ifileid,"(a)") "        &END SCREENING"
-    write(ifileid,"(a)") "        &INTERACTION_POTENTIAL"
-    if (index(method,"HSE")/=0) then
-        write(ifileid,"(a)") "          POTENTIAL_TYPE SHORTRANGE"
-        write(ifileid,"(a)") "          OMEGA 0.11"
-    else
-        write(ifileid,"(a)") "          POTENTIAL_TYPE TRUNCATED"
-        !Set CUTOFF_RADIUS to 1/2.1 of shortest box length, as suggested in CP2K input editor
-        v1n=dsqrt(sum(cellv1**2))
-        v2n=dsqrt(sum(cellv2**2))
-        v3n=dsqrt(sum(cellv3**2))
-        rad=min(min(v1n,v2n),v3n)*b2a/2.1D0
-        if (ifPBC==0.or.rad>6) then !If half of shortest box length is larger than 6 Angstrom, simply use 6, this is adequate
-            write(ifileid,"(a,f8.4)") "          CUTOFF_RADIUS 6.0 #Cutoff radius for truncated 1/r potential"
-        else
-            write(ifileid,"(a,f8.4,a)") "          CUTOFF_RADIUS",rad," #Cutoff radius for truncated 1/r potential"
-        end if
-        write(ifileid,"(a)") "          T_C_G_DATA t_c_g.dat"
-    end if
-    write(ifileid,"(a)") "        &END INTERACTION_POTENTIAL"
-    write(ifileid,"(a)") "        &MEMORY"
-    write(ifileid,"(a)") "          MAX_MEMORY 3000 #Memory(MB) per MPI process for calculating HF exchange"
-    !Scaling factor to scale EPS_SCHWARZ. Storage threshold for compression will be EPS_SCHWARZ*EPS_STORAGE_SCALING
-    write(ifileid,"(a)") "          EPS_STORAGE_SCALING 0.1"
-    write(ifileid,"(a)") "        &END MEMORY"
-    write(ifileid,"(a)") "      &END HF"
-    !MP2 part
-    if (iMP2==1) then
-        write(ifileid,"(a)") "      &WF_CORRELATION"
-        write(ifileid,"(a)") "        &RI_MP2"
-        write(ifileid,"(a)") "        &END RI_MP2"
-        if (index(method,"SCS-MP2")/=0) then
-            write(ifileid,"(a)") "        SCALE_S 1.2"
-            write(ifileid,"(a)") "        SCALE_T 0.3333333"
-        else if (index(method,"B2PLYP")/=0) then
-            write(ifileid,"(a)") "        SCALE_S 0.27"
-            write(ifileid,"(a)") "        SCALE_T 0.27"
-        else if (index(method,"B2GP-PLYP")/=0) then
-            write(ifileid,"(a)") "        SCALE_S 0.36"
-            write(ifileid,"(a)") "        SCALE_T 0.36"
-        else if (index(method,"DSD-BLYP")/=0) then
-            write(ifileid,"(a)") "        SCALE_S 0.46"
-            write(ifileid,"(a)") "        SCALE_T 0.37"
-        end if
-        write(ifileid,"(a)") "        &INTEGRALS"
-        write(ifileid,"(a)") "          &WFC_GPW"
-        write(ifileid,"(a)") "            CUTOFF      300"
-        write(ifileid,"(a)") "            REL_CUTOFF  50"
-        write(ifileid,"(a)") "            EPS_FILTER  1.0E-12"
-        write(ifileid,"(a)") "            EPS_GRID    1.0E-8"
-        write(ifileid,"(a)") "          &END"
-        write(ifileid,"(a)") "        &END INTEGRALS"
-        write(ifileid,"(a)") "        MEMORY    3000 #Maximum allowed total memory usage (MB) during MP2 part"
-        write(ifileid,"(a)") "        GROUP_SIZE  1 #Default. Also known as NUMBER_PROC"
-        write(ifileid,"(a)") "      &END WF_CORRELATION"
-    end if
-end if
-
-!--- Dispersion correction
-if (idispcorr>0.or.method=="BEEFVDW") then
-    write(ifileid,"(a)") "      &VDW_POTENTIAL"
-    if (idispcorr==1.or.idispcorr==2) then
-        write(ifileid,"(a)") "        POTENTIAL_TYPE PAIR_POTENTIAL"
-        write(ifileid,"(a)") "        &PAIR_POTENTIAL"
-        write(ifileid,"(a)") "          PARAMETER_FILE_NAME dftd3.dat"
-        if (idispcorr==1) write(ifileid,"(a)") "          TYPE DFTD3"
-        if (idispcorr==2) write(ifileid,"(a)") "          TYPE DFTD3(BJ)"
-        !See qs_dispersion_pairpot.F on how to write functional name
-        if (method=="BP") then
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL BP86"
-        else if (method=="PBEsol_LIBXC") then
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL PBEsol"
-        else if (method=="MN15L_LIBXC") then
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL MN15L"
-        else if (method=="SCAN_LIBXC") then
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL SCAN"
-        else if (index(method,"B2PLYP")/=0) then
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL B2PLYP"
-        else if (index(method,"B2GP-PLYP")/=0) then
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL B2GPPLYP"
-        else if (index(method,"DSD-BLYP")/=0) then
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL DSD-BLYP"
-        else
-            c80tmp=trim(method)
-            ipos=index(c80tmp,"_ADMM")
-            if (ipos/=0) c80tmp(ipos:ipos+4)=""
-            write(ifileid,"(a)") "          REFERENCE_FUNCTIONAL "//trim(c80tmp)
-        end if
-        !write(ifileid,"(a)") "          R_CUTOFF 10.5835442" !Default DFT-D potential range, cutoff will be 2 times this value
-        write(ifileid,"(a)") "        &END PAIR_POTENTIAL"
-    else if (idispcorr==5.or.method=="BEEFVDW") then         
-        write(ifileid,"(a)") "        POTENTIAL_TYPE NON_LOCAL"
-        write(ifileid,"(a)") "        &NON_LOCAL"
-        if (idispcorr==5) then
-            write(ifileid,"(a)") "          TYPE RVV10"
-            if (method=="B97M-rV_LIBXC") then !See: Ab initio molecular dynamics simulations of liquid water using high quality meta-GGA functionals
-                write(ifileid,"(a)") "          PARAMETERS 6.0 0.01"
-            else
-                write(ifileid,"(a)") "    #The default rVV10 b and c parameters are given below. They should be replaced by proper values for current XC functional"
-                write(ifileid,"(a)") "          PARAMETERS 6.3 9.3E-3"
-            end if
-            write(ifileid,"(a)") "          KERNEL_FILE_NAME rVV10_kernel_table.dat"
-        else if (method=="BEEFVDW") then
-            write(ifileid,"(a)") "          TYPE LMKLL"
-            write(ifileid,"(a)") "          KERNEL_FILE_NAME vdW_kernel_table.dat"
-        end if
-        write(ifileid,"(a)") "        &END NON_LOCAL"
-    end if
-    write(ifileid,"(a)") "      &END VDW_POTENTIAL"
-end if
-if (ifineXCgrid==1) then
-    write(ifileid,"(a)") "      &XC_GRID"
-    write(ifileid,"(a)") "        USE_FINER_GRID T #Use finer grid for calculating XC"
-    write(ifileid,"(a)") "      &END XC_GRID"
-end if
-write(ifileid,"(a)") "    &END XC"
-100 continue
-
-!--- &MGRID
-if (method/="GFN1-xTB".and.method/="PM6") then
-    write(ifileid,"(a)") "    &MGRID"
-    if (iconvtest==1) then
-        write(ifileid,"(a)") "      CUTOFF LT_cutoff"
-        write(ifileid,"(a)") "      REL_CUTOFF LT_rel_cutoff"
-    else
-        if (itask==1) then !Single point, medicore accuracy
-            write(ifileid,"(a)") "      CUTOFF 350"
-            write(ifileid,"(a)") "      REL_CUTOFF 50"
-        else if (itask==6) then !MD, do not need high accuracy
-            write(ifileid,"(a)") "      CUTOFF 300" !Default is 280
-            write(ifileid,"(a)") "      REL_CUTOFF 40" !Default is 40
-        else !If task involves energy derivative, or TDDFT, use higher cutoff
-            write(ifileid,"(a)") "      CUTOFF 400"
-            write(ifileid,"(a)") "      REL_CUTOFF 55"
-        end if
-    end if
-    if (ibas==3.or.ibas==4.or.ibas==5) write(ifileid,"(a)") "      NGRIDS 5 #The number of multigrids to use. 5 is optimal for MOLOPT-GTH basis sets"
-    write(ifileid,"(a)") "    &END MGRID"
-end if
-
-!--- &SCF
-write(ifileid,"(a)") "    &SCF"
-if (iconvtest==1) then
-    write(ifileid,"(a)") "      MAX_SCF 1"
-else
-    if (idiagOT==1) then !Diagonalization
-        write(ifileid,"(a)") "      MAX_SCF 128"
-    else !OT, usually use more cycles
-        if (iouterSCF==0) write(ifileid,"(a)") "      MAX_SCF 200 #Should be set to a small value (e.g. 30) if enabling outer SCF"
-        if (iouterSCF==1) write(ifileid,"(a)") "      MAX_SCF 20 #Maximum number of steps of inner SCF"
-    end if
-end if
-if (imixing==1) then
-    write(ifileid,"(a)") "      MAX_DIIS 7 #Maximum number of DIIS vectors to be used" !The default 4 is too small
-    write(ifileid,"(a)") "      EPS_DIIS 0.3 #Threshold on the convergence to start using DIAG/DIIS" !The default 0.1 is too small
-end if
-if (itask==1) then !Single point and MD, do not need high accuracy
-    eps_scf=5D-6
-else if (itask==6) then !For faster MD, use even looser threshold
-    eps_scf=1D-5
-else if (itask==5) then !Vibration analysis is realized based on finite difference, so use tight convergence as suggested by manual
-    eps_scf=1D-7
-else if (itask==9.and.itask==10) then !NMR and polar may need pretty tight threshold
-    eps_scf=1D-8
-else !Other tasks involving energy derivative, use tighter convergence
-    eps_scf=3D-6
-end if
-if (iouterSCF==0) write(ifileid,"(a,1PE8.1,a)") "      EPS_SCF",eps_scf," #Convergence threshold of density matrix during SCF"
-if (iouterSCF==1) write(ifileid,"(a,1PE8.1,a)") "      EPS_SCF",eps_scf," #Convergence threshold of density matrix of inner SCF"
-!if (method=="GFN1-xTB".or.method=="PM6") write(ifileid,"(a)") "      SCF_GUESS MOPAC" !Seems they benefit from this
-write(ifileid,"(a)") "#     SCF_GUESS RESTART #Use wavefunction from WFN_RESTART_FILE_NAME file as initial guess"
-if (idiagOT==1) then
-    write(ifileid,"(a)") "      &DIAGONALIZATION"
-    write(ifileid,"(a)") "        ALGORITHM STANDARD #Algorithm for diagonalization. DAVIDSON is faster for large systems"
-    write(ifileid,"(a)") "      &END DIAGONALIZATION"
-else if (idiagOT==2) then
-    write(ifileid,"(a)") "      &OT"
-    if (method=="GFN1-xTB".or.method=="PM6") then !Semi-empirical cannot use FULL_KINETIC. For large system FULL_SINGLE_INVERSE is the only good choice
-        write(ifileid,"(a)") "        PRECONDITIONER FULL_SINGLE_INVERSE"
-    else
-        if (ncenter>150) then !Large system, using FULL_ALL will cause too high cost at the first step
-            write(ifileid,"(a)") "        PRECONDITIONER FULL_KINETIC #FULL_SINGLE_INVERSE is also worth to try. FULL_ALL is better but quite expensive for large system"
-        else
-            write(ifileid,"(a)") "        PRECONDITIONER FULL_ALL #Usually best but expensive for large system. Cheaper: FULL_SINGLE_INVERSE and FULL_KINETIC (default)"
-        end if
-    end if
-    write(ifileid,"(a)") "        MINIMIZER DIIS #CG is worth to consider in difficult cases" !BROYDEN in fact can also be used, but quite poor!
-    write(ifileid,"(a)") "        LINESEARCH 2PNT #1D line search algorithm for CG. 2PNT is default, 3PNT is better but more costly. GOLD is best but very expensive"
-    write(ifileid,"(a)") "      &END OT"
-    if (iouterSCF==0) then
-        write(ifileid,"(a)") "      #Uncomment following lines can enable outer SCF"
-        write(ifileid,"(a)") "      #&OUTER_SCF"
-        write(ifileid,"(a)") "      #  MAX_SCF 20 #Maximum number of steps of outer SCF"
-        write(ifileid,"(a,1PE8.1,a)") "      #  EPS_SCF",eps_scf," #Convergence threshold of outer SCF"
-        write(ifileid,"(a)") "      #&END OUTER_SCF"
-    else if (iouterSCF==1) then
-        write(ifileid,"(a)") "       &OUTER_SCF"
-        write(ifileid,"(a)") "         MAX_SCF 20 #Maximum number of steps of outer SCF"
-        write(ifileid,"(a,1PE8.1,a)") "         EPS_SCF",eps_scf," #Convergence threshold of outer SCF"
-        write(ifileid,"(a)") "       &END OUTER_SCF"
-    end if
-end if
-
-if (idiagOT==1) then
-    !--- &MIXING
-    write(ifileid,"(a)") "      &MIXING #How to mix old and new density matrices"
-    if (imixing==1) then !PM6 and only use this
-        write(ifileid,"(a)") "        METHOD DIRECT_P_MIXING"
-        write(ifileid,"(a)") "        ALPHA 0.4 #Default. Mixing 40% of new density matrix with the old one"
-    else if (imixing==2) then
-        write(ifileid,"(a)") "        METHOD BROYDEN_MIXING #PULAY_MIXING is also a good alternative"
-        write(ifileid,"(a)") "        ALPHA 0.4 #Default. Mixing 40% of new density matrix with the old one"
-        write(ifileid,"(a)") "        NBROYDEN 8 #Default is 4. Number of previous steps stored for the actual mixing scheme" !Equivalent to NBUFFER
-    else if (imixing==3) then
-        write(ifileid,"(a)") "        METHOD PULAY_MIXING #BROYDEN_MIXING is also a good alternative"
-        write(ifileid,"(a)") "        NPULAY 8 #Default is 4. Number of previous steps stored for the actual mixing scheme" !Equivalent to NBUFFER
-    end if
-    write(ifileid,"(a)") "      &END MIXING"
-    !--- &SMEAR
-    if (ismear==1) then
-        write(ifileid,"(a)") "      &SMEAR"
-        write(ifileid,"(a)") "        METHOD FERMI_DIRAC" !Can also be ENERGY_WINDOW, LIST
-        write(ifileid,"(a)") "        ELECTRONIC_TEMPERATURE 300 #Electronic temperature of Fermi-Dirac smearing in K"
-        write(ifileid,"(a)") "      &END SMEAR"
-    end if
-    if (nADDED_MOS/=0) then
-        if (multispin>1.or.any(kindmag(1:nkind)/=0)) then
-            write(ifileid,"(a,i6,i6,a)") "      ADDED_MOS",nADDED_MOS,nADDED_MOS," #Number of virtual MOs to solve for alpha and beta spins"
-        else
-            write(ifileid,"(a,i6,a)") "      ADDED_MOS",nADDED_MOS," #Number of virtual MOs to solve"
-        end if
-    end if
-end if
-if (itask==3.or.itask==4.or.itask==6.or.itask==7) then
-    write(ifileid,"(a)") "      &PRINT"
-    write(ifileid,"(a)") "        &RESTART #Use ""&RESTART OFF"" can prevent generating wfn file"
-    write(ifileid,"(a)") "          BACKUP_COPIES 0 #Maximum number of backup copies of wfn file"
-    write(ifileid,"(a)") "        &END RESTART"
-    write(ifileid,"(a)") "      &END PRINT"
-end if
-write(ifileid,"(a)") "    &END SCF"
-
-!--- &PRINT of DFT level
-if (imolden==1.or.ioutcube>0.or.iatomcharge>0.or.itask==5.or.imoment==1) then
-    write(ifileid,"(a)") "    &PRINT"
-    if (imolden==1) then
-        write(ifileid,"(a)") "      &MO_MOLDEN #Exporting .molden file containing MOs"
-        write(ifileid,"(a)") "        NDIGITS 8 #Number of significant digits of data in .molden"
-        write(ifileid,"(a)") "        GTO_KIND SPHERICAL #Spherical-harmonic type of basis functions"
-        write(ifileid,"(a)") "      &END MO_MOLDEN"
-    end if
-    if (ioutcube>0) then
-        if (ioutcube==1) then
-            write(ifileid,"(a)") "      &E_DENSITY_CUBE"
-            write(ifileid,"(a)") "        STRIDE 1 #Stride of exported cube file"
-            write(ifileid,"(a)") "      &END E_DENSITY_CUBE"
-        else if (ioutcube==2) then
-            write(ifileid,"(a)") "      &ELF_CUBE"
-            write(ifileid,"(a)") "        STRIDE 1 #Stride of exported cube file"
-            write(ifileid,"(a)") "      &END ELF_CUBE"
-        else if (ioutcube==3) then
-            write(ifileid,"(a)") "      &V_XC_CUBE"
-            write(ifileid,"(a)") "        STRIDE 1 #Stride of exported cube file"
-            write(ifileid,"(a)") "      &END V_XC_CUBE"
-        else if (ioutcube==4) then
-            write(ifileid,"(a)") "      &V_HARTREE_CUBE"
-            write(ifileid,"(a)") "        STRIDE 1 #Stride of exported cube file"
-            write(ifileid,"(a)") "      &END V_HARTREE_CUBE"
-        else if (ioutcube==5) then
-            write(ifileid,"(a)") "      &EFIELD_CUBE"
-            write(ifileid,"(a)") "        STRIDE 1 #Stride of exported cube file"
-            write(ifileid,"(a)") "      &END EFIELD_CUBE"
-        else if (ioutcube==6) then
-            write(ifileid,"(a)") "      &MO_CUBES"
-            write(ifileid,"(a)") "        STRIDE 1 #Stride of exported cube file"
-            write(ifileid,"(a,i6)") "        NHOMO",NHOMO
-            write(ifileid,"(a,i6)") "        NLUMO",NLUMO
-            write(ifileid,"(a)") "      &END MO_CUBES"
-        end if
-    end if
-    if (iatomcharge>0) then
-        if (iatomcharge==1) then
-            write(ifileid,"(a)") "      &MULLIKEN"
-            write(ifileid,"(a)") "        PRINT_ALL F #If T, then printing full net AO and overlap population matrix"
-            write(ifileid,"(a)") "      &END MULLIKEN"
-        else if (iatomcharge==2) then
-            write(ifileid,"(a)") "      &LOWDIN"
-            write(ifileid,"(a)") "        PRINT_ALL F #If T, then printing full net AO and overlap population matrix"
-            write(ifileid,"(a)") "      &END LOWDIN"
-        else if (iatomcharge==3.or.iatomcharge==4) then
-            write(ifileid,"(a)") "      &HIRSHFELD"
-            write(ifileid,"(a)") "        SHAPE_FUNCTION DENSITY"
-            if (iatomcharge==4) write(ifileid,"(a)") "        SELF_CONSISTENT T"
-            write(ifileid,"(a)") "      &END HIRSHFELD"
-        else if (iatomcharge==5) then
-            write(ifileid,"(a)") "      &VORONOI"
-            write(ifileid,"(a)") "        VORONOI_RADII Covalent" !Better than default of using vdW radii
-            write(ifileid,"(a)") "      &END VORONOI"
-        end if
-    end if
-    if (itask==5.or.imoment==1) then
-        write(ifileid,"(a)") "      &MOMENTS"
-        if (PBCdir=="NONE") then
-            write(ifileid,"(a)") "        PERIODIC .FALSE."
-            write(ifileid,"(a)") "        REFERENCE COM"
-        end if
-        write(ifileid,"(a)") "      &END MOMENTS"
-    end if
-    if (iSCCS==1) then
-        write(ifileid,"(a)") "      @IF 1 #Printing SCCS information in each SCF iteration" !When print level is medium, will also print SCCS iteration information
-        write(ifileid,"(a)") "      &SCCS"
-        write(ifileid,"(a)") "        &EACH"
-        write(ifileid,"(a)") "          QS_SCF 1"
-        write(ifileid,"(a)") "        &END EACH"
-        write(ifileid,"(a)") "      &END SCCS"
-        write(ifileid,"(a)") "      @ENDIF"
-    end if
-    write(ifileid,"(a)") "    &END PRINT"
-end if
-if (iSCCS==1) then
-    write(ifileid,"(a)") "    &SCCS"
-    write(ifileid,"(a)") "      ALPHA [N*m^-1] 0.0"
-    write(ifileid,"(a)") "      BETA [kbar] 0.0"
-    write(ifileid,"(a)") "      GAMMA [mN/m] 0.0"
-    write(ifileid,"(a)") "      DIELECTRIC_CONSTANT 78.36 #Water"
-    write(ifileid,"(a)") "      EPS_SCCS 1E-6 #Default. Requested accuracy for the SCCS iteration cycle"
-    write(ifileid,"(a)") "      EPS_SCF 0.5 #Default. SCCS iteration is activated only if SCF iteration is converged to this threshold"
-    write(ifileid,"(a)") "      MAX_ITER 100 #Default. Maximum number of SCCS iteration steps"
-    write(ifileid,"(a)") "      DERIVATIVE_METHOD FFT #Default. Method for calculation of numerical derivatives. Can also be CD3, CD5, CD7"
-    write(ifileid,"(a)") "      &ANDREUSSI"
-    write(ifileid,"(a)") "        RHO_MAX 0.0035 #Default"
-    write(ifileid,"(a)") "        RHO_MIN 0.0001 #Default"
-    write(ifileid,"(a)") "      &END ANDREUSSI"
-    write(ifileid,"(a)") "    &END SCCS"
-end if
-if (idipcorr>0) then
-    write(ifileid,"(a)") "    SURFACE_DIPOLE_CORRECTION T"
-    if (idipcorr==1) write(ifileid,"(a)") "    SURF_DIP_DIR X"
-    if (idipcorr==2) write(ifileid,"(a)") "    SURF_DIP_DIR Y"
-    if (idipcorr==3) write(ifileid,"(a)") "    SURF_DIP_DIR Z"
-end if
-write(ifileid,"(a)") "  &END DFT"
-
-if (itask==2) then
-    write(ifileid,"(a)") "  &PRINT"
-    write(ifileid,"(a)") "    &FORCES ON"
-    write(ifileid,"(a)") "    &END FORCES"
-    write(ifileid,"(a)") "  &END PRINT"
-end if
-if (itask==4.or.ibarostat>0) write(ifileid,"(a)") "  STRESS_TENSOR ANALYTICAL"
-if (itask==9.or.itask==10.or.iTDDFT==1) then !NMR, polar, TDDFT
-    write(ifileid,"(a)") "  &PROPERTIES"
-    if (itask==9.or.itask==10) then !NMR, polar
-        write(ifileid,"(a)") "    &LINRES #Activate linear response calculation"
-        if (ncenter>150) then
-            write(ifileid,"(a)") "      PRECONDITIONER FULL_KINETIC #Preconditioner to be used with all minimization schemes"
-        else
-            write(ifileid,"(a)") "      PRECONDITIONER FULL_ALL #Preconditioner to be used with all minimization schemes"
-        end if
-        write(ifileid,"(a)") "      EPS 1E-10 #Target accuracy for the convergence of the conjugate gradient" !Tigher than default 1E-6
-        write(ifileid,"(a)") "      MAX_ITER 300 #Maximum number of conjugate gradient iteration to be performed for one optimization"
-        if (itask==9) then
-            write(ifileid,"(a)") "      &CURRENT"
-            !write(ifileid,"(a)") "        GAUGE R_AND_STEP_FUNCTION #Default. The gauge used to compute the induced current within GAPW" !I found the default is the only useful choice
-            !Use ATOM can keep shielding tensor symmetry much better than WANNIER
-            write(ifileid,"(a)") "        ORBITAL_CENTER ATOM #The orbital center. Can also be WANNIER (default)"
-            write(ifileid,"(a)") "      &END CURRENT"
-            write(ifileid,"(a)") "      &LOCALIZE"
-            !I found CRAZY doesn't properly work, so do not explicitly mention, just use default JACOBI
-            !write(ifileid,"(a)") "	      METHOD JACOBI #Localization optimization method. JACOBI=2x2 orbital rotations. CRAZY is less robust but usually much faster"
-            write(ifileid,"(a)") "	      MAX_ITER 300 #Maximum number of iterations used for localization methods"
-            !I found BOYS and PIPEK do not work, so do not explicitly mention them, just use default BERRY
-            !write(ifileid,"(a)") "	      OPERATOR BERRY #The quantity to be minimized in localization. Can also be BOYS and PIPEK"
-            write(ifileid,"(a)") "      &END LOCALIZE"
-            write(ifileid,"(a)") "      &NMR"
-            write(ifileid,"(a)") "      #  NICS T #Calculate NICS"
-            write(ifileid,"(a)") "      #  NICS_FILE_NAME filepath #Path of the file containing NICS points coordinates"
-            write(ifileid,"(a)") "      &END NMR"
-        else if (itask==10) then
-            write(ifileid,"(a)") "      &POLAR ON"
-            write(ifileid,"(a)") "      &END POLAR"
-        end if
-        write(ifileid,"(a)") "    &END LINRES"
-    end if
-    if (iTDDFT==1) then !TDDFT
-        write(ifileid,"(a)") "    &TDDFPT #TDDFT calculation"
-        write(ifileid,"(a,i5)") "      NSTATES",nstates_TD
-        if (isTDA==1) then
-            write(ifileid,"(a)") "      KERNEL STDA #Using sTDA approximation"
-            write(ifileid,"(a)") "      &STDA"
-            if (ifPBC>0) write(ifileid,"(a)") "        DO_EWALD .T. #Use Ewald type method for Coulomb interaction"
-            write(ifileid,"(a)") "        FRACTION 0.0 #Fraction of TB Hartree-Fock exchange to use in the kernel"
-            write(ifileid,"(a)") "      &END STDA"
-        end if
-        if (iTDtriplet==1) then
-            write(ifileid,"(a)") "      RKS_TRIPLETS .T. #If calculating triplet rather than singlet excited states"
-        else
-            write(ifileid,"(a,i5)") "      RKS_TRIPLETS .F. #If calculating triplet rather than singlet excited states"
-        end if
-        write(ifileid,"(a)") "      CONVERGENCE [eV] 1E-4 #Convergence criterion of all excitation energies"
-        write(ifileid,"(a)") "      MIN_AMPLITUDE 0.01 #The smallest excitation amplitude to print"
-        write(ifileid,"(a)") "#     RESTART .T. #If restarting TDDFT calculation. If true, WFN_RESTART_FILE_NAME should be set to previous .tdwfn file"
-        write(ifileid,"(a)") "#     WFN_RESTART_FILE_NAME "//trim(c200tmp)//"-RESTART.tdwfn"
-        write(ifileid,"(a)") "      &XC"
-        write(ifileid,"(a)") "        &XC_GRID"
-        write(ifileid,"(a)") "          XC_DERIV SPLINE2_SMOOTH #The method used to compute the derivatives"
-        write(ifileid,"(a)") "        &END XC_GRID"
-        write(ifileid,"(a)") "      &END XC"
-        if (iNTO==1) then
-            write(ifileid,"(a)") "      &PRINT"
-            write(ifileid,"(a)") "        &NTO_ANALYSIS ON #Do NTO analysis for all excited states"
-            !write(ifileid,"(a)") "          FILENAME NTO" !Seems not to affect name of actually exported .molden file
-            write(ifileid,"(a)") "        &END NTO_ANALYSIS"
-            write(ifileid,"(a)") "        &MOS_MOLDEN #Output .molden file containing NTO of the ""NSTATES""th state"
-            write(ifileid,"(a)") "          NDIGITS 8"
-            write(ifileid,"(a)") "          GTO_KIND SPHERICAL"
-            write(ifileid,"(a)") "          FILENAME NTO #Filename of NTO .molden file"
-            write(ifileid,"(a)") "        &END MOS_MOLDEN"
-            write(ifileid,"(a)") "      &END PRINT"
-        end if
-        write(ifileid,"(a)") "    &END TDDFPT"
-    end if
-    write(ifileid,"(a)") "  &END PROPERTIES"
-end if
-if (iatomcharge==6.or.iatomcharge==7) then
-    write(ifileid,"(/,a)") "  &PROPERTIES"
-    write(ifileid,"(a)") "    &RESP"
-    if (iatomcharge==7) write(ifileid,"(a)") "    USE_REPEAT_METHOD T"
-    write(ifileid,"(a)") "      &SPHERE_SAMPLING"
-    write(ifileid,"(a)") "        AUTO_VDW_RADII_TABLE CAMBRIDGE #vdW radii type. This is default. Can also be UFF"
-    write(ifileid,"(a)") "        AUTO_RMIN_SCALE 1.0 #Scaled factor of vdW radii determining the inner boundary of sampling"
-    write(ifileid,"(a)") "        AUTO_RMAX_SCALE 2.0 #Scaled factor of vdW radii determining the outer boundary of sampling"
-    write(ifileid,"(a)") "      &END SPHERE_SAMPLING"
-    if (ifPBC>0) then
-        write(ifileid,"(a)") "      #Uncomment following lines can use slab sampling of fitting points"
-        write(ifileid,"(a)") "      #&SLAB_SAMPLING #The fitting points will sampled above a slab"
-        write(ifileid,"(a)") "      #  RANGE 2.0 4.0"
-        write(ifileid,"(a)") "      #  LENGTH 3.0"
-        write(ifileid,"(a)") "      #  ATOM_LIST 1..32 #List of considered atoms"
-        write(ifileid,"(a)") "      #  SURF_DIRECTION Z #What above the surface means. Can also be e.g. -Z, X, Z..."
-        write(ifileid,"(a)") "      #&END SLAB_SAMPLING"
-    end if
-    write(ifileid,"(a)") "      &PRINT"
-    write(ifileid,"(a)") "        &COORD_FIT_POINTS"
-    write(ifileid,"(a)") "        &END COORD_FIT_POINTS"
-    write(ifileid,"(a)") "        &RESP_CHARGES_TO_FILE"
-    write(ifileid,"(a)") "        &END RESP_CHARGES_TO_FILE"
-    write(ifileid,"(a)") "      &END PRINT"
-    write(ifileid,"(a)") "    &END RESP"
-    write(ifileid,"(a)") "  &END PROPERTIES"
-end if
-write(ifileid,"(a)") "&END FORCE_EVAL"
-
-!--- &MOTION
-if (itask>=3.and.itask<=7) then
-    write(ifileid,"(/,a)") "&MOTION"
-    if (itask==3.or.itask==7) then !Optimizing atoms for minimum or TS
-        write(ifileid,"(a)") "  &GEO_OPT"
-        if (itask==3) then
-            write(ifileid,"(a)") "    TYPE MINIMIZATION #Search for minimum"
-            if (ioptmethod==1) then
-                write(ifileid,"(a)") "    OPTIMIZER BFGS #Can also be CG (more robust for difficult cases) or LBFGS"
-                write(ifileid,"(a)") "    &BFGS"
-                write(ifileid,"(a)") "      TRUST_RADIUS 0.2 #Trust radius (maximum stepsize) in Angstrom"
-                write(ifileid,"(a)") "#     RESTART_HESSIAN T #If read initial Hessian, uncomment this line and specify the file in the next line"
-                write(ifileid,"(a)") "#     RESTART_FILE_NAME to_be_specified"
-                write(ifileid,"(a)") "    &END BFGS"
-            else if (ioptmethod==2) then
-                write(ifileid,"(a)") "    OPTIMIZER LBFGS #Can also be CG (more robust for difficult cases) or BFGS"
-            else if (ioptmethod==3) then
-                write(ifileid,"(a)") "    OPTIMIZER CG #Can also be BFGS or LBFGS"
-                write(ifileid,"(a)") "    &CG"
-                write(ifileid,"(a)") "      &LINE_SEARCH"
-                write(ifileid,"(a)") "        TYPE 2PNT #Two-point extrapolation, cheap while acceptable. Can also be FIT, GOLD"
-                write(ifileid,"(a)") "      &END LINE_SEARCH"
-                write(ifileid,"(a)") "    &END CG"
-            end if
-        else if (itask==7) then
-            write(ifileid,"(a)") "    TYPE TRANSITION_STATE #Optimizing TS using dimer algorithm"
-            write(ifileid,"(a)") "    OPTIMIZER CG" !CG is the only choice for dimer
-            write(ifileid,"(a)") "    &CG"
-            write(ifileid,"(a)") "      &LINE_SEARCH"
-            write(ifileid,"(a)") "        TYPE 2PNT"
-            write(ifileid,"(a)") "      &END LINE_SEARCH"
-            write(ifileid,"(a)") "    &END CG"
-            write(ifileid,"(a)") "    &TRANSITION_STATE"
-            write(ifileid,"(a)") "      &DIMER"
-            write(ifileid,"(a)") "        DR 0.01 #Default. DR parameter"
-            write(ifileid,"(a)") "        ANGLE_TOLERANCE [deg] 4.0 #Tolerance angle for line search performed to optimize dimer orientation"
-            write(ifileid,"(a)") "        &ROT_OPT #How to optimizing dimer rotation"
-            write(ifileid,"(a)") "          OPTIMIZER CG"
-            write(ifileid,"(a)") "          MAX_ITER 50 #Maximum number of optimization steps, default is 200"
-            write(ifileid,"(a)") "          #The following thresholds of dimer orientation are the default ones"
-            write(ifileid,"(a)") "          MAX_DR 3E-3 #Maximum geometry change"
-            write(ifileid,"(a)") "          RMS_DR 1.5E-3 #RMS geometry change"
-            write(ifileid,"(a)") "          MAX_FORCE 4.5E-4 #Maximum force"
-            write(ifileid,"(a)") "          RMS_FORCE 3E-4 #RMS force"
-            write(ifileid,"(a)") "          &CG"
-            write(ifileid,"(a)") "            &LINE_SEARCH"
-            write(ifileid,"(a)") "              TYPE 2PNT"
-            write(ifileid,"(a)") "            &END LINE_SEARCH"
-            write(ifileid,"(a)") "          &END CG"
-            write(ifileid,"(a)") "        &END ROT_OPT"
-            write(ifileid,"(a)") "      &END DIMER"
-            write(ifileid,"(a)") "    &END TRANSITION_STATE"
-        end if
-        write(ifileid,"(a)") "    MAX_ITER 250 #Maximum number of geometry optimization"
-        write(ifileid,"(a)") "    #The following thresholds of geometry convergence are the default ones"
-        write(ifileid,"(a)") "    MAX_DR 3E-3 #Maximum geometry change"
-        write(ifileid,"(a)") "    RMS_DR 1.5E-3 #RMS geometry change"
-        write(ifileid,"(a)") "    MAX_FORCE 4.5E-4 #Maximum force"
-        write(ifileid,"(a)") "    RMS_FORCE 3E-4 #RMS force"
-        write(ifileid,"(a)") "  &END GEO_OPT"
-    else if (itask==4) then
-        write(ifileid,"(a)") "  &CELL_OPT"
-        write(ifileid,"(a)") "    MAX_ITER 250 #Maximum number of geometry optimization"
-        write(ifileid,"(a)") "    EXTERNAL_PRESSURE 1.01325 #External pressure for cell optimization (bar)" !Full 9 components of the pressure tensor can be individually specified
-        write(ifileid,"(a)") "    CONSTRAINT NONE #Can be e.g. Z, XY to fix corresponding cell length"
-        write(ifileid,"(a)") "    KEEP_ANGLES F #If T, then cell angles will be kepted"
-        write(ifileid,"(a)") "    KEEP_SYMMETRY F #If T, crystal symmetry will be kepted, and symmetry should be specified in &CELL" 
-        write(ifileid,"(a)") "    TYPE DIRECT_CELL_OPT #Geometry and cell are optimized at the same time. Can also be GEO_OPT, MD"
-        write(ifileid,"(a)") "    #The following thresholds of optimization convergence are the default ones"
-        write(ifileid,"(a)") "    MAX_DR 3E-3 #Maximum geometry change"
-        write(ifileid,"(a)") "    RMS_DR 1.5E-3 #RMS geometry change"
-        write(ifileid,"(a)") "    MAX_FORCE 4.5E-4 #Maximum force"
-        write(ifileid,"(a)") "    RMS_FORCE 3E-4 #RMS force"
-        write(ifileid,"(a)") "    PRESSURE_TOLERANCE 100 #Pressure tolerance (w.r.t EXTERNAL_PRESSURE)"
-        if (ioptmethod==1) then
-            write(ifileid,"(a)") "    OPTIMIZER BFGS #Can also be CG (more robust for difficult cases) or LBFGS"
-            write(ifileid,"(a)") "    &BFGS"
-            write(ifileid,"(a)") "      TRUST_RADIUS 0.2 #Trust radius (maximum stepsize) in Angstrom"
-            write(ifileid,"(a)") "#     RESTART_HESSIAN T #If read initial Hessian, uncomment this line and specify the file in the next line"
-            write(ifileid,"(a)") "#     RESTART_FILE_NAME to_be_specified"
-            write(ifileid,"(a)") "    &END BFGS"
-        else if (ioptmethod==2) then
-            write(ifileid,"(a)") "    OPTIMIZER LBFGS #Can also be CG (more robust for difficult cases) or BFGS"
-        else if (ioptmethod==3) then
-            write(ifileid,"(a)") "    OPTIMIZER CG #Can also be BFGS or LBFGS"
-            write(ifileid,"(a)") "    &CG"
-            write(ifileid,"(a)") "      &LINE_SEARCH"
-            write(ifileid,"(a)") "        TYPE 2PNT #Two-point extrapolation, cheap while acceptable. Can also be FIT, GOLD"
-            write(ifileid,"(a)") "      &END LINE_SEARCH"
-            write(ifileid,"(a)") "    &END CG"
-        end if
-        write(ifileid,"(a)") "  &END CELL_OPT"
-    else if (itask==6) then !MD
-        write(ifileid,"(a)") "  &MD"
-        if (ithermostat==0.and.ibarostat==0) then
-            write(ifileid,"(a)") "    ENSEMBLE NVE"
-        else if (ithermostat>1.and.ibarostat==0) then
-            write(ifileid,"(a)") "    ENSEMBLE NVT"
-        else if (ithermostat==0) then
-            if (ibarostat==1) write(ifileid,"(a)") "    ENSEMBLE NPE_F"
-            if (ibarostat==2) write(ifileid,"(a)") "    ENSEMBLE NPE_I"
-        else if (ithermostat>1) then
-            if (ibarostat==1) write(ifileid,"(a)") "    ENSEMBLE NPT_F"
-            if (ibarostat==2) write(ifileid,"(a)") "    ENSEMBLE NPT_I"
-        end if
-        write(ifileid,"(a)") "    STEPS 200"
-        write(ifileid,"(a)") "    TIMESTEP 1.0 #fs. Decrease it properly for high temperature simulation"
-        write(ifileid,"(a)") "    TEMPERATURE 298.15 #Initial and maintained temperature (K)"
-        if (ithermostat>0) then
-            write(ifileid,"(a)") "    &THERMOSTAT"
-            if (ithermostat==1) write(ifileid,"(a)") "      TYPE AD_LANGEVIN"
-            if (ithermostat==2) then
-                write(ifileid,"(a)") "      TYPE CSVR"
-                write(ifileid,"(a)") "      &CSVR"
-                write(ifileid,"(a)") "        TIMECON 200 #Time constant in fs. Smaller/larger results in stronger/weaker temperature coupling"
-                write(ifileid,"(a)") "      &END CSVR"
-            end if
-            if (ithermostat==3) write(ifileid,"(a)") "      TYPE GLE"
-            if (ithermostat==4) write(ifileid,"(a)") "      TYPE NOSE"
-            if (nthermoatm<ncenter) then
-                write(ifileid,"(a)") "      &DEFINE_REGION"
-                call testidx_contiguous(thermoatm,nthermoatm,ifconti)
-                if (ifconti==1) then
-                    write(c80tmp,*) maxval(thermoatm(1:nthermoatm))
-                    write(ifileid,"(a,i8,'..',a)") "        LIST ",minval(thermoatm(1:nthermoatm)),adjustl(c80tmp)
-                else
-                    write(ifileid,"(a)",advance='no') "        LIST "
-                    icount=0
-                    do iatm=1,nthermoatm
-                        write(ifileid,"(i6)",advance="no") thermoatm(iatm)
-                        icount=icount+1
-                        if (iatm==nthermoatm) then
-                            write(ifileid,*)
-                        else
-                            if (icount==6) then
-                                icount=0
-                                write(ifileid,"(a)") " \"
-                                write(ifileid,"(a)",advance="no") "             "
-                            end if
-                        end if
-                    end do
-                end if
-                write(ifileid,"(a)") "      &END DEFINE_REGION"
-            end if
-            write(ifileid,"(a)") "    &END THERMOSTAT"
-        end if
-        if (ibarostat/=0) then
-            write(ifileid,"(a)") "    &BAROSTAT"
-            write(ifileid,"(a)") "      PRESSURE 1.01325 #Initial and maintained pressure (bar)"
-            write(ifileid,"(a)") "      VIRIAL XYZ #Relax the cell along which cartesian axes"
-            write(ifileid,"(a)") "    &END BAROSTAT"
-        end if
-        write(ifileid,"(a)") "  &END MD"
-    end if
-    if (natmcons>0) then
-        write(ifileid,"(a)") "  &CONSTRAINT"
-        write(ifileid,"(a)") "    &FIXED_ATOMS #Set atoms to be fixed"
-        write(ifileid,"(a)") "      COMPONENTS_TO_FIX XYZ #May also be e.g. Z, XY ..." 
-        call testidx_contiguous(atmcons,natmcons,ifconti)
-        if (ifconti==1) then
-            write(c80tmp,*) maxval(atmcons(1:natmcons))
-            write(ifileid,"(a,i8,'..',a)") "      LIST ",minval(atmcons(1:natmcons)),adjustl(c80tmp)
-        else
-            write(ifileid,"(a)",advance='no') "      LIST "
-            i=0
-            do while(.true.)
-                if (i*12<natmcons-12) then
-                    write(ifileid,"(12i6,' \')") atmcons(12*i+1:12*i+12)
-                    i=i+1
-                else
-                    write(ifileid,"(12i6)") atmcons(12*i+1:natmcons)
-                    exit
-                end if
-            end do
-        end if
-        write(ifileid,"(a)") "    &END FIXED_ATOMS"
-        write(ifileid,"(a)") "  &END CONSTRAINT"
-    end if
-    
-    !Output frequency of various properties
-    write(ifileid,"(a)") "  &PRINT"
-    if (itask==6) then
-        write(ifileid,"(a)") "    &TRAJECTORY"
-        write(ifileid,"(a)") "      &EACH"
-        write(ifileid,"(a,i6,a)") "        MD",nMDsavefreq," #Output frequency of geometry"
-        write(ifileid,"(a)") "      &END EACH"
-        if (iMDformat==1) write(ifileid,"(a)") "      FORMAT xyz"
-        if (iMDformat==2) write(ifileid,"(a)") "      FORMAT dcd"
-        if (iMDformat==3) write(ifileid,"(a)") "      FORMAT pdb"
-        write(ifileid,"(a)") "    &END TRAJECTORY"
-        write(ifileid,"(a)") "    &VELOCITIES"
-        write(ifileid,"(a)") "      &EACH"
-        write(ifileid,"(a,i6,a)") "        MD",nMDsavefreq," #Output frequency of velocity"
-        write(ifileid,"(a)") "      &END EACH"
-        write(ifileid,"(a)") "    &END VELOCITIES"
-    end if
-    
-    write(ifileid,"(a)") "    &RESTART"
-    write(ifileid,"(a)") "      BACKUP_COPIES 0 #Maximum number of backing up restart file" !Do not generate annoying .restart.bak file
-    if (itask==6) then !Update restart file every 10 steps
-        write(ifileid,"(a)") "      &EACH"
-        write(ifileid,"(a)") "        MD 10 #Frequency of updating last restart file"
-        write(ifileid,"(a)") "      &END EACH"
-    end if
-    write(ifileid,"(a)") "    &END RESTART"
-    
-    if (itask==4) then !Avoid generating a batch of history .restart files at every step
-        write(ifileid,"(a)") "    &RESTART_HISTORY" !Rarely needed. Default is output every 500 steps
-        write(ifileid,"(a)") "      &EACH"
-        write(ifileid,"(a)") "        CELL_OPT 0 #How often a history .restart file is generated, 0 means never"
-        write(ifileid,"(a)") "      &END EACH"
-        write(ifileid,"(a)") "    &END RESTART_HISTORY"
-    else if (itask==6) then !Rarely needed. Default is outputting every 500 steps
-        !write(ifileid,"(a)") "    &RESTART_HISTORY"
-        !write(ifileid,"(a)") "      &EACH"
-        !write(ifileid,"(a)") "        MD 100 #How often a history .restart file is generated"
-        !write(ifileid,"(a)") "      &END EACH"
-        !write(ifileid,"(a)") "    &END RESTART_HISTORY"
-    end if
-    write(ifileid,"(a)") "  &END PRINT"
-    write(ifileid,"(a)") "&END MOTION"
-end if
-if (itask==5) then
-    write(ifileid,"(a)") "&VIBRATIONAL_ANALYSIS"
-    write(ifileid,"(a)") "  DX 0.01 #Step size of finite difference. This is default (Bohr)"
-    write(ifileid,"(a)") "  NPROC_REP 1 #Number of processors to be used per replica. This is default"
-    write(ifileid,"(a)") "  TC_PRESSURE 101325 #1 atm. Pressure for calculate thermodynamic data (Pa)"
-    write(ifileid,"(a)") "  TC_TEMPERATURE 298.15 #Temperature for calculate thermodynamic data (K)"
-    write(ifileid,"(a)") "  THERMOCHEMISTRY #Print thermochemistry information (only correct for gas molecule!)"
-    write(ifileid,"(a)") "  INTENSITIES T #Calculate IR intensities"
-    if (ioutvibmol==1) then
-        write(ifileid,"(a)") "  &PRINT"
-        write(ifileid,"(a)") "    &MOLDEN_VIB #Output .mol (Molden file) for visualization vibrational modes"
-        write(ifileid,"(a)") "    &END MOLDEN_VIB"
-        write(ifileid,"(a)") "  &END PRINT"
-    end if
-    write(ifileid,"(a)") "&END VIBRATIONAL_ANALYSIS"
-end if
-
-close(ifileid)
-
-write(*,"(a)") " CP2K input file has been exported to "//trim(outname)
-end subroutine
-
-!----- Test if a given integer array contains contiguous numbers (index order is unimportant)
-!If yes, ifconti=1, else =0
-subroutine testidx_contiguous(array,narray,ifconti)
-implicit real*8 (a-h,o-z)
-integer narray,array(narray)
-ifconti=0
-do i=minval(array),maxval(array)
-    if (all(array/=i)) return
-end do
-ifconti=1
-end subroutine
-
-
-
 
 !!---------- Interface of outputting Quantum ESPRESSO input file
 subroutine outQEinp_wrapper
@@ -8547,6 +6943,13 @@ subroutine outPOSCAR_wrapper
 use util
 use defvar
 character outname*200,c200tmp*200
+if (ifPBC==0) then
+	write(*,"(a)") " Error: POSCAR cannot be generated, because the loaded file does not contain cell information!"
+    write(*,"(a)") " See Section 2.9.3 of Multiwfn manual on which format can provide cell information to Multiwfn"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+	return
+end if
 call path2filename(filename,c200tmp)
 write(*,*) "Input path for generating VASP POSCAR file, e.g. C:\ltwd.poscar"
 write(*,"(a)") " If press ENTER button directly, will export to POSCAR in current folder"
@@ -8600,8 +7003,6 @@ end do
 close(ifileid)
 
 write(*,"(a)") " VASP POSCAR file has been exported to "//trim(outname)//" in current folder"
-if (ifPBC==0) write(*,"(a)") " Warning: Since the file loaded when Multiwfn booted up does not contain cell information, &
-all cell vectors in the created POSCAR file are set to be 0, and fractional coordinates are all zero!"
 end subroutine
 
 
@@ -8650,7 +7051,6 @@ else
 	write(*,*)
 	write(fileid,"(i5,4f12.6)") 1,1D0,0D0,0D0,0D0
 end if
-!write(*,*) "Exporting cube file, please wait..."
 do i=1,numx
 	do j=1,numy
 		write(fileid,"(6(1PE14.5E3))",advance="no") matrix(i,j,1:numz)
@@ -9243,8 +7643,8 @@ write(ifileid,"(A40,3X,A1,5X,1PE22.15)") "Virial Ratio                          
 write(ifileid,"(A40,3X,A1,5X,1PE22.15)") "Total Energy                            ","R",totenergy
 !After careful investigation, I found the following information is needed if you want to use unfchk &
 !to convert it to chk and read guess from it, without it Gaussian will only read alpha orbitals as guess.
-!According to Gaussian programmer's manual, the meaning of the first slot of ILSW is: 0=real HF (default) 1=real etc.
-!I found R and RO calculation doesn't need this
+!According to Gaussian programmer's manual, the meaning of the first slot of ILSW is: 0=real RHF (default) 1=real UHF, etc.
+!R and RO calculations do not need this
 if (wfntype==1.or.wfntype==4) then
     write(ifileid,"(a)") "Num ILSW                                   I              1"
     write(ifileid,"(a)") "ILSW                                       I   N=         1"
@@ -9587,17 +7987,6 @@ do icen=1,ncenter
     write(ifileid,"(i6,1x,a,i4,f6.1,3f16.8)") icen,a(icen)%name,a(icen)%index,a(icen)%charge,a(icen)%x*b2a,a(icen)%y*b2a,a(icen)%z*b2a
 end do
 
-!Determine nindbasis. I found this is highly unreliable, so not use
-!nindbasis=0
-!do imo=1,nbasis
-!    !if (any(CObasa(:,imo)/=0)) then
-!    if (any(CO(imo,:)/=0)) then
-!        nindbasis=nindbasis+1
-!    else
-!        write(*,*) imo
-!    end if
-!end do
-
 write(ifileid,"(/,a)") "# Basis function information"
 write(ifileid,"('Nbasis=    ',i8)") nbasis
 if (nindbasis==0) then !nindbasis was not loaded, simply set the same as nbasis
@@ -9683,8 +8072,6 @@ if (iprint>=1) then
 end if
 close(ifileid)
 end subroutine
-
-
 
 
 
@@ -9812,7 +8199,7 @@ if (infomode==0) write(*,"(' The highest angular moment basis functions is ',a)"
 isphergau=0
 if (any(shelltype<=-2)) isphergau=1
 if (any(abs(shelltype)>5).and.infomode==0) then
-	write(*,"(a)") " Error: GTFs with angular moment higher than h are found, while Multiwfn currently only supports up to h. Press Enter button to exit"
+	write(*,"(a)") " Error: GTFs with angular moment higher than h are found, while Multiwfn currently only supports up to h. Press ENTER button to exit"
 	read(*,*)
 	stop
 end if
@@ -10134,27 +8521,18 @@ if (isphergau==1) then
 end if
 
 !Generate basstart and basend
-nowcen=0
-indcen=0
-basstart=0 !X atom without basis function will have 0 for basstart and basend
-basend=0
-do ibasis=1,nbasis
-	if (bascen(ibasis)/=nowcen) then
-		nowcen=bascen(ibasis)
-		indcen=indcen+1
-		basstart(indcen)=ibasis
-		if (indcen/=1) basend(indcen-1)=ibasis-1
-	end if
-end do
-basend(ncenter)=nbasis
+call bascen2basstart_end
 
 !Generate one-particle density matrix for basis functions
 if (igenP==1) then
 	if (infomode==0) write(*,*) "Generating density matrix based on orbitals and occupation ..."
 	call genP
 end if
-if (infomode==0) write(*,*) "Generating overlap matrix..."
-call genSbas_curr
+
+if (ifPBC==0) then !For PBC, Sbas will be generated after invoking "init_PBC" in "readinfile"
+    if (infomode==0) write(*,*) "Generating overlap matrix..."
+    call genSbas_curr
+end if
 
 !Output summary of present wavefunction
 if (infomode==0) then
@@ -10280,13 +8658,14 @@ ncenter_tmp=0
 backspace(10)
 do while(.true.) !Start loading atom part
     read(10,"(a)",iostat=ierror) c80tmp
-    if (c80tmp==" ".or.index(c80tmp,'#')/=0.or.index(c80tmp,'loop_')/=0.or.ierror/=0) exit !.or.index(c80tmp,'_')/=0   Some atom names may contain _, so remove this criterion
+    nunderline=strcharnum(c80tmp,'_') !I assume that if a line containing three underline, it must not atom name
+    if (c80tmp==" ".or.index(c80tmp,'#')/=0.or.index(c80tmp,'loop_')/=0.or.nunderline>=3.or.ierror/=0) exit !.or.index(c80tmp,'_')/=0   Some atom names may contain _, so remove this criterion
     ncenter_tmp=ncenter_tmp+1
 end do
 if (allocated(a_tmp)) deallocate(a_tmp)
 allocate(a_tmp(ncenter_tmp),atmocc(ncenter_tmp))
 atmocc=1
-write(*,"(a,i4)") " Number of symmetrically unique atoms:",ncenter_tmp
+write(*,"(a,i7)") " Number of symmetrically unique atoms:",ncenter_tmp
 
 !Locate to "loop_" just before _atom_site_label
 call loclabel(10,"_atom_site_label",ifound)
@@ -10519,6 +8898,38 @@ end subroutine
 
 
 
+!!---------- Interface of outputting gro file
+subroutine outgro_wrapper
+use util
+use defvar
+character(len=200) outname,c200tmp
+call path2filename(filename,c200tmp)
+write(*,*) "Input path for outputting gro file, e.g. C:\ltwd.gro"
+write(*,"(a)") " If press ENTER button directly,the system will be exported to "//trim(c200tmp)//".gro in current folder"
+read(*,"(a)") outname
+if (outname==" ") outname=trim(c200tmp)//".gro"
+call outgro(outname,10)
+end subroutine
+!!---------- Output current coordinate to gro file
+subroutine outgro(outgroname,ifileid)
+use defvar
+implicit real*8 (a-h,o-z)
+character(len=*) outgroname
+integer ifileid
+open(ifileid,file=outgroname,status="replace")
+write(ifileid,"(a)") "Generated by Multiwfn"
+write(ifileid,*) ncenter
+do i=1,ncenter
+	write(ifileid,"(i5,'MOL',a7,i5,3f8.3)") 1,a(i)%name,i,a(i)%x*b2a/10,a(i)%y*b2a/10,a(i)%z*b2a/10
+end do
+write(ifileid,"(9f12.6)") cellv1(1)*b2a/10,cellv2(2)*b2a/10,cellv3(3)*b2a/10,cellv1(2)*b2a/10,cellv1(3)*b2a/10,&
+cellv2(1)*b2a/10,cellv2(3)*b2a/10,cellv3(1)*b2a/10,cellv3(2)*b2a/10
+close(ifileid)
+write(*,*) "Exporting gro file finished!"
+end subroutine
+
+
+
 
 
 !=======================================================================
@@ -10665,6 +9076,8 @@ call get_option_str(20,'ishowptESP=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) ishowptESP
 call get_option_str(20,'imolsurparmode=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) imolsurparmode
+call get_option_str(20,'nPGmaxatm=',c80tmp)
+if (c80tmp/=" ") read(c80tmp,*) nPGmaxatm
 call get_option_str(20,'steric_addminimal=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) steric_addminimal
 call get_option_str(20,'steric_potcutrho=',c80tmp)
@@ -10689,6 +9102,8 @@ call get_option_str(20,'iMCBOtype=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) iMCBOtype
 call get_option_str(20,'ibasinlocmin=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) ibasinlocmin
+call get_option_str(20,'cfgcrossthres=',c80tmp)
+if (c80tmp/=" ") read(c80tmp,*) cfgcrossthres
 call get_option_str(20,'PBCnxnynz=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) PBCnx_in,PBCny_in,PBCnz_in
 call get_option_str(20,'ifdoPBCxyz=',c80tmp)
@@ -10750,6 +9165,8 @@ call get_option_str(20,'CP_RGB=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) CP3n3RGB,CP3n1RGB,CP3p1RGB,CP3p3RGB
 call get_option_str(20,'CP_RGB_2D=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) CP3n3RGB_2D,CP3n1RGB_2D,CP3p1RGB_2D,CP3p3RGB_2D
+call get_option_str(20,'interbasin_RGB=',c80tmp)
+if (c80tmp/=" ") read(c80tmp,*) IBSclrR,IBSclrG,IBSclrB
 call get_option_str(20,'isoRGB_same=',c80tmp)
 if (c80tmp/=" ") then
     read(c80tmp,*) clrRcub1same,clrGcub1same,clrBcub1same
@@ -10811,8 +9228,12 @@ call get_option_str(20,'iwfntmptype=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) iwfntmptype
 call get_option_str(20,'iaddprefix=',c80tmp)
 if (c80tmp/=" ") read(c80tmp,*) iaddprefix
-call get_option_str(20,'ispecial=',c80tmp)
-if (c80tmp/=" ") read(c80tmp,*) ispecial
+
+call getarg_int("-ispecial",ispecial,ifound)
+if (ifound==0) then
+    call get_option_str(20,'ispecial=',c80tmp)
+    if (c80tmp/=" ") read(c80tmp,*) ispecial
+end if
 
 !The last opened file name
 call get_option_str(20,'lastfile=',c200tmp)
@@ -10830,9 +9251,25 @@ use defvar
 character(len=*) delname
 character command*200
 if (isys==1) then
-    command="del /Q "//trim(delname)//" 2> NUL" !/Q means do not need confirm when there is *. "2> NUL" redirects error (e.g. unable to find file) to black hole
+    command="del /Q "//trim(delname)//" 2> NUL" !/Q means do not need to confirm when there is *. "2> NUL" redirects error (e.g. unable to find file) to black hole
 else if (isys==2) then
     command="rm -f "//trim(delname)
+end if
+write(*,*) "Deleting "//trim(delname)
+call system(trim(command))
+end subroutine
+
+
+
+!!------- Delete directory
+subroutine deldir(delname)
+use defvar
+character(len=*) delname
+character command*200
+if (isys==1) then
+    command="rmdir /Q /S "//trim(delname)//" 2> NUL"
+else if (isys==2) then
+    command="rm -rf "//trim(delname)
 end if
 write(*,*) "Deleting "//trim(delname)
 call system(trim(command))

@@ -215,7 +215,14 @@ do ifile=1,nfile
 	end if
 	write(*,"(' Loading ',a,'...')") trim(c200tmp)
 	open(10,file=c200tmp,status="old")
-	call loclabel(10,"GIAO Magnetic shielding tensor")
+	call loclabel(10,"GIAO Magnetic shielding tensor",ifound)
+    if (ifound==0) then
+		write(*,*) "Error: Unable to find ""GIAO Magnetic shielding tensor"" field!"
+        write(*,*) "Please check this file to make sure that the task has normally finished"
+        write(*,*) "Press ENTER button to exit"
+        read(*,*)
+        return
+    end if
 	read(10,*)
 	!Detect format. The NMR output format changes since G09 D.01 to leave more space for atomic index
 	read(10,"(a80)") c200tmp
@@ -250,7 +257,8 @@ do ifile=1,nfile
 					if (ierror/=0) then
 						write(*,"(' Error: Unable to load the',i7,'th Bq in this file!')") iloadthis
 						write(*,"(' This Bq should correspond to the',i7,'th center in this file')") ncenter+iloadthis
-						write(*,*) "Please double check your grid setting. Press ENTER button to exit"
+						write(*,*) "Please double check your grid setting and ""NICSnptlim"" in settings.ini"
+                        write(*,*) "Press ENTER button to exit"
 						read(*,*)
 						return
 					end if
@@ -439,8 +447,8 @@ do while(.true.)
 					write(*,"(' Error: Missing reference parameter for ',a,'-',a)") ind2name(iatmeleidx),ind2name(jatmeleidx)
 					exit
 				end if
-				paircontri=-refsigma/numHOMAatm*(refbondlen-distmat(iatm,jatm)*b2a)**2
-				write(*,"(i5,'(',a,')  --',i5,'(',a,'):',f15.6,f16.6)") iatm,ind2name(iatmeleidx),jatm,ind2name(jatmeleidx),paircontri,distmat(iatm,jatm)*b2a
+				paircontri=-refsigma/numHOMAatm*(refbondlen-atomdist(iatm,jatm,1)*b2a)**2
+				write(*,"(i5,'(',a,')  --',i5,'(',a,'):',f15.6,f16.6)") iatm,ind2name(iatmeleidx),jatm,ind2name(jatmeleidx),paircontri,atomdist(iatm,jatm,1)*b2a
 				HOMAval=HOMAval+paircontri
 				if (iidx==numHOMAatm) write(*,"(a,f12.6)") " HOMA value is",HOMAval
 			end do
@@ -507,8 +515,8 @@ do while(.true.)
 					write(*,"(' Error: Missing a and b parameters for ',a,'-',a)") ind2name(iatmeleidx),ind2name(jatmeleidx)
 					exit
 				end if
-				BirdN(iidx)=Birdanow/(distmat(iatm,jatm)*b2a)**2-Birdbnow
-				write(*,"(i5,'(',a,')  --',i5,'(',a,'):',f15.6,f16.6)") iatm,ind2name(iatmeleidx),jatm,ind2name(jatmeleidx),BirdN(iidx),distmat(iatm,jatm)*b2a
+				BirdN(iidx)=Birdanow/(atomdist(iatm,jatm,1)*b2a)**2-Birdbnow
+				write(*,"(i5,'(',a,')  --',i5,'(',a,'):',f15.6,f16.6)") iatm,ind2name(iatmeleidx),jatm,ind2name(jatmeleidx),BirdN(iidx),atomdist(iatm,jatm,1)*b2a
 				if (iidx==numBirdatm) then
 					avgBirdN=sum(BirdN)/numBirdatm
 					BirdVnow=dsqrt(sum((BirdN(:)-avgBirdN)**2)/numBirdatm)*100/avgBirdN
@@ -1078,7 +1086,7 @@ end subroutine
 subroutine calcmultibndord(nbndcen,cenind,PSmat,matdim,result)
 use defvar
 use util
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer nbndcen,cenind(2000),cenindtmp(2000),matdim
 real*8 PSmat(matdim,matdim),result
 integer,allocatable :: allperm(:,:)
@@ -1115,7 +1123,7 @@ end subroutine
 !!------- Actual working horse for multi-center index calculation
 subroutine calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
 use defvar
-implicit real*8(a-h,o-z)
+implicit real*8 (a-h,o-z)
 integer nbndcen,cenind(2000),matdim !Can maximally deal with 2000 centers
 real*8 PSmat(matdim,matdim),result
 real*8,allocatable :: mat1(:,:),mat2(:,:)
@@ -1184,7 +1192,7 @@ end subroutine
 !!---- The actual working horse for multi-center bond order calculation
 !subroutine calcmultibndord_do(nbndcen,cenind,PSmat,matdim,result)
 !use defvar
-!implicit real*8(a-h,o-z)
+!implicit real*8 (a-h,o-z)
 !integer nbndcen,cenind(12),matdim
 !real*8 PSmat(matdim,matdim),result
 !

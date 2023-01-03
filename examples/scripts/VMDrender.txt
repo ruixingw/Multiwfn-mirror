@@ -6,6 +6,8 @@ material change outlinewidth Opaque 0.5
 material change ambient Glossy 0.1
 material change diffuse Glossy 0.600000
 material change opacity Glossy 0.75
+material change ambient Opaque 0.08
+material change mirror Opaque 0.0
 material change shininess Glossy 1.0
 mol modcolor 1 top ColorID 12
 mol modcolor 2 top ColorID 22
