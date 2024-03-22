@@ -126,7 +126,7 @@ else if (thisfilename(inamelen-2:inamelen)=="gbw") then
 			stop
 		end if
 	end if
-else if (index(filenameonly,"POSCAR")/=0) then
+else if (index(thisfilename,"POSCAR")/=0) then
     call readPOSCAR(thisfilename,infomode)
 else if (index(filenameonly,"CHGCAR")/=0.or.index(filenameonly,"CHG")/=0.or.index(filenameonly,"ELFCAR")/=0.or.index(filenameonly,"LOCPOT")/=0) then
     call readVASPgrd(thisfilename,infomode)
@@ -146,10 +146,12 @@ else !Plain text file
         open(10,file=thisfilename,status="old")
         call inputprog(10,iprog)
         close(10)
-        if (iprog==1) then
-            if (thisfilename(inamelen-2:inamelen)=="inp".or.thisfilename(inamelen-6:inamelen)=="restart") call readcp2k(thisfilename,infomode)
-        else if (iprog==2) then
+        if (iprog==1) then !Read as CP2K input file
+            if (thisfilename(inamelen-2:inamelen)=="inp".or.thisfilename(inamelen-6:inamelen)=="restart") call readcp2k(thisfilename)
+        else if (iprog==2) then !Read as ORCA input file
             call readORCAinp(thisfilename,infomode)
+        else if (iprog==3) then !Read as Quantum ESPRESSO input file
+            call readQEinp(thisfilename)
         end if
     end if
     !Try to load as Turbomole input file ($coord in the first line)
@@ -162,7 +164,7 @@ else !Plain text file
     end if
 end if
 
-if (iresinfo==0) then !Residue information was not loaded, initialize empty content
+if (iresinfo==0.and.allocated(a)) then !Residue information was not loaded, initialize empty content
     a%resid=1
     a%resname=" "
 end if
@@ -170,7 +172,15 @@ end if
 if (allocated(b)) then
     !Determine how to supply EDF information for the file containing GTF information when pseudopotential basis set is involved
     !For .wfn file, EDF has already been added in due case in subroutine "readwfn", and EDF may has been added in subroutine readwfx if EDF is available in the file and readEDF==1
-	if (any(a%index/=nint(a%charge)) .and..not.allocated(b_EDF)) then
+	ifEDF=0
+	do iatm=1,ncenter
+		if (a(iatm)%charge==0) cycle !Bq atom, ignore
+        if (a(iatm)%index/=a(iatm)%charge) then
+			ifEDF=1
+            exit
+        end if
+    end do
+	if (ifEDF==1 .and. .not.allocated(b_EDF)) then
 		if (isupplyEDF==0) then !Do nothing
 			continue
 		else if (isupplyEDF==1) then !Supply EDF from .wfx file
@@ -486,7 +496,7 @@ if (any(tmparrint==0).and.infomode==0) then
 	write(*,"(a)") " Note: If all Bq atoms have corresponding basis functions, then they can be safely loaded. &
 	However, if some of them do not have basis functions, in general they should not be loaded, otherwise problems or crashes may occur &
 	when performing analyses based on wavefunction"
-	read(*,*) selectyn
+	read(*,"(a)") selectyn
 	if (selectyn=='n'.or.selectyn=='N') ncenter=count(tmparrint/=0)
 end if
 if (allocated(a)) deallocate(a)
@@ -1203,7 +1213,7 @@ do while(.true.)
 	if (test=="HETATM".or.test=="ATOM  ") then
 		backspace(10)
 		i=i+1
-		read(10,"(12x,a4,1x,a3,2x,i4,4x,3f8.3,22x,a3)") tmpname,a(i)%resname,a(i)%resid,a(i)%x,a(i)%y,a(i)%z,element
+		read(10,"(12x,a4,1x,a3,2x,i4,4x,3f8.3,22x,a2)") tmpname,a(i)%resname,a(i)%resid,a(i)%x,a(i)%y,a(i)%z,element
 		if (ipqr==1) then !Use free-format to load atomic charge
 			backspace(10)
 			read(10,"(a)") c80tmp
@@ -1329,6 +1339,19 @@ end if
 itmp=index(titleline,'Tv_3:')
 if (itmp/=0) then
     read(titleline(itmp+5:),*) cellv3(:)
+    cellv3=cellv3/b2a
+    ifPBC=3
+end if
+itmp=index(titleline,'attice=') !Extended xyz format use Lattice= to record cell vectors
+if (itmp/=0) then
+	c200tmp=trim(titleline)
+	itmp=index(c200tmp,'"')
+    c200tmp(:itmp)=" "
+	itmp=index(c200tmp,'"')
+    c200tmp(itmp:)=" "
+    read(c200tmp,*) cellv1(:),cellv2(:),cellv3(:)
+    cellv1=cellv1/b2a
+    cellv2=cellv2/b2a
     cellv3=cellv3/b2a
     ifPBC=3
 end if
@@ -1481,7 +1504,7 @@ end subroutine
 
 !!---------------------------------------------------
 !!-------------------- Read .gro --------------------
-! infomode=0: Output summary, =1: do not
+! infomode=0: Output summary, =1: Do not
 subroutine readgro(name,infomode)
 use defvar
 use util
@@ -1512,13 +1535,22 @@ do iatm=1,ncenter
     end if
     if (ifound==0) then !Guess element according to atomname
 	    do i=1,nelesupp
-		    if (ind2name_up(i)==tmpname_up(1:1)//' ' .or. ind2name_up(i)==tmpname_up(1:2) .or. & !Recognize e.g. C, N11, Li
-		    ((ichar(tmpname_up(1:1))<=57).and.ind2name_up(i)==tmpname_up(2:2)//' ')) then !Recognize such as 1H5*
+		    if (ind2name_up(i)==tmpname_up(1:2)) then !Find matched element name
 			    a(iatm)%index=i
 			    ifound=1
 			    exit
 		    end if
 	    end do
+        if (ifound==0) then
+			do i=1,nelesupp
+				if (ind2name_up(i)==tmpname_up(1:1)//' '.or. & !Recognize e.g. C, N11, Li
+				((ichar(tmpname_up(1:1))<=57).and.ind2name_up(i)==tmpname_up(2:2)//' ')) then !Recognize such as 1H5*
+					a(iatm)%index=i
+					ifound=1
+					exit
+				end if
+			end do
+        end if
     end if
     if (ifound==0) then
 	    write(*,"(a)") " Warning: Element of """//trim(tmpname)//""" cannot be recognized, assume it is carbon"
@@ -1538,11 +1570,14 @@ cellv2=cellv2*10/b2a
 cellv3=cellv3*10/b2a
 ifPBC=3
 close(10)
+
 a%x=a%x*10/b2a
 a%y=a%y*10/b2a
 a%z=a%z*10/b2a
+a%charge=a%index
 iresinfo=1 !Residue information is available in this file
 if (infomode==0) write(*,"(' Totally',i8,' atoms')") ncenter
+call guessnelec
 end subroutine
 
 
@@ -1711,7 +1746,7 @@ naelec=(nint(nelec)+loadmulti-1)/2
 nbelec=nelec-naelec
 if (infomode==0) then
 	write(*,"(' Totally',i8,' atoms')") ncenter
-	write(*,"(' The number of alpha and beta electrons:',2i8)") nint(naelec),nint(nbelec)
+	write(*,"(' Number of alpha and beta electrons:',2i8)") nint(naelec),nint(nbelec)
 end if
 end subroutine
 
@@ -1787,8 +1822,7 @@ nelec=sum(a%index)-loadcharge
 naelec=(nint(nelec)+loadmulti-1)/2
 nbelec=nelec-naelec
 if (infomode==0) then
-	write(*,"(' Totally',i8,' atoms')") ncenter
-	write(*,"(' The number of alpha and beta electrons:',2i8)") nint(naelec),nint(nbelec)
+	write(*,"(' Number of alpha and beta electrons:',2i8)") nint(naelec),nint(nbelec)
 end if
 end subroutine
 
@@ -1796,12 +1830,10 @@ end subroutine
 
 !!------------------------------------------------------------------------------
 !!-------------------- Read CP2K input file or restart file --------------------
-! infomode=0: Output summary, =1: do not
-subroutine readcp2k(name,infomode) 
+subroutine readcp2k(name) 
 use defvar
 use util
 implicit real*8 (a-h,o-z)
-integer infomode
 character(len=*) name
 character c40tmp*40,c200tmp*200
 real*8 vec1(3),vec2(3)
@@ -1809,7 +1841,13 @@ real*8 vec1(3),vec2(3)
 ifiletype=16
 open(10,file=name,status="old")
 
-call loclabel(10,"&CELL ",ifound) !Must be "&CELL " rather than "&CELL", the latter may locate to e.g. &CELL_OPT
+call loclabel(10,"&SUBSYS",ifound) !Will avoid to locate to &CELL in &PRINT
+if (ifound==0) then !This is the simplest .inp file, only &COORD and &CELL fields
+	call loclabel(10,"&CELL",ifound)
+else
+	call loclabel(10,"&CELL ",ifound,0) !Must be "&CELL " rather than "&CELL", the latter may locate to e.g. &CELL_OPT
+end if
+
 do while(.true.)
     read(10,"(a)") c200tmp
     if (index(c200tmp,'&CELL_REF')/=0) then !Skip &CELL_REF part
@@ -1880,6 +1918,11 @@ do i=1,ncenter
         end if
     end if
 	read(c200tmp,*,iostat=ierror) a(i)%name,a(i)%x,a(i)%y,a(i)%z
+    itmp=index(a(i)%name,'_') !User may use e.g. Fe_1 to indicate special atom kind
+    if (itmp/=0) a(i)%name(itmp:)=" "
+    do ichar=1,len_trim(a(i)%name) !Remove possible number, e.g. Fe3 to Fe
+		if (iachar(a(i)%name(ichar:ichar))>=48.and.iachar(a(i)%name(ichar:ichar))<=57) a(i)%name(ichar:ichar)=" "
+    end do
     call elename2idx(a(i)%name,a(i)%index)
 end do
 do while(.true.) !User may put SCALED after coordinates
@@ -1913,10 +1956,116 @@ end if
 a%charge=a%index
 a%name=ind2name(a%index)
 call guessnelec
-if (infomode==0) then
-	write(*,"(' Totally',i8,' atoms')") ncenter
-	!write(*,"(' The number of alpha and beta electrons:',2i8)") nint(naelec),nint(nbelec)
+end subroutine
+
+
+
+!!--------------------------------------------------------------------------
+!!-------------------- Read Quantum ESPRESSO input file --------------------
+! Only support ibrav=0
+subroutine readQEinp(name)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character c80tmp*80,c200tmp*200
+character(len=*) name
+
+ifiletype=19
+open(10,file=name,status="old")
+
+call loclabel(10,"&SYSTEM",ifound)
+if (ifound==0) call loclabel(10,"&system",ifound)
+if (ifound==0) then
+	write(*,*) "Error: &system field cannot be found! Press ENTER button to exit"
+    read(*,*)
+    stop
 end if
+
+!Load &SYSTEM
+alat=0
+read(10,*)
+do while(.true.)
+	read(10,"(a)") c200tmp
+	if (index(c200tmp,'/')/=0) exit
+    
+    itmp=index(c200tmp,'=')
+    read(c200tmp(:itmp-1),*) c80tmp
+	if (c80tmp=="ibrav") then
+		call readaftersign_int(c200tmp,'=',itmp)
+		if (itmp/=0) then
+			write(*,*) "Error: Only ibrav=0 is supported! Press ENTER button to exit"
+			read(*,*)
+			stop
+		end if
+	else if (c80tmp=="nat") then
+		call readaftersign_int(c200tmp,'=',ncenter)
+		if (allocated(a)) deallocate(a)
+		allocate(a(ncenter))
+	else if (c80tmp=="celldm(1)") then
+		call readaftersign_float(c200tmp,'=',alat)
+	else if (c80tmp=="a".or.c80tmp=="A") then
+		call readaftersign_float(c200tmp,'=',alat)
+        alat=alat/b2a
+    end if
+end do
+if (alat/=0) write(*,"(' alat is',f12.6,' Bohr')") alat
+
+!Load CELL_PARAMETERS
+call loclabel(10,"CELL_PARAMETERS",ifound)
+if (ifound==0) call loclabel(10,"cell_parameters",ifound)
+if (ifound==0) then
+	write(*,*) "Error: CELL_PARAMETERS card cannot be found! Press ENTER button to exit"
+    read(*,*)
+    stop
+else
+	read(10,"(a)") c200tmp
+	read(10,*) cellv1(:)
+	read(10,*) cellv2(:)
+	read(10,*) cellv3(:)
+	if (index(c200tmp,'angstrom')/=0.or.index(c200tmp,'Angstrom')/=0) then
+		cellv1=cellv1/b2a
+		cellv2=cellv2/b2a
+		cellv3=cellv3/b2a
+	else if (index(c200tmp,'alat')/=0) then
+		cellv1=cellv1*alat
+		cellv2=cellv2*alat
+		cellv3=cellv3*alat
+	end if
+	ifPBC=3
+end if
+
+!Load ATOMIC_POSITIONS
+call loclabel(10,"ATOMIC_POSITIONS",ifound)
+if (ifound==0) call loclabel(10,"atomic_positions",ifound)
+if (ifound==0) then
+	write(*,*) "Error: ATOMIC_POSITIONS card cannot be found! Press ENTER button to exit"
+    read(*,*)
+    stop
+else
+	read(10,"(a)") c200tmp
+	do iatm=1,ncenter
+		read(10,*) c80tmp,a(iatm)%x,a(iatm)%y,a(iatm)%z
+        !User may use customized name, such as Fe2. So we only keep the first two letter
+        a(iatm)%name=c80tmp(1:2)
+		call lc2uc(a(iatm)%name(1:1))
+		call uc2lc(a(iatm)%name(2:2))
+		call elename2idx(a(iatm)%name,a(iatm)%index)
+	end do
+	if (index(c200tmp,'angstrom')/=0.or.index(c200tmp,'Angstrom')/=0) then
+		a%x=a%x/b2a
+		a%y=a%y/b2a
+		a%z=a%z/b2a
+	else if (index(c200tmp,'alat')/=0) then
+		a%x=a%x*alat
+		a%y=a%y*alat
+		a%z=a%z*alat
+	end if
+end if
+
+close(10)
+
+a%charge=a%index
+call guessnelec
 end subroutine
 
 
@@ -2172,8 +2321,17 @@ use util
 implicit real*8 (a-h,o-z)
 integer infomode
 character(len=*) name
+
 ifiletype=11
 open(10,file=name,status="old")
+!Molden file containing vibrational modes exported by CP2K also has .mol extension. If it is the case, regarded as plain text file
+call loclabel(10,"[Molden Format]",ifound,maxline=100)
+if (ifound==1) then
+	ifiletype=0
+    close(10)
+    return
+end if
+rewind(10)
 read(10,"(a)") titleline
 read(10,*)
 read(10,*)
@@ -2199,30 +2357,6 @@ a%z=a%z/b2a
 a%charge=a%index
 if (infomode==0) write(*,"(' Totally',i8,' atoms')") ncenter
 call guessnelec
-end subroutine
-
-!------------- Only read connectivity from .mol file -----------------
-subroutine readmolconn(name) 
-use defvar
-implicit real*8 (a-h,o-z)
-character(len=*) name
-open(10,file=name,status="old")
-read(10,*)
-read(10,*)
-read(10,*)
-read(10,"(2i3)") ntmp,nbond
-do i=1,ntmp
-	read(10,*)
-end do
-if (allocated(connmat)) deallocate(connmat)
-allocate(connmat(ncenter,ncenter))
-connmat=0
-do ibond=1,nbond
-	read(10,"(3i3)") i,j,ntmp
-	connmat(i,j)=ntmp
-	connmat(j,i)=ntmp
-end do
-close(10)
 end subroutine
 
 
@@ -2295,6 +2429,72 @@ a%z=a%z/b2a
 a%charge=a%index
 if (infomode==0) write(*,"(' Totally',i8,' atoms')") ncenter
 call guessnelec
+end subroutine
+
+
+
+
+!------------- Only read connectivity from .mol or .mol2 file
+subroutine readmolconn(name) 
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+character(len=*) name
+character c80tmp*80
+
+if (allocated(connmat)) deallocate(connmat)
+allocate(connmat(ncenter,ncenter))
+connmat=0
+    
+open(10,file=name,status="old")
+if (index(name,".mol2")/=0) then !Read mol2
+	call loclabel(10,"@<TRIPOS>MOLECULE")
+    read(10,*)
+    read(10,*)
+    read(10,*) ntmp,nbond
+    if (ntmp/=ncenter) then
+		write(*,"(a)") " Warning: The number of atoms in the .mol2 file is not the same as present system!"
+		!write(*,"(a)") " Press ENTER button to continue (Multiwfn may crash)"
+  !      read(10,*)
+  !      pause
+    end if
+	call loclabel(10,"@<TRIPOS>BOND")
+	read(10,*)
+	do ibond=1,nbond
+		read(10,*) inouse,i,j,c80tmp
+		if (c80tmp=="ar".or.c80tmp=="Ar") then
+			ntmp=4
+		else if (c80tmp=="am") then
+			ntmp=1
+		else if (c80tmp=="un".or.c80tmp=="nc".or.c80tmp=="du") then
+			ntmp=0
+		else
+			read(c80tmp,*) ntmp
+		end if
+		connmat(i,j)=ntmp
+		connmat(j,i)=ntmp
+	end do
+else !Read mol
+	read(10,*)
+	read(10,*)
+	read(10,*)
+	read(10,"(2i3)") ntmp,nbond
+    if (ntmp/=ncenter) then
+		write(*,"(a)") " Warning: The number of atoms in the .mol2 file is not the same as present system!"
+		!write(*,"(a)") " Press ENTER button to continue (Multiwfn may crash)"
+  !      read(10,*)
+  !      pause
+    end if
+	do i=1,ntmp
+		read(10,*)
+	end do
+	do ibond=1,nbond
+		read(10,"(3i3)") i,j,ntmp
+		connmat(i,j)=ntmp
+		connmat(j,i)=ntmp
+	end do
+end if
+close(10)
 end subroutine
 
 
@@ -3209,7 +3409,8 @@ ifiletype=2
 imodwfn=0
 open(10,file=name,status="old")
 read(10,"(a)") wfntitle
-read(10,"(a8,i15,13x,i7,11x,i9)") c80tmp,nmo,nprims,ncenter
+!read(10,"(a8,i15,13x,i7,11x,i9)") c80tmp,nmo,nprims,ncenter
+read(10,*) c80tmp,nmo,c80tmp,c80tmp,nprims,c80tmp,ncenter !Use free format for compatible with .wfn produced by Q-Chem
 ibasmode=1
 if (index(c80tmp,"SLATER")/=0) ibasmode=2
 if (ibasmode==2) then
@@ -3740,7 +3941,7 @@ nEDFelec=0
 do iatm=1,ncenter
 	natmcore=a(iatm)%index-nint(a(iatm)%charge)
 	if (natmcore==0) cycle
-	if (a(iatm)%index==0) cycle !Skip Bq
+	if (a(iatm)%index==0.or.a(iatm)%charge==0) cycle !Skip Bq
 	nEDFelec=nEDFelec+natmcore
 	call EDFLIB(a(iatm)%index,natmcore,nfun,EDFexp,EDFcoeff)
 	if (infomode==0) write(*,"(1x,a,'(',i5,')      Core electrons:',i3,'     EDF primitive GTFs:',i3)") a(iatm)%name,iatm,natmcore,nfun
@@ -4164,6 +4365,7 @@ end do
 !!!!! Load orbital information. The sequence: Alpha(high occ / low ene) -> Alpha(low occ / high ene) -> Beta(high occ / low ene) -> Beta(low occ / high ene)
 !Close shell orbitals are formally marked as "Alpha" spin. For singly occupied orbitals of ROHF, the spin marker are also Alpha
 if (infomode==0) write(*,*) "Loading orbitals..."
+!call walltime(iwalltime1)
 nmo=nbasis
 ! Here I don't use call loclabel(10,"Beta",ibeta) to check if there are Beta orbitals, because for very large file, this will be quite expensive
 ! I assume that when the first orbital has occupation number <1.05, then the wavefunction must be unrestricted
@@ -4214,13 +4416,11 @@ do while(.true.)
 		symtmp="?"
 		backspace(10)
 	end if
-	
 	read(10,"(a)") c80 !Read orbital energy. Since there may be no spacing between = and energy (Bagel program), position of = should be tested
-	!write(*,"(a)") trim(c80)
 	ieq=index(c80,'=')
 	read(c80(ieq+1:),*) enetmp
  	!write(*,*) iloadorb,enetmp,nbasis,nmo  !<<------ If encountering problem when loading MOs, using this to locate the problematic MO
-    !When loading is failed, it is suggested to search *** in the molden file
+    !PS: When loading is failed, it is suggested to search *** in the molden file
 	
 	read(10,"(a)") c80 !Read orbital spin
 	ispintmp=1 !Alpha
@@ -4231,9 +4431,14 @@ do while(.true.)
 		MOocc(iMOa)=occtmp
 		MOene(iMOa)=enetmp
         call corrsymlab(MOsym(iMOa),symtmp) !Purify symmetry label to meet standard
-		do while(.true.) !This loading way is compatible with Dalton and .molden by all other programs
-			read(10,*,iostat=ierror) itmp,tmpval
-			if (ierror/=0) then
+		do while(.true.) !This loading way is slow but compatible with Dalton and .molden by all other programs
+			read(10,"(a)",iostat=ierror) c80
+			if (ierror/=0) then !May reached end of file
+				backspace(10)
+				exit
+			end if
+			read(c80,*,iostat=ierror) itmp,tmpval
+			if (ierror/=0) then !New orbital
 				backspace(10)
 				exit
 			end if
@@ -4245,19 +4450,25 @@ do while(.true.)
 		MOene(nbasis+iMOb)=enetmp
         call corrsymlab(MOsym(nbasis+iMOb),symtmp) !Purify symmetry label to meet standard
 		do while(.true.)
-			read(10,*,iostat=ierror) itmp,tmpval
-			if (ierror/=0) then
+			read(10,"(a)",iostat=ierror) c80
+			if (ierror/=0) then !May read to end of file
+				backspace(10)
+				exit
+			end if
+			read(c80,*,iostat=ierror) itmp,tmpval
+			if (ierror/=0) then !New orbital
 				backspace(10)
 				exit
 			end if
 			bmocoeff(iMOb,itmp)=tmpval
 		end do
 	end if
-	
-	read(10,"(a)",iostat=ierror) c80 !Test if the ending of [MO] field is reached
+	read(10,"(a)",iostat=ierror) c80 !Test if the end of [MO] field has reached
 	if (ierror/=0.or.c80==" ".or.index(c80,'[')/=0) exit
 	backspace(10)
 end do
+!call walltime(iwalltime2)
+!write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
 
 !Fix orbital coefficients for ORCA. ORCA is rather rather frantic:
 !the F(+3,-3) and G(+3,-3,+4,-4) and H(+3,-3,+4,-4) in ORCA are normalized to -1 rather than 1
@@ -4640,7 +4851,7 @@ end subroutine
 
 
 
-!---------- Read GAMESS-US output file to get GTF and basis information, the suffix must be "gms"
+!---------- Read GAMESS-US and Firefly output file to get GTF and basis information, the suffix must be "gms"
 !GAMESS-US always print LCAO cofficients as Cartesian basis functions, while the number of MOs correspond to spherical harmonic functions (if used)
 !infomode=0 means output info, =1 silent
 subroutine readgms(name,infomode)
@@ -4733,20 +4944,22 @@ read(10,*)
 iaddshell=0
 nshell=0
 nprimshell=0
+nshell_tmp=0 !Number of basis shells without splitting SP shell
 do iatm=1,ncenter
 	read(10,*) !Atom name
-	read(10,*)
+	read(10,*) !Space line
 	do while(.true.)
 		read(10,"(a)") c80
 		if (c80==" ") then !Finished loading last shell
 			nshell=nshell+1
+            nshell_tmp=nshell_tmp+1
 			if (iaddshell==1) nshell=nshell+1 !Last shell is L
 			iaddshell=0
 			read(10,"(a)") c80;backspace(10)
-			if (iachar(c80(2:2))>=65) exit !The second column of next line is a letter, indicating that reading present atom has finished
+			if (iachar(c80(2:2))>=65.or.c80(2:2)=='*') exit !The second column of next line is a letter (element name (* for Bq) or string), indicating that reading present atom has finished
 			if (c80==" ") exit !The next line is blank (may occur in the case of Firefly), indicating the whole field of basis set definition has finished
 		else
-            if (c80(2:2)/=" ") then
+            if (iachar(c80(2:2))>=65.or.c80(2:2)=='*') then !The second column of next line is a letter (element name (* for Bq) or string), indicating that reading present atom has finished
                 backspace(10)
                 exit
             end if
@@ -4757,7 +4970,11 @@ do iatm=1,ncenter
 			end if
 		end if
 	end do
+    !write(*,*) iatm,nprimshell,nshell,nshell_tmp
 end do
+write(*,"(' Number of primitive shells (L is splitted as S and P):',i8)") nprimshell
+write(*,"(' Number of basis function shells (L is splitted as S and P):',i8)") nshell
+write(*,"(' Number of basis function shells (without splitting L):',i8)") nshell_tmp
 
 !Second time, read basis set information actually
 allocate(shtype(nshell),shcon(nshell),shcen(nshell))
@@ -4799,7 +5016,7 @@ do iatm=1,ncenter
 			end if
 			ishell=ishell+1
 			read(10,"(a)") c80;backspace(10)
-			if (iachar(c80(2:2))>=65.or.c80(2:2)=='*') exit !The second column of next line is a letter, indicating that reading present atom has finished
+			if (iachar(c80(2:2))>=65.or.c80(2:2)=='*') exit !The second column of next line is a letter (element name (* for Bq) or string), indicating that reading present atom has finished
 			if (c80==" ") exit !The next line is blank (may occur in the case of Firefly), indicating the whole field of basis set definition has finished
 		else !Loading next primitive shell in current basis function shell
             !In very special case, there are two Bq successively occur at the end, below is an example. &
@@ -4814,7 +5031,7 @@ do iatm=1,ncenter
             !
             ! TOTAL NUMBER OF BASIS SET SHELLS             =   84
             !...
-            if (c80(2:2)/=" ") then
+            if (iachar(c80(2:2))>=65.or.c80(2:2)=='*') then !The second column of next line is a letter (element name (* for Bq) or string), indicating that reading present atom has finished
                 backspace(10)
                 exit
             end if
@@ -4856,13 +5073,27 @@ end do
 nbasisCar=nbasis
 
 if (infomode==0) write(*,*) "Loading orbitals..."
-call loclabel(10,"----- BETA SET -----",ibeta)
-call loclabel(10,"TOTAL NUMBER OF MOS IN VARIATION SPACE=",ispher)
-if (ispher==0) then !Cartesian functions
-	nmoactual=nbasis
+
+!  "nmoactual" below is the actual number of MOs (for each spin in unrestricted case), less or equal to nbasis
+!  In GAMESS-US, the actual number of orbitals is nbasis - A - B, where
+!A is "NUMBER OF SPHERICAL CONTAMINANTS DROPPED", namely the difference betweem number of spherical and cartesian basis functions
+!B is "NUMBER OF LINEARLY DEPENDENT MOS DROPPED", namely the number of removed linearly dependent basis functions
+!  In Firefly, the actual number of orbitals is nbasis - "TOTAL NUMBER OF CONTAMINANTS DROPPED"
+if (ifirefly==0) then
+	call loclabel(10,"TOTAL NUMBER OF MOS IN VARIATION SPACE=",ispher)
+	if (ispher==0) then !Cartesian functions
+		nmoactual=nbasis
+	else
+		read(10,"(40x,i8)") nmoactual
+	end if
 else
-	read(10,"(40x,i8)") nmoactual !The actual number of MOs (value is for each spin in unrestricted case), less than nbasis
+	nremove=0
+	call loclabel(10,"TOTAL NUMBER OF CONTAMINANTS DROPPED",ifound)
+    read(10,"(a)") c80
+	if (ifound==1) call readaftersign_int(c80,'=',nremove)
+    nmoactual=nbasis-nremove
 end if
+call loclabel(10,"----- BETA SET -----",ibeta)
 if (ibeta==0) then !Only one set of orbitals
 	nmo=nbasis
 	allocate(amocoeff(nbasis,nmoactual),MOocc(nmo),MOene(nmo),MOtype(nmo),MOsym(nmo))
@@ -5144,8 +5375,9 @@ subroutine outpdb(outpdbname,ifileid)
 use defvar
 implicit real*8 (a-h,o-z)
 character(len=*) outpdbname
-character prefixname*6
+character prefixname*6,tmpresname*3
 integer ifileid,resid
+
 open(ifileid,file=outpdbname,status="replace")
 write(ifileid,"('REMARK   Generated by Multiwfn, Totally',i10,' atoms')") ncenter
 if (ifPBC>0) then
@@ -5154,8 +5386,10 @@ if (ifPBC>0) then
 end if
 do i=1,ncenter
     call getprefixname(i,prefixname)
+    tmpresname="MOL"
+    if (a(i)%resname/=" ") tmpresname=a(i)%resname
 	write(ifileid,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
-	prefixname,i,' '//ind2name_up(a(i)%index)//' ',a(i)%resname, 'A',a(i)%resid,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,1D0,0D0,adjustr(ind2name_up(a(i)%index))
+	prefixname,i,' '//ind2name_up(a(i)%index)//' ',tmpresname, 'A',a(i)%resid,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a,1D0,0D0,adjustr(ind2name_up(a(i)%index))
 end do
 write(ifileid,"('END')")
 close(ifileid)
@@ -5314,7 +5548,11 @@ subroutine outgjf_wrapper
 use util
 use defvar
 character(len=200) outname,c200tmp
+character c2000tmp*2000
 integer :: icoordtype=1 !1=Cartesian   2=Z-matrix with variable names   -2=Z-matrix directly with geometry parameters
+integer,allocatable :: tmparr(:)
+
+icustom=0
 call path2filename(filename,c200tmp)
 do while(.true.)
     write(*,*)
@@ -5331,9 +5569,10 @@ do while(.true.)
             if you want to output geometry parameters with variable names, input ""zmat1"""
         end if
     end if
-    write(*,"(a)") " Hint: If template.gjf is presented in current folder, &
+    write(*,"(a)") " Hint 1: If template.gjf is presented in current folder, &
     then it will be used as template file, the line containing [geometry] or [GEOMETRY] will be replaced with the present coordinate, &
     [name] will be replaced with name of the new input file (without suffix), net charge and spin multiplicity will correspond to present system"
+    write(*,"(a)") " Hint 2: If inputting ""custom"", you can specify charge, spin multiplicity and indices of the atoms for outputting"
     read(*,"(a)") outname
     if (outname=="zmat".or.outname=="zmat1") then
         icoordtype=2
@@ -5341,6 +5580,47 @@ do while(.true.)
         icoordtype=-2
     else if (outname=="cart") then
         icoordtype=1
+    else if (outname=="custom") then !Temporarily replace charge, spin multiplicit and atoms to the selected ones
+		icustom=1
+        loadcharge_tmp=loadcharge !Backup
+        loadmulti_tmp=loadmulti
+        ncenter_tmp=ncenter
+		allocate(a_tmp(ncenter))
+        a_tmp=a
+        write(*,*) "Input net charge and spin multiplicity, e.g. 1 3"
+        read(*,*) loadcharge,loadmulti
+        write(*,*) "Input index of the atoms to output in the .gjf file, e.g. 2,5,7-10"
+        read(*,"(a)") c2000tmp
+		call str2arr(c2000tmp,ncenter)
+        deallocate(a)
+        allocate(a(ncenter),tmparr(ncenter))
+		call str2arr(c2000tmp,ncenter,tmparr)
+        do idx=1,ncenter
+			a(idx)=a_tmp(tmparr(idx))
+        end do
+    else if (outname=="Bq") then !The same as custom, but inputted atoms will be treated as ghost atom. Mainly used in sobEDA shell script
+		if (icoordtype/=1) then
+			write(*,*) "Error: Only Cartesian coordinates can be used in this case"
+            write(*,*) "Press ENTER button to continue"
+            read(*,*)
+            cycle
+        end if
+		icustom=2
+        loadcharge_tmp=loadcharge !Backup
+        loadmulti_tmp=loadmulti
+        write(*,*) "Input net charge and spin multiplicity, e.g. 1 3"
+        read(*,*) loadcharge,loadmulti
+        write(*,*) "Input index of real atoms (all other atoms will be treated as ghost atoms)"
+        write(*,*) "For example, 2,5,7-10,22"
+        read(*,"(a)") c2000tmp
+		call str2arr(c2000tmp,ntmp)
+        allocate(tmparr(ntmp))
+		call str2arr(c2000tmp,ntmp,tmparr)
+        a%charge=-a%charge
+        do idx=1,ntmp !Use negative charge to indicate ghost atoms
+			iatm=tmparr(idx)
+			a(iatm)%charge=abs(a(iatm)%charge)
+        end do
     else if (outname==" ") then
         outname=trim(c200tmp)//".gjf"
         exit
@@ -5348,8 +5628,22 @@ do while(.true.)
         exit
     end if
 end do
+
 call outgjf(outname,10,icoordtype)
+
+if (icustom==1) then
+    loadcharge=loadcharge_tmp
+    loadmulti=loadmulti_tmp
+    ncenter=ncenter_tmp
+    deallocate(a)
+    allocate(a(ncenter))
+    a=a_tmp
+	deallocate(a_tmp)
+else if (icustom==2) then
+	a(:)%charge=abs(a(:)%charge)
+end if
 end subroutine
+
 !!---------- Output current coordinates and cell information to Gaussian input file
 !1=Cartesian   2=Z-matrix with variable names   -2=Z-matrix directly with geometry parameters
 subroutine outgjf(outgjfname,ifileid,icoordtype)
@@ -5370,7 +5664,7 @@ end if
 if (abs(icoordtype)==2) then
     call genZmat(Zmat,ierror)
     if (ierror==1) then
-        write(*,"(a)") " Error: Generation of internal coordinate is failed! May be this system cannot be properly represented by internal coordinate"
+        write(*,"(a)") " Error: Generation of internal coordinate was failed! May be this system cannot be properly represented by internal coordinate"
         write(*,*) "Press ENTER button to return"
         read(*,*)
         return
@@ -5403,8 +5697,13 @@ if (alive) then !Write information in template.gjf to current gjf file except fo
         read(ifileid+1,"(a)",iostat=ierror) c200tmp
         if (c200tmp==" ".and.nspace<2) nspace=nspace+1
         if (nspace==2) then !Write charge and spin multiplicity of present system
-			read(ifileid+1,*) !Skip charge and spin multiplicity line
-            write(ifileid,"(/,2i3)") netcharge,multi
+			if (loadmulti/=-99.or.allocated(b)) then !Charge and spin multiplicity are loaded or specified manually, or wavefunction information is available
+				read(ifileid+1,*) !Skip charge and spin multiplicity line
+				write(ifileid,"(/,2i3)") netcharge,multi
+            else !Use charge and spin multiplicity in template.gjf
+                read(ifileid+1,"(a)") c200tmp
+				write(ifileid,"(/,a)") trim(c200tmp)
+            end if
             nspace=nspace+1
             cycle
         end if
@@ -5432,7 +5731,11 @@ end if
 !Write atomic coordinates
 if (icoordtype==1) then !Cartesian
     do i=1,ncenter
-	    write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+	    if (a(i)%charge>=0) then
+			write(ifileid,"(a,1x,3f14.8)") a(i)%name,a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+        else !Ghost atoms have negative charge temporarily
+			write(ifileid,"(a,1x,3f14.8)") trim(a(i)%name)//"-Bq",a(i)%x*b2a,a(i)%y*b2a,a(i)%z*b2a
+        end if
     end do
 else if (icoordtype==2) then !Z-matrix with variable names
     nbond=0
@@ -6827,6 +7130,7 @@ if (dalname/=" ") then
 	write(ifileid,"(a)") " B3LYPg"
 	write(ifileid,"(a)") "**END OF INPUT"
 	close(ifileid)
+	write(*,"(a)") " Exporting .dal file finished! It corresponds to single point task using B3LYPg functional"
 end if
 
 open(ifileid,file=molname,status="replace")
@@ -6861,8 +7165,8 @@ do iele=1,nelesupp
 	end if
 end do
 close(ifileid)
-write(*,"(a)") " Exporting Dalton input file finished! It corresponds to single point task at B3LYPg/6-31G* level"
-if (naelec/=nbelec) write(*,*) "Electronic configuration in .dal file should be manually set properly"
+write(*,*) "Exporting .mol file finished! You need to properly set basis set in this file"
+if (naelec/=nbelec) write(*,*) "NOTE: Electronic configuration in the .mol file should be manually set properly"
 end subroutine
 
 
@@ -6956,6 +7260,7 @@ write(*,"(a)") " If press ENTER button directly, will export to POSCAR in curren
 read(*,"(a)") outname
 if (outname==" ") outname="POSCAR"
 call outPOSCAR(outname,10)
+write(*,"(a)") " VASP POSCAR file has been exported to "//trim(outname)//" in current folder"
 end subroutine
 !!---------- Output current coordinate to VASP position file POSCAR
 subroutine outPOSCAR(outname,ifileid)
@@ -7001,8 +7306,6 @@ do iele=1,nelesupp
     end do
 end do
 close(ifileid)
-
-write(*,"(a)") " VASP POSCAR file has been exported to "//trim(outname)//" in current folder"
 end subroutine
 
 
@@ -7092,6 +7395,49 @@ if (selectyn=='y') then
     call outcml(outcmlname,ifileid,1)
 end if
 end subroutine
+
+
+
+
+!!------------- Output grid data in VASP format (like CHGCAR, LOCPOT)    
+subroutine outVASPgrd(outname,ifileid)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer infomode
+character(len=*) outname
+
+!If cell information is not available, Use grid data vectors as cell vectors
+if (all(cellv1==0)) then
+    cellv1(:)=gridv1(:)*nx
+    cellv2(:)=gridv2(:)*ny
+    cellv3(:)=gridv3(:)*nz
+    itmp=1
+end if
+
+!The first part of CHGCAR/CHG is identical to POSCAR
+!Because VASP grid data format does not record origin position, we need to temporarily translate atoms so that origin happens to be (0,0,0)
+a(:)%x=a(:)%x-orgx
+a(:)%y=a(:)%y-orgy
+a(:)%z=a(:)%z-orgz
+call outPOSCAR(outname,ifileid)
+a(:)%x=a(:)%x+orgx
+a(:)%y=a(:)%y+orgy
+a(:)%z=a(:)%z+orgz
+
+open(ifileid,file=outname,status="old",position="append")
+write(ifileid,"(/,3i6)") nx,ny,nz
+write(ifileid,"(5E18.11)") (((cubmat(ix,iy,iz),ix=1,nx),iy=1,ny),iz=1,nz)
+close(ifileid)
+write(*,"(a)") " Done, the grid data has been exported in VASP grid data format"
+
+if (itmp==1) then
+	cellv1(:)=0
+	cellv2(:)=0
+	cellv3(:)=0
+end if
+end subroutine
+
 
 
 
@@ -7208,7 +7554,7 @@ write(ifileid,"(a)") "<Number of Perturbations>"
 write(ifileid,"(i6)") 0
 write(ifileid,"(a)") "</Number of Perturbations>"
 write(ifileid,"(a)") "<Net Charge>"
-write(ifileid,"(i6)") sum(a%charge)-nint(nelec)
+write(ifileid,"(i6)") nint(sum(a%charge)-nelec)
 write(ifileid,"(a)") "</Net Charge>"
 write(ifileid,"(a)") "<Number of Electrons>"
 write(ifileid,"(i6)") nint(nelec)
@@ -7692,8 +8038,13 @@ character(80) c80tmp1,c80tmp2
 real*8 primshcoefftmp(nprimshell)
 real*8,allocatable :: halfmat(:)
 real*8,external :: normgau
-integer bastype2NBO(50),nptr(nshell)
+integer bastype2NBO(-5:50),nptr(nshell)
 integer ifileid
+bastype2NBO(-5)=255 !z2
+bastype2NBO(-4)=252 !xz
+bastype2NBO(-3)=253 !yz
+bastype2NBO(-2)=254 !x2-y2
+bastype2NBO(-1)=251 !xy
 bastype2NBO(1 )=1   !s
 bastype2NBO(2 )=101 !x
 bastype2NBO(3 )=102 !y
@@ -7731,10 +8082,14 @@ bastype2NBO(23)=413 !YYZZ
 bastype2NBO(22)=414 !YZZZ
 bastype2NBO(21)=415 !ZZZZ
 
-if (any(shtype<0)) then
-	write(*,*) "Error: This function only works when all basis functions are Cartesian type!"
-	write(*,"(a)") " Hint: If you set ""iloadasCart"" in settings.ini to 1, then all spherical harmonic type of &
-	basis functions will be converted to Cartesian type when loading input file, and then this function will be usable"
+if (any(shtype<=-3)) then
+	write(*,"(a)") " Error: This function cannot be used if any spherical-harmonic basis function has >=f angular moment!"
+	write(*,"(a)") " To make this function usable, there are three ways:"
+    write(*,"(a)") " (1) Reduce quality of basis set so that highest angular moment does not exceed d. Note that most NBO analyses are quite insensitive to basis set"
+    write(*,"(a)") " (2) Perform calculation based on Cartesian instead of spherical-harmonic basis functions"
+    write(*,"(a)") " (3) Before booting up Multiwfn, set ""iloadasCart"" in settings.ini to 1. After that all spherical-harmonic &
+    basis functions will be converted to Cartesian ones when loading input file. However, note that in this case Multiwfn is unable &
+    to correctly generate Fock matrix based on orbital energies and coeffcients"
 	write(*,*) "Press ENTER button to return"
 	read(*,*)
 	return
@@ -7757,13 +8112,12 @@ do iatm=1,ncenter
 	write(ifileid,"(2i6,3f12.6)") a(iatm)%index,int(a(iatm)%charge),a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
 end do
 write(ifileid,*) "$END"
-
 !Basis function information
 write(ifileid,*) "$BASIS"
 write(ifileid,"(' CENTER =')")
-write(ifileid,"(10i6)") bascen(:)
+write(ifileid,"(10i6)") bascen(1:nbasis)
 write(ifileid,"(' LABEL =')")
-write(ifileid,"(10i6)") bastype2NBO(bastype(:))
+write(ifileid,"(10i6)") bastype2NBO(bastype(1:nbasis))
 write(ifileid,"(' $END')")
 
 !Shell information
@@ -7782,8 +8136,9 @@ write(ifileid,"('   NPTR =')")
 write(ifileid,"(10i6)") nptr(:)
 write(ifileid,"('    EXP =')")
 write(ifileid,"(4E16.7)") primshexp(:)
-!In standard .47 and .37 file, the shell contraction coefficients include normalization coefficients
-!For d, f, g, the normalization coefficients are for XX/YY/ZZ, XXX/YYY/ZZZ, XXXX/YYYY/ZZZZ, respectively
+!In standard .47 and .31 files, the shell contraction coefficients include normalization coefficients
+!For d, f, g, the normalization coefficients are for XX/YY/ZZ, XXX/YYY/ZZZ, XXXX/YYYY/ZZZZ, respectively. &
+!I think in fact this is problematic, because normalization coefficient of e.g. XX and XY is different, I don't know how NBO deal with this issue
 do iang=0,maxval(abs(shtype))
 	primshcoefftmp=0
 	if (iang==0) then
@@ -8302,8 +8657,11 @@ call loclabel(10,'Index=         1',irewind=0)
 iaorb=0;iborb=0
 do iorb=1,norbload
     if (iorb>1) read(10,*,iostat=ierror) !Skip space line between each orbital
-    read(10,*,iostat=ierror) !Skip index line
-    if (ierror==0) then
+    read(10,*,iostat=ierror) c80tmp !Skip index line
+    if (index(c80tmp,"Index=")==0.or.ierror/=0) then !norbload is larger than actual number of recorded orbitals, often because linearly dependent basis functions are eliminated
+        write(*,"(i6,' orbitals were actually loaded')") iorb-1
+        exit
+    else
         read(10,*) c80tmp,itype
         if (ires==1) then !Restricted
             MOtype(iorb)=itype
@@ -8331,9 +8689,6 @@ do iorb=1,norbload
                 read(10,*) bmocoeff(:,iborb)
             end if
         end if
-    else !norbload is larger than actual number of recorded orbitals, often because linearly dependent basis functions are eliminated
-        write(*,"(i6,' orbitals were actually loaded')") iorb-1
-        exit
     end if
 end do
 if (wfntype==1.or.wfntype==4) then !Unrestricted case, assign correct spin type for artificially filled orbitals
@@ -8782,7 +9137,7 @@ if (ifound==1) then
         c80tmp2=symopstr(isymop)(itmp+1:jtmp-1)
         c80tmp3=symopstr(isymop)(jtmp+1:)
         !write(*,"(' Symmetry operation',i4,': ',a,1x,a,1x,a)") isymop,trim(c80tmp),trim(c80tmp2),trim(c80tmp3)
-        call parsef(1,trim(c80tmp),var)
+        call parsef(1,trim(c80tmp),var) !Use string to define formula, var(:) defines variables in the formula. Then use evalf to evaluate value
         call parsef(2,trim(c80tmp2),var)
         call parsef(3,trim(c80tmp3),var)
         do iatm=1,ncenter_tmp !Duplicate unique atoms via symmetry operations
@@ -8915,12 +9270,16 @@ subroutine outgro(outgroname,ifileid)
 use defvar
 implicit real*8 (a-h,o-z)
 character(len=*) outgroname
+character tmpresname*3
 integer ifileid
+
 open(ifileid,file=outgroname,status="replace")
 write(ifileid,"(a)") "Generated by Multiwfn"
 write(ifileid,*) ncenter
 do i=1,ncenter
-	write(ifileid,"(i5,'MOL',a7,i5,3f8.3)") 1,a(i)%name,i,a(i)%x*b2a/10,a(i)%y*b2a/10,a(i)%z*b2a/10
+	tmpresname="MOL"
+	if (a(i)%resname/=" ") tmpresname=a(i)%resname
+	write(ifileid,"(i5,a3,a7,i5,3f8.3)") a(i)%resid,tmpresname,a(i)%name,i,a(i)%x*b2a/10,a(i)%y*b2a/10,a(i)%z*b2a/10
 end do
 write(ifileid,"(9f12.6)") cellv1(1)*b2a/10,cellv2(2)*b2a/10,cellv3(3)*b2a/10,cellv1(2)*b2a/10,cellv1(3)*b2a/10,&
 cellv2(1)*b2a/10,cellv2(3)*b2a/10,cellv3(1)*b2a/10,cellv3(2)*b2a/10
@@ -9179,9 +9538,9 @@ if (c80tmp/=" ") then
 end if
 
 !Set atom 3D color either according to external file or default setting
-call get_option_str(20,'atmcolorfile=',c200tmp2)
-if (c200tmp2/=" ".and.c200tmp2/="none") then
-    read(c200tmp2,*) c200tmp !Such a loading can remove " symbol
+call get_option_str(20,'atmcolorfile=',c200tmp)
+if (c200tmp/=" ".and.c200tmp/="none") then
+    call remove_quotemark(c200tmp)
 	inquire(file=c200tmp,exist=alive)
 	if (alive) then
 		write(*,"(' Note: Loading atom color settings from ',a)") trim(c200tmp)
@@ -9190,8 +9549,32 @@ if (c200tmp2/=" ".and.c200tmp2/="none") then
 			read(21,*) inouse,atm3Dclr(iele,:)
 		end do
 		close(21)
+        write(*,"(a,/)") " Done!"
     else
-        write(*,"(a)") " Unable to find atomic color file: "//trim(c200tmp)
+        write(*,"(a,/)") " Unable to find atomic color file: "//trim(c200tmp)
+	end if
+end if
+
+!Load vdW radii from external file if the file is specified
+call get_option_str(20,'vdwrfile=',c200tmp)
+if (c200tmp/=" ".and.c200tmp/="none") then
+    call remove_quotemark(c200tmp)
+	inquire(file=c200tmp,exist=alive)
+	if (alive) then
+		write(*,"(' Note: Loading van der Waals radii from ',a)") trim(c200tmp)
+		open(21,file=c200tmp,status="old")
+        do while(.true.)
+			read(21,"(a)",iostat=ierror) c200tmp
+            if (ierror/=0.or.c200tmp==" ") exit
+            if (index(c200tmp,'#')==0) then
+				read(c200tmp,*) idx,tmpval
+                vdwr(idx)=tmpval
+            end if
+        end do
+		close(21)
+        write(*,"(a,/)") " Done!"
+    else
+        write(*,"(a,/)") " Unable to find van der Waals radii file: "//trim(c200tmp)
 	end if
 end if
 
@@ -9272,5 +9655,22 @@ else if (isys==2) then
     command="rm -rf "//trim(delname)
 end if
 write(*,*) "Deleting "//trim(delname)
+call system(trim(command))
+end subroutine
+
+
+
+!!------- Copy a given file to another one
+subroutine copyfile(file1,file2)
+use defvar
+character(len=*) file1,file2
+character command*300
+
+if (isys==1) then
+	command="copy "//trim(file1)//' '//trim(file2)//" /Y > NUL"
+else if (isys==2) then
+	command="cp -f"//trim(file1)//' '//trim(file2)
+end if
+write(*,*) "Running: "//trim(command)
 call system(trim(command))
 end subroutine

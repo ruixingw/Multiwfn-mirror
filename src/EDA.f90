@@ -8,10 +8,9 @@ do while(.true.)
 	write(*,*) "0 Return"
 	write(*,*) "1 Energy decomposition analysis based on molecular forcefield (EDA-FF)"
 	write(*,*) "2 Shubin Liu's energy decomposition analysis (Gaussian is needed)"
+	write(*,*) "3 sobEDA and sobEDAw energy decomposition analyses (J. Phys. Chem. A, 127, 7023 (2023))"
 ! 		write(*,*) "2 Mayer energy decomposition analysis"
 ! 		write(*,*) "3 Fuzzy space based energy decomposition analysis"
-! 		write(*,*) "4 ETS-NOCV analysis based on ORCA output"
-	write(*,*) "5 Simple energy decomposition analysis (Gaussian is needed)"
 	read(*,*) infuncsel2
 	if (infuncsel2==0) then
 		return
@@ -19,10 +18,10 @@ do while(.true.)
 		call EDA_forcefield
 	else if (infuncsel2==2) then	
 		call EDA_SBL
-	else if (infuncsel2==5) then
-		write(*,"(a)") " Please check the example in Section 4.100.8 of the manual. &
-		Currently to realize this function you need to manually use subfunction 8 of main function 100"
-		write(*,*) "Press ENTER button to continue"
+	else if (infuncsel2==3) then
+		write(*,"(a)") " This kind of analysis needs using shell script. Please check detailed sobEDA/sobEDAw tutorial: http://sobereva.com/soft/sobEDA_tutorial.zip"
+        write(*,*) "Also see original paper: J. Phys. Chem. A, 127, 7023 (2023) DOI: 10.1021/acs.jpca.3c04374"
+        write(*,*) "Press ENTER to return"
 		read(*,*)
 	end if
 end do
@@ -646,7 +645,10 @@ if (ifound==0) then
 	return
 end if
 
-read(10,"(4x,f12.6,4x,f12.6,4x,f12.6,4x,f12.6,6x,f12.6)",iostat=ierror) ET,EV,EJ,EK,ENuc !EK is useless
+read(10,"(a)") c200tmp
+read(c200tmp(6:),*) ET
+read(c200tmp(37:),*) EJ
+read(c200tmp(71:),*) ENuc
 !Frequently, the EV is quite large making the corresponding output is *****. Therefore, EV will be obtained as EV=ENTVJ-ET-EJ-ENuc
 
 call loclabel(10,"Ex= ")

@@ -775,7 +775,11 @@ do while(.true.)
 			containing GTF information of your system, such as .wfn/.wfx/.mwfn/.fch/.molden file. e.g. C:\abc.wfn"
 			read(*,"(a)") c200tmp
 			call readinfile(c200tmp,1)
-			call gen_GTFuniq(1) !Generate unique GTFs, for faster evaluation in orbderv
+            if (ifPBC==0) then
+				call gen_GTFuniq(1) !Generate unique GTFs, for faster evaluation in orbderv
+            else
+				call gen_neigh_GTF !Generate neighbouring GTFs list at reduced grids, for faster evaluation
+            end if
 		end if
 		if (isel==4) then !Output LI and DI
 			call LIDIbasin
@@ -4811,13 +4815,15 @@ do iz=izlow,izup
 			basinvol_priv(irealatt)=basinvol_priv(irealatt)+1
 		end do
 	end do
+	!$OMP CRITICAL
     ifinish=ifinish+1
     call showprog(ifinish,izup-izlow+1)
+	!$OMP end CRITICAL
 end do
 !$OMP end do
 !$OMP CRITICAL
-    basinpop=basinpop+basinpop_priv
-    basinvol=basinvol+basinvol_priv
+basinpop=basinpop+basinpop_priv
+basinvol=basinvol+basinvol_priv
 !$OMP end CRITICAL
 !$OMP END PARALLEL
 call calc_dvol(dvol)

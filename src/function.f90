@@ -18,7 +18,7 @@ if (ifunc==1) then
 	if (allocated(b)) then
 		calcfuncall=fdens(x,y,z)
 	else
-		calcfuncall=calcprodens(x,y,z,0) !Use interpolation promolecular density
+		calcfuncall=calcprodens(x,y,z,0) !Use promolecular density
 	end if
 else if (ifunc==2) then
 	calcfuncall=fgrad(x,y,z,'t')
@@ -98,11 +98,11 @@ case (3) !Integrand of electronic spatial extent <r^2>
     userfunc=(x*x+y*y+z*z)*fdens(x,y,z)
 case (4) !Weizsacker potential
     userfunc=weizpot(x,y,z)
-case (5) !Integrand of weizsacker functional
+case (5) !Integrand of Weizsacker functional
     userfunc=KED(x,y,z,4) !Equivalent to weizsacker(x,y,z)
 case (6) !Radial distribution function (assume that density is sphericalized)
     userfunc=4*pi*fdens(x,y,z)*(x*x+y*y+z*z)
-case (7) !Local Temperature(Kelvin), PNAS,81,8028
+case (7) !Local Temperature (Kelvin), PNAS,81,8028
 	tmp=fdens(x,y,z)
 	if (tmp>uservar) then
 	    userfunc=2D0/3D0*lagkin(x,y,z,0)/tmp
@@ -117,6 +117,8 @@ case (10) !Potential energy density, also known as virial field
     userfunc=-Hamkin(x,y,z,0)-lagkin(x,y,z,0)
 case (11) !Energy density
     userfunc=-Hamkin(x,y,z,0)
+case (-11) !Scaled energy density
+    userfunc=-Hamkin(x,y,z,0)*(virialratio-1)
 case (12) !Local nuclear attraction potential energy
     userfunc=-nucesp(x,y,z)*fdens(x,y,z)
 case (13) !This quantity at bond critical point is useful to discriminate covalent bonding and closed-shell interaction
@@ -159,6 +161,8 @@ case (26) !Thomas-Fermi kinetic energy density
     userfunc=KED(x,y,z,3)
 case (27) !Local electron affinity
     userfunc=loceleaff(x,y,z)
+case (-27) !Local electron attachment energy
+    userfunc=loceleatt(x,y,z)
 case (28) !Local Mulliken electronegativity
     userfunc=(avglocion(x,y,z)+loceleaff(x,y,z))/2
 case (29) !Local hardness
@@ -201,6 +205,8 @@ case (45) !Steric force based on damped potential
     userfunc=stericforce_damp(x,y,z)
 case (46) !Steric force directly damped to zero
     userfunc=stericforce_directdamp(x,y,z)
+case (47) !Steric charge directly damped to zero
+    userfunc=stericcharge_directdamp(x,y,z)
 case (49) !Relative Shannon entropy, also called information gain
     userfunc=relShannon(x,y,z)
 case (50) !Shannon entropy density, see JCP,126,191107 for example
@@ -323,6 +329,8 @@ case (113) !Total charge of the energy components defined by SBL (steric + elect
     userfunc = stericcharge(x,y,z) + elestatcharge(x,y,z) + quantumcharge(x,y,z)
 case (114) !Pauli kinetic energy density
     userfunc = KED(x,y,z,iKEDsel) - weizsacker(x,y,z)
+case (200) !Random number of [0,1£©
+	call RANDOM_NUMBER(userfunc)
 case (802:807)
     userfunc=funcvalLSB(iuserfunc-800,x,y,z)
 case (812:817)
@@ -380,6 +388,11 @@ case (1210) !Potential of KED
 case (1303) !\xi^\alpha Fractional integrals/derivatives, close to Lagkin, fdens routines
     userfunc=fracderiv(x,y,z)
 end select
+
+if (iuserfunc>10000) then
+	userfunc=calcfuncall(iuserfunc-10000,x,y,z)
+end if
+
 !Below are other examples
 ! userfunc=hamkin(x,y,z,3)-0.5D0*(hamkin(x,y,z,1)+hamkin(x,y,z,2)) !Anisotropy of Hamiltonian kinetic energy in Z, namely K_Z-0.5*(K_X+K_Y)
 ! userfunc=-x*y*fdens(x,y,z) !Integrand of XY component of electric quadrupole moment
@@ -398,7 +411,6 @@ subroutine orbderv(runtype,istart,iend,x,y,z,wfnval,grad,hess,tens3)
 real*8 x,y,z,wfnval(nmo)
 real*8,optional :: grad(3,nmo),hess(3,3,nmo),tens3(3,3,3,nmo)
 integer runtype,istart,iend
-!real*8 GTFexpterm(nprims)
 
 if (ifPBC>0) then !Consider PBC
     call orbderv_PBC(runtype,istart,iend,x,y,z,wfnval,grad,hess,tens3)
@@ -813,22 +825,233 @@ end subroutine
 !! Calculate wavefunction value of a range of orbitals and their derivatives at a given point, up to third-order
 !! istart and iend is the range of the orbitals will be calculated, to calculate all orbitals, use 1,nmo
 !! runtype=1: value  =2: value+dx/y/z  =3: value+dxx/yy/zz(diagonal of hess)  =4: value+dx/y/z+Hessian  
-!!        =5: value+dx/y/z+hess+3-order derivative tensor 
+!!        =5: value+dx/y/z+hess+3-order derivative tensor
+!! k-point is taken into account if kp1crd,kp2crd,kp3crd has been properly defined, but only real part is taken into account, imaginary part is ignored
 subroutine orbderv_PBC(runtype,istart,iend,x,y,z,wfnval,grad,hess,tens3)
 real*8 x,y,z,wfnval(nmo),tvec(3)
 real*8,optional :: grad(3,nmo),hess(3,3,nmo),tens3(3,3,3,nmo)
 integer runtype,istart,iend
-real*8 GTFexpterm(nprims)
 
 wfnval=0D0
 if (present(grad)) grad=0D0
 if (present(hess)) hess=0D0
 if (present(tens3)) tens3=0D0
 
+iquick=0 !Check for this position if quick code can be used. If this position is out of region covered by reduced grid, the slow conventional code must be used
+if (allocated(neighGTF)) then
+	ix_red=floor((x-orgx_neigh)/spcred)
+	iy_red=floor((y-orgy_neigh)/spcred)
+	iz_red=floor((z-orgz_neigh)/spcred)
+    if (ix_red>=0.and.ix_red<=size(neighnGTF,1)-1 .and. iy_red>=0.and.iy_red<=size(neighnGTF,2)-1 .and. iz_red>=0.and.iz_red<=size(neighnGTF,3)-1) iquick=1
+end if
+
+if (iquick==1) then !Utilizing neighbouring GTF list at reduced grids to significantly reduce number of candidate GTFs. Unique GTF cannot be utilized in this case
+
+nloopGTF=neighnGTF(ix_red,iy_red,iz_red)
+do iloopGTF=1,nloopGTF !Only loop the neighbouring GTFs corresponding to the reduced grid that the current position belongs to
+	j=neighGTF(iloopGTF,ix_red,iy_red,iz_red)
+    icell=neighGTFcell(1,iloopGTF,ix_red,iy_red,iz_red) !Obtaining the cell index that the neighbouring GTF attributed to
+    jcell=neighGTFcell(2,iloopGTF,ix_red,iy_red,iz_red)
+    kcell=neighGTFcell(3,iloopGTF,ix_red,iy_red,iz_red)
+    call tvec_PBC(icell,jcell,kcell,tvec)
+    facreal=cos(2*pi*(icell*kp1crd+jcell*kp2crd+kcell*kp3crd)) !Real part of exponent term of wavefunction
+	jcen=b(j)%center
+	sftx=x-(a(jcen)%x+tvec(1))
+	sfty=y-(a(jcen)%y+tvec(2))
+	sftz=z-(a(jcen)%z+tvec(3))
+    sftx2=sftx*sftx
+    sfty2=sfty*sfty
+    sftz2=sftz*sftz
+	rr=sftx2 + sfty2 + sftz2
+	ep=b(j)%exp
+	tmpval=-ep*rr
+	if (tmpval>expcutoff_PBC.or.expcutoff_PBC>0) then
+		expterm=exp(tmpval)*facreal !!!! Real part of exponent term of wavefunction is merged into exponent term to make it take effect properly without modifying any other codes
+    else
+		cycle
+    end if
+	
+	!Calculate value for current GTF
+	jtype=b(j)%type
+	ix=type2ix(jtype)
+	iy=type2iy(jtype)
+	iz=type2iz(jtype)
+	if (jtype==1) then
+	GTFval=expterm
+	else if (jtype==2) then
+	GTFval=sftx*expterm
+	else if (jtype==3) then
+	GTFval=sfty*expterm
+	else if (jtype==4) then
+	GTFval=sftz*expterm
+	else if (jtype==5) then
+	GTFval=sftx2*expterm
+	else if (jtype==6) then
+	GTFval=sfty2*expterm
+	else if (jtype==7) then
+	GTFval=sftz2*expterm
+	else if (jtype==8) then
+	GTFval=sftx*sfty*expterm
+	else if (jtype==9) then
+	GTFval=sftx*sftz*expterm
+	else if (jtype==10) then
+	GTFval=sfty*sftz*expterm
+	else
+	GTFval=sftx**ix *sfty**iy *sftz**iz *expterm
+	end if
+	!Calculate orbital wavefunction value
+	do imo=istart,iend
+		wfnval(imo)=wfnval(imo)+CO(imo,j)*GTFval
+	end do
+                
+	if (runtype>=2) then
+		!Calculate 1-order derivative for current GTF
+		tx=0D0
+		ty=0D0
+		tz=0D0
+		if (ix/=0) tx=ix*sftx**(ix-1)
+		if (iy/=0) ty=iy*sfty**(iy-1)
+		if (iz/=0) tz=iz*sftz**(iz-1)
+		GTFdx=sfty**iy *sftz**iz *expterm*(tx-2*ep*sftx**(ix+1))
+		GTFdy=sftx**ix *sftz**iz *expterm*(ty-2*ep*sfty**(iy+1))
+		GTFdz=sftx**ix *sfty**iy *expterm*(tz-2*ep*sftz**(iz+1))
+		!Calculate 1-order derivative for orbitals
+		do imo=istart,iend
+			grad(1,imo)=grad(1,imo)+CO(imo,j)*GTFdx
+			grad(2,imo)=grad(2,imo)+CO(imo,j)*GTFdy
+			grad(3,imo)=grad(3,imo)+CO(imo,j)*GTFdz
+		end do
+
+		if (runtype>=3) then
+			!Calculate 2-order derivative for current GTF
+			txx=0D0
+			tyy=0D0
+			tzz=0D0
+			if (ix>=2) txx=ix*(ix-1)*sftx**(ix-2)
+			if (iy>=2) tyy=iy*(iy-1)*sfty**(iy-2)
+			if (iz>=2) tzz=iz*(iz-1)*sftz**(iz-2)
+			GTFdxx=sfty**iy *sftz**iz *expterm*( txx + 2*ep*sftx**ix*(-2*ix+2*ep*sftx2-1) )
+			GTFdyy=sftx**ix *sftz**iz *expterm*( tyy + 2*ep*sfty**iy*(-2*iy+2*ep*sfty2-1) )
+			GTFdzz=sftx**ix *sfty**iy *expterm*( tzz + 2*ep*sftz**iz*(-2*iz+2*ep*sftz2-1) )
+			ttx=tx-2*ep*sftx**(ix+1)
+			tty=ty-2*ep*sfty**(iy+1)
+			ttz=tz-2*ep*sftz**(iz+1)
+			GTFdxy=sftz**iz *expterm*ttx*tty
+			GTFdyz=sftx**ix *expterm*tty*ttz
+			GTFdxz=sfty**iy *expterm*ttx*ttz
+			!Calculate diagonal Hessian elements for orbitals
+			do imo=istart,iend
+				hess(1,1,imo)=hess(1,1,imo)+CO(imo,j)*GTFdxx !dxx
+				hess(2,2,imo)=hess(2,2,imo)+CO(imo,j)*GTFdyy !dyy
+				hess(3,3,imo)=hess(3,3,imo)+CO(imo,j)*GTFdzz !dzz
+			end do
+			if (runtype>=4) then !Also process nondiagonal elements
+				do imo=istart,iend
+					hess(1,2,imo)=hess(1,2,imo)+CO(imo,j)*GTFdxy !dxy
+					hess(2,3,imo)=hess(2,3,imo)+CO(imo,j)*GTFdyz !dyz
+					hess(1,3,imo)=hess(1,3,imo)+CO(imo,j)*GTFdxz !dxz
+				end do
+				hess(2,1,:)=hess(1,2,:)
+				hess(3,2,:)=hess(2,3,:)
+				hess(3,1,:)=hess(1,3,:)
+			end if
+			
+			if (runtype>=5) then
+				!Calculate 3-order derivative for current GTF
+				ep2=ep*2D0
+				ep4=ep*4D0
+				epep4=ep2*ep2
+				epep8=epep4*2D0
+				!dxyz
+				a1=0D0
+				b1=0D0
+				c1=0D0
+				if (ix>=1) a1=ix*sftx**(ix-1)
+				if (iy>=1) b1=iy*sfty**(iy-1)
+				if (iz>=1) c1=iz*sftz**(iz-1)
+				a2=-ep2*sftx**(ix+1)
+				b2=-ep2*sfty**(iy+1)
+				c2=-ep2*sftz**(iz+1)
+				GTFdxyz=(a1+a2)*(b1+b2)*(c1+c2)*expterm
+				!dxyy,dxxy,dxxz,dxzz,dyzz,dyyz
+				atmp=0D0
+				btmp=0D0
+				ctmp=0D0
+				if (ix>=2) atmp=ix*(ix-1)*sftx**(ix-2)
+				if (iy>=2) btmp=iy*(iy-1)*sfty**(iy-2)
+				if (iz>=2) ctmp=iz*(iz-1)*sftz**(iz-2)
+				GTFdxyy=(a1+a2)*sftz**iz *expterm*(-ep4*iy*sfty**iy+epep4*sfty**(iy+2)+btmp-ep2*sfty**iy)
+				GTFdxxy=(b1+b2)*sftz**iz *expterm*(-ep4*ix*sftx**ix+epep4*sftx**(ix+2)+atmp-ep2*sftx**ix) !=dyxx
+				GTFdxxz=(c1+c2)*sfty**iy *expterm*(-ep4*ix*sftx**ix+epep4*sftx**(ix+2)+atmp-ep2*sftx**ix) !=dzxx
+				GTFdxzz=(a1+a2)*sfty**iy *expterm*(-ep4*iz*sftz**iz+epep4*sftz**(iz+2)+ctmp-ep2*sftz**iz)
+				GTFdyzz=(b1+b2)*sftx**ix *expterm*(-ep4*iz*sftz**iz+epep4*sftz**(iz+2)+ctmp-ep2*sftz**iz)
+				GTFdyyz=(c1+c2)*sftx**ix *expterm*(-ep4*iy*sfty**iy+epep4*sfty**(iy+2)+btmp-ep2*sfty**iy) !=dzyy
+				!dxxx,dyyy,dzzz
+				aatmp1=0D0
+				bbtmp1=0D0
+				cctmp1=0D0
+				if (ix>=1) aatmp1=ep2*ix*sftx**(ix-1)
+				if (iy>=1) bbtmp1=ep2*iy*sfty**(iy-1)
+				if (iz>=1) cctmp1=ep2*iz*sftz**(iz-1)
+				aatmp2=0D0
+				bbtmp2=0D0
+				cctmp2=0D0
+				if (ix>=2) aatmp2=ep2*ix*(ix-1)*sftx**(ix-1)
+				if (iy>=2) bbtmp2=ep2*iy*(iy-1)*sfty**(iy-1)
+				if (iz>=2) cctmp2=ep2*iz*(iz-1)*sftz**(iz-1)
+				aatmp3=0D0
+				bbtmp3=0D0
+				cctmp3=0D0
+				if (ix>=3) aatmp3=ix*(ix-1)*(ix-2)*sftx**(ix-3)
+				if (iy>=3) bbtmp3=iy*(iy-1)*(iy-2)*sfty**(iy-3)
+				if (iz>=3) cctmp3=iz*(iz-1)*(iz-2)*sftz**(iz-3)
+				GTFdxxx=sfty**iy*sftz**iz*expterm*( (-2*ix+ep2*sftx2-1)*(-epep4*sftx**(ix+1) + aatmp1) - aatmp2 + epep8*sftx**(ix+1) + aatmp3 )
+				GTFdyyy=sftx**ix*sftz**iz*expterm*( (-2*iy+ep2*sfty2-1)*(-epep4*sfty**(iy+1) + bbtmp1) - bbtmp2 + epep8*sfty**(iy+1) + bbtmp3 )
+				GTFdzzz=sfty**iy*sftx**ix*expterm*( (-2*iz+ep2*sftz2-1)*(-epep4*sftz**(iz+1) + cctmp1) - cctmp2 + epep8*sftz**(iz+1) + cctmp3 )
+				
+				!Calculate 3-order derivative tensor for orbital wavefunction
+				do imo=istart,iend
+					tens3(1,1,1,imo)=tens3(1,1,1,imo)+CO(imo,j)*GTFdxxx !dxxx
+					tens3(2,2,2,imo)=tens3(2,2,2,imo)+CO(imo,j)*GTFdyyy !dyyy
+					tens3(3,3,3,imo)=tens3(3,3,3,imo)+CO(imo,j)*GTFdzzz !dzzz
+					tens3(1,2,2,imo)=tens3(1,2,2,imo)+CO(imo,j)*GTFdxyy !dxyy
+					tens3(1,1,2,imo)=tens3(1,1,2,imo)+CO(imo,j)*GTFdxxy !dxxy
+					tens3(1,1,3,imo)=tens3(1,1,3,imo)+CO(imo,j)*GTFdxxz !dxxz
+					tens3(1,3,3,imo)=tens3(1,3,3,imo)+CO(imo,j)*GTFdxzz !dxzz
+					tens3(2,3,3,imo)=tens3(2,3,3,imo)+CO(imo,j)*GTFdyzz !dyzz
+					tens3(2,2,3,imo)=tens3(2,2,3,imo)+CO(imo,j)*GTFdyyz !dyyz
+					tens3(1,2,3,imo)=tens3(1,2,3,imo)+CO(imo,j)*GTFdxyz !dxyz
+				end do
+				tens3(1,2,1,:)=tens3(1,1,2,:) !dxyx=dxxy
+				tens3(1,3,1,:)=tens3(1,1,3,:) !dxzx=dxxz
+				tens3(1,3,2,:)=tens3(1,2,3,:) !dxzy=dxyz
+				tens3(2,1,1,:)=tens3(1,1,2,:) !dyxx=dxxy
+				tens3(2,1,2,:)=tens3(1,2,2,:) !dyxy=dxyy
+				tens3(2,1,3,:)=tens3(1,2,3,:) !dyxz=dxyz
+				tens3(2,2,1,:)=tens3(1,2,2,:) !dyyx=dxyy
+				tens3(2,3,1,:)=tens3(1,2,3,:) !dyzx=dxyz
+				tens3(2,3,2,:)=tens3(2,2,3,:) !dyzy=dyyz
+				tens3(3,1,1,:)=tens3(1,1,3,:) !dzxx=dxxz
+				tens3(3,1,2,:)=tens3(1,2,3,:) !dzxy=dxyz
+				tens3(3,1,3,:)=tens3(1,3,3,:) !dzxz=dxzz
+				tens3(3,2,1,:)=tens3(1,2,3,:) !dzyx=dxyz
+				tens3(3,2,2,:)=tens3(2,2,3,:) !dzyy=dyyz
+				tens3(3,2,3,:)=tens3(2,3,3,:) !dzyz=dyzz
+				tens3(3,3,1,:)=tens3(1,3,3,:) !dzzx=dxzz
+				tens3(3,3,2,:)=tens3(2,3,3,:) !dzzy=dyzz
+			end if !end runtype>=5
+			
+		end if !end runtype>=3
+	end if !end runtype>=2
+end do
+
+else !Using very slow method: Looping all candidate GTFs in all possible cells. Unique GTF can be utilized
+
 call getpointcell(x,y,z,ic,jc,kc)
 do icell=ic-PBCnx,ic+PBCnx
     do jcell=jc-PBCny,jc+PBCny
         do kcell=kc-PBCnz,kc+PBCnz
+			facreal=cos(2*pi*(icell*kp1crd+jcell*kp2crd+kcell*kp3crd)) !Real part of exponent term of wavefunction
 			lastcen=-1 !Arbitrary value
             call tvec_PBC(icell,jcell,kcell,tvec)
             xmove=tvec(1)
@@ -842,16 +1065,16 @@ do icell=ic-PBCnx,ic+PBCnx
 						sftx=x-(a(jcen)%x+xmove)
 						sfty=y-(a(jcen)%y+ymove)
 						sftz=z-(a(jcen)%z+zmove)
-	            			sftx2=sftx*sftx
-	            			sfty2=sfty*sfty
-	            			sftz2=sftz*sftz
-	            			rr=sftx2+sfty2+sftz2
+	            		sftx2=sftx*sftx
+	            		sfty2=sfty*sfty
+	            		sftz2=sftz*sftz
+	            		rr=sftx2+sfty2+sftz2
 					end if
 					ep=b(j)%exp
 					tmpval=-ep*rr
 					lastcen=jcen
 					if (tmpval>expcutoff_PBC.or.expcutoff_PBC>0) then
-	            			expterm=exp(tmpval)
+                        expterm=exp(tmpval)*facreal !!!! Real part of exponent term of wavefunction is merged into exponent term to make it take effect properly without modifying any other codes
 					else
 						cycle
 					end if
@@ -1037,16 +1260,16 @@ do icell=ic-PBCnx,ic+PBCnx
 						sftx=x-(a(jcen)%x+xmove)
 						sfty=y-(a(jcen)%y+ymove)
 						sftz=z-(a(jcen)%z+zmove)
-	            			sftx2=sftx*sftx
-	            			sfty2=sfty*sfty
-	            			sftz2=sftz*sftz
-	            			rr=sftx2+sfty2+sftz2
+	            		sftx2=sftx*sftx
+	            		sfty2=sfty*sfty
+	            		sftz2=sftz*sftz
+	            		rr=sftx2+sfty2+sftz2
 					end if
 					ep=b_uniq(j)%exp
 					tmpval=-ep*rr
 					lastcen=jcen
 					if (tmpval>expcutoff_PBC.or.expcutoff_PBC>0) then
-	            			expterm=exp(tmpval)
+                        expterm=exp(tmpval)
 					else
 						cycle
 					end if
@@ -1229,6 +1452,9 @@ do icell=ic-PBCnx,ic+PBCnx
         end do
 	end do
 end do
+
+end if
+
 end subroutine
 
 
@@ -3174,7 +3400,7 @@ call orbderv(1,1,nmo,x,y,z,wfnval)
 loceleaff=0D0
 rho=0D0
 do i=1,nmo
-	if (MOocc(i)==0) then !Only cycles unoccupied orbitals 
+	if (MOocc(i)==0) then !Only cycle unoccupied orbitals
 		loceleaff=loceleaff-MOene(i)*wfnval(i)**2 !Don't need to multiply "occupation number", because ROHF is not allowed, so all orbitals have the same type
 		rho=rho+wfnval(i)**2 !Calculate rho
 	end if
@@ -3183,6 +3409,31 @@ if (rho==0D0) then
 	loceleaff=0D0 !Avoid at distant region rho become zero when exponent cutoff is used
 else
 	loceleaff=loceleaff/rho
+end if
+end function
+
+
+
+
+!!-------- Calculate Local electron attachment energy
+!Since virtual orbitals are involved, such as .fch/.molden/.gms must be used
+real*8 function loceleatt(x,y,z)
+real*8 x,y,z,wfnval(nmo)
+call orbderv(1,1,nmo,x,y,z,wfnval)
+loceleatt=0D0
+rho=0D0
+do i=1,nmo
+	tmp=wfnval(i)**2
+    rho=rho+MOocc(i)*tmp
+	if (MOocc(i)==0.and.MOene(i)<0) then !Only cycle unoccupied orbitals with negative energy
+		loceleatt=loceleatt+MOene(i)*tmp
+	end if
+end do
+if (wfntype==0) loceleatt=loceleatt*2
+if (rho==0D0) then
+	loceleatt=0D0 !Avoid at distant region rho become zero when exponent cutoff is used
+else
+	loceleatt=loceleatt/rho
 end if
 end function
 
@@ -3375,7 +3626,7 @@ end subroutine
 
 
 !!----- Calculate electron density, its gradient and Hessian matrix at x,y,z with promolecular approximation
-!Currently only employed by RDG analysis
+!Currently only employed by RDG analysis!!!!!!!!!!! The YWT fitted atomic density used in this subroutine is poor!
 !Electron density and its gradient are always calculated, Hessian will be calculated when "elehess" is present
 !Notice that global array "fragment" must be properly defined! Only the atoms in fragment will be taken into account
 subroutine calchessmat_prodens(xin,yin,zin,elerho,elegrad,elehess)
@@ -3403,43 +3654,43 @@ do icell=ic-PBCnx,ic+PBCnx
             call tvec_PBC(icell,jcell,kcell,tvec)
             do i=1,nfragatm
 	            iatm=fragatm(i)
-	            ind=a(iatm)%index
+	            iele=a(iatm)%index
 	            !rx=a(iatm)%x+tvec(1)-xin !Wrong code, older than 2022-Sep-18
 	            !ry=a(iatm)%y+tvec(2)-yin
 	            !rz=a(iatm)%z+tvec(3)-zin
-	            rx=xin+tvec(1)-a(iatm)%x !Relative x
-	            ry=yin+tvec(2)-a(iatm)%y
-	            rz=zin+tvec(3)-a(iatm)%z
+	            rx=xin-tvec(1)-a(iatm)%x !Relative x
+	            ry=yin-tvec(2)-a(iatm)%y
+	            rz=zin-tvec(3)-a(iatm)%z
 	            rx2=rx*rx
 	            ry2=ry*ry
 	            rz2=rz*rz
 	            r2=rx2+ry2+rz2
 	            r=dsqrt(r2)
-	            if (ind<=18) then !H~Ar, use Weitao Yang's fitted parameters as original RDG paper
+	            if (iele<=18) then !H~Ar, use Weitao Yang's fitted parameters as original RDG paper
 	                if (atomdenscut==1) then !Tight cutoff, for CHNO corresponding to cutoff at rho=0.00001
-		                if (ind==1.and.r2>25D0) then !H, 6.63^2=43.9569. But this seems to be unnecessarily large, so I use 5^2=25
+		                if (iele==1.and.r2>25D0) then !H, 6.63^2=43.9569. But this seems to be unnecessarily large, so I use 5^2=25
 			                cycle
-		                else if (ind==6.and.r2>58.6756D0) then !C, 7.66^2=58.6756
+		                else if (iele==6.and.r2>58.6756D0) then !C, 7.66^2=58.6756
 			                cycle
-		                else if (ind==7.and.r2>43.917129D0) then !N, 6.627^2=43.917129
+		                else if (iele==7.and.r2>43.917129D0) then !N, 6.627^2=43.917129
 			                cycle
-		                else if (ind==8.and.r2>34.9281D0) then !O, 5.91^2=34.9281
+		                else if (iele==8.and.r2>34.9281D0) then !O, 5.91^2=34.9281
 			                cycle
-		                else if (r2>(2.5D0*vdwr(ind))**2) then !Other cases, larger than 2.5 times of its vdw radius will be skipped
+		                else if (r2>(2.5D0*vdwr(iele))**2) then !Other cases, larger than 2.5 times of its vdw radius will be skipped
 			                cycle
 		                end if
 	                else if (atomdenscut==2) then !Medium cutoff, the result may be not as accurate as atomdenscut==1, but much more cheaper
-		                if (r2>(2.2D0*vdwr(ind))**2) cycle
+		                if (r2>(2.2D0*vdwr(iele))**2) cycle
 	                else if (atomdenscut==3) then !Loose cutoff, the most inaccurate
-		                if (r2>(1.8D0*vdwr(ind))**2) cycle
+		                if (r2>(1.8D0*vdwr(iele))**2) cycle
 	                else if (atomdenscut==4) then !Foolish cutoff, you need to know what you are doing
-		                if (r2>(1.5D0*vdwr(ind))**2) cycle
+		                if (r2>(1.5D0*vdwr(iele))**2) cycle
 	                end if
 		            r2_1d5=r2**1.5D0
-		            do j=1,3
-			            if (YWTatomcoeff(ind,j)==0D0) cycle
-			            expterm=YWTatomexp(ind,j)
-			            term=YWTatomcoeff(ind,j)*dexp(-r/expterm)
+		            do iSTO=1,3
+			            if (YWTatomcoeff(iele,iSTO)==0D0) cycle
+			            expterm=YWTatomexp(iele,iSTO)
+			            term=YWTatomcoeff(iele,iSTO)*dexp(-r/expterm)
 			            elerho=elerho+term
 			            if (r==0D0) cycle !Derivative of STO at nuclei is pointless
 			            tmp=term/expterm/r
@@ -3459,8 +3710,8 @@ do icell=ic-PBCnx,ic+PBCnx
 			            end if
 		            end do
 	            else !Heavier than Ar
-                    if (r>atmrhocut(ind)) cycle
-		            call genatmraddens(ind,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element
+                    if (r>atmrhocut(iele)) cycle
+		            call genatmraddens(iele,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element at specific grids
 		            if (idohess==0) then
 						call lagintpol(posarr(1:npt),rhoarr(1:npt),npt,r,term,der1r,der2r,2)
 		            else if (idohess==1) then
@@ -3506,29 +3757,53 @@ end subroutine
 
 
 
-!!------ Calculate atomic density based on STO fitted or radial density
-!PBC is supported
-!indSTO==0: All atom densities will be evaluated based on interpolation of built-in radial density, quite accurate
-!indSTO==18: Use STO fitted atomic density for element <18, quality is mediocre but fast (Weitao Yang, RDG original paper)
-real*8 function calcatmdens(iatm,x,y,z,indSTO)
-use util
-real*8 rho,x,y,z,posarr(200),rhoarr(200),tvec(3)
-integer iatm,indSTO
+!!------ Return radial electron density of an element at r
+!itype defines how the atomic densities will be evaluated
+!itype=-2: Fitted by no more than 10 GTFs
+!itype=-1: Fitted by a few STOs
+!itype=0: Interpolation of built-in radial density
+!itype=18: Use STO fitted atomic density for element <=18, quality is quite poor, not normalized to expected electron number, and thus highly deprecated! (From SI of RDG original paper)
+!  Accuracy: 0>-2>-1>>18   Cost: -2>=0>-1=18
+!  0 is best default choice because most accurate and not expensive. However its definition is truncated at finite distance, so if density at more distant region is needed, use -1(accurate) or -2 (cheaper)
+real*8 function eleraddens(iele,r,itype)
+integer iele,itype
+real*8 r,posarr(200),rhoarr(200),atomcoeff(10),atomexp(10)
+
+eleraddens=0
+if (iele==0) return !Bq atom
+if (itype==0) then !Interpolation by Lagrangian interpolation based on built-in grid data
+    if (r>atmrhocut(iele)) return !r is longer than the maximum distance that rho is prebuilt, unable to calculate
+	call genatmraddens(iele,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element at specific grids
+	call lagintpol(posarr(1:npt),rhoarr(1:npt),npt,r,eleraddens,der1r,der2r,1)
+else if (itype==-1) then !STOs fitted by Tian Lu
+	call genatmraddens_STOfitparm(iele,nSTO,atomcoeff,atomexp)
+    do iSTO=1,nSTO
+		eleraddens=eleraddens+atomcoeff(iSTO)*exp(-r*atomexp(iSTO))
+	end do
+else if (itype==-2) then !GTFs fitted by Tian Lu
+	call genatmraddens_GTFfitparm(iele,nGTF,atomcoeff,atomexp)
+    do iGTF=1,nGTF
+		eleraddens=eleraddens+atomcoeff(iGTF)*exp(-r**2*atomexp(iGTF))
+	end do
+else if (itype==18) then !H~Ar, STO fitted by YWT group
+	if (iele>18) return !Cannot evaluate
+	do iSTO=1,3
+		if (YWTatomcoeff(iele,iSTO)==0D0) cycle
+		eleraddens=eleraddens+YWTatomcoeff(iele,iSTO)*exp(-r/YWTatomexp(iele,iSTO))
+	end do
+end if
+end function
+
+
+!!------ Calculate isolated atomic density. PBC is supported. Meaning of itype is identical to "eleraddens"
+real*8 function calcatmdens(iatm,x,y,z,itype)
+real*8 x,y,z,tvec(3)
+integer iatm,itype
+iele=a(iatm)%index
 calcatmdens=0
-ind=a(iatm)%index
-if (ind==0) return
 if (ifPBC==0) then
     r=dsqrt( (a(iatm)%x-x)**2 + (a(iatm)%y-y)**2 + (a(iatm)%z-z)**2 )
-    if (ind<=indSTO) then !H~Ar, use STO fitted density. This is faster than using Lagrange interpolation technique, but not normalized to expected electron number
-	    do j=1,3
-		    if (YWTatomcoeff(ind,j)==0D0) cycle
-		    calcatmdens=calcatmdens+YWTatomcoeff(ind,j)*exp(-r/YWTatomexp(ind,j))
-	    end do
-    else
-        if (r>atmrhocut(ind)) return !r is longer than the maximum distance that rho is prebuilt, unable to calculate
-	    call genatmraddens(ind,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element at specific grids
-	    call lagintpol(posarr(1:npt),rhoarr(1:npt),npt,r,calcatmdens,der1r,der2r,1) !Evaluate rho(r) by interpolation
-    end if
+    calcatmdens=calcatmdens+eleraddens(iele,r,itype)
 else !Periodic case
     call getpointcell(x,y,z,ic,jc,kc)
     do icell=ic-PBCnx,ic+PBCnx
@@ -3539,31 +3814,45 @@ else !Periodic case
                 atmy=a(iatm)%y+tvec(2)
                 atmz=a(iatm)%z+tvec(3)
                 r=dsqrt( (atmx-x)**2 + (atmy-y)**2 + (atmz-z)**2 )
-                if (ind<=indSTO) then !H~Ar, use STO fitted density. This is faster than using Lagrange interpolation technique, but not normalized to expected electron number
-	                do j=1,3
-		                if (YWTatomcoeff(ind,j)==0D0) cycle
-		                calcatmdens=calcatmdens+YWTatomcoeff(ind,j)*exp(-r/YWTatomexp(ind,j))
-	                end do
-                else
-                    if (r>atmrhocut(ind)) cycle
-	                call genatmraddens(ind,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element
-	                call lagintpol(posarr(1:npt),rhoarr(1:npt),npt,r,atmdenstmp,der1r,der2r,1)
-                    calcatmdens=calcatmdens+atmdenstmp
-                end if
+				calcatmdens=calcatmdens+eleraddens(iele,r,itype)
             end do
         end do
     end do
 end if
 end function
-!!---- Calculate promolecular density. Meaning of indSTO is identical to calcatmdens
-real*8 function calcprodens(x,y,z,indSTO)
-real*8 x,y,z
-integer indSTO
+
+
+!!------ Calculate promolecular density. PBC is supported. Meaning of itype is identical to "eleraddens"
+real*8 function calcprodens(x,y,z,itype)
+real*8 x,y,z,r,tvec(3)
+integer itype
 calcprodens=0
-do i=1,nfragatm
-	iatm=fragatm(i) !Global variable
-	calcprodens=calcprodens+calcatmdens(iatm,x,y,z,indSTO)
-end do
+if (ifPBC==0) then
+	do i=1,nfragatm
+		iatm=fragatm(i) !Global variable
+		iele=a(iatm)%index
+		r=dsqrt( (a(iatm)%x-x)**2 + (a(iatm)%y-y)**2 + (a(iatm)%z-z)**2 )
+		calcprodens=calcprodens+eleraddens(iele,r,itype)
+	end do
+else
+    call getpointcell(x,y,z,ic,jc,kc)
+    do icell=ic-PBCnx,ic+PBCnx
+        do jcell=jc-PBCny,jc+PBCny
+            do kcell=kc-PBCnz,kc+PBCnz
+                call tvec_PBC(icell,jcell,kcell,tvec)
+				do i=1,nfragatm
+					iatm=fragatm(i) !Global variable
+					iele=a(iatm)%index
+					atmx=a(iatm)%x+tvec(1)
+					atmy=a(iatm)%y+tvec(2)
+					atmz=a(iatm)%z+tvec(3)
+					r=dsqrt( (atmx-x)**2 + (atmy-y)**2 + (atmz-z)**2 )
+					calcprodens=calcprodens+eleraddens(iele,r,itype)
+                end do
+            end do
+        end do
+    end do
+end if
 end function
 
 
@@ -3595,7 +3884,7 @@ end subroutine
 !Only atomic density obtained via Lagrangian interpolation density is used
 subroutine proatmgrad(iatm,x,y,z,rho,grad)
 real*8 posarr(200),rhoarr(200),rho,grad(3),tvec(3)
-ind=a(iatm)%index
+iele=a(iatm)%index
 rho=0
 grad=0
 call getpointcell(x,y,z,ic,jc,kc)
@@ -3606,16 +3895,16 @@ do icell=ic-PBCnx,ic+PBCnx
             !rx=a(iatm)%x+tvec(1)-x !Wrong code, older than 2022-Sep-18
             !ry=a(iatm)%y+tvec(2)-y
             !rz=a(iatm)%z+tvec(3)-z
-            rx=x+tvec(1)-a(iatm)%x
-            ry=y+tvec(2)-a(iatm)%y
-            rz=z+tvec(3)-a(iatm)%z
+            rx=x-tvec(1)-a(iatm)%x
+            ry=y-tvec(2)-a(iatm)%y
+            rz=z-tvec(3)-a(iatm)%z
             rx2=rx*rx
             ry2=ry*ry
             rz2=rz*rz
             r2=rx2+ry2+rz2
             r=dsqrt(r2)
-            if (r>atmrhocut(ind)) cycle
-            call genatmraddens(ind,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element
+            if (r>atmrhocut(iele)) cycle
+            call genatmraddens(iele,posarr,rhoarr,npt) !Extract spherically averaged radial density of corresponding element at specific grids
             call lagintpol(posarr(1:npt),rhoarr(1:npt),npt,r,rhotmp,der1r,der2r,2)
             rho=rho+rhotmp
             if (r/=0) then
@@ -3648,7 +3937,6 @@ call IGMgrad_Hirsh(x,y,z,frag2,grad2,IGM_gradnorm2)
 grad=grad1+grad2
 IGM_gradnorm=dsqrt(sum(grad1**2))+dsqrt(sum(grad2**2))
 delta_g_inter_Hirsh=IGM_gradnorm-dsqrt(sum(grad**2))
-!write(15,"(3f12.6,2f16.10)") x,y,z,IGM_gradnorm,dsqrt(sum(grad**2))
 end function
 
 
@@ -3999,9 +4287,7 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 	open(10,file="cubegenpt.txt",status="replace")
 	do ipt=1,ngridnum1
 		do jpt=1,ngridnum2
-			rnowx=orgx2D+(ipt-1)*v1x+(jpt-1)*v2x
-			rnowy=orgy2D+(ipt-1)*v1y+(jpt-1)*v2y
-			rnowz=orgz2D+(ipt-1)*v1z+(jpt-1)*v2z
+            call get2Dgridxyz(ipt,jpt,rnowx,rnowy,rnowz)
 			write(10,"(3f16.8)") rnowx*b2a,rnowy*b2a,rnowz*b2a
 		end do
 	end do
@@ -4036,27 +4322,31 @@ if (alive.and.ifiletype==1) then !Use cubegen to calculate ESP
 
 else
 	!Calculate ESP of electron contribution
-    if (iESPcode==1) then !Old slow code, but opitimized specifically for plane grid
+    if (iESPcode==1) then !Old slow code, but optimized specifically for plane grid
         call planeeleesp
     else if (iESPcode==2.or.iESPcode==3) then !Based on libreta
         nESPthreads=nthreads
         call doinitlibreta(1)
-        if (isys==1.and.nESPthreads>10) nESPthreads=10
+        if (isys==1.and.nESPthreads>12) nESPthreads=12
         write(*,*)
 	    ifinish=0
-        !$OMP PARALLEL DO SHARED(planemat,ifinish) PRIVATE(ii,jj,Cx,Cy,Cz) schedule(dynamic) NUM_THREADS(nESPthreads)
+        ntmp=floor(ngridnum1*ngridnum1/100D0)
+        !$OMP PARALLEL DO SHARED(planemat,ifinish,ishowprog) PRIVATE(ii,jj,Cx,Cy,Cz) schedule(dynamic) NUM_THREADS(nESPthreads) collapse(2)
 	    do ii=0,ngridnum1-1
 		    do jj=0,ngridnum2-1
 			    Cx=orgx2D+ii*v1x+jj*v2x
 			    Cy=orgy2D+ii*v1y+jj*v2y
 			    Cz=orgz2D+ii*v1z+jj*v2z
 			    planemat(ii+1,jj+1)=eleesp(Cx,Cy,Cz)
+				!$OMP CRITICAL
+				ifinish=ifinish+1
+				ishowprog=mod(ifinish,ntmp)
+				if (ishowprog==0) call showprog(floor(100D0*ifinish/(ngridnum1*ngridnum1)),100)
+        		!$OMP END CRITICAL
 		    end do
-            ifinish=ifinish+1
-            call showprog(ifinish,ngridnum1)
 	    end do
         !$OMP END PARALLEL DO
-        if (ifinish<ngridnum1) call showprog(ngridnum1,ngridnum1)
+        if (ishowprog/=0) call showprog(100,100)
     end if
     
 	!Combine ESP of nuclear contribution into plane map
@@ -5020,7 +5310,7 @@ derv(2)=(stericpot_damp(x,y+diffstep,z)-stericpot_damp(x,y-diffstep,z))/(2*diffs
 derv(3)=(stericpot_damp(x,y,z+diffstep)-stericpot_damp(x,y,z-diffstep))/(2*diffstep)
 stericforce_damp=dsqrt(sum(derv**2))
 end function
-!!---- Steric force directly damped to zero rather than based on damped steric potential
+!!---- Steric force directly damped to zero, rather than based on damped steric potential
 real*8 function stericforce_directdamp(x,y,z)
 real*8 x,y,z
 weiwidth=2
@@ -5040,7 +5330,6 @@ steric_addminimal=0
 stericforce_directdamp=stericforce(x,y,z)*consorg
 steric_addminimal=steric_addminimalold
 end function
-
 
 
 
@@ -5065,6 +5354,26 @@ derv2z=(derv1add(3)-derv1min(3))/(2*diffstep) !d2v/dz2
 stericcharge=-(derv2x+derv2y+derv2z)/4D0/pi
 end function
 
+!!------- Steric charge directly damped to zero
+real*8 function stericcharge_directdamp(x,y,z)
+real*8 x,y,z
+weiwidth=2
+tmps=-(dlog(fdens(x,y,z))-steric_potcutrho)/weiwidth
+if (tmps<-1) then
+	consorg=1
+else if (tmps>1) then
+	consorg=0
+else
+	do iter=1,2
+		tmps=1.5D0*(tmps)-0.5D0*(tmps)**3
+	end do
+	consorg=0.5D0*(1-tmps)
+end if
+steric_addminimalold=steric_addminimal
+steric_addminimal=0
+stericcharge_directdamp=stericcharge(x,y,z)*consorg
+steric_addminimal=steric_addminimalold
+end function
 
 
 
@@ -5390,81 +5699,110 @@ end function
 
 
 
-!!------- Use trilinear interpolation to obtain value at a given point by using cubmat
+!!------- Use trilinear interpolation to obtain value at a given point by using cubmat. Both orthogonal and nonorthogonal grids are supported
 !itype==1: interpolate from cubmat, =2: from cubmattmp
+!Ref.: https://en.wikipedia.org/wiki/Trilinear_interpolation
+!Trilinear interpolation is equivalent to linear interpolation between two bilinear interpolations
+!In this case, the cell defining fractional coordinate corresponds to the box containing all grids. Origin of fractional coordinate is (orgx,orgy,orgz)
 real*8 function linintp3d(x,y,z,itype)
 real*8 x,y,z
 integer itype
-character c80tmp*80
-do ix=1,nx
-	x1=orgx+(ix-1)*dx
-	x2=orgx+ix*dx
-	if (x>=x1.and.x<x2) exit  !1D-10 is used to avoid numerical uncertainty
+real*8 Cart(3),fract(3),tmpvec(3)
+real*8 i1_val,i2_val,i3_val,i1_low,i2_low,i3_low,i1_high,i2_high,i3_high,d1,d2,d3
+
+linintp3d=0
+if (itype==1.and.(.not.allocated(cubmat))) return
+if (itype==2.and.(.not.allocated(cubmattmp))) return
+
+!Get fractional coordinate of present position
+Cart(1)=x;Cart(2)=y;Cart(3)=z
+call Cart2fract_grid(Cart,fract)
+i1_val=fract(1);i2_val=fract(2);i3_val=fract(3)
+d1=1D0/nx !Grid spacing of fractional coordinate in each direction
+d2=1D0/ny
+d3=1D0/nz
+do i1=1,nx
+	i1_low=(i1-1)*d1
+	i1_high=i1_low+d1
+	if (i1_val>=i1_low.and.i1_val<i1_high) exit
 end do
-do iy=1,ny
-	y1=orgy+(iy-1)*dy
-	y2=orgy+iy*dy
-	if (y>=y1.and.y<y2) exit
+do i2=1,ny
+	i2_low=(i2-1)*d2
+	i2_high=i2_low+d2
+	if (i2_val>=i2_low.and.i2_val<i2_high) exit
 end do
-do iz=1,nz
-	z1=orgz+(iz-1)*dz
-	z2=orgz+iz*dz
-	if (z>=z1.and.z<z2) exit
+do i3=1,nz
+	i3_low=(i3-1)*d3
+	i3_high=i3_low+d3
+	if (i3_val>=i3_low.and.i3_val<i3_high) exit
 end do
-if (ix>=nx.or.iy>=ny.or.iz>=nz) then !Out of grid data range
-	linintp3d=0D0
-else
+
+if (i1<nx.and.i2<ny.and.i3<nz) then
+	!Perform two bilinear interpolations first, then further linear interpolation
 	if (itype==1) then
-		valxy1=( cubmat(ix,iy,iz  )*(x2-x)*(y2-y) + cubmat(ix+1,iy,iz  )*(x-x1)*(y2-y) + &
-			cubmat(ix,iy+1,iz  )*(x2-x)*(y-y1) + cubmat(ix+1,iy+1,iz  )*(x-x1)*(y-y1) ) /dx/dy
-		valxy2=( cubmat(ix,iy,iz+1)*(x2-x)*(y2-y) + cubmat(ix+1,iy,iz+1)*(x-x1)*(y2-y) + &
-			cubmat(ix,iy+1,iz+1)*(x2-x)*(y-y1) + cubmat(ix+1,iy+1,iz+1)*(x-x1)*(y-y1) ) /dx/dy
+		val12_low= ( cubmat(i1,i2,i3    )*(i1_high-i1_val)*(i2_high-i2_val) + cubmat(i1+1,i2,i3    )*(i1_val-i1_low)*(i2_high-i2_val) + &
+			         cubmat(i1,i2+1,i3  )*(i1_high-i1_val)*(i2_val-i2_low ) + cubmat(i1+1,i2+1,i3  )*(i1_val-i1_low)*(i2_val-i2_low ) ) /(d1*d2)
+		val12_high=( cubmat(i1,i2,i3+1  )*(i1_high-i1_val)*(i2_high-i2_val) + cubmat(i1+1,i2,i3+1  )*(i1_val-i1_low)*(i2_high-i2_val) + &
+			         cubmat(i1,i2+1,i3+1)*(i1_high-i1_val)*(i2_val-i2_low ) + cubmat(i1+1,i2+1,i3+1)*(i1_val-i1_low)*(i2_val-i2_low ) ) /(d1*d2)
 	else
-		valxy1=( cubmattmp(ix,iy,iz  )*(x2-x)*(y2-y) + cubmattmp(ix+1,iy,iz  )*(x-x1)*(y2-y) + &
-			cubmattmp(ix,iy+1,iz  )*(x2-x)*(y-y1) + cubmattmp(ix+1,iy+1,iz  )*(x-x1)*(y-y1) ) /dx/dy
-		valxy2=( cubmattmp(ix,iy,iz+1)*(x2-x)*(y2-y) + cubmattmp(ix+1,iy,iz+1)*(x-x1)*(y2-y) + &
-			cubmattmp(ix,iy+1,iz+1)*(x2-x)*(y-y1) + cubmattmp(ix+1,iy+1,iz+1)*(x-x1)*(y-y1) ) /dx/dy
+		val12_low= ( cubmattmp(i1,i2,i3    )*(i1_high-i1_val)*(i2_high-i2_val) + cubmattmp(i1+1,i2,i3    )*(i1_val-i1_low)*(i2_high-i2_val) + &
+			         cubmattmp(i1,i2+1,i3  )*(i1_high-i1_val)*(i2_val-i2_low ) + cubmattmp(i1+1,i2+1,i3  )*(i1_val-i1_low)*(i2_val-i2_low ) ) /(d1*d2)
+		val12_high=( cubmattmp(i1,i2,i3+1  )*(i1_high-i1_val)*(i2_high-i2_val) + cubmattmp(i1+1,i2,i3+1  )*(i1_val-i1_low)*(i2_high-i2_val) + &
+			         cubmattmp(i1,i2+1,i3+1)*(i1_high-i1_val)*(i2_val-i2_low ) + cubmattmp(i1+1,i2+1,i3+1)*(i1_val-i1_low)*(i2_val-i2_low ) ) /(d1*d2)
 	end if
-	linintp3d=valxy1+(z-z1)*(valxy2-valxy1)/dz
+	linintp3d=val12_low+(i3_val-i3_low)*(val12_high-val12_low)/d3
+else !Out of grid data range
+	linintp3d=0D0
 end if
 end function
 
 
 
 
-!!-------- Trilinear interpolation of 3D-vector field by using cubmatvec
+!!------- Trilinear interpolation of 3D-vector field by using cubmatvec. Both orthogonal and nonorthogonal grids are supported
+!See comment in subroutine linintp3d for more information
 subroutine linintp3dvec(x,y,z,vecintp)
-real*8 x,y,z,vecintp(3),valxy1(3),valxy2(3)
-do ix=1,nx
-	x1=orgx+(ix-1)*dx
-	x2=orgx+ix*dx
-	if (x>=x1.and.x<x2) exit
+real*8 x,y,z,vecintp(3),val12_low(3),val12_high(3)
+real*8 Cart(3),fract(3),tmpvec(3)
+real*8 i1_val,i2_val,i3_val,i1_low,i2_low,i3_low,i1_high,i2_high,i3_high,d1,d2,d3
+
+Cart(1)=x;Cart(2)=y;Cart(3)=z
+call Cart2fract_grid(Cart,fract)
+i1_val=fract(1);i2_val=fract(2);i3_val=fract(3)
+d1=1D0/nx !Grid spacing of fractional coordinate in each direction
+d2=1D0/ny
+d3=1D0/nz
+do i1=1,nx
+	i1_low=(i1-1)*d1
+	i1_high=i1_low+d1
+	if (i1_val>=i1_low.and.i1_val<i1_high) exit
 end do
-do iy=1,ny
-	y1=orgy+(iy-1)*dy
-	y2=orgy+iy*dy
-	if (y>=y1.and.y<y2) exit
+do i2=1,ny
+	i2_low=(i2-1)*d2
+	i2_high=i2_low+d2
+	if (i2_val>=i2_low.and.i2_val<i2_high) exit
 end do
-do iz=1,nz
-	z1=orgz+(iz-1)*dz
-	z1=orgz+iz*dz
-	if (z>=z1.and.z<z2) exit
+do i3=1,nz
+	i3_low=(i3-1)*d3
+	i3_high=i3_low+d3
+	if (i3_val>=i3_low.and.i3_val<i3_high) exit
 end do
-if (ix>nx.or.iy>ny.or.iz>nz) then !Out of grid data range
+
+if (i1<nx.and.i2<ny.and.i3<nz) then
+	val12_low(:)= ( cubmatvec(:,i1,i2,i3    )*(i1_high-i1_val)*(i2_high-i2_val) + cubmatvec(:,i1+1,i2,i3    )*(i1_val-i1_low)*(i2_high-i2_val) + &
+			        cubmatvec(:,i1,i2+1,i3  )*(i1_high-i1_val)*(i2_val-i2_low ) + cubmatvec(:,i1+1,i2+1,i3  )*(i1_val-i1_low)*(i2_val-i2_low ) ) /(d1*d2)
+	val12_high(:)=( cubmatvec(:,i1,i2,i3+1  )*(i1_high-i1_val)*(i2_high-i2_val) + cubmatvec(:,i1+1,i2,i3+1  )*(i1_val-i1_low)*(i2_high-i2_val) + &
+			        cubmatvec(:,i1,i2+1,i3+1)*(i1_high-i1_val)*(i2_val-i2_low ) + cubmatvec(:,i1+1,i2+1,i3+1)*(i1_val-i1_low)*(i2_val-i2_low ) ) /(d1*d2)
+	vecintp(:)=val12_low(:)+(i3_val-i3_low)*(val12_high(:)-val12_low(:))/d3
+else !Out of grid data range
 	vecintp=0D0
-else
-	valxy1(:)=( cubmatvec(:,ix,iy,iz  )*(x2-x)*(y2-y) + cubmatvec(:,ix+1,iy,iz  )*(x-x1)*(y2-y) + &
-		cubmatvec(:,ix,iy+1,iz  )*(x2-x)*(y-y1) + cubmatvec(:,ix+1,iy+1,iz  )*(x-x1)*(y-y1) ) /dx/dy
-	valxy2(:)=( cubmatvec(:,ix,iy,iz+1)*(x2-x)*(y2-y) + cubmatvec(:,ix+1,iy,iz+1)*(x-x1)*(y2-y) + &
-		cubmatvec(:,ix,iy+1,iz+1)*(x2-x)*(y-y1) + cubmatvec(:,ix+1,iy+1,iz+1)*(x-x1)*(y-y1) ) /dx/dy
-	vecintp=valxy1+(z-z1)*(valxy2-valxy1)/dz
 end if
 end subroutine
 
 
 
 
-!!-------- Use cubic spline interpolation to obtain value at a given point by using cubmat
+!!-------- Use cubic spline interpolation to obtain value at a given point by using cubmat. Both orthogonal and nonorthogonal grids are supported
 !itype==1: interpolate from cubmat, =2: from cubmattmp
 !If all grid points in cubmat are used in the interpolation, the cost will be extremely high if very large number of points are to be calculated, &
 !therefore I decide only takes a few grids around the present position for the interpolation, and this idea works well and the cost is significantly lowered
@@ -5473,68 +5811,81 @@ end subroutine
 real*8 function splineintp3D(x,y,z,itype)
 use bspline_sub_module
 real*8 x,y,z
+real*8 Cart(3),fract(3),tmpvec(3)
+real*8 i1_val,i2_val,i3_val,i1_low,i2_low,i3_low,i1_high,i2_high,i3_high,d1,d2,d3
 integer itype
 integer,parameter :: norder=4 !4 corresponds to cubic spline interpolation. order = polynomial degree + 1, order from 3 to 6 are supported
 !According to my experience, norder=4~6 has negligible difference. Even norder=3 is quite similar to norder=4. The norder seems doesn't affect cost
-integer,parameter :: kx=norder,ky=norder,kz=norder
+integer,parameter :: k1=norder,k2=norder,k3=norder
 integer :: inbvx=1,inbvy=1,inbvz=1,iloy=1,iloz=1 !Must be set to 1 before call as mentioned in the test file, though I don't know why
 integer :: iknot=0  !Automatically determine the knots
 integer,parameter :: next=4 !The number of extended grids on both sides. Test showed that 4 leads to converge result, increasing it will not detectably affect result
 integer,parameter :: nlocgrd=2+2*next
-real*8 :: xarr(nlocgrd),yarr(nlocgrd),zarr(nlocgrd)
-real*8 tx(nlocgrd+kx),ty(nlocgrd+ky),tz(nlocgrd+kz) !Not used because I let knot automatically determined, but these arrays must be defined
+real*8 :: arr1(nlocgrd),arr2(nlocgrd),arr3(nlocgrd)
+real*8 t1(nlocgrd+k1),t2(nlocgrd+k2),t3(nlocgrd+k3) !Not used because I let knot automatically determined, but these arrays must be defined
 real*8 cubloc(nlocgrd,nlocgrd,nlocgrd),spline3Dcoeff(nlocgrd,nlocgrd,nlocgrd)
 
-do ix=1,nx
-	x1=orgx+(ix-1)*dx
-	x2=orgx+ix*dx
-	if (x>=x1.and.x<x2) exit
+splineintp3D=0
+if (itype==1.and.(.not.allocated(cubmat))) return
+if (itype==2.and.(.not.allocated(cubmattmp))) return
+
+Cart(1)=x;Cart(2)=y;Cart(3)=z
+call Cart2fract_grid(Cart,fract)
+i1_val=fract(1);i2_val=fract(2);i3_val=fract(3)
+d1=1D0/nx !Grid spacing of fractional coordinate in each direction
+d2=1D0/ny
+d3=1D0/nz
+do i1=1,nx
+	i1_low=(i1-1)*d1
+	i1_high=i1_low+d1
+	if (i1_val>=i1_low.and.i1_val<i1_high) exit
 end do
-do iy=1,ny
-	y1=orgy+(iy-1)*dy
-	y2=orgy+iy*dy
-	if (y>=y1.and.y<y2) exit
+do i2=1,ny
+	i2_low=(i2-1)*d2
+	i2_high=i2_low+d2
+	if (i2_val>=i2_low.and.i2_val<i2_high) exit
 end do
-do iz=1,nz
-	z1=orgz+(iz-1)*dz
-	z2=orgz+iz*dz
-	if (z>=z1.and.z<z2) exit
+do i3=1,nz
+	i3_low=(i3-1)*d3
+	i3_high=i3_low+d3
+	if (i3_val>=i3_low.and.i3_val<i3_high) exit
 end do
-if (ix+1>nx-next.or.iy+1>ny-next.or.iz+1>nz-next .or. ix<next+1.or.iy<next+1.or.iz<next+1) then !Out of grid data range
+if (i1+1>nx-next.or.i2+1>ny-next.or.i3+1>nz-next .or. i1<next+1.or.i2<next+1.or.i3<next+1) then !Out of grid data range
 	splineintp3D=0D0
     return
 end if
-ilowx=ix-next
-ihighx=ix+1+next
-ilowy=iy-next
-ihighy=iy+1+next
-ilowz=iz-next
-ihighz=iz+1+next
-do ix=ilowx,ihighx
-    xarr(ix-ilowx+1)=orgx+(ix-1)*dx
+!Determine the index range of the grids around present point, these grids will be actually used in interpolation
+ilow1=i1-next
+ihigh1=i1+1+next
+ilow2=i2-next
+ihigh2=i2+1+next
+ilow3=i3-next
+ihigh3=i3+1+next
+do i1=ilow1,ihigh1
+    arr1(i1-ilow1+1)=(i1-1)*d1
 end do
-do iy=ilowy,ihighy
-    yarr(iy-ilowy+1)=orgy+(iy-1)*dy
+do i2=ilow2,ihigh2
+    arr2(i2-ilow2+1)=(i2-1)*d2
 end do
-do iz=ilowz,ihighz
-    zarr(iz-ilowz+1)=orgz+(iz-1)*dz
+do i3=ilow3,ihigh3
+    arr3(i3-ilow3+1)=(i3-1)*d3
 end do
-do ix=ilowx,ihighx
-    do iy=ilowy,ihighy
-        do iz=ilowz,ihighz
-            if (itype==1) cubloc(ix-ilowx+1,iy-ilowy+1,iz-ilowz+1)=cubmat(ix,iy,iz)
-            if (itype==2) cubloc(ix-ilowx+1,iy-ilowy+1,iz-ilowz+1)=cubmattmp(ix,iy,iz)
+do i1=ilow1,ihigh1
+    do i2=ilow2,ihigh2
+        do i3=ilow3,ihigh3
+            if (itype==1) cubloc(i1-ilow1+1,i2-ilow2+1,i3-ilow3+1)=cubmat(i1,i2,i3)
+            if (itype==2) cubloc(i1-ilow1+1,i2-ilow2+1,i3-ilow3+1)=cubmattmp(i1,i2,i3)
         end do
     end do
 end do
 
 !Initialize
-call db3ink(xarr,nlocgrd,yarr,nlocgrd,zarr,nlocgrd,cubloc,kx,ky,kz,iknot,tx,ty,tz,spline3Dcoeff,iflag)
+call db3ink(arr1,nlocgrd,arr2,nlocgrd,arr3,nlocgrd,cubloc,k1,k2,k3,iknot,t1,t2,t3,spline3Dcoeff,iflag)
 if (iflag/=0) write(*,*) "Error when initializing B-spline!"
 
 !Evaluate value
-idx=0;idy=0;idz=0 !Do not evaluate derivative
-call db3val(x,y,z,idx,idy,idz,tx,ty,tz,nlocgrd,nlocgrd,nlocgrd,kx,ky,kz,spline3Dcoeff,splineintp3D,iflag,inbvx,inbvy,inbvz,iloy,iloz)
+id1=0;id2=0;id3=0 !Do not evaluate derivative
+call db3val(i1_val,i2_val,i3_val,id1,id2,id3,t1,t2,t3,nlocgrd,nlocgrd,nlocgrd,k1,k2,k3,spline3Dcoeff,splineintp3D,iflag,inbvx,inbvy,inbvz,iloy,iloz)
 end function
 
 
@@ -5989,6 +6340,8 @@ real*8 x,y,z
 integer nlen,atmlist(nlen)
 dist2minin=1D100 !The nearest distance to atoms inside
 dist2minext=1D100 !The nearest distance to atoms outside
+iminin=0
+iminext=0
 do iatm=1,ncenter
 	dist2=(a(iatm)%x-x)**2+(a(iatm)%y-y)**2+(a(iatm)%z-z)**2
 	if (any(atmlist==iatm)) then !Atoms inside
@@ -6003,6 +6356,10 @@ do iatm=1,ncenter
 		end if
 	end if
 end do
+if (iminin==0.or.iminext==0) then !In this case there must be a bug in constructing the surface
+    surfana_norm=0
+    return
+end if
 di=dsqrt(dist2minin)
 de=dsqrt(dist2minext)
 rvdwin=vdwr(a(iminin)%index)
@@ -6014,14 +6371,14 @@ end function
 
 
 !!-------- PAEM, potential acting on one electron in a molecule, defined by Zhongzhi Yang in JCC,35,965(2014)
-!If itype=1, evaluate the XC potential based on pair density, in this case GTFint will be generated first and used throughout
+!If itype=1, evaluate the XC potential based on pair density with Muller approximation, in this case GTFint will be generated first and used throughout
 !If itype=2, it will be equivalent to DFT XC potential, in this case libreta will be used to compute ESP
 real*8 function PAEM(x,y,z,itype)
 integer itype
 real*8 x,y,z,wfnval(nmo),GTFint(nprims,nprims)
 if (itype==1) then !Based on Muller approximation form
+	call genGTFattmat(x,y,z,GTFint) !GTFint will be used in the following parts
 	!Evaluate electron contribution to ESP
-	call genGTFattmat(x,y,z,GTFint)
 	rhopot=0
 	do imo=1,nmo
 		do iprim=1,nprims

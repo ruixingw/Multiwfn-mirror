@@ -478,7 +478,7 @@ do iatm=1,ncenter !Cycle each atom
 	!Calculate Becke weight
 	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
 	
-	!Calculate Hirshfeld weight
+	!Calculate atom densities for evaluating Hirshfeld weight later
 	do jatm=1,ncenter_org
 		call dealloall(0)
 		call readwfn(custommapname(jatm),1)
@@ -1129,44 +1129,47 @@ end subroutine
 
 
 !!------- Calculate some quantities involved in Shubin's project in a plane
-!itype=1: Calculate the sum of atomic relative Shannon entropy (namely total relative Shannon entropy)
+!itype=1: Calculate the sum of atomic relative Shannon entropy (namely total relative Shannon entropy). sum{rho(A)*ln[rho(A)/rho0(A)]}
 !itype=2: Calculate the sum of x=[rhoA-rho0A]/rhoA
 !itype=3: Calculate the difference between total relative Shannon entropy and deformation density
+!itype=4: Calculate 2nd relative Onicescu information sum{[rho(A)]^2/rho0(A)}
+!itype=5: Calculate 3rd relative Onicescu information sum{[rho(A)]^3/[rho0(A)]^2}/2
 subroutine genentroplane(itype)
 use defvar
 use functions
 implicit real*8 (a-h,o-z)
 integer itype
 real*8 planeprodens(ngridnum1,ngridnum2),planedens(ngridnum1,ngridnum2)
+
 if (allocated(planemat)) deallocate(planemat)
 allocate(planemat(ngridnum1,ngridnum2))
 planeprodens=0D0
 planemat=0D0
+
 !Calculate molecular density in the plane and store it to planedens
 !$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planedens) schedule(dynamic) NUM_THREADS(nthreads)
 do i=1,ngridnum1
 	do j=1,ngridnum2
-		rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-		rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-		rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+        call get2Dgridxyz(i,j,rnowx,rnowy,rnowz)
 		planedens(i,j)=fdens(rnowx,rnowy,rnowz)
 	end do
 end do
 !$OMP END PARALLEL DO
-do jatm=1,ncenter_org !Calculate promolecular density in the plane and store it to planeprodens
+
+!Calculate promolecular density in the plane and store it to planeprodens
+do jatm=1,ncenter_org
 	call dealloall(0)
 	call readwfn(custommapname(jatm),1)
 	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz) shared(planeprodens) schedule(dynamic) NUM_THREADS(nthreads)
 	do i=1,ngridnum1
 		do j=1,ngridnum2
-			rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-			rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-			rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+            call get2Dgridxyz(i,j,rnowx,rnowy,rnowz)
 			planeprodens(i,j)=planeprodens(i,j)+fdens(rnowx,rnowy,rnowz)
 		end do
 	end do
 	!$OMP END PARALLEL DO
 end do
+
 !Calculate Hirshfeld weight, relative Shannon entropy and x=[rhoA-rho0A]/rhoA for each atom in the plane and accumulate them to planemat
 do jatm=1,ncenter_org !Cycle each atom, calculate its contribution in the plane
 	call dealloall(0)
@@ -1174,13 +1177,18 @@ do jatm=1,ncenter_org !Cycle each atom, calculate its contribution in the plane
 	!$OMP PARALLEL DO private(i,j,rnowx,rnowy,rnowz,rho0A,rhoA,tmpval) shared(planemat) schedule(dynamic) NUM_THREADS(nthreads)
 	do i=1,ngridnum1
 		do j=1,ngridnum2
-			rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-			rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-			rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+            call get2Dgridxyz(i,j,rnowx,rnowy,rnowz)
 			rho0A=fdens(rnowx,rnowy,rnowz)
 			rhoA=planedens(i,j)*rho0A/planeprodens(i,j)
-			if (itype==1.or.itype==3) tmpval=rhoA*log(rhoA/rho0A) !Relative Shannon entropy
-			if (itype==2) tmpval=(rhoA-rho0A)/rhoA !x=[rhoA-rho0A]/rhoA
+			if (itype==1.or.itype==3) then
+				tmpval=rhoA*log(rhoA/rho0A) !Relative Shannon entropy
+			else if (itype==2) then
+				tmpval=(rhoA-rho0A)/rhoA !x=[rhoA-rho0A]/rhoA
+			else if (itype==4) then
+				tmpval=rhoA**2/rho0A
+			else if (itype==5) then
+				tmpval=(rhoA**3/rho0A**2)/2D0
+            end if
 			planemat(i,j)=planemat(i,j)+tmpval
 		end do
 	end do
@@ -1190,6 +1198,88 @@ call dealloall(0)
 call readinfile(firstfilename,1) !Retrieve the first loaded file(whole molecule)
 if (itype==3) planemat=planemat-(planedens-planeprodens) !Diff between total relative Shannon entropy and deformation density
 end subroutine
+
+
+
+
+!!------- Calculate some quantities involved in Shubin's project as grid data
+!Definition is the same as subroutine genentroplane
+subroutine genentrocub(itype)
+use defvar
+use functions
+implicit real*8 (a-h,o-z)
+integer itype
+real*8 cubprodens(nx,ny,nz),cubdens(nx,ny,nz)
+
+call setpromol
+
+if (allocated(cubmat)) deallocate(cubmat)
+allocate(cubmat(nx,ny,nz))
+cubprodens=0D0
+cubmat=0D0
+
+!Calculate molecular density grid data and store it to cubdens
+write(*,*) "Calculating real electron density grid data..."
+!$OMP PARALLEL DO SHARED(cubdens) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
+do k=1,nz
+	do j=1,ny
+		do i=1,nx
+			call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+			cubdens(i,j,k)=fdens(tmpx,tmpy,tmpz)
+		end do
+	end do
+end do
+!$OMP END PARALLEL DO
+
+write(*,*) "Calculating promolecular density grid data..."
+do jatm=1,ncenter_org
+	call dealloall(0)
+	call readwfn(custommapname(jatm),1)
+	!$OMP PARALLEL DO SHARED(cubprodens) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
+	do k=1,nz
+		do j=1,ny
+			do i=1,nx
+				call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+                cubprodens(i,j,k)=cubprodens(i,j,k)+fdens(tmpx,tmpy,tmpz)
+			end do
+		end do
+	end do
+	!$OMP END PARALLEL DO
+    call showprog(jatm,ncenter_org)
+end do
+
+write(*,*) "Calculating promolecular grid data of information-theoretic quantities..."
+do jatm=1,ncenter_org !Cycle each atom, calculate its contribution
+	call dealloall(0)
+	call readwfn(custommapname(jatm),1)
+	!$OMP PARALLEL DO SHARED(cubmat) PRIVATE(i,j,k,tmpx,tmpy,tmpz,rho0A,rhoA,tmpval) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
+	do k=1,nz
+		do j=1,ny
+			do i=1,nx
+				call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+                rho0A=fdens(tmpx,tmpy,tmpz)
+				rhoA=cubdens(i,j,k)*rho0A/cubprodens(i,j,k)
+				if (itype==1.or.itype==3) then
+					tmpval=rhoA*log(rhoA/rho0A) !Relative Shannon entropy
+				else if (itype==2) then
+					tmpval=(rhoA-rho0A)/rhoA !x=[rhoA-rho0A]/rhoA
+				else if (itype==4) then
+					tmpval=rhoA**2/rho0A
+				else if (itype==5) then
+					tmpval=(rhoA**3/rho0A**2)/2D0
+				end if
+				cubmat(i,j,k)=cubmat(i,j,k)+tmpval
+			end do
+		end do
+	end do
+	!$OMP END PARALLEL DO
+    call showprog(jatm,ncenter_org)
+end do
+call dealloall(0)
+call readinfile(firstfilename,1) !Retrieve the first loaded file(whole molecule)
+if (itype==3) cubmat=cubmat-(cubdens-cubprodens) !Diff between total relative Shannon entropy and deformation density
+end subroutine
+
 
 
 
@@ -1272,9 +1362,7 @@ real*8 tmparr(3),tmpmat(3,3)
 !$OMP parallel do shared(rho,derrho,hessrho) private(i,j,rnowx,rnowy,rnowz) num_threads(nthreads)
 do i=1,ngridnum1
 	do j=1,ngridnum2
-		rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-		rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-		rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+        call get2Dgridxyz(i,j,rnowx,rnowy,rnowz)
         call calchessmat_dens(2,rnowx,rnowy,rnowz,rho(i,j),derrho(:,i,j),hessrho(:,:,i,j))
     end do
 end do
@@ -1293,9 +1381,7 @@ do ipro=1,ncustommap
     !$OMP parallel do shared(rho,derrho,hessrho) private(i,j,rnowx,rnowy,rnowz,tmprho,tmparr,tmpmat) num_threads(nthreads)
     do i=1,ngridnum1
 	    do j=1,ngridnum2
-		    rnowx=orgx2D+(i-1)*v1x+(j-1)*v2x
-		    rnowy=orgy2D+(i-1)*v1y+(j-1)*v2y
-		    rnowz=orgz2D+(i-1)*v1z+(j-1)*v2z
+            call get2Dgridxyz(i,j,rnowx,rnowy,rnowz)
             call calchessmat_dens(2,rnowx,rnowy,rnowz,tmprho,tmparr,tmpmat)
             rho0(i,j)=rho0(i,j)+tmprho
             derrho0(:,i,j)=derrho0(:,i,j)+tmparr(:)
@@ -1670,6 +1756,12 @@ write(*,"(a)") " 7 Fermionic quantum energy Eq=Tp+Exc (evaluating Tp based on Ha
 write(*,"(a)") " -7 Fermionic quantum energy Eq=Tp+Exc (evaluating Tp based on Lagrangian kinetic energy density)"
 read(*,*) ienedens
 
+write(*,*)
+write(*,*) "Use origin form or scaled (normalized) form of the energy density?"
+write(*,*) "1 Origin form"
+write(*,*) "2 Scaled form"
+read(*,*) iform
+
 if (ienedens==2) then
 	ifunc=6
 else if (ienedens==-2) then
@@ -1685,9 +1777,72 @@ else
 	if (ienedens==-7) iuserfunc=-69
 end if
 
+call walltime(iwalltime1)
 write(*,"(' Radial points:',i5,'    Angular points:',i5,'   Total:',i10,' per center')") radpot,sphpot,radpot*sphpot
 call gen1cintgrid(gridatmorg,iradcut)
-call walltime(iwalltime1)
+
+!Calculate integral of energy density over whole space, so that we can use scaled (normalized) electron density later
+if (iform==1) then
+	eint=1
+    e0int=1
+else if (iform==2) then
+	write(*,*) "Calculating integral of energy density over whole space..."
+	eint=0 !Interal of present molecule
+    e0int=0 !Integral of reference state
+	do iatm=1,ncenter
+		write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
+		gridatm%x=gridatmorg%x+a(iatm)%x
+		gridatm%y=gridatmorg%y+a(iatm)%y
+		gridatm%z=gridatmorg%z+a(iatm)%z
+    
+		if (ienedens==3) call doinitlibreta(2)
+    
+		!Calculate energy density for present system
+		!$OMP parallel do shared(eval) private(ipt) num_threads(nthreads)
+		do ipt=1+iradcut*sphpot,radpot*sphpot
+			eval(ipt)=calcfuncall(ifunc,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
+		end do
+		!$OMP end parallel do
+    
+		!Calculate energy density for reference (promolecule)
+		if (ieneinfo==4.or.ieneinfo==5.or.ieneinfo==6) then
+			if (ireftype==1) then
+				deallocate(MOocc,MOtype,MOene,CO)
+				allocate(MOocc(nmo_pmol),MOene(nmo_pmol),MOtype(nmo_pmol),CO(nmo_pmol,nprims))
+				nmo=nmo_pmol
+				MOocc=MOocc_pmol
+				MOene=MOene_pmol
+				MOtype=MOtype_pmol
+				CO=CO_pmol
+			else if (ireftype==2) then
+				call dealloall(0)
+				call readinfile(refsysname,1)
+			end if
+			if (ienedens==3) call doinitlibreta(2)
+			!$OMP parallel do shared(e0val) private(ipt) num_threads(nthreads)
+			do ipt=1+iradcut*sphpot,radpot*sphpot
+				e0val(ipt)=calcfuncall(ifunc,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z)
+			end do
+			!$OMP end parallel do
+			call dealloall(0)
+			call readinfile(firstfilename,1) !Retrieve the first loaded file
+		end if
+		
+		call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+		do ipt=1+iradcut*sphpot,radpot*sphpot
+			eint=eint+eval(ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
+			e0int=e0int+e0val(ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
+		end do
+	end do
+    write(*,"(' Integral of present system:',1PE20.10)") eint
+    if (ieneinfo==4.or.ieneinfo==5.or.ieneinfo==6) write(*,"(' Integral of reference system:',1PE20.10)") e0int
+end if
+
+!Start formal calculation
+if (iform==2) then
+	write(*,*)
+	write(*,*) "Start formal calculation"
+end if
 intval=0
 do iatm=1,ncenter
 	write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
@@ -1696,7 +1851,8 @@ do iatm=1,ncenter
 	gridatm%z=gridatmorg%z+a(iatm)%z
     
     if (ienedens==3) call doinitlibreta(2)
-    !Calculate value, gradiant and Laplacian of energy density for present system
+    
+    !Calculate value (eval), gradiant (egrad) and Laplacian (elapl) of energy density for present system
 	!$OMP parallel do shared(eval,egrad,elapl) private(ipt,x,y,z,hess) num_threads(nthreads)
 	do ipt=1+iradcut*sphpot,radpot*sphpot
 		x=gridatm(ipt)%x
@@ -1704,14 +1860,19 @@ do iatm=1,ncenter
 		z=gridatm(ipt)%z
         if (ider==0) then !Only need value
 			eval(ipt)=calcfuncall(ifunc,x,y,z)
-        else !Need derivative
+        else !Need 1st or 1st+2nd derivative
 			call gencalchessmat(ider,ifunc,x,y,z,eval(ipt),egrad(:,ipt),hess(:,:),1)
 			elapl(ipt)=hess(1,1)+hess(2,2)+hess(3,3)
         end if
 	end do
 	!$OMP end parallel do
+    if (iform==2) then
+		eval=eval/eint
+		egrad=egrad/eint
+		elapl=elapl/eint
+    end if
     
-    !Calculate reference part
+    !Calculate value, gradiant and Laplacian of energy density for reference (promolecule), e0
     if (ieneinfo==4.or.ieneinfo==5.or.ieneinfo==6) then
 		if (ireftype==1) then
 			deallocate(MOocc,MOtype,MOene,CO)
@@ -1733,14 +1894,17 @@ do iatm=1,ncenter
 			z=gridatm(ipt)%z
 			if (ider==0) then !Only need value
 				e0val(ipt)=calcfuncall(ifunc,x,y,z)
-			else !Need derivative
-				call gencalchessmat(ider,ifunc,x,y,z,e0val(ipt),e0grad(:,ipt),hess(:,:),1)
-				e0lapl(ipt)=hess(1,1)+hess(2,2)+hess(3,3)
+			else !Need 1st derivative
+				call gencalchessmat(1,ifunc,x,y,z,e0val(ipt),e0grad(:,ipt),hess(:,:),1)
 			end if
 		end do
 		!$OMP end parallel do
 		call dealloall(0)
 		call readinfile(firstfilename,1) !Retrieve the first loaded file
+    end if
+    if (iform==2) then
+		e0val=e0val/e0int
+		e0grad=e0grad/e0int
     end if
     
     !Calculate function value at every point
@@ -1759,18 +1923,28 @@ do iatm=1,ncenter
         else if (ieneinfo==6) then
 			funcval(ipt)=elapl(ipt)*log(eval(ipt)/e0val(ipt))
         end if
+        !write(15,*) ipt,funcval(ipt),eval(ipt),e0val(ipt),gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z
 	end do
     
 	call gen1cbeckewei(iatm,iradcut,gridatm,beckeweigrid,covr_tianlu,3)
+    valthis=0
 	do ipt=1+iradcut*sphpot,radpot*sphpot
-		intval=intval+funcval(ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
+		valthis=valthis+funcval(ipt)*gridatmorg(ipt)%value*beckeweigrid(ipt)
 	end do
+    intval=intval+valthis
+	write(*,"(' Contribution of center',i6,':',1PE20.10)") iatm,valthis
 end do
 call walltime(iwalltime2)
 write(*,"(' Calculation took up wall clock time',i10,' s')") iwalltime2-iwalltime1
+write(*,*) "Note: The center contributions correspond to Becke partition"
 
 write(*,"(/,' Result is',1PE20.10)") intval
 
 end do
 
 end subroutine
+
+
+
+
+

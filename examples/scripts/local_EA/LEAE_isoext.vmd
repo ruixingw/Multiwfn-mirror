@@ -1,0 +1,38 @@
+#This script is used to draw LEAE (local electron attachment energy) colored molecular vdW surface (rho=0.004 a.u.) with surface LEAE extrema
+#density.cub, userfunc.cub and surfanalysis.pdb should be presented in current folder
+
+color scale method BWR
+color Display Background white
+axes location Off
+display depthcue off
+display rendermode GLSL
+light 2 on
+light 3 on
+material change transmode EdgyGlass 1.000000
+
+#Lower and upper limit of color scale of LEAE (a.u.)
+#If you want to change in VMD, input for example: mol scaleminmax 0 1 -0.03 0.0
+set colorlow -0.03
+set colorhigh 0.0
+
+set id 0
+mol new density.cub
+mol addfile userfunc.cub
+mol modstyle 0 $id CPK 1.000000 0.300000 22.000000 22.000000
+mol addrep $id
+mol modstyle 1 $id Isosurface 0.004 0 0 0 1 1
+mol modmaterial 1 $id EdgyGlass
+material change opacity EdgyGlass 0.8
+material change specular EdgyGlass 0.0
+material change outline EdgyGlass 0.4
+material change outlinewidth EdgyGlass 0.3
+mol modcolor 1 $id Volume 1
+mol scaleminmax $id 1 $colorlow $colorhigh
+display projection Orthographic
+
+#Load surfanalysis.pdb to show LEAE extrema on vdW surface
+
+mol new surfanalysis.pdb
+mol modstyle 0 top VDW 0.07 20
+mol modselect 0 top name O
+mol modcolor 0 top ColorID 10

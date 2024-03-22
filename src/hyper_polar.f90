@@ -33,13 +33,6 @@ end subroutine
 
 
 
-!!-----------------------------------------------------------------------------
-!!--------- Calculate and plot (hyper)polarizability density --------
-!!-----------------------------------------------------------------------------
-subroutine hyper_polar_dens
-implicit real*8 (a-h,o-z)
-write(*,"(a)") " This function has not been implemented yet! Currently please manually perform this analysis according to Section 4.A.7 of manual"
-end subroutine
 
 
 
@@ -79,8 +72,8 @@ do while(.true.)
 	if (irdfreq==1) write(*,*) "-1 Toggle loading frequency-dependent result for options 1 and 7, current: Yes"
 	if (irdfreq==0) write(*,*) "-1 Toggle loading frequency-dependent result for options 1 and 7, current: No"
 	write(*,*) "0 Return"
-	write(*,*) "1 ""Polar"" + analytic 3-order deriv. (HF,DFT,semi-empirical)"
-	write(*,*) "2 ""Polar"" + analytic 2-order deriv. (MP2,TDDFT,CIS...)"
+	write(*,*) "1 ""Polar"" + analytic 3-order deriv. (HF,pure/hybrid DFT,semi-empirical)"
+	write(*,*) "2 ""Polar"" + analytic 2-order deriv. (MP2,double-hybrid DFT,TDDFT,CIS...)"
 	write(*,*) "3 ""Polar=Cubic"" + analytic 2-order deriv."
 	write(*,*) "4 ""Polar"" + analytic 1-order deriv. (CISD,QCISD,CCSD,MP3,MP4(SDQ)...)"
 	write(*,*) "5 ""Polar=DoubleNumer"" or ""Polar=EnOnly"" + analytic 1-order deriv."
@@ -219,7 +212,8 @@ if (isel==1.or.isel==4.or.isel==5.or.isel==7) then !Standard orientation
 	read(10,*) rnouse,alpha(3,1),alpha(3,2),alpha(3,3)
 else if (isel==2.or.isel==3) then !Standard orientation
 	call loclabel(10,"Exact polarizability")
-	read(10,"(23x,6f8.3)",iostat=ierror) alpha(1,1),alpha(2,1),alpha(2,2),alpha(3,1),alpha(3,2),alpha(3,3)
+    read(10,"(a)") c200tmp
+	read(c200tmp(24:),*,iostat=ierror) alpha(1,1),alpha(2,1),alpha(2,2),alpha(3,1),alpha(3,2),alpha(3,3)
     !Sometimes magnitude of polarizability is quite large, leading to *** in this part. In this case load data from archive part instead
     if (ierror/=0) ireadalpha_archive=1 
 end if
@@ -1069,7 +1063,7 @@ character transmodestr*80,c80tmp*80,c200tmp*80
 character :: dirlab(3)=(/ "X","Y","Z" /)
 real*8,allocatable :: trandip(:,:,:) !Transition dipole moment between i and j in X,Y,Z. 0 corresponds to ground state
 real*8,allocatable :: excene(:) !Excitation energy
-real*8 alpha(3,3),beta(3,3,3),gamma(3,3,3,3),gamma1(3,3,3,3),gamma2(3,3,3,3),delta(3,3,3,3,3)
+real*8 alpha(3,3),alphatmp(3,3),beta(3,3,3),gamma(3,3,3,3),gamma1(3,3,3,3),gamma2(3,3,3,3),delta(3,3,3,3,3)
 real*8 eigval(3),eigvecmat(3,3),tmpw(5)
 real*8,allocatable :: freqlist(:,:) !Store the frequency to be calculated for beta and gamma
 integer tmpdir(5),arrb(6,3),arrg(24,4),arrd(120,5),dir1,dir2,dir3,dir4,dir5
@@ -1251,7 +1245,8 @@ else if (isel==1.or.isel==5.or.isel==15) then !Analysis of polarizability (alpha
 			term1=(alpha(1,1)-alpha(2,2))**2 + (alpha(1,1)-alpha(3,3))**2 + (alpha(2,2)-alpha(3,3))**2
 			term2=6*(alpha(1,2)**2+alpha(1,3)**2+alpha(2,3)**2)
 			alphaani1=dsqrt((term1+term2)/2D0)
-			call diagmat(alpha,eigvecmat,eigval,300,1D-10)
+            alphatmp=alpha
+			call diagmat(alphatmp,eigvecmat,eigval,300,1D-10)
 			call sort(eigval)
 			alphaani2=eigval(3)-(eigval(1)+eigval(2))/2D0
 		
@@ -2296,4 +2291,282 @@ write(ifileid,"(a)") "set green [expr double(500-$j)/500]               "
 write(ifileid,"(a)") "set blue [expr double(500-$j)/500]                "
 write(ifileid,"(a)") "color change rgb [expr $i+50] $red $green $blue"
 write(ifileid,"(a)") "}                                               "
+end subroutine
+
+
+
+
+!!-------------------------------------------------------------------
+!!--------- Calculate and plot (hyper)polarizability density --------
+!!-------------------------------------------------------------------
+subroutine hyper_polar_dens
+use defvar
+use util
+use functions
+use GUI
+implicit real*8 (a-h,o-z)
+integer fieldlist(4)
+character c80tmp*80,c200tmp*200,c200tmp2*200,c2000tmp*200,fname(4)*3,fpath(4)*200
+real*8 :: fieldstr=0.003D0
+
+write(*,"(/,' Note: Stepsize of finite electric field used in this module is',f7.4,' a.u., which is a good choice')") fieldstr
+write(*,*)
+call menutitle("Calculate and plot (hyper)polarizability density",10,1)
+write(*,*) "Choose the quantity to study"
+write(*,*) "0 Exit"
+write(*,*) "1 Polarizability density and spatial contribution to polarizability"
+write(*,*) "2 First hyperpolarizability density and spatial contribution to first hyperpolarizability"
+write(*,*) "3 Second hyperpolarizability density and spatial contribution to second hyperpolarizability"
+read(*,*) itype
+if (itype==0) then
+    return
+else if (itype==1) then
+    ntime=2
+    fieldlist(1:2)=(/ -1,1 /)
+else if (itype==2) then
+    ntime=3
+    fieldlist(1:3)=(/ -1,0,1 /)
+else if (itype==3) then
+    ntime=4
+    fieldlist(1:4)=(/ -2,-1,1,2 /)
+end if
+
+write(*,*) "Choose the direction of interest"
+write(*,*) "1 X"
+write(*,*) "2 Y"
+write(*,*) "3 Z"
+read(*,*) idir
+
+!Generate file name corresponding to different fields
+if (idir==1) fname(1:ntime)(1:1)='X'
+if (idir==2) fname(1:ntime)(1:1)='Y'
+if (idir==3) fname(1:ntime)(1:1)='Z'
+do itime=1,ntime
+    if (fieldlist(itime)==0) then
+        fname(itime)(2:3)="_0"
+    else if (fieldlist(itime)>0) then
+        write(fname(itime)(2:3),"('+',i1)") fieldlist(itime)
+    else
+        write(fname(itime)(2:3),"(i2)") fieldlist(itime)
+    end if
+end do
+
+do while(.true.)
+    write(*,"(/,a)") " 1 Generate Gaussian input files of single point task under different external electric fields"
+    write(*,"(a)") " 2 Load .wfx files of single point task under different external electric fields"
+    read(*,*) isel
+    if (isel==1) then
+        if (allocated(b)) then
+            ichg=sum(a%charge)-nelec
+            imult=nint(naelec)-nint(nbelec)+1
+        else
+            write(*,*) "Input net charge and spin multiplicity, e.g. 0,2"
+            write(*,*) "If press ENTER button directly, 0,1 will be used"
+            read(*,"(a)") c80tmp
+            if (c80tmp==" ") then
+                ichg=0
+                imult=1
+            else
+                read(c80tmp,*) ichg,imult
+            end if
+        end if
+        do itime=1,ntime
+            c80tmp=fname(itime)//".gjf"
+            write(*,*) "Generating "//trim(c80tmp)//" in current folder..."
+            if (fieldlist(itime)==0) then
+                c200tmp=" "
+            else
+                if (idir==1) c200tmp='field=X'
+                if (idir==2) c200tmp='field=Y'
+                if (idir==3) c200tmp='field=Z'
+                !Note that definition of direction of electric field in Gaussian in inversed w.r.t. to common convention
+                if (fieldlist(itime)<0) c200tmp=trim(c200tmp)//'+'
+                write(c200tmp2,"(i4)") nint(-fieldstr*fieldlist(itime)*10000)
+                c200tmp=trim(c200tmp)//adjustl(c200tmp2)
+            end if
+            open(10,file=c80tmp,status="replace")
+            write(10,"(a,/)") "#P PBE1PBE/aug-cc-pVTZ int(ultrafine,acc2e=14) scf(noincfock,novaracc) out=wfx nosymm "//trim(c200tmp)
+            write(10,"(a,/)") fname(itime)
+            write(10,"(i2,i3)") ichg,imult
+            do iatm=1,ncenter
+                write(10,"(a,3f12.6)") a(iatm)%name,a(iatm)%x*b2a,a(iatm)%y*b2a,a(iatm)%z*b2a
+            end do
+            write(10,*)
+            write(10,"(a,/,/)") fname(itime)//".wfx"
+            close(10)
+        end do
+        write(*,"(a)") " Generating input files finished! The computational level is set to PBE0/aug-cc-pVTZ. &
+        You may manually edit the files if you want to use another level. You should run the files by Gaussian manually, &
+        and then load them via option 2"
+    else if (isel==2) then
+        write(*,*) "Input the folder in which .wfx files calculated under different electric fields are available, e.g. D:\mari\riko\"
+        write(*,*) "If press ENTER button directly, they are assumed to be in current folder"
+        read(*,"(a)") c200tmp
+        do itime=1,ntime
+            fpath(itime)=trim(c200tmp)//fname(itime)//".wfx"
+            inquire(file=fpath(itime),exist=alive)
+	        if (alive) then
+                write(*,"(a)") " Found "//trim(fpath(itime))
+            else
+	            write(*,*) "Error: Cannot find "//trim(fpath(itime))//", you need to generate it first!"
+                exit
+            end if
+        end do
+        if (itime==ntime+1) then
+            write(*,*) "Well, all needed files are available"
+            exit
+        end if
+    end if
+end do
+
+if (itype==1) then
+    c200tmp="polarizability density"
+    c200tmp2="spatial contribution to polarizability"
+else if (itype==2) then
+    c200tmp="first hyperpolarizability density"
+    c200tmp2="spatial contribution to first hyperpolarizability"
+else if (itype==3) then
+    c200tmp="second hyperpolarizability density"
+    c200tmp2="spatial contribution to second hyperpolarizability"
+end if
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "0 Exit"
+    write(*,*) "1 Generate grid data of "//trim(c200tmp)
+    write(*,*) "2 Generate grid data of "//trim(c200tmp2)
+    write(*,*) "3 Plot plane map of "//trim(c200tmp)
+    write(*,*) "4 Plot plane map of "//trim(c200tmp2)
+    read(*,*) isel
+    if (isel==0) then
+        return
+    else if (isel==1.or.isel==2) then
+        call setgrid(10,igridsel)
+        if (allocated(cubmat)) deallocate(cubmat)
+        if (allocated(cubmattmp)) deallocate(cubmattmp)
+        allocate(cubmat(nx,ny,nz),cubmattmp(nx,ny,nz))
+        !Calculate (hyper)polarizability
+        do itime=1,ntime
+            call dealloall(0)
+            write(*,*) "Calculating "//trim(fpath(itime))
+            call readinfile(fpath(itime),1)
+            ifinish=0
+            ntmp=floor(ny*nz/100D0)
+            !$OMP PARALLEL DO SHARED(cubmattmp,ifinish,ishowprog) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
+            do k=1,nz
+	            do j=1,ny
+		            do i=1,nx
+			            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+			            cubmattmp(i,j,k)=fdens(tmpx,tmpy,tmpz)
+		            end do
+		            !$OMP CRITICAL
+		            ifinish=ifinish+1
+		            ishowprog=mod(ifinish,ntmp)
+		            if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
+		            !$OMP END CRITICAL
+	            end do
+            end do
+            !$OMP END PARALLEL DO
+            if (ishowprog/=0) call showprog(100,100)
+            if (itype==1) then !Polarizability density
+                if (itime==1) then
+                    cubmat=-cubmattmp
+                else if (itime==2) then
+                    cubmat=cubmat+cubmattmp
+                end if
+            else if (itype==2) then !First hyperpolarizability density
+                if (itime==1) then
+                    cubmat=cubmattmp
+                else if (itime==2) then
+                    cubmat=cubmat-2*cubmattmp
+                else if (itime==3) then
+                    cubmat=cubmat+cubmattmp
+                end if
+            else if (itype==3) then !Second hyperpolarizability density
+                if (itime==1) then
+                    cubmat=-cubmattmp
+                else if (itime==2) then
+                    cubmat=cubmat+2*cubmattmp
+                else if (itime==3) then
+                    cubmat=cubmat-2*cubmattmp
+                else if (itime==4) then
+                    cubmat=cubmat+cubmattmp
+                end if
+            end if
+        end do
+        if (itype==1) then
+            cubmat=cubmat/(2*fieldstr)
+        else if (itype==2) then
+            cubmat=cubmat/fieldstr**2
+        else if (itype==3) then
+            cubmat=cubmat/(2*fieldstr**3)
+        end if
+        !Transform (hyper)polarizability to spatial contribution
+        if (isel==2) then
+            do k=1,nz
+	            do j=1,ny
+		            do i=1,nx
+			            call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+                        if (idir==1) then
+                            cubmat(i,j,k)=-tmpx*cubmat(i,j,k)
+                        else if (idir==2) then
+                            cubmat(i,j,k)=-tmpy*cubmat(i,j,k)
+                        else if (idir==3) then
+                            cubmat(i,j,k)=-tmpz*cubmat(i,j,k)
+                        end if
+		            end do
+	            end do
+            end do
+        end if
+        deallocate(cubmattmp)
+        call dealloall(0)
+        write(*,*) "Reloading "//trim(firstfilename)
+        call readinfile(firstfilename,1)
+        call calc_dvol(dvol)
+        write(*,"(/,' Integral of grid data:',f16.6,' a.u.')") sum(cubmat)*dvol
+        if (isel==1) then
+            sur_value=0.5D0
+        else if (isel==2) then
+            sur_value=2
+        end if
+        do while(.true.)
+            write(*,*)
+            write(*,*) "0 Return"
+            write(*,*) "1 Visualize isosurface map"
+            write(*,*) "2 Export grid data as cube file"
+            read(*,*) isel2
+            if (isel2==0) then
+                exit
+            else if (isel2==1) then
+                call drawisosurgui(1)
+            else if (isel2==2) then
+                write(*,*) "Input path of the cube file to export, e.g. D:\Aqours\Sunshine\poldens.cub"
+                write(*,*) "If press ENTER button directly, grid data will be exported to grid.cub in current folder"
+                read(*,"(a)") c200tmp
+                if (c200tmp==" ") c200tmp="grid.cub"
+			    open(10,file=c200tmp,status="replace")
+			    call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
+			    close(10)
+			    write(*,"(' Done! Grid data has been exported to ',a)") trim(c200tmp)
+            end if
+        end do
+        
+    else if (isel==3.or.isel==4) then
+        !Generate custom operation commands
+        if (allocated(custommapname)) deallocate(custommapname)
+        allocate(custommapname(ntime)) !Temporarily use custommapname to pass files to be processed to study2dim
+        do itime=1,ntime
+            custommapname(itime)=trim(fpath(itime))
+        end do
+        itypetmp=itype
+        if (isel==4) itypetmp=-itypetmp
+        aug2D_old=aug2D
+        aug2D=8
+        call study2dim(2,itypetmp,idir)
+        aug2D=aug2D_old
+        call dealloall(0)
+        write(*,*) "Reloading "//trim(firstfilename)
+        call readinfile(firstfilename,1)
+    end if
+end do
 end subroutine

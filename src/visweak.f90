@@ -2,6 +2,7 @@
 subroutine visweak_main
 use defvar
 implicit real*8 (a-h,o-z)
+
 do while(.true.)
 	write(*,*)
 	write(*,*) "           ============ Visual study of weak interaction ============ "
@@ -17,6 +18,15 @@ do while(.true.)
 	write(*,"(a)") " 11 IGM analysis based on Hirshfeld partition of molecular density (IGMH) (JCC, 43, 539)"
 	write(*,*) "12 Averaged IGM analysis (aIGM)"
 	read(*,*) isel
+    
+	if ((isel==1.or.isel==4.or.isel==5.or.isel==11).and.(.not.allocated(b))) then
+		write(*,*) "Error: Wavefunction information is not available!"
+        write(*,"(a)") " You must use a file containing wavefunction information (e.g. .wfn/fch/mwfn/wfx...) as input file to perform the analysis. &
+        See Section 2.5 of Multiwfn manual to understand which files contain wavefunction information"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+        return
+    end if
 	if (isel==0) then
 		return
 	else if (isel==1) then
@@ -352,12 +362,16 @@ if (iIGMtype==1) then
 	write(*,*) "***** Please cite following papers in your work: *****"
     write(*,*) "Phys. Chem. Chem. Phys., 19, 17928 (2017)"
     write(*,*) "J. Comput. Chem., 43, 539 (2022) DOI: 10.1002/jcc.26812"
+    write(*,"(a)") " Review article: Tian Lu, Qinxue Chen, Visualization Analysis of &
+    Weak Interactions in Chemical Systems DOI: 10.1016/B978-0-12-821978-2.00076-3"
 else if (iIGMtype==2) then
 	write(*,*)
 	write(*,*) "***** Please cite this introductory paper of IGMH: *****"
     write(*,*) "Tian Lu, Qinxue Chen, J. Comput. Chem., 43, 539 (2022) DOI: 10.1002/jcc.26812"
     write(*,*) "An erratum to the IGMH paper is also suggested to cite together:"
     write(*,*) "Tian Lu, Qinxue Chen, ChemRxiv (2022) DOI: 10.26434/chemrxiv-2022-g1m34"
+    write(*,"(a)") " Review article: Tian Lu, Qinxue Chen, Visualization Analysis of &
+    Weak Interactions in Chemical Systems DOI: 10.1016/B978-0-12-821978-2.00076-3"
 end if
 
 !----- Define fragments
@@ -431,11 +445,16 @@ if (iIGMtype==2) allocate(rhogrid(nx,ny,nz),gradgrid(3,nx,ny,nz))
 
 !----- Calculate grid data
 call delvirorb(1)
-call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+if (ifPBC==0) then
+	call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+else
+	call gen_neigh_GTF !Generate neighbouring GTFs list at reduced grids, for faster evaluation
+end if
 call walltime(iwalltime1)
 write(*,*) "Calculating sign(lambda2)rho..."
 ifinish=0
-!$OMP PARALLEL DO SHARED(ifinish,sl2r,rhogrid,gradgrid) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
+ntmp=floor(ny*nz/100D0)
+!$OMP PARALLEL DO SHARED(ifinish,ishowprog,sl2r,rhogrid,gradgrid) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
@@ -452,16 +471,21 @@ do k=1,nz
 				sl2r(i,j,k)=signlambda2rho_prodens(tmpx,tmpy,tmpz)
 			end if
 		end do
+		!$OMP CRITICAL
+		ifinish=ifinish+1
+		ishowprog=mod(ifinish,ntmp)
+		if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
+        !$OMP END CRITICAL
 	end do
-    ifinish=ifinish+1
-    call showprog(ifinish,nz)
 end do
 !$OMP END PARALLEL DO
+if (ishowprog/=0) call showprog(100,100)
 
 write(*,*) "Calculating delta-g, delta-g_inter and delta-g_intra..."
 ifinish=0
 dg_inter=0
-!$OMP PARALLEL DO SHARED(ifinish,dg,dg_inter) PRIVATE(i,j,k,tmpx,tmpy,tmpz,grad,gradnorm,IGM_gradnorm,IGM_gradnorm_inter,gradtmp) schedule(dynamic) NUM_THREADS(nthreads)
+ntmp=floor(ny*nz/100D0)
+!$OMP PARALLEL DO SHARED(ifinish,ishowprog,dg,dg_inter) PRIVATE(i,j,k,tmpx,tmpy,tmpz,grad,gradnorm,IGM_gradnorm,IGM_gradnorm_inter,gradtmp) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
@@ -489,11 +513,15 @@ do k=1,nz
 			end do
 			dg_inter(i,j,k)=IGM_gradnorm_inter-dsqrt(sum(grad**2))
 		end do
+		!$OMP CRITICAL
+		ifinish=ifinish+1
+		ishowprog=mod(ifinish,ntmp)
+		if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
+        !$OMP END CRITICAL
 	end do
-    ifinish=ifinish+1
-    call showprog(ifinish,nz)
 end do
 !$OMP END PARALLEL DO
+if (ishowprog/=0) call showprog(100,100)
 
 dg_intra=dg-dg_inter
 

@@ -28,24 +28,17 @@ real*8 Pfrz(nbasis,nbasis) !Frozen state density matrix of all electrons
 real*8,allocatable :: PfrzA(:,:),PfrzB(:,:) !Same as above, for alpha and beta electrons. Used only for open-shell case
 real*8 Pdiff(nbasis,nbasis) !Difference density matrix (real w.r.t. frozen state) of all electrons
 real*8,allocatable :: PdiffA(:,:),PdiffB(:,:) !Same as above, for alpha and beta electrons. Used only for open-shell case
-!Overlap matrix
-real*8 FOovlp(nbasis,nbasis) !Overlap matrix between fragment orbitals (spatial or alpha)
-real*8,allocatable :: FOovlpB(:,:) !Same as above, for beta spin. Used only for open-shell case
-real*8,allocatable :: FOovlpocc(:,:) !Overlap matrix between occupied fragment orbitals (spatial or alpha)
-real*8,allocatable :: FOovlpoccB(:,:) !Same as above, for beta spin. Used only for open-shell case
 !Coefficient matrics
 real*8 CObasapro(nbasis,nbasis) !Coefficient matrix of promolecular orbitals
 real*8,allocatable :: CObasbpro(:,:) !Same as above, for beta spin. Used only for open-shell case
 real*8 CObasafrz(nbasis,nbasis) !Coefficient matrix of frozen state orbitals
 real*8,allocatable :: CObasbfrz(:,:) !Same as above, for beta spin. Used only for open-shell case
 !Other arrays
-real*8 occfrag(nbasis),occfragB(nbasis) !Occupation of fragment orbitals, for all/alpha and beta spins
+real*8 occfrag(nbasis),occfragB(nbasis) !Occupation number of fragment orbitals, for all/alpha and beta spins
 integer,allocatable :: ibasfrag(:) !ibasfrag(ifrag) is the starting basis function index of fragment i
 integer,allocatable :: naelec_frag(:),nbelec_frag(:) !Number of alpha and beta electrons of each fragment 
-integer,allocatable :: occidx(:),occidxB(:) !occidx(i)=j means the ith occupied orbital corresponds to jth global orbital index. For all/alpha and beta spins
 integer,allocatable :: pairidx1(:),pairidx2(:) !Index of the two NOCV orbitals corresponding to a pair. If number of orbitals is odd, one orbital will not paired
 integer,allocatable :: sellist(:)
-real*8,allocatable :: Umat(:,:),svalvec(:),Xmat(:,:) !Temporarily used in Lowdin orthogonalization
 real*8,allocatable :: rho_complex(:,:,:),rho_frz(:,:,:),rho_pro(:,:,:)
 real*8 :: printthres=0.001D0
 real*8,allocatable :: wfnval(:)
@@ -191,7 +184,7 @@ do ifrag=1,nfrag
                 CObasapro(ibeg:ibeg+nbasis-1,ibeg:ibeg+nbasis-1)=CObasb(:,:)
                 CObasbpro(ibeg:ibeg+nbasis-1,ibeg:ibeg+nbasis-1)=CObasa(:,:)
                 occfrag(ibeg:ibeg+nbasis-1)=MOocc(nbasis+1:nmo)
-                occfragb(ibeg:ibeg+nbasis-1)=MOocc(1:nbasis)
+                occfragB(ibeg:ibeg+nbasis-1)=MOocc(1:nbasis)
                 naelec_frag(ifrag)=nint(nbelec)
                 nbelec_frag(ifrag)=nint(naelec)
             end if
@@ -249,112 +242,15 @@ if (iopsh==1) then
     end if
 end if
 
-!Generate correspondence of index between occupied orbitals and global orbitals
-nocc=nint(naelec)
-allocate(FOovlpocc(nocc,nocc),occidx(nocc))
-iocc=0
-do imo=1,nbasis
-    if (occfrag(imo)==0) cycle
-    iocc=iocc+1
-    occidx(iocc)=imo
-end do
-if (iopsh==1) then !Beta part
-    noccB=nint(nbelec)
-    allocate(FOovlpoccB(noccB,noccB),occidxB(noccB))
-    iocc=0
-    do imo=1,nbasis
-        if (occfragB(imo)==0) cycle
-        iocc=iocc+1
-        occidxB(iocc)=imo
-    end do
+!Perform Lowdin orthogonalization between occupied orbitals to generate frozen state wavefunction
+if (iopsh==0) then
+    ndimB=0
+    allocate(CObasbpro(0,0),CObasbfrz(0,0),PfrzA(0,0),PfrzB(0,0))
+else if (iopsh==1) then
+    ndimB=nbasis
+    allocate(CObasbfrz(nbasis,nbasis),PfrzA(nbasis,nbasis),PfrzB(nbasis,nbasis))
 end if
-
-!Transform overlap integral matrix from AO basis to FO basis
-!FOovlp=matmul(transpose(CObasapro),matmul(Sbas,CObasapro)) !Slower code
-write(*,*)
-write(*,*) "Calculating overlap integral matrix between fragment orbitals ..."
-allocate(tmpmat(nbasis,nbasis))
-tmpmat=matmul_blas(Sbas,CObasapro,nbasis,nbasis)
-FOovlp=matmul_blas(CObasapro,tmpmat,nbasis,nbasis,1,0)
-!Generate overlap integral matrix between occupied combined fragment orbitals
-do imo=1,nocc
-    do jmo=1,nocc
-        FOovlpocc(imo,jmo)=FOovlp(occidx(imo),occidx(jmo))
-    end do
-end do
-if (iopsh==1) then !Beta part
-    tmpmat=matmul_blas(Sbas,CObasbpro,nbasis,nbasis)
-    FOovlpB=matmul_blas(CObasbpro,tmpmat,nbasis,nbasis,1,0)
-    do imo=1,noccB
-        do jmo=1,noccB
-            FOovlpoccB(imo,jmo)=FOovlpB(occidxB(imo),occidxB(jmo))
-        end do
-    end do
-end if
-deallocate(tmpmat)
-
-!Lowdin orthogonalization between all occupied orbitals. See Eq. 7 of ETS-NOCV original paper
-!Unoccupied fragment orbitals keep unchanged since they are not involved in construction of frozen state density matrix, &
-! Do not follow ETS-NOCV paper's statement, it is redundant and unnecessary (they also use Lowdin orthogonalization between fragment unoccupied orbitals, &
-! and then do Schmidt orthogonalization for unoccupied orbitals w.r.t. occupied ones)
-write(*,*)
-write(*,*) "Lowdin orthogonalization between occupied fragment orbitals ..."
-allocate(Umat(nocc,nocc),svalvec(nocc),Xmat(nocc,nocc),tmpmat(nocc,nocc))
-call diagsymat(FOovlpocc,Umat,svalvec,ierror)
-if (ierror/=0) write(*,*) "Error: Diagonalization of overlap matrix failed!"
-tmpmat=0
-forall (i=1:nocc) tmpmat(i,i)=dsqrt(1/svalvec(i)) !Use Sbas as temporary matrix here
-Xmat=matmul(matmul(Umat,tmpmat),transpose(Umat)) !Then Xmat is S^(-1/2)
-CObasafrz=0
-do imo=1,nocc
-    do jmo=1,nocc
-        CObasafrz(:,occidx(imo))=CObasafrz(:,occidx(imo))+CObasapro(:,occidx(jmo))*Xmat(imo,jmo)
-    end do
-end do
-deallocate(Umat,svalvec,Xmat,tmpmat)
-if (iopsh==1) then !Beta part
-    allocate(Umat(noccB,noccB),svalvec(noccB),Xmat(noccB,noccB),tmpmat(noccB,noccB))
-    call diagsymat(FOovlpoccB,Umat,svalvec,ierror)
-    if (ierror/=0) write(*,*) "Error: Diagonalization of overlap matrix failed!"
-    tmpmat=0
-    forall (i=1:noccB) tmpmat(i,i)=dsqrt(1/svalvec(i)) !Use Sbas as temporary matrix here
-    Xmat=matmul(matmul(Umat,tmpmat),transpose(Umat)) !Then Xmat is S^-0.5
-    allocate(CObasbfrz(nbasis,nbasis))
-    CObasbfrz=0
-    do imo=1,noccB
-        do jmo=1,noccB
-            CObasbfrz(:,occidxB(imo))=CObasbfrz(:,occidxB(imo))+CObasbpro(:,occidxB(jmo))*Xmat(imo,jmo)
-        end do
-    end do
-    deallocate(Umat,svalvec,Xmat,tmpmat)
-end if
-
-!Generate frozen state density matrix
-write(*,*)
-write(*,*) "Generating frozen state density matrix (P_frz) ..."
-if (iopsh==0) then !Closed-shell case
-    Pfrz=0
-    do iocc=1,nocc
-        imo=occidx(iocc)
-	    Pfrz=Pfrz+occfrag(imo)*matmul(CObasafrz(:,imo:imo),transpose(CObasafrz(:,imo:imo)))
-    end do
-    write(*,"(' Tr(P_frz*S):',f12.6)") sum(Pfrz*Sbas)
-    !call showmatgau(Pfrz,label="Pfrz",form="f12.8")
-else if (iopsh==1) then !Open shell case, generate alpha and beta respectively, and also combine to total
-    allocate(PfrzA(nbasis,nbasis),PfrzB(nbasis,nbasis))
-    PfrzA=0
-    do iocc=1,nocc
-        imo=occidx(iocc)
-	    PfrzA=PfrzA+occfrag(imo)*matmul(CObasafrz(:,imo:imo),transpose(CObasafrz(:,imo:imo)))
-    end do
-    PfrzB=0
-    do iocc=1,noccB
-        imo=occidxB(iocc)
-	    PfrzB=PfrzB+occfragB(imo)*matmul(CObasbfrz(:,imo:imo),transpose(CObasbfrz(:,imo:imo)))
-    end do
-    write(*,"(' Tr(P_frz_A*S):',f12.6)") sum(PfrzA*Sbas)
-    write(*,"(' Tr(P_frz_B*S):',f12.6)") sum(PfrzB*Sbas)
-end if
+call occorb_Lowdinorth(1,iopsh,ndimB,occfrag,occfragB,CObasapro,CObasbpro,CObasafrz,CObasbfrz,Pfrz,PfrzA,PfrzB)
 
 !Generate difference density matrix
 write(*,*)
@@ -375,7 +271,7 @@ write(*,*)
 write(*,*) "Generating NOCV orbitals and eigenvalues ..."
 if (iopsh==0) then !Diagonalizing total density matrix to generate NOCV
     Ptot=Pdiff
-    call gennatorb(1,0) !Deal with Ptot, generate CObasa and MOocc
+    call gennatorb(1,0) !This subroutine deals with Ptot (which is difference density matrix currently), generate CObasa (NOCVs currently) and MOocc (eigenvalues currently)
     call CObas2CO(1) !Convert CObasa to CO
     NOCVorb=CObasa !Backing up
     NOCVeig=MOocc
@@ -588,10 +484,10 @@ do while(.true.)
                 write(*,*)
             end if
             cubmat=0
-            ifinish=0
             write(*,*) "Calculating grid data..."
             allocate(wfnval(nmo))
-            !$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,ilow,ihigh,wfnval,idx,iorb,jorb) schedule(dynamic) NUM_THREADS(nthreads)
+            ifinish=0
+            !$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,ilow,ihigh,wfnval,idx,iorb,jorb) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
             do k=1,nz
 	            do j=1,ny
 		            do i=1,nx
@@ -609,16 +505,19 @@ do while(.true.)
                             end if
                         end do
 		            end do
+		            !$OMP CRITICAL
+                    ifinish=ifinish+1
+                    ishowprog=mod(ifinish,floor(ny*nz/100D0))
+		            if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
+                    !$OMP END CRITICAL
 	            end do
-                ifinish=ifinish+1
-                call showprog(ifinish,nz)
             end do
             !$OMP END PARALLEL DO
-            if (ifinish<nz) call showprog(nz,nz)
+            if (ishowprog/=0) call showprog(100,100)
             deallocate(wfnval)
             if (isel==2) then
                 sur_value=sur_value_iso
-        		    call drawisosurgui(1)
+                call drawisosurgui(1)
                 sur_value_iso=sur_value
             else if (isel==7) then
                 write(*,*)
@@ -690,6 +589,7 @@ do while(.true.)
                 write(*,*)
                 write(*,*) "Calculating grid data of promolecular density ..."
                 call savecubmat(1,0,0) !Calculate rho
+                if (allocated(rho_pro)) deallocate(rho_pro)
                 allocate(rho_pro(nx,ny,nz))
                 rho_pro=cubmat
             end if
@@ -710,6 +610,7 @@ do while(.true.)
                 write(*,*)
                 write(*,*) "Calculating grid data of frozen state density ..."
                 call savecubmat(1,0,0) !Calculate rho
+                if (allocated(rho_frz)) deallocate(rho_frz)
                 allocate(rho_frz(nx,ny,nz))
                 rho_frz=cubmat
             end if
@@ -731,6 +632,7 @@ do while(.true.)
                 write(*,*)
                 write(*,*) "Calculating grid data of complex density ..."
                 call savecubmat(1,0,0) !Calculate rho
+                if (allocated(rho_complex)) deallocate(rho_complex)
                 allocate(rho_complex(nx,ny,nz))
                 rho_complex=cubmat
             end if
@@ -851,6 +753,42 @@ do while(.true.)
             end if
             call showNOCVcomposition(6,pairidx1,pairidx2,npair,iopsh,printthres,ipair)
         end do
+        
+    else if (isel==15) then !
+        write(*,*) "Variation in electron population:"
+        vartot=0
+        do ifrag=1,nfrag
+            ibeg=ibasfrag(ifrag)
+            if (ifrag==nfrag) then
+                iend=nbasis
+            else
+                iend=ibasfrag(ifrag+1)-1
+            end if
+            popval=sum(Sbas(ibeg:iend,ibeg:iend)*Pdiff(ibeg:iend,ibeg:iend))
+            write(*,"(' Within fragment',i3,':',f12.6)") ifrag,popval
+            vartot=vartot+popval
+        end do
+        write(*,*)
+        do ifrag=1,nfrag
+            ibeg=ibasfrag(ifrag)
+            if (ifrag==nfrag) then
+                iend=nbasis
+            else
+                iend=ibasfrag(ifrag+1)-1
+            end if
+            do jfrag=ifrag+1,nfrag
+                jbeg=ibasfrag(jfrag)
+                if (jfrag==nfrag) then
+                    jend=nbasis
+                else
+                    jend=ibasfrag(jfrag+1)-1
+                end if
+                popval=2*sum(Sbas(ibeg:iend,jbeg:jend)*Pdiff(ibeg:iend,jbeg:jend))
+                write(*,"(' Between fragment',i3,' and',i3,':',f12.6)") ifrag,jfrag,popval
+                vartot=vartot+popval
+            end do
+        end do
+        write(*,"(/,' Sum of variation:',f12.6)") vartot
     end if
 end do
 end subroutine
@@ -862,6 +800,7 @@ use defvar
 implicit real*8 (a-h,o-z)
 integer ides,npair,iopsh,pairidx1(npair),pairidx2(npair)
 real*8 printthres
+
 if (ides==6) write(ides,*)
 write(ides,"(a,a)") "        --------------- Pair and NOCV orbital information --------------"
 write(ides,"(' There are totally',i5,' NOCV pairs and',i6,' NOCV orbitals')") npair,size(MOocc)

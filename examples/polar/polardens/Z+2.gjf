@@ -1,0 +1,13 @@
+#P PBE1PBE/aug-cc-pVTZ int(ultrafine,acc2e=14) scf(noincfock,novaracc) out=wfx nosymm field=Z-60
+
+Z+2
+
+ 0  1
+C     0.000000    0.000000   -0.527108
+H     0.000000    0.938856   -1.114139
+H     0.000000   -0.938856   -1.114139
+O     0.000000    0.000000    0.673866
+ 
+Z+2.wfx
+
+

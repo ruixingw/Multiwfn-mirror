@@ -8,11 +8,11 @@ do while(.true.)
 	write(*,*) "1 Calculate core-valence bifurcation (CVB) index and related quantities"
 	write(*,*) "2 Calculate atomic and bond dipole moments in Hilbert space"
 	write(*,*) "3 Generate cube file for multiple orbital wavefunctions"
-	write(*,*) "4 Generate iso-chemical shielding surfaces (ICSS) and related quantities"
+	!write(*,*) "4 Generate iso-chemical shielding surfaces (ICSS) and related quantities"
 	write(*,*) "5 Plot radial distribution function for a real space function"
 	write(*,*) "6 Analyze correspondence between orbitals in two wavefunctions"
-	write(*,*) "7 Parse output of (hyper)polarizability task of Gaussian"
-	write(*,*) "8 Study (hyper)polarizability by sum-over-states (SOS) method"
+	!write(*,*) "7 Parse output of (hyper)polarizability task of Gaussian"
+	!write(*,*) "8 Study (hyper)polarizability by sum-over-states (SOS) method"
 	write(*,*) "9 Calculate average bond length and average coordinate number"
 	write(*,*) "10 Output various kinds of integral between orbitals"
 	write(*,*) "11 Calculate center, first/second moments and radius of gyration of a function"
@@ -25,6 +25,7 @@ do while(.true.)
     write(*,*) "18 Calculate bond length/order alternation (BLA/BOA)"
     write(*,*) "19 Calculate spatial delocalization index (SDI) for orbitals or a function"
     write(*,*) "20 Bond order density (BOD) and natural adaptive orbital (NAdO) analyses"
+    write(*,*) "21 Perform Lowdin orthogonalization between occupied orbitals"
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -34,15 +35,15 @@ do while(.true.)
 		call atmbonddip
 	else if (isel==3) then
 		call genmultiorbcube
-	else if (isel==4) then
+	else if (isel==4) then !hidden
 		call ICSS
 	else if (isel==5) then
 		call plotraddis
 	else if (isel==6) then
 		call orbcorres
-	else if (isel==7) then
+	else if (isel==7) then !Hidden
 		call parseGauPolar
-	else if (isel==8) then
+	else if (isel==8) then !Hidden
 		call SOS
 	else if (isel==9) then
 		call atmavgdist
@@ -68,6 +69,8 @@ do while(.true.)
 		call SDI
     else if (isel==20) then
         call BOD
+    else if (isel==21) then
+        call occorb_Lowdinorth_wrapper
 	end if
 end do
 end subroutine
@@ -1102,7 +1105,7 @@ implicit real*8 (a-h,o-z)
 integer :: ifunciso=13,ifPBCgrid=0
 integer,allocatable :: mergelist(:),grididx(:,:,:),dogrid(:,:)
 logical,allocatable :: boundgrid(:)
-character :: defdomain*20="<0.5",c80tmp*80,c1000tmp*1000,c2000tmp*2000
+character :: defdomain*20="<0.5",c80tmp*80,c1000tmp*1000,c2000tmp*2000,cubname*200
 integer,allocatable :: tmparr(:)
 
 if (allocated(gridxyz)) deallocate(gridxyz)
@@ -1295,7 +1298,7 @@ do while(.true.)
 	write(*,*) "0 Exit"
 	write(*,*) "1 Perform integration for a domain"
 	write(*,*) "2 Perform integration for all domains"
-	write(*,"(a)") " 2b Perform integration for subregion of some domains according to range of sign(lambda)*rho"
+	write(*,"(a)") " 2b Perform integration for subregion of some domains according to range of sign(lambda2)*rho"
 	write(*,*) "3 Visualize domains"
     write(*,*) "4 Sort indices of domains according to their domain volumes"
 	write(*,*) "5 Calculate q_bind index for a domain"
@@ -1351,11 +1354,29 @@ do while(.true.)
 		end if
         write(*,*) "Which data will be integrated in the selected domain?"
         write(*,*) "1 The grid data in memory"
-        write(*,*) "2 Choose a real space function"
+        write(*,*) "2 Choose a real space function, which will be directly calculated"
+        write(*,*) "3 Grid data loaded from a .cub file"
         read(*,*) inttype
         if (inttype==2) then
 			write(*,*) "Select the real space function to be integrated, e.g. 1"
 			call selfunc_interface(1,ifuncint)
+        else if (inttype==3) then
+			if (allocated(cubmattmp)) deallocate(cubmattmp)
+            write(*,*) "Input path of the cube file, e.g. D:\ltwd\rho.cub"
+            write(*,"(a)") " Note: Distribution of the grids in this file must be exactly identical to that of grid data in memory"
+            do while(.true.)
+				read(*,"(a)") cubname
+				inquire(file=cubname,exist=alive)
+				if (alive) exit
+				write(*,*) "Cannot find the file, input again!"
+			end do
+            call readcubetmp(cubname,1,inconsis)
+            if (inconsis==1) then
+				write(*,*) "Error: Distribution of the grids in this file is not exactly identical to that of grid data in memory"
+                write(*,*) "Press ENTER button to return"
+                read(*,*)
+                cycle
+            end if
         end if
 		valint=0
 		volint=0
@@ -1371,6 +1392,8 @@ do while(.true.)
 				tmpval=cubmat(dogrid(1,idx),dogrid(2,idx),dogrid(3,idx))
             else if (inttype==2) then
 				tmpval=calcfuncall(ifuncint,xnow,ynow,znow)
+            else if (inttype==3) then
+				tmpval=cubmattmp(dogrid(1,idx),dogrid(2,idx),dogrid(3,idx))
             end if
 			valint=valint+tmpval
 			volint=volint+1
@@ -1398,11 +1421,29 @@ do while(.true.)
 	else if (isel2==2) then !Perform integration for all domains
         write(*,*) "Which data will be integrated in the selected domain?"
         write(*,*) "1 The grid data in memory"
-        write(*,*) "2 Choose a real space function"
+        write(*,*) "2 Choose a real space function, which will be directly calculated"
+        write(*,*) "3 Grid data loaded from a .cub file"
         read(*,*) inttype
         if (inttype==2) then
 			write(*,*) "Select the real space function to be integrated, e.g. 1"
 			call selfunc_interface(1,ifuncint)
+        else if (inttype==3) then
+			if (allocated(cubmattmp)) deallocate(cubmattmp)
+            write(*,*) "Input path of the cube file, e.g. D:\ltwd\rho.cub"
+            write(*,"(a)") " Note: Distribution of the grids in this file must be exactly identical to that of grid data in memory"
+            do while(.true.)
+				read(*,"(a)") cubname
+				inquire(file=cubname,exist=alive)
+				if (alive) exit
+				write(*,*) "Cannot find the file, input again!"
+			end do
+            call readcubetmp(cubname,1,inconsis)
+            if (inconsis==1) then
+				write(*,*) "Error: Distribution of the grids in this file is not exactly identical to that of grid data in memory"
+                write(*,*) "Press ENTER button to return"
+                read(*,*)
+                cycle
+            end if
         end if
 		write(*,*) "Domain    Integral (a.u.)     Volume (Bohr^3)      Average"
 		valinttot=0
@@ -1416,6 +1457,8 @@ do while(.true.)
 					tmpval=cubmat(dogrid(1,idx),dogrid(2,idx),dogrid(3,idx))
                 else if (inttype==2) then
 					tmpval=calcfuncall(ifuncint,gridxyz(1,idx),gridxyz(2,idx),gridxyz(3,idx))
+				else if (inttype==3) then
+					tmpval=cubmattmp(dogrid(1,idx),dogrid(2,idx),dogrid(3,idx))
                 end if
 				valint=valint+tmpval
 				volint=volint+1
@@ -2659,7 +2702,7 @@ real*8,allocatable :: BODmat(:,:),BODmatb(:,:)
 real*8,allocatable :: BOM1(:,:),BOM2(:,:),AOM1(:,:),AOM2(:,:),FOM1(:,:),FOM2(:,:)
 real*8,allocatable :: BOM1b(:,:),BOM2b(:,:),AOM1b(:,:),AOM2b(:,:),FOM1b(:,:),FOM2b(:,:)
 real*8,allocatable :: eigvecmat(:,:),eigvalarr(:)
-real*8 tmparr(nbasis)
+real*8 tmparr(nbasis),mat11(1,1)
 integer frag1atm(ncenter),frag2atm(ncenter)
 character c80tmp*80,c200tmp*200,c2000tmp*200,selectyn
 
@@ -2685,17 +2728,52 @@ if (imodwfn==1) then
 end if
 call getHOMOidx
 
-write(*,*)
-write(*,*) "   ======= Bond order density and natural adaptive orbital analysis ======="
-write(*,*) "0 Return"
-write(*,"(a)") " 1 Interatomic interaction analysis based on atomic overlap matrix (AOM)"
-write(*,"(a)") " 2 Interbasin interaction analysis based on basin overlap matrix (BOM)"
-write(*,"(a)") " 3 Interfragment interaction analysis based on the fragment overlap matrix (FOM) constructed from AOM"
-read(*,*) isel
+idoene=0
 
-if (isel==0) then
-    return
-else if (isel==1) then
+do while(.true.)
+	write(*,*)
+	write(*,*) "   ======= Bond order density and natural adaptive orbital analysis ======="
+	if (idoene==0) write(*,*) "-1 Toggle if calculating energies for NAdOs, current: No"
+	if (idoene==1) write(*,*) "-1 Toggle if calculating energies for NAdOs, current: Yes"
+	write(*,*) " 0 Return"
+	write(*,"(a)") "  1 Interatomic interaction analysis based on atomic overlap matrix (AOM)"
+	write(*,"(a)") "  2 Interbasin interaction analysis based on basin overlap matrix (BOM)"
+	write(*,"(a)") "  3 Interfragment interaction analysis based on the fragment overlap matrix (FOM) constructed from AOM"
+	read(*,*) isel
+
+	if (isel==0) then
+		return
+    
+	else if (isel==-1) then
+		if (idoene==1) then
+			idoene=0
+		else if (idoene==0) then
+			do while(.true.)
+				write(*,*)
+				write(*,*) "How to evaluate energy of NAdOs?"
+				write(*,*) "0 Do not evaluate"
+				write(*,*) "1 Evaluate, using the Fock matrix generated by MO energies and coefficients"
+				write(*,*) "2 Evaluate, loading Fock matrix from a file"
+				read(*,*) ievalene
+				if (ievalene==0) then
+					exit
+				else if (ievalene==1) then
+					call MOene2Fmat(istatus)
+				else if (ievalene==2) then
+					call loadFockfile(istatus)
+				end if
+				if (istatus==0) then
+					idoene=1
+					exit
+				end if
+			end do
+		end if
+    else
+		exit
+	end if
+end do
+    
+if (isel==1) then
     write(*,*) "Input the path of the file containing AOM, e.g. C:\AOM.txt"
     write(*,*) "If press ENTER button directly, AOM.txt in current folder will be loaded"
     read(*,"(a)") c200tmp
@@ -2936,15 +3014,38 @@ if (wfntype==1) then !Deal with beta part of unrestricted wavefunction
     write(*,"(7f10.5)") eigvalarr
 end if
 
+!Generate NAdO energies
+write(*,*)
+if (idoene==0) then
+	write(*,*) "Note: Energies of NAdOs are not generated, they are simply set to zero"
+else
+	write(*,*) "Generating energies for NAdOs..."
+    do iorb=1,idxHOMO
+		mat11=matmul(matmul(transpose(CObasa(:,iorb:iorb)),FmatA),CObasa(:,iorb:iorb))
+		MOene(iorb)=mat11(1,1)
+    end do
+    if (wfntype==1) then
+		do iorbtmp=nbasis+1,idxHOMOb
+			iorb=iorbtmp-nbasis
+            mat11=matmul(matmul(transpose(CObasb(:,iorb:iorb)),FmatB),CObasb(:,iorb:iorb))
+			MOene(iorbtmp)=mat11(1,1)
+		end do
+    end if
+    write(*,*) "Done!"
+end if
+
 call outmwfn("NAdOs.mwfn",10,0)
 write(*,"(/,a)") " All NAdO orbitals has been exported to NAdOs.mwfn in current folder"
-write(*,*) "Do you want to load it now so that you can visualize NAdOs? (y/n)"
+write(*,"(a)") " In this file, original occupied orbitals have been replaced with NAdOs, occupation numbers correspond to eigenvalues, &
+while the unoccupied orbitals are still the original ones"
+write(*,*)
+write(*,*) "Do you want to load it now so that you can then study NAdOs? (y/n)"
 read(*,*) selectyn
 call dealloall(0)
 if (selectyn=='y'.or.selectyn=='Y') then
     write(*,*) "Loading NAdOs.mwfn..."
     call readinfile("NAdOs.mwfn",1)
-    write(*,"(a)") " Done! Now you can use e.g. main function 0 to visualize orbitals. Occupation numbers correspond to eigenvalues"
+    write(*,"(a)") " Done! Now you can study NAdOs, such as using main function 0 to visualize orbitals"
 else
     write(*,"(a)") " Reloading "//trim(filename)//" to recover initial status..."
     call readinfile(filename,1)
@@ -2963,13 +3064,17 @@ use functions
 implicit real*8 (a-h,o-z)
 real*8 intval,moment1(3),moment2(3,3),moment2nuc(3,3),funcval(radpot*sphpot),beckeweigrid(radpot*sphpot),eigvecmat(3,3),eigval(3)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+integer :: iabs=0
 character selectyn
+
 ifunc=1
 cenx=0
 ceny=0
 cenz=0
 do while(.true.)
 	write(*,*)
+    if (iabs==0) write(*,"(a)") " -1 Toggle using absolute function value instead of original function value when calculating various quantities via option 1, current: No"
+    if (iabs==1) write(*,"(a)") " -1 Toggle using absolute function value instead of original function value when calculating various quantities via option 1, current: Yes"
 	write(*,*) "0 Return"
 	write(*,*) "1 Calculate various quantities of the selected function"
 	write(*,*) "2 Calculate center and integral of the selected function"
@@ -2980,6 +3085,13 @@ do while(.true.)
 	
 	if (isel==0) then
 		return
+    else if (isel==-1) then
+		if (iabs==0) then
+			iabs=1
+        else
+			iabs=0
+        end if
+		cycle
 	else if (isel==3) then
 		call selfunc_interface(1,ifunc)
 		cycle
@@ -3003,6 +3115,7 @@ do while(.true.)
 	realcenx=0
 	realceny=0
 	realcenz=0
+    !Calculate center, integral, first and second moments
 	do iatm=1,ncenter
 		write(*,"(' Processing center',i6,'(',a2,')   /',i6)") iatm,a(iatm)%name,ncenter
 		gridatm%x=gridatmorg%x+a(iatm)%x !Move quadrature point to actual position in molecule
@@ -3041,14 +3154,14 @@ do while(.true.)
         !$OMP parallel do num_threads(nthreads) &
         !$OMP default(none) &
         !$OMP private(i, xtmp, ytmp, ztmp, tmpval) &
-        !$OMP shared(iradcut, radpot, sphpot, isel, funcval, gridatm, gridatmorg, beckeweigrid, cenx, ceny, cenz) &
+        !$OMP shared(iabs, iradcut, radpot, sphpot, isel, funcval, gridatm, gridatmorg, beckeweigrid, cenx, ceny, cenz) &
         !$OMP reduction(+:intval, moment1, moment2, realcenx, realceny, realcenz)
         do i = 1 + iradcut*sphpot, radpot*sphpot
             tmpval = funcval(i)*gridatmorg(i)%value*beckeweigrid(i)
             xtmp = gridatm(i)%x - cenx
             ytmp = gridatm(i)%y - ceny
             ztmp = gridatm(i)%z - cenz
-            if (isel == 5) tmpval = abs(tmpval)
+            if (isel == 5 .or. iabs==1) tmpval = abs(tmpval)
             intval = intval + tmpval
             moment1(1) = moment1(1) + xtmp*tmpval
             moment1(2) = moment1(2) + ytmp*tmpval
@@ -3064,16 +3177,17 @@ do while(.true.)
             realcenz = realcenz + gridatm(i)%z*tmpval
         end do
         !$OMP end parallel do
-         
 	end do
+    
 	call walltime(iwalltime2)
 	write(*,"(' Calculation took up wall clock time',i10,' s',/)") iwalltime2-iwalltime1
 	
-	if (isel==1) then
+    !Print result
+	if (isel==1) then !Various quantities
 		moment2(3,1)=moment2(1,3)
 		moment2(2,1)=moment2(1,2)
 		moment2(3,2)=moment2(2,3)
-		write(*,*) "Note: All data shown below are in a.u."
+		write(*,*) "Note: Unless otherwise specified, all data shown below are in a.u."
 		write(*,"(/,' Integral over whole space:',1PE16.8,/)") intval
 		write(*,"(' The first moment:')")
 		write(*,"(' X= ',1PE16.8,'   Y= ',1PE16.8,'   Z= ',1PE16.8)") moment1
@@ -3088,9 +3202,11 @@ do while(.true.)
 		write(*,"(a,3(1PE16.8))") ' Eigenvalues:',eigval
         write(*,"(a,1PE16.8)") " Sum of eigenvalues (trace of the second moment tensor):",sum(eigval)
 		write(*,"(' Anisotropy:',1PE16.8,/)") eigval(3)-(eigval(1)+eigval(2))/2D0
-		write(*,"(' Radius of gyration:',1PE16.8)") dsqrt((moment2(1,1)+moment2(2,2)+moment2(3,3))/intval)
+        rgyr=dsqrt((moment2(1,1)+moment2(2,2)+moment2(3,3))/intval)
+		write(*,"(' Radius of gyration:',1PE16.8, ' Bohr ',1PE16.8, ' Angstrom')") rgyr,rgyr*b2a
         write(*,"(/,a,f16.6)") " Spatial extent of the function <r^2>:",sum(eigval)
 
+        !If the selected function is electron density, also print electric moments
 		if (ifunc==1) then
 			moment2nuc=0
 			do iatm=1,ncenter
@@ -3120,7 +3236,7 @@ do while(.true.)
 			write(*,"(' ZX=',f16.8,'   ZY=',f16.8,'   ZZ=',f16.8)") moment2nuc(3,:)-moment2(3,:)
 		end if
 		
-	else if (isel==2.or.isel==5) then
+	else if (isel==2.or.isel==5) then !Function center
 		realcenx=realcenx/intval
 		realceny=realceny/intval
 		realcenz=realcenz/intval

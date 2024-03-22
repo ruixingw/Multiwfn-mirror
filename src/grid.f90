@@ -88,7 +88,11 @@ if (ifPBC==0) then
     end do
 end if
 
-call gen_GTFuniq(infomode) !Generate unique GTFs, for faster evaluation in orbderv
+if (ifPBC==0) then
+	call gen_GTFuniq(infomode) !Generate unique GTFs, for faster evaluation in orbderv
+else
+	call gen_neigh_GTF !Generate neighbouring GTFs list at reduced grids, for faster evaluation
+end if
 
 !When ESPrhoiso/=0, only calculate ESP for grid around isosurface of rho=ESPrhoiso to save time
 !Now determine which grids will be calculated
@@ -139,21 +143,21 @@ call walltime(iwalltime1)
 nthreads_old=nthreads
 if (ifdoESP(functype).and.(iESPcode==2.or.iESPcode==3)) then
     call doinitlibreta(1)
-    if (isys==1.and.nthreads>10) nthreads=10
+    if (isys==1.and.nthreads>12) nthreads=12
 end if
 
 !Start calculation of grid data!!!!!!!!!!!!
 if (infomode==0) call showprog(0,nz*ny)
 ifinish=0
 cubmat=0
-!$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,densval) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
+!$OMP PARALLEL DO SHARED(cubmat,ifinish,ishowprog) PRIVATE(i,j,k,tmpx,tmpy,tmpz,densval) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
             if (ifPBC==0) then
 			    tmpx=xarr(i)
                 tmpy=yarr(j)
-    				tmpz=zarr(k)
+                tmpz=zarr(k)
             else !In the case of PBC, calculate x,y,z of points according grid vector
                 call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
             end if
@@ -172,14 +176,15 @@ do k=1,nz
 		end do
 		if (infomode==0) then
 		    !$OMP CRITICAL
-		    ifinish=ifinish+1
-		    call showprog(ifinish,nz*ny)
+			ifinish=ifinish+1
+			ishowprog=mod(ifinish,ceiling(nz*ny/100D0))
+			if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
 		    !$OMP END CRITICAL
 		end if
 	end do
 end do
 !$OMP END PARALLEL DO
-if (infomode==0.and.ifinish<nz*ny) call showprog(nz*ny,nz*ny)
+if (infomode==0.and.ishowprog/=0) call showprog(100,100)
 nthreads=nthreads_old
 
 call del_GTFuniq !Destory unique GTF informtaion
@@ -237,11 +242,16 @@ else
 	do while(.true.)
 		write(*,*)
 		write(*,*) "Please select a method to set up grid"
-		write(*,"(a,f7.3,a)") " -10 Set extension distance of grid range for mode 1~4, current:",aug3D," Bohr"
-		write(*,*) "1 Low quality grid,    covering whole system, about 125000 points in total"
-		write(*,*) "2 Medium quality grid, covering whole system, about 512000 points in total"
-		write(*,*) "3 High quality grid,   covering whole system, about 1728000 points in total"
-		write(*,*) "4 Input the number of points or grid spacing in X,Y,Z, covering whole system"
+        if (ifPBC>0) then
+			write(*,"(a)") " **** NOTE: For periodic systems, if you hope the grid points evenly distribute in the whole cell, usually you should choose option 9 to define the grid ****"
+        end if
+        if (ifPBC==0) then
+			write(*,"(a,f7.3,a)") " -10 Set extension distance of grid range for mode 1~4, current:",aug3D," Bohr"
+			write(*,*) "1 Low quality grid,    covering whole system, about 125000 points in total"
+			write(*,*) "2 Medium quality grid, covering whole system, about 512000 points in total"
+			write(*,*) "3 High quality grid,   covering whole system, about 1728000 points in total"
+			write(*,*) "4 Input the number of points or grid spacing in X,Y,Z, covering whole system"
+        end if
 		write(*,*) "5 Input original point, grid spacings, and the number of points"
 		write(*,*) "6 Input center coordinate, number of points and extension distance"
 		write(*,*) "7 The same as 6, but input two atoms, the midpoint will be defined as center"
@@ -420,7 +430,7 @@ else
         dy=gridv2(2)
         dz=gridv3(3)
     end if
-    call getgridend
+    call getgridend !Generate endx,endy,endz
     
 	write(*,"(' Coordinate of origin in X,Y,Z is   ',3f12.6,' Bohr')") orgx,orgy,orgz
 	write(*,"(' Coordinate of end point in X,Y,Z is',3f12.6,' Bohr')") endx,endy,endz
@@ -682,7 +692,7 @@ end subroutine
 
 
 
-!!----- Get XYZ coordinate of grid based on grid indiex
+!!----- Get XYZ coordinate of 3D grid based on grid index
 subroutine getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 use defvar
 integer i,j,k
@@ -690,6 +700,18 @@ real*8 tmpx,tmpy,tmpz
 tmpx=orgx+gridv1(1)*(i-1)+gridv2(1)*(j-1)+gridv3(1)*(k-1)
 tmpy=orgy+gridv1(2)*(i-1)+gridv2(2)*(j-1)+gridv3(2)*(k-1)
 tmpz=orgz+gridv1(3)*(i-1)+gridv2(3)*(j-1)+gridv3(3)*(k-1)
+end subroutine
+
+
+
+!!----- Get XYZ coordinate of 2D grid based on grid index
+subroutine get2Dgridxyz(i,j,tmpx,tmpy,tmpz)
+use defvar
+integer i,j
+real*8 tmpx,tmpy,tmpz
+tmpx=orgx2D+(i-1)*v1x+(j-1)*v2x
+tmpy=orgy2D+(i-1)*v1y+(j-1)*v2y
+tmpz=orgz2D+(i-1)*v1z+(j-1)*v2z
 end subroutine
 
 
@@ -815,14 +837,15 @@ subroutine saverhocub
 use defvar
 use functions
 implicit real*8 (a-h,o-z)
+
 if (allocated(rhocub)) then
-    if (size(rhocub,1)==nx.and.size(rhocub,2)==ny.and.size(rhocub,3)==nz) return !Do need to calculate again
+    if (size(rhocub,1)==nx.and.size(rhocub,2)==ny.and.size(rhocub,3)==nz) return !The grid data to be calculated is already available, do not need to calculate again
 else
     allocate(rhocub(nx,ny,nz))
 end if
 write(*,*) "Calculating grid data of electron density..."
 ifinish=0
-!$OMP PARALLEL DO SHARED(rhocub,ifinish) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprho) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
+!$OMP PARALLEL DO SHARED(rhocub,ifinish,ishowprog) PRIVATE(i,j,k,tmpx,tmpy,tmpz,tmprho) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
@@ -830,13 +853,14 @@ do k=1,nz
 			rhocub(i,j,k)=fdens(tmpx,tmpy,tmpz)
 		end do
 		!$OMP CRITICAL
-		ifinish=ifinish+1
-		call showprog(ifinish,nz*ny)
+        ifinish=ifinish+1
+        ishowprog=mod(ifinish,ceiling(nz*ny/100D0))
+        if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
 		!$OMP END CRITICAL
 	end do
 end do
 !$OMP END PARALLEL DO
-if (ifinish<nz*ny) call showprog(nz*ny,nz*ny)
+if (ishowprog/=0) call showprog(100,100)
 end subroutine
 
 
@@ -942,4 +966,24 @@ ifdoPBCz=1
 PBCnx=1
 PBCny=1
 PBCnz=1
+end subroutine
+
+
+
+!!!------ Convert Cartesian coordinates to fractional coordinates, just for grid data
+!In this case, the cell defining fractional coordinate corresponds to the box containing all grids. Origin of fractional coordinate is (orgx,orgy,orgz)
+!"Cart" is common Cartesian coordinate
+subroutine Cart2fract_grid(Cart,fract)
+use defvar
+use util
+real*8 Cart(3),fract(3),Amat(3,3),Bmat(3,3),Fcoord(3,1),rcoord(3,1)
+rcoord(1,1)=Cart(1)-orgx
+rcoord(2,1)=Cart(2)-orgy
+rcoord(3,1)=Cart(3)-orgz
+Amat(:,1)=gridv1(:)*nx
+Amat(:,2)=gridv2(:)*ny
+Amat(:,3)=gridv3(:)*nz
+Bmat=invmat(Amat,3)
+Fcoord=matmul(Bmat,rcoord)
+fract(:)=Fcoord(:,1)
 end subroutine

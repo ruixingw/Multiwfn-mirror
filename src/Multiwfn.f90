@@ -31,9 +31,9 @@ end if
 
 10 call loadsetting
 write(*,*) "Multiwfn -- A Multifunctional Wavefunction Analyzer"
-write(*,*) "Version 3.8(dev), release date: 2022-Dec-18"
+write(*,*) "Version 3.8(dev), release date: 2024-Mar-11"
 write(*,*) "Developer: Tian Lu (Beijing Kein Research Center for Natural Sciences)"
-write(*,*) "Below paper ***MUST BE CITED*** if Multiwfn is utilized in your work:"
+write(*,*) "Below paper ***MUST BE CITED IN MAIN TEXT*** if Multiwfn is used in your work:"
 write(*,*) "         Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580-592 (2012)"
 write(*,*) "See ""How to cite Multiwfn.pdf"" in Multiwfn binary package for more information"
 write(*,*) "Multiwfn official website: http://sobereva.com/multiwfn"
@@ -77,8 +77,8 @@ write(*,*)
 if (trim(filename)==" ") then !Haven't defined filename variable
 	call mylover(lovername)
 	write(*,"(a,a,a)") " Input file path, for example E:\",trim(lovername),".wfn"
-	write(*,*) "(Supported: .mwfn/wfn/wfx/fch/molden/31/chg/pdb/xyz/mol/mol2/cif/cub, etc.)"
-	write(*,"(a)") " Hint: Press ENTER button directly can select file in a GUI window. To reload the file last time used, simply input the letter ""o"". &
+	write(*,*) "(.mwfn/wfn/wfx/fch/molden/pdb/xyz/mol2/cif/cub... see Section 2.5 of manual)"
+	write(*,"(a)") " Hint: Pressing ENTER button directly can select file in a GUI window. To reload the file last time used, simply input the letter ""o"". &
 	Input such as ?miku.fch can open the miku.fch in the same folder as the file last time used."
 	do while(.true.)
 		read(*,"(a)") filename
@@ -196,12 +196,14 @@ end if
 !!-------- Show cell information
 call showcellinfo
 call getcellabc(asize,bsize,csize,alpha,beta,gamma)
-if (asize<5D0.and.PBCnx==1) write(*,"(/,a)") " Warning: Because size of a axis of the cell is relatively small, &
-in order to guarantee analysis accuracy, it is suggested to increase the first index of ""PBCnxnynz"" in settings.ini to 2"
-if (bsize<5D0.and.PBCny==1) write(*,"(/,a)") " Warning: Because size of b axis of the cell is relatively small, &
-in order to guarantee analysis accuracy, it is suggested to increase the second index of ""PBCnxnynz"" in settings.ini to 2"
-if (csize<5D0.and.PBCnz==1) write(*,"(/,a)") " Warning: Because size of c axis of the cell is relatively small, &
-in order to guarantee analysis accuracy, it is suggested to increase the third index of ""PBCnxnynz"" in settings.ini to 2"
+if (allocated(b)) then
+	if (asize<7D0/b2a.and.PBCnx==1) write(*,"(/,a)") " Warning: Because size of a axis of the cell is relatively small, &
+	in order to guarantee analysis accuracy, it is suggested to increase the first index of ""PBCnxnynz"" in settings.ini to 2"
+	if (bsize<7D0/b2a.and.PBCny==1) write(*,"(/,a)") " Warning: Because size of b axis of the cell is relatively small, &
+	in order to guarantee analysis accuracy, it is suggested to increase the second index of ""PBCnxnynz"" in settings.ini to 2"
+	if (csize<7D0/b2a.and.PBCnz==1) write(*,"(/,a)") " Warning: Because size of c axis of the cell is relatively small, &
+	in order to guarantee analysis accuracy, it is suggested to increase the third index of ""PBCnxnynz"" in settings.ini to 2"
+end if
 
 
 !!-------- Show brief information of present system
@@ -240,8 +242,11 @@ if (allocated(a)) then
     end if
 end if
 
+
+
 !Special treatment and test new code
-!call energy_info_project
+!call MBIS_wrapper
+
 
 !!!--------------------- Now everything start ---------------------!!!
 do while(.true.) !Main loop
@@ -277,6 +282,7 @@ do while(.true.) !Main loop
 	write(*,*) "21 Energy decomposition analysis        22 Conceptual DFT (CDFT) analysis"
     write(*,*) "23 ETS-NOCV analysis                    24 (Hyper)polarizability analysis"
     write(*,*) "25 Electron delocalization and aromaticity analyses"
+    write(*,*) "26 Structure and geometry related analyses"
 	write(*,*) "100 Other functions (Part 1)            200 Other functions (Part 2)"
 	write(*,*) "300 Other functions (Part 3)"
 	! write(*,*) "1000 Special functions"
@@ -307,8 +313,6 @@ do while(.true.) !Main loop
         read(*,*) iuserfunc
         call init_func
         write(*,*) "Done!"
-    else if (c200tmp=="cp2kbs".or.c200tmp=="bs") then
-		call CP2K_BS
     else if (c200tmp=="geomparm") then
 		iallowPBC=0
 		if (ifPBC>0) then
@@ -324,6 +328,10 @@ do while(.true.) !Main loop
 		call calcMPP
     else if (c200tmp=="cav") then
 		call cavity_diameter
+    else if (c200tmp=="pdb") then
+	    call outpdb_wrapper
+    else if (c200tmp=="xyz") then
+	    call outxyz_wrapper
     else
         read(c200tmp,*,iostat=ierror) isel
         if (ierror/=0) then
@@ -376,10 +384,6 @@ do while(.true.) !Main loop
 				    write(*,"(' Index of SOMO orbitals:',10i6)") (i,i=nint(nbelec+1),nint(naelec))
 			    end if
 		    end if
-            if (allocated(b)) then
-				write(*,*) "Constructing unique GTF information..."
-				call gen_GTFuniq(0) !Generate unique GTF information, for faster evaluation in orbderv
-            end if
 		    if (ifiletype==7.or.ifiletype==8) then !Visualize grid data
 			    if (isilent==0) call drawisosurgui(1)
 		    else
@@ -387,9 +391,9 @@ do while(.true.) !Main loop
 		    end if
             iorbvis=0 !Recover its status. iorbvis=0 makes saved image file has DISLIN prefix
             ishowdatarange=0 !Do not show data range if showing it
-            call del_GTFuniq !Destory unique GTF information
             call setfil("dislin."//trim(graphformat)) !The file name of saved image file may have been modified (e.g. equal to orbital index), so recover to default
 
+            
 	    !!!-------------------------------------------------
 	    !1!-------------------- Output properties at a point
 	    else if (isel==1) then
@@ -411,12 +415,14 @@ do while(.true.) !Main loop
 	    !!!-------------------------------------
 	    !4!-------------------- Draw plane graph
 	    else if (isel==4) then
-		    call study2dim
+		    call study2dim(0,0,0)
 
+            
 	    !!!--------------------------------------------------------
 	    !5!------------------- Calculate, show and output grid file
 	    else if (isel==5) then
 		    call study3dim
+            
 
 	    !!!--------------------------------------------------------------------------------
 	    !6!!------------------- Check & Modify wavefunction or show GTF/Orbital information
@@ -537,6 +543,82 @@ do while(.true.) !Main loop
 	    !25!!------------------- Delocalization and aromaticity analyses
 	    else if (isel==25) then
 		    call deloc_aromat
+
+            
+	    !!!-------------------------------------------------------------
+	    !26!!------------------- Structure and geometry related analyses
+	    else if (isel==26) then
+			do while(.true.)
+				write(*,*)
+				call menutitle("Geometry related analysis",10,1)
+				write(*,*) "0 Return"
+				write(*,*) "1 Calculate properties based on geometry information for specific atoms"
+				write(*,*) "2 Various geometry operation on present system"
+				write(*,"(a)") " 3 Molecular planarity parameter (MPP) and span of deviation from plane (SDP)"
+				write(*,*) "4 Evaluate interatomic connectivity and atomic coordination number"
+				write(*,*) "5 Calculate average bond length and average coordinate number"
+				write(*,*) "6 Calculate bond length/order alternation (BLA/BOA)"
+				write(*,*) "7 Calculate kinetic diameter"
+				write(*,*) "8 Calculate molecular diameter and length/width/height"
+				write(*,*) "9 Visualize molecular cavity and calculate its volume"
+				write(*,*) "10 Plot surface distance projection map"
+				write(*,*) "11 View free regions and calculating free volume in a cell"
+				write(*,*) "12 Calculate area of vdW surface of whole system or individual fragments"
+				write(*,*) "13 Calculate vdW volume via Monte Carlo method"
+				write(*,*) "14 Calculate vdW volume via Marching Tetrahedron algorithm based on electron density isosurface"
+				write(*,*) "15 Calculate cavity diameter of molecule and crystal, as well as graphically representing it as sphere"
+				write(*,*) "16 Calculate area and perimeter of a specific ring"
+				write(*,"(a)") " 17 Calculate minimum/maximum and geometry/mass center distances between two fragments"
+				read(*,*) isel
+				if (isel==0) then
+					exit
+				else if (isel==1) then
+					call calcgeomprop
+				else if (isel==2) then
+					call geom_operation
+				else if (isel==3) then
+					write(*,"(a,/)") " Hint: You can also directly enter this function by inputting ""MPP"" in main menu of Multiwfn"
+					call calcMPP
+				else if (isel==4) then
+					call conn_coordnum
+				else if (isel==5) then
+					call atmavgdist
+				else if (isel==6) then
+					call BLABOA
+				else if (isel==7) then
+					write(*,"(a)") " Please check Section 4.12.12 of Multiwfn manual on how to use main function 12 to calculate kinetic diameter"
+					write(*,*) "Press ENTER button to return"
+					read(*,*)
+				else if (isel==8) then
+					call calcmolsize
+				else if (isel==9) then
+					write(*,"(a)") " Please check Section 4.200.14.2 of Multiwfn manual on how to use domain analysis to visualize molecular cavity and calculate its volume"
+					write(*,*) "Press ENTER button to return"
+					read(*,*)
+				else if (isel==10) then
+					call molsurf_distmap
+				else if (isel==11) then
+					call freeregion
+				else if (isel==12) then
+					write(*,"(a)") " Please check Section 4.12.9 of Multiwfn manual on how to use main function 12 to calculate area of van der Waals surface of whole system or individual fragments"
+					write(*,*) "Press ENTER button to return"
+					read(*,*)
+				else if (isel==13) then
+					call molvol_MC
+				else if (isel==14) then
+					write(*,"(a)") " Please check Section 4.12.1 of Multiwfn manual on how to use main function 12 to &
+					calculate van der Waals volume based on electron density isosurface"
+					write(*,*) "Briefly speaking, you should simply enter main function 12 and choose option 6 to obtain the volume"
+					write(*,*) "Press ENTER button to return"
+					read(*,*)
+				else if (isel==15) then
+					call cavity_diameter
+				else if (isel==16) then
+					call calcringsize
+				else if (isel==17) then
+					call calcfragdist
+				end if
+			end do
 		
 
 	    !!!------------------------------------------------------------------
@@ -586,13 +668,20 @@ do while(.true.) !Main loop
 		    write(*,*) "97 Generate natural orbitals based on density matrix outputted by MRCC program"
 		    write(*,*) "99 Show EDF information (if any)"
 		    write(*,*) "100 Check the sanity of present wavefunction"
+            write(*,*) "201 Ring-ring distance&angle statistical analysis for a trajectory" !Only used by Sobereva in C18 work
+            write(*,*) "202 Ring rotation statistical analysis for a trajectory" !Only used by Sobereva in C18 work
             write(*,*) "1303 Setup fractional calculus"
-            !write(*,*) "201 Ring-ring distance&angle statistical analysis for a trajectory" !Only used by Sobereva in C18 work
-            !write(*,*) "202 Ring rotation statistical analysis for a trajectory" !Only used by Sobereva in C18 work
 		    read(*,*) i
 		    if (i==1) then
 			    write(*,*) "Input x,y,z in Bohr, e.g. 3.0,0.0,1.3"
-			    read(*,*) refx,refy,refz
+                write(*,*) "Note: with ""A"" suffix, the unit will be in Angstrom, e.g. 2,0.12,3.5 A"
+                read(*,"(a)") c200tmp
+			    read(c200tmp,*) refx,refy,refz
+                if (index(c200tmp,'A')/=0) then
+					refx=refx/b2a
+                    refy=refy/b2a
+                    refz=refz/b2a
+                end if
 			    write(*,*) "Done!"
 		    else if (i==2) then
 			    write(*,*) "Input index of the user-defined function, e.g. 24"

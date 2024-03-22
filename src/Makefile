@@ -68,10 +68,10 @@ cleanlibreta:
 
 #Define modules that used by other files
 
-dislin_d.mod : dislin_d.f90
+dislin.mod : dislin_d.f90
 	$(FC) $(OPT) -c dislin_d.f90
 
-define.o : define.f90 dislin_d.mod
+define.o : define.f90 dislin.mod
 	$(FC) $(OPT) -c define.f90
 
 Bspline.o : Bspline.f90
@@ -80,7 +80,7 @@ Bspline.o : Bspline.f90
 util.o : util.f90 define.o
 	$(FC) $(OPT) -c util.f90
 
-function.o : function.f90 define.o util.o Bspline.o libreta.o
+function.o : function.f90 define.o util.o Bspline.o libreta.o 2F2.f90.o
 	$(FC) $(OPT) -c function.f90
 
 plot.o : plot.f90 define.o util.o

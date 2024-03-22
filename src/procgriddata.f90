@@ -65,7 +65,8 @@ use GUI
 implicit real*8 (a-h,o-z)
 real*8,allocatable :: avgdata(:,:)
 integer,allocatable :: atmlist(:),atmlist2(:)
-character gridfile2*200,gridfilenew*200,atmidxfile*200,atmidxfile2*200,c200tmp*200,tmpchar,c2000tmp*2000
+logical,allocatable :: cub_do(:,:,:)
+character gridfile2*200,gridfilenew*200,atmidxfile*200,atmidxfile2*200,c200tmp*200,tmpchar,c2000tmp*2000,selectyn
 type(content) useratom(3),maxv,minv
 
 if (.not.allocated(cubmat)) then
@@ -118,7 +119,7 @@ do while(.true.)
 	write(*,*) "14 Set value of the grid points outside overlap region of two fragments"
 	write(*,*) "15 If data value is within certain range, set it to a specified value"
 	write(*,*) "16 Scale data range of present grid data"
-	write(*,*) "17 Show statistic data of the points in specific spatial and value range"
+	write(*,*) "17 Show statistic data of grid points in specific spatial and value ranges"
 	write(*,*) "18 Plot (local) integral curve or plane-averaged in X/Y/Z direction"
 	read(*,*) isel
     
@@ -667,45 +668,78 @@ do while(.true.)
 		rlowv=minval(cubmat)
 		rhighv=maxval(cubmat)
 		write(*,*) "1 Obtain statistic data for all grid points"
-		write(*,*) "2 Obtain statistic data for grid points in specific spatial and value range"
+		write(*,*) "2 Obtain statistic data for grid points in specific spatial and value ranges"
 		read(*,*) iselrange
-		if (iselrange==2) then
-			write(*,"(a)") " Input the lower and upper limits of X coordinate (in Angstrom), e.g. -40,33.5"
-            write(*,*) "If you don't want to set constraint, input ""a"""
-			read(*,"(a)") c200tmp
-			if (index(c200tmp,'a')/=0) then
-				read(c200tmp,*) rlowx,rhighx
-				rlowx=rlowx/b2a
-				rhighx=rhighx/b2a
-			end if
-			write(*,"(a)") " Input the lower and upper limits of Y coordinate (in Angstrom)"
-            write(*,*) "If you do not want to set this constraint, input ""a"""
-			read(*,"(a)") c200tmp
-			if (index(c200tmp,'a')/=0) then
-				read(c200tmp,*) rlowy,rhighy
-				rlowy=rlowy/b2a
-				rhighy=rhighy/b2a
-			end if
-			write(*,"(a)") " Input the lower and upper limits of Z coordinate (in Angstrom), e.g. -40,33.5"
-            write(*,*) "If you do not want to set this constraint, input ""a"""
-			read(*,"(a)") c200tmp
-			if (index(c200tmp,'a')/=0) then
-				read(c200tmp,*) rlowz,rhighz
-				rlowz=rlowz/b2a
-				rhighz=rhighz/b2a
-			end if
+        if (iselrange==1) then
+			iregion=0
+		else if (iselrange==2) then
 			write(*,"(a)") " Input the lower and upper limits of value, e.g. -2,3.25"
-            write(*,*) "If you do not want to set this constraint, input ""a"""
+            write(*,*) "If you do not want to set this constraint, press ENTER button directly"
 			read(*,"(a)") c200tmp
-			if (index(c200tmp,'a')/=0) read(c200tmp,*) rlowv,rhighv
+			if (index(c200tmp,'a')==0.and.c200tmp/=" ") read(c200tmp,*) rlowv,rhighv
+            write(*,*) "How to define the spatial region?"
+            write(*,*) "1 Rectangular region"
+            write(*,*) "2 Cylindrical region"
+            write(*,*) "3 Spherical region"
+            read(*,*) iregion
+            if (iregion==1) then
+				write(*,"(a)") " Input the lower and upper limits of X coordinate (in Angstrom), e.g. -40,33.5"
+				write(*,*) "If you do not want to set constraint, input ""a"""
+				read(*,"(a)") c200tmp
+				if (index(c200tmp,'a')/=0) then
+					read(c200tmp,*) rlowx,rhighx
+					rlowx=rlowx/b2a
+					rhighx=rhighx/b2a
+				end if
+				write(*,"(a)") " Input the lower and upper limits of Y coordinate (in Angstrom)"
+				write(*,*) "If you do not want to set this constraint, input ""a"""
+				read(*,"(a)") c200tmp
+				if (index(c200tmp,'a')/=0) then
+					read(c200tmp,*) rlowy,rhighy
+					rlowy=rlowy/b2a
+					rhighy=rhighy/b2a
+				end if
+				write(*,"(a)") " Input the lower and upper limits of Z coordinate (in Angstrom), e.g. -40,33.5"
+				write(*,*) "If you do not want to set this constraint, input ""a"""
+				read(*,"(a)") c200tmp
+				if (index(c200tmp,'a')/=0) then
+					read(c200tmp,*) rlowz,rhighz
+					rlowz=rlowz/b2a
+					rhighz=rhighz/b2a
+				end if
+            else if (iregion==2) then
+				write(*,*) "Input X,Y,Z of the first end point of cylinder (in Angstrom), e.g. 0,1,-1.5"
+                read(*,*) cylx1,cyly1,cylz1
+				write(*,*) "Input X,Y,Z of the second end point of cylinder (in Angstrom), e.g. 0,1,1.5"
+                read(*,*) cylx2,cyly2,cylz2
+                write(*,*) "Input radius of the cylinder (in Angstrom), e.g. 2.1"
+                read(*,*) cylrad
+                cylx1=cylx1/b2a
+                cyly1=cyly1/b2a
+                cylz1=cylz1/b2a
+                cylx2=cylx2/b2a
+                cyly2=cyly2/b2a
+                cylz2=cylz2/b2a
+                cylrad=cylrad/b2a
+            else if (iregion==3) then
+				write(*,*) "Input X,Y,Z coordinate of sphere center (in Angstrom), e.g. 1.0,5.4,-0.1"
+                read(*,*) sphcenx,sphceny,sphcenz
+                write(*,*) "Input radius of the sphere (in Angstrom), e.g. 3.5"
+                read(*,*) sphrad
+                sphcenx=sphcenx/b2a
+                sphceny=sphceny/b2a
+                sphcenz=sphcenz/b2a
+                sphrad=sphrad/b2a
+            end if
 		end if
 		
-		write(*,*) "The geometry and value range for statistics"
-		write(*,"(' Lower and upper limit of X:',2f14.8,' Bohr')") rlowx,rhighx
-		write(*,"(' Lower and upper limit of Y:',2f14.8,' Bohr')") rlowy,rhighy
-		write(*,"(' Lower and upper limit of Z:',2f14.8,' Bohr')") rlowz,rhighz
-		write(*,"(' Lower and upper limit of value:',2E20.10)") rlowv,rhighv
-		write(*,*)
+        if (iregion==0) then
+			write(*,*) "The geometry range for statistics"
+			write(*,"(' Lower and upper limit of X:',2f14.8,' Bohr')") rlowx,rhighx
+			write(*,"(' Lower and upper limit of Y:',2f14.8,' Bohr')") rlowy,rhighy
+			write(*,"(' Lower and upper limit of Z:',2f14.8,' Bohr')") rlowz,rhighz
+		end if
+        
 		maxv%value=cubmat(1,1,1)
 		maxv%x=orgx
 		maxv%y=orgy
@@ -725,15 +759,38 @@ do while(.true.)
 		igoodpointpos=0
 		igoodpointneg=0
 		sumupsqrtot=0
+        allocate(cub_do(nx,ny,nz))
+        cub_do=.false.
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
-                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
-			        if (tmpx<rlowx.or.tmpx>rhighx) cycle
-				    if (tmpy<rlowy.or.tmpy>rhighy) cycle
-					if (tmpz<rlowz.or.tmpz>rhighz) cycle
 					valtmp=cubmat(i,j,k)
 					if (valtmp<rlowv.or.valtmp>rhighv) cycle
+                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+                    if (iregion==1) then !Rectangle
+						if (tmpx<rlowx.or.tmpx>rhighx) cycle
+						if (tmpy<rlowy.or.tmpy>rhighy) cycle
+						if (tmpz<rlowz.or.tmpz>rhighz) cycle
+                    else if (iregion==2) then !Cylinder
+						rdist=potlinedis(tmpx,tmpy,tmpz,cylx1,cyly1,cylz1,cylx2,cyly2,cylz2)
+                        if (rdist>cylrad) cycle
+                        cenx=(cylx1+cylx2)/2
+                        ceny=(cyly1+cyly2)/2
+                        cenz=(cylz1+cylz2)/2
+                        dirx=cylx1-cylx2
+                        diry=cyly1-cyly2
+                        dirz=cylz1-cylz2
+                        !Plane equation:  dirx*(x-cenx)+diry*(y-ceny)+dirz*(z-cenz)=0
+                        !namely, dirx*x + diry*y + dirz*z -dirx*cenx -diry*ceny -dirz*cenz = 0
+                        pleD=-dirx*cenx-diry*ceny-dirz*cenz 
+                        call pointABCDdis(tmpx,tmpy,tmpz,dirx,diry,dirz,pleD,dist,0)
+                        cyllength=dsqrt(dirx**2+diry**2+dirz**2)
+                        if (dist>cyllength/2) cycle
+                    else if (iregion==3) then !Sphere
+						rdist=dsqrt((tmpx-sphcenx)**2+(tmpy-sphceny)**2+(tmpz-sphcenz)**2)
+                        if (rdist>sphrad) cycle
+                    end if
+                    cub_do(i,j,k)=.true.
 					if (valtmp>0) then
 						sumuppos=sumuppos+valtmp
 						cenxpos=cenxpos+tmpx*valtmp
@@ -773,20 +830,20 @@ do while(.true.)
         call calc_dvol(dvol)
 		avgtot=sumuptot/numpt
 		stddev=0
+        
 		!Calculate standard deviation
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
-                    call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
-			        if (tmpx<rlowx.or.tmpx>rhighx) cycle
-				    if (tmpy<rlowy.or.tmpy>rhighy) cycle
-					if (tmpz<rlowz.or.tmpz>rhighz) cycle
-					if (valtmp<rlowv.or.valtmp>rhighv) cycle
-					stddev=stddev+(cubmat(i,j,k)-avgtot)**2
+                    if (cub_do(i,j,k)) then
+						stddev=stddev+(cubmat(i,j,k)-avgtot)**2
+                    end if
 				end do
 			end do
 		end do
 		stddev=dsqrt(stddev/numpt)
+        
+        write(*,*)
 		write(*,"(' The minimum value:',E16.8,' at',3f12.6,' Bohr')") minv%value,minv%x,minv%y,minv%z
 		write(*,"(' The maximum value:',E16.8,' at',3f12.6,' Bohr')") maxv%value,maxv%x,maxv%y,maxv%z
 		write(*,"(' Differential element:',f15.10,' Bohr^3')") dvol
@@ -809,9 +866,34 @@ do while(.true.)
 		write(*,"(' X,Y,Z of barycenter (in Bohr)')")
 		write(*,"(' Positive part:',3f20.8)") cenxpos,cenypos,cenzpos
 		write(*,"(' Negative part:',3f20.8)") cenxneg,cenyneg,cenzneg
+        
 		!If positive and negative cancel each other exactly, namely sumuptot is about zero, total barycenter will be infinitely large
 		if (abs(sumuptot)>0.001D0) write(*,"(' Total:        ',3f20.8)") cenxtot,cenytot,cenztot
-		
+        
+        if (iselrange==2) then
+			write(*,*)
+			write(*,"(a)") " Do you want to export the grids actually involved in statistics to grid.xyz in current folder for visual check? (y/n)"
+            read(*,*) selectyn
+            if (selectyn=='y'.or.selectyn=='Y') then
+				open(10,file="grid.xyz",status="replace")
+                write(10,*) count(cub_do.eqv..true.)
+                write(10,*)
+				do k=1,nz
+					do j=1,ny
+						do i=1,nx
+							if (cub_do(i,j,k)) then
+								call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+								write(10,"(a4,3f12.6)") "X",tmpx*b2a,tmpy*b2a,tmpz*b2a
+							end if
+						end do
+					end do
+				end do
+                close(10)
+                write(*,"(a)") " Done! grid.xyz has been exported in current folder. The coordinates are in Angstrom. You may use VMD program to visualze it"
+            end if
+        end if
+		deallocate(cub_do)
+        
 	else if (isel==18) then !Integral curve
         call drawintcurve
 	end if
@@ -955,7 +1037,7 @@ use defvar
 use util
 use GUI
 implicit real*8 (a-h,o-z)
-character c200tmp*200
+character c200tmp*200,c80tmp*80
 real*8,allocatable :: intcurve(:),locintcurve(:),pleavgcurve(:),curvepos(:)
 
 if (gridv1(2)==0.and.gridv1(3)==0) then !Can integrate along X axis
@@ -983,8 +1065,8 @@ if (idir==1) then
     if (gridv1(2)==0.and.gridv1(3)==0.and.sum(gridv1*gridv2)==0.and.sum(gridv1*gridv3)==0) then
         continue
     else
-        write(*,"(a)") " Error: To integrate along X axis, grid vector 1 is must be parallel &
-        along X axis and the other two are in YZ plane. The present grid does not meet this conditions"
+        write(*,"(a)") " Error: To integrate along X axis, grid vector 1 must be parallel &
+        to X axis and the other two should be in YZ plane. The present grid does not meet this condition"
         write(*,*) "Press ENTER button to continue"
         read(*,*)
         return
@@ -993,8 +1075,8 @@ else if (idir==2) then
     if (gridv2(1)==0.and.gridv2(3)==0.and.sum(gridv2*gridv1)==0.and.sum(gridv2*gridv3)==0) then
         continue
     else
-        write(*,"(a)") " Error: To integrate along Y axis, grid vector 2 is must be parallel &
-        along Y axis and the other two are in XZ plane. The present grid does not meet this conditions"
+        write(*,"(a)") " Error: To integrate along Y axis, grid vector 2 must be parallel &
+        to Y axis and the other two should be in XZ plane. The present grid does not meet this condition"
         write(*,*) "Press ENTER button to continue"
         read(*,*)
         return
@@ -1003,8 +1085,8 @@ else if (idir==3) then
     if (gridv3(1)==0.and.gridv3(2)==0.and.sum(gridv3*gridv1)==0.and.sum(gridv3*gridv2)==0) then
         continue
     else
-        write(*,"(a)") " Error: To integrate along Z axis, grid vector 3 is must be parallel &
-        along Z axis and the other two are in XY plane. The present grid does not meet this conditions"
+        write(*,"(a)") " Error: To integrate along Z axis, grid vector 3 must be parallel &
+        to Z axis and the other two should be in XY plane. The present grid does not meet this condition"
         write(*,*) "Press ENTER button to continue"
         read(*,*)
         return
@@ -1012,9 +1094,11 @@ else if (idir==3) then
 end if
 
 write(*,*) "Input lower and upper limits of the position (in Angstrom), e.g. -30,51.5"
-write(*,*) "Input ""a"" can choose the entire range"
+write(*,*) "Press ENTER button directly or input ""a"" can choose the entire range"
 read(*,"(a)") c200tmp
-if (index(c200tmp,"a")==0) then
+if (c200tmp==" ".or.index(c200tmp,"a")/=0) then
+	continue
+else
 	read(c200tmp,*) rlow,rhigh
 	rlow=rlow/b2a
 	rhigh=rhigh/b2a
@@ -1025,7 +1109,7 @@ if (idir==1) then !Direction 1
 	allocate(intcurve(nx),locintcurve(nx),curvepos(nx),pleavgcurve(nx))
 	ncurpt=nx
     v1len=dsqrt(sum(gridv1**2))
-	if (index(c200tmp,"a")/=0) then
+	if (c200tmp==" ".or.index(c200tmp,"a")/=0) then
 		rlow=orgx
 		rhigh=orgx+(nx-1)*v1len
 	end if
@@ -1042,7 +1126,7 @@ else if (idir==2) then !Direction 2
 	allocate(intcurve(ny),locintcurve(ny),curvepos(ny),pleavgcurve(ny))
 	ncurpt=ny
     v2len=dsqrt(sum(gridv2**2))
-	if (index(c200tmp,"a")/=0) then
+	if (c200tmp==" ".or.index(c200tmp,"a")/=0) then
 		rlow=orgy
 		rhigh=orgy+(ny-1)*v2len
 	end if
@@ -1059,7 +1143,7 @@ else if (idir==3) then !Direction 3
 	allocate(intcurve(nz),locintcurve(nz),curvepos(nz),pleavgcurve(nz))
 	ncurpt=nz
     v3len=dsqrt(sum(gridv3**2))
-	if (index(c200tmp,"a")/=0) then
+	if (c200tmp==" ".or.index(c200tmp,"a")/=0) then
 		rlow=orgz
 		rhigh=orgz+(nz-1)*v3len
 	end if
@@ -1080,12 +1164,14 @@ write(*,*)
 write(*,"(' Minimum and maximum of plane-averaged curve:',2E16.8)") minval(pleavgcurve),maxval(pleavgcurve)
 write(*,"(' Minimum and maximum of local integral curve:',2E16.8)") minval(locintcurve),maxval(locintcurve)
 write(*,"(' Minimum and maximum of integral curve:      ',2E16.8)") minval(intcurve),maxval(intcurve)
+rlowlim=1
+ruplim=1
 
 do while(.true.)
 	write(*,*)
 	write(*,*) "-2 Set format of saving graphical file, current: "//graphformat
-	if (ilenunit1D==1) write(*,*) "-1 Change length unit of the graph to Angstrom"
-	if (ilenunit1D==2) write(*,*) "-1 Change length unit of the graph to Bohr"
+	if (ilenunit1D==1) write(*,*) "-1 Change length unit of the graph from Bohr to Angstrom"
+	if (ilenunit1D==2) write(*,*) "-1 Change length unit of the graph from Angstrom to Bohr"
 	write(*,*) "0 Return"
 	write(*,*) "1 Plot graph of integral curve"
 	write(*,*) "2 Plot graph of local integral curve"
@@ -1096,6 +1182,12 @@ do while(.true.)
 	write(*,*) "7 Export data of integral curve to intcurve.txt in current folder"
 	write(*,*) "8 Export data of local integral curve to locintcurve.txt in current folder"
 	write(*,*) "9 Export data of plane-averaged curve to pleavgcurve.txt in current folder"
+	if (rlowlim==ruplim) then
+		write(*,*) "10 Set lower and upper limits of Y-axis, current: Auto"
+    else
+		write(*,"(a,2E14.6)") " 10 Set lower and upper limits of Y-axis, current:",rlowlim,ruplim
+    end if
+    write(*,*) "11 Calculate value a given position (via linear interpolation)"
 	read(*,*) isel2
     if (isel2==-2) then
         call setgraphformat
@@ -1107,36 +1199,54 @@ do while(.true.)
 		end if
 	else if (isel2==0) then
 		exit
-	else if (isel2==1.or.isel2==4) then
-		disminmax=maxval(intcurve)-minval(intcurve)
-		ylow=minval(intcurve)-0.1D0*disminmax
-		yhigh=maxval(intcurve)+0.1D0*disminmax
+	else if (isel2==1.or.isel2==4) then !Integral curve
+        if (rlowlim==ruplim) then
+			disminmax=maxval(intcurve)-minval(intcurve)
+			ylow=minval(intcurve)-0.1D0*disminmax
+			yhigh=maxval(intcurve)+0.1D0*disminmax
+        else
+			ylow=rlowlim
+            yhigh=ruplim
+        end if
 		stplabx=(rhigh-rlow)/10
 		stplaby=(yhigh-ylow)/10
+        call showcurveminmax(ncurpt,curvepos,intcurve,ilenunit1D)
 		if (isel2==1) then
 			call drawcurve(curvepos,intcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"show")
 		else if (isel2==4) then
 			call drawcurve(curvepos,intcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"save")
             write(*,"(a)") " Done! Image file of integral curve has been saved to current folder with DISLIN prefix"
         end if
-	else if (isel2==2.or.isel2==5) then
-		disminmax=maxval(locintcurve)-minval(locintcurve)
-		ylow=minval(locintcurve)-0.1D0*disminmax
-		yhigh=maxval(locintcurve)+0.1D0*disminmax
+	else if (isel2==2.or.isel2==5) then !Local integral curve
+        if (rlowlim==ruplim) then
+			disminmax=maxval(locintcurve)-minval(locintcurve)
+			ylow=minval(locintcurve)-0.1D0*disminmax
+			yhigh=maxval(locintcurve)+0.1D0*disminmax
+        else
+			ylow=rlowlim
+            yhigh=ruplim
+        end if
 		stplabx=(rhigh-rlow)/10
 		stplaby=(yhigh-ylow)/10
+        call showcurveminmax(ncurpt,curvepos,locintcurve,ilenunit1D)
 		if (isel2==2) then
 			call drawcurve(curvepos,locintcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"show")
 		else if (isel2==5) then
 			call drawcurve(curvepos,locintcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"save")
             write(*,"(a)") " Done! Image file of local integral curve has been saved to current folder with DISLIN prefix"
         end if
-	else if (isel2==3.or.isel2==6) then
-		disminmax=maxval(pleavgcurve)-minval(pleavgcurve)
-		ylow=minval(pleavgcurve)-0.1D0*disminmax
-		yhigh=maxval(pleavgcurve)+0.1D0*disminmax
+	else if (isel2==3.or.isel2==6) then !Plane-averaged curve
+        if (rlowlim==ruplim) then
+			disminmax=maxval(pleavgcurve)-minval(pleavgcurve)
+			ylow=minval(pleavgcurve)-0.1D0*disminmax
+			yhigh=maxval(pleavgcurve)+0.1D0*disminmax
+        else
+			ylow=rlowlim
+            yhigh=ruplim
+        end if
 		stplabx=(rhigh-rlow)/10
 		stplaby=(yhigh-ylow)/10
+        call showcurveminmax(ncurpt,curvepos,pleavgcurve,ilenunit1D)
 		if (isel2==3) then
 			call drawcurve(curvepos,pleavgcurve,ncurpt,rlow,rhigh,stplabx,ylow,yhigh,stplaby,"show")
 		else if (isel2==6) then
@@ -1167,6 +1277,41 @@ do while(.true.)
 		end do
 		close(10)
 		write(*,"(a)") " Done! 1,2,3 columns correspond to the coordinate (in Bohr and in Angstrom) in the direction you selected and the plane-averaged value, respectively"						
+	else if (isel2==10) then
+		write(*,*) "Input lower and upper limits of Y-axis, e.g. -2.3,16.8"
+        write(*,*) "If pressing ENTER button directly, the limits will be automatically determined"
+        read(*,"(a)") c80tmp
+        if (c80tmp==" ") then
+			rlowlim=1
+            ruplim=1
+        else
+	        read(c80tmp,*) rlowlim,ruplim
+        end if
+    else if (isel2==11) then
+		write(*,*) "Calculate value a given point for which curve?"
+        write(*,*) "1 Integral curve"
+        write(*,*) "2 Local integral curve"
+        write(*,*) "3 Plane-averaged curve"
+        read(*,*) itype
+        if (ilenunit1D==1) write(*,*) "Input position in Bohr, e.g. 2.3"
+        if (ilenunit1D==2) write(*,*) "Input position in Angstrom, e.g. 2.3"
+        read(*,*) posinp
+        if (ilenunit1D==2) posinp=posinp/b2a
+        if (posinp<minval(curvepos)) then
+			write(*,*) "Error: The inputted position is smaller than lower limit!"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            cycle
+        else if (posinp>maxval(curvepos)) then
+			write(*,*) "Error: The inputted position is larger than upper limit!"
+            write(*,*) "Press ENTER button to return"
+            read(*,*)
+            cycle
+        end if
+        if (itype==1) call linintpol(curvepos,intcurve,ncurpt,posinp,val)
+        if (itype==2) call linintpol(curvepos,locintcurve,ncurpt,posinp,val)
+        if (itype==3) call linintpol(curvepos,pleavgcurve,ncurpt,posinp,val)
+        write(*,"(' The value is ',1PE18.8)") val
 	end if
 end do
 end subroutine

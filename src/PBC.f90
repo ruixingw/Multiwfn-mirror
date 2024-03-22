@@ -3,6 +3,7 @@ subroutine showcellinfo
 use defvar
 implicit real*8 (a-h,o-z)
 character c200tmp*200
+real*8 rcellv1(3),rcellv2(3),rcellv3(3)
 
 if (ifPBC>0) then
 	write(*,*)
@@ -24,15 +25,33 @@ if (ifPBC>0) then
         end if
     end if
     if (ifPBC==3) then
+        call getrcellvec(rcellv1,rcellv2,rcellv3)
+        write(*,*) "Reciprocal vectors in Angstrom^-1:"
+        write(*,"(' Vector 1,  X=',f11.5,'  Y=',f11.5,'  Z=',f11.5,'  Norm:',f11.5)") rcellv1/b2a,dsqrt(sum(rcellv1**2))/b2a
+        write(*,"(' Vector 2,  X=',f11.5,'  Y=',f11.5,'  Z=',f11.5,'  Norm:',f11.5)") rcellv2/b2a,dsqrt(sum(rcellv2**2))/b2a
+        write(*,"(' Vector 3,  X=',f11.5,'  Y=',f11.5,'  Z=',f11.5,'  Norm:',f11.5)") rcellv3/b2a,dsqrt(sum(rcellv3**2))/b2a
+    end if
+    if (ifPBC==3) then
         call getcellabc(asize,bsize,csize,alpha,beta,gamma)
         write(*,"(' Cell angles:  Alpha=',f9.4,'  Beta=',f9.4,'  Gamma=',f9.4,' degree')") alpha,beta,gamma
         call calc_cellvol(cellvol)
+        call calc_vecarea(cellv1*b2a,cellv2*b2a,area)
+        write(*,"(' Area between a and b:',f12.4,' Angstrom^2')") area
+        call calc_vecarea(cellv2*b2a,cellv3*b2a,area)
+        write(*,"(' Area between b and c:',f12.4,' Angstrom^2')") area
+        call calc_vecarea(cellv1*b2a,cellv3*b2a,area)
+        write(*,"(' Area between a and c:',f12.4,' Angstrom^2')") area
         write(*,"(' Cell volume:',f16.4,' Bohr^3    (',f16.4,' Angstrom^3 )')") cellvol,cellvol*b2a**3
         dens=sum(atmwei(a%index))*amu2kg*1000  /(cellvol*b2a**3/1D24)
         write(*,"(' Density:',f10.5,' g/cm^3    (',f10.3,' kg/m^3 )')") dens,dens*1000
         write(*,*)
         write(c200tmp,"(a,3f10.5,3f8.3,a)") "pbc set {",asize,bsize,csize,alpha,beta,gamma," } -all"
         write(*,"(a,/,1x,a)") " Command of showing box in VMD program: (then run ""pbc box"")",trim(c200tmp)
+        write(*,*)
+        do idx=1,8
+            call cellvertex(idx,vertx,verty,vertz)
+            write(*,"(' Vertex',i2,' of the cell:',3f10.4,' Bohr')") idx,vertx,verty,vertz
+        end do
     end if
 end if
 end subroutine
@@ -372,6 +391,18 @@ end subroutine
 
 
 
+!!---------- Input two vectors, return area     
+subroutine calc_vecarea(vec1,vec2,area)
+implicit real*8 (a-h,o-z)
+real*8 vec1(3),vec2(3),area
+vec2norm=dsqrt(sum(vec2**2))
+tmp=sum(vec1*(vec2/vec2norm)) !Length of vec1 along vector 2
+tmp2=dsqrt(sum(vec1**2)-tmp**2) !Length of vec1 perpendicular to vector 2
+area=tmp2*vec2norm
+end subroutine
+
+
+
 !!!------ Calculate cell vectors cellv1/2/3 based on inputted a,b,c (in Bohr) and alpha,beta,gamma (in degree), reference: http://gisaxs.com/index.php/Unit_cell
 subroutine abc2cellv(asize,bsize,csize,alpha,beta,gamma)
 use defvar
@@ -393,7 +424,7 @@ end subroutine
 
 
 
-!!!------ Return a,b,c (in Angstrom) and alpha,beta,gamma based on current cell information
+!!!------ Return a,b,c (in Angstrom!) and alpha,beta,gamma based on current cell information
 subroutine getcellabc(asize,bsize,csize,alpha,beta,gamma)
 use defvar
 use util
@@ -405,6 +436,23 @@ csize=dsqrt(sum(cellv3**2))*b2a
 alpha=vecang(cellv2(1),cellv2(2),cellv2(3),cellv3(1),cellv3(2),cellv3(3))
 beta =vecang(cellv1(1),cellv1(2),cellv1(3),cellv3(1),cellv3(2),cellv3(3))
 gamma=vecang(cellv1(1),cellv1(2),cellv1(3),cellv2(1),cellv2(2),cellv2(3))
+end subroutine
+
+
+
+!!!------- Get reciprocal vectors
+subroutine getrcellvec(rcellv1,rcellv2,rcellv3)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+real*8 rcellv1(3),rcellv2(3),rcellv3(3)
+call calc_cellvol(cellvol)
+call vecprod(cellv2(1),cellv2(2),cellv2(3),cellv3(1),cellv3(2),cellv3(3),rcellv1(1),rcellv1(2),rcellv1(3))
+call vecprod(cellv1(1),cellv1(2),cellv1(3),cellv3(1),cellv3(2),cellv3(3),rcellv2(1),rcellv2(2),rcellv2(3))
+call vecprod(cellv1(1),cellv1(2),cellv1(3),cellv2(1),cellv2(2),cellv2(3),rcellv3(1),rcellv3(2),rcellv3(3))
+rcellv1=rcellv1*2*pi/cellvol
+rcellv2=rcellv2*2*pi/cellvol
+rcellv3=rcellv3*2*pi/cellvol
 end subroutine
 
 
@@ -516,7 +564,7 @@ real*8 Cart(3),fract(3),ftest(3)
 integer ncenter_tmp
 
 call getcellabc(asize,bsize,csize,alpha,beta,gamma)
-devthres=1D-3 !If distance to cell boundary is less than 0.001 Bohr, then it will be regarded as boundary atom
+devthres=1D-2 !If distance to cell boundary is less than 0.01 Bohr, then it will be regarded as boundary atom
 fdeva=devthres/asize
 fdevb=devthres/bsize
 fdevc=devthres/csize
@@ -678,4 +726,37 @@ if (alive) then
         close(ifileid)
     end if
 end if
+end subroutine
+
+
+
+
+!!!-------- Calculate spacing between cell planes
+!h,k,l: Miller index
+!d: Returned spacing in Angstrom
+!Ref: Triclinic form in https://en.wikipedia.org/wiki/Crystal_structure
+subroutine cellplane_spacing(h,k,l,d)
+use defvar
+use util
+implicit real*8 (a-h,o-z)
+integer h,k,l
+real*8 d
+
+call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+arad=ang2rad(alpha)
+brad=ang2rad(beta)
+grad=ang2rad(gamma)
+sina=sin(arad)
+sinb=sin(brad)
+sing=sin(grad)
+cosa=cos(arad)
+cosb=cos(brad)
+cosg=cos(grad)
+
+tmp1=h**2/asize**2*sina**2 + k**2/bsize**2*sinb**2 + l**2/csize**2*sing**2
+tmp2=2*k*l/bsize/csize*(cosb*cosg-cosa) + 2*h*l/asize/csize*(cosg*cosa-cosb) + 2*h*k/asize/bsize*(cosa*cosb-cosg)
+tmp3=1-cosa**2-cosb**2-cosg**2+2*cosa*cosb*cosg
+
+d=(tmp1+tmp2)/tmp3
+d=1D0/dsqrt(d)
 end subroutine

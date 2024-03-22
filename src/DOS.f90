@@ -14,7 +14,7 @@
 subroutine DOS
 use defvar
 use util
-use dislin_d
+use dislin
 use functions
 implicit real*8 (a-h,o-z)
 integer,parameter :: nfragmax=10
@@ -41,7 +41,7 @@ integer :: legendx=400,legendy=160
 integer :: ticksize=45,height_axis=45,legtextsize=42
 character :: TDOSstring*80="TDOS",OPDOSstring*80="OPDOS",graphformat_old*4
 character :: PDOSstring(nfragmax)*80=(/ character(len=80) :: "PDOS frag.1","PDOS frag.2","PDOS frag.3","PDOS frag.4","PDOS frag.5","PDOS frag.6","PDOS frag.7","PDOS frag.8","PDOS frag.9","PDOS frag.10"/)
-integer :: ishowPDOSline(nfragmax),ishowPDOScurve(nfragmax),icurvewidth=3,ilinewidth=2,intarr(2)
+integer :: ishowPDOSline(nfragmax),ishowPDOScurve(nfragmax),icurvewidth=4,ilinewidth=2,intarr(2)
 integer :: iclrPDOS(nfragmax)=(/ 1,3,10,14,12,9,13,11,6,7 /)
 !Below are used for defining fragments. For Mulliken/SCPA, they correspond to basis function, while for Hirshfeld/Becke, they correspond to atom indices
 integer :: nfragDOS(nfragmax) !The number of terms in the fragments (0=undefined)
@@ -61,6 +61,7 @@ if (.not.(ifiletype==0.or.allocated(CObasa))) then
 	return
 end if
 
+!Initialize parameters and some arrays
 if (allocated(FWHM)) deallocate(FWHM) !Global array
 if (allocated(str)) deallocate(str) !Global array
 defFWHM=0.05D0 !Default FWHM
@@ -69,6 +70,7 @@ ibroadfunc=2 !Default is Gaussian function
 scalecurve=0.1D0 !Multiply curves with this value
 enelow=-0.8D0 !Energy range, a.u.
 enehigh=0.2D0
+eneshift=0
 stepx=0.1D0
 stepy=2
 gauweigh=0.5D0 !The weight of Gaussian in Pseudo-Voigt function
@@ -98,6 +100,8 @@ iusersetcolorscale=0 !If user has set color scale of 2D LDOS by himself
 Yrightsclfac=0.5D0 !Scale factor relative to left Y-axis of OPDOS (right Y-axis)
 yxratio=1D0
 graphformat_old=graphformat !User may change graphformat, backup it
+graphformat="pdf"
+call setfil("dislin."//trim(graphformat))
 
 ireadgautype=1
 if (ifiletype==0) then
@@ -187,21 +191,63 @@ else
 	return
 end if
 
-!Allocate all arrays that may be used, don't consider if they will actually be used, because memory consuming is very little
+if (all(MOene==0)) then
+	write(*,*) "Error: All orbitals have zero energy! In this case DOS cannot be plotted!"
+    if (ifiletype==9) write(*,"(a)") " If the molden file was produced by CP2K, note that OT should not be used, which does not produce orbital energies"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
+end if
+
+!Allocate all arrays that may be used, do not consider if they will actually be used, because memory consuming is very little
 allocate(DOSlinex(3*nmo),TDOSliney(3*nmo),TDOSliney_unocc(3*nmo),PDOSliney(3*nmo,nfragmax),OPDOSliney(3*nmo),LDOSliney(3*nmo))
 allocate(compfrag(nmo,0:nfragmax),OPfrag12(nmo))
 allocate(fragDOS(nbasis,nfragmax+1)) !The last slot is used to exchange fragment
 allocate(LDOScomp(nmo))
 
-!======Set from where to where are active energy levels
+!Set from where to where are active energy levels
 if (ispin==0.or.ispin==3) imoend=nmo !Text file or restricted .fch, or unrestricted but consider both spins
 if (ispin==1.or.ispin==2) imoend=nbasis !For unrestricted fch or Gaussian output file while only consider alpha or beta
 
-if (allocated(MOene_dos)) deallocate(MOene_dos,MOocc_dos) !MOene_dos is the working horse, record energy in current unit
+!MOene_dos is the working horse, recording energies in actually employed unit
+!MOocc_dos records occupation numbers for DOS plotting, which may be modified by users in present function
+if (allocated(MOene_dos)) deallocate(MOene_dos,MOocc_dos)
 allocate(MOene_dos(nmo),MOocc_dos(nmo))
 MOene_dos=MOene
 MOocc_dos=MOocc
 if (ifiletype==0.and.(inp==3.or.inp==4)) MOene_dos=au2eV*MOene
+
+!Suggested setting for periodic wavefunction, which may contain numerous densely distributed orbitals
+if (ifPBC>0) then
+    ilinebottom=1
+    nlabdigX=1
+	nlabdigY=1
+	nlabdigY_OPDOS=1
+    !Use eV unit
+	iunitx=2
+	unitstr=" eV"
+    FWHM=0.5D0 !Usually suitable
+	MOene_dos=MOene_dos*au2eV
+	str=str/au2eV
+	scalecurve=scalecurve*au2eV
+	stepx=1
+	stepy=1
+	eneHOMO=-1D99 !Determine HOMO energy
+	do imo=1,imoend
+		irealmo=imo
+		if (ispin==2) irealmo=imo+nbasis
+		if (MOocc_dos(irealmo)>0) then
+			if (MOene_dos(irealmo)>eneHOMO) eneHOMO=MOene_dos(irealmo)
+        else
+			eneLUMO=MOene_dos(irealmo)
+            exit
+        end if
+	end do
+    enelow=eneHOMO-8
+    enehigh=eneLUMO+5
+    icompmethod=2 !Use SCPA for PDOS by default, which doesn't rely on Sbas; evaluation of Sbas is quite time-consuming for large cell
+end if
+
 
 
 !!!!! ***** Main loop ***** !!!!!!
@@ -214,19 +260,20 @@ if (any(nfragDOS>0)) idoPDOS=1
 idoOPDOS=0
 if (all(nfragDOS(1:2)>0).and.icompmethod<=2.and.iPDOStype==1) idoOPDOS=1
 
-!Unknow text file doesn't contains wavefunction info, couldn't define fragment
+!Unknow text file does not contain wavefunction info, couldn't define fragment
 write(*,*)
 write(*,"(a)") " Hint: You can input ""s"" to save current plotting status to a file, or input ""l"" to load status from a file"
 write(*,*)
 write(*,*) "          ================ Plot density-of-states ==============="
 write(*,*) "-10 Return to main menu"
+write(*,"(a,f10.4,1x,a)") " -6 Set shift of energy levels, current:",eneshift,trim(unitstr)
 write(*,*) "-5 Customize energy levels, occupations, strengths and FWHMs for specific MOs"
 write(*,*) "-4 Show all orbital information"
 write(*,*) "-3 Export energy levels, occupations, strengths and FWHMs to plain text file"
 write(*,*) "-2 Define MO fragments for MO-PDOS"
 if (allocated(CObasa)) write(*,*) "-1 Define fragments for PDOS/OPDOS"
 if (idoOPDOS==1) then
-	write(*,*) "0 Draw TDOS+PDOS+OPDOS graph!"
+	write(*,*) "0 Draw TDOS+PDOS+OPDOS graph!    -0 Draw TDOS+PDOS!"
 else if (idoPDOS==1) then
     if (iPDOStype==1) then
 	    write(*,*) "0 Draw TDOS+PDOS graph!"
@@ -333,6 +380,7 @@ if (index(c80tmp,'s')/=0) then
     end do
     !New parameters, recording with labels
     write(10,"('ilinebottom',i5)") ilinebottom
+    write(10,"('eneshift',f12.6)") eneshift
     close(10)
     write(*,*) "Done!"
     cycle
@@ -415,16 +463,42 @@ else if (index(c80tmp,'l')/=0) then
         if (nfragDOS(ifrag)>0) read(10,"(12i6)") fragDOS(:nfragDOS(ifrag),ifrag)
     end do
     call readoption_int(10,"ilinebottom",' ',ilinebottom)
+    call readoption_float(10,"eneshift",' ',eneshift)
     close(10)
     write(*,*) "Loading finished!"
     cycle
 else
+	if (c80tmp=="-0") idoOPDOS=0
     read(c80tmp,*) isel
 end if
 
 if (isel==-10) then
     graphformat=graphformat_old
 	exit
+    
+else if (isel==-6) then !Shift energy levels
+	eneshift_old=eneshift
+	!Remove previous shift
+	MOene_dos=MOene_dos-eneshift
+    write(*,*) "Input shift value of orbital energies in "//trim(unitstr)//", e.g. 0.23"
+    write(*,*) "If input ""H"", then orbital energies will be added by negative of HOMO energy"
+    read(*,*) c80tmp
+    if (c80tmp=='h'.or.c80tmp=='H') then
+		eneHOMO=-1D99 !Determine HOMO energy
+		do imo=1,imoend
+			irealmo=imo
+			if (ispin==2) irealmo=imo+nbasis
+			if (MOocc_dos(irealmo)>0.and.MOene_dos(irealmo)>eneHOMO) eneHOMO=MOene_dos(irealmo)
+		end do
+        eneshift=-eneHOMO
+    else
+		read(c80tmp,*) eneshift
+    end if
+	MOene_dos=MOene_dos+eneshift
+    !Correspondingly shift X-range
+    enelow=enelow+(eneshift-eneshift_old)
+    enehigh=enehigh+(eneshift-eneshift_old)
+    write(*,*) "Done!"
     
 else if (isel==-5) then
 	do while(.true.)
@@ -577,6 +651,7 @@ else if (isel==-1) then
 	write(*,*) "           ----------------- Define fragments -----------------"
 	write(*,"(a)") " Note: Up to 10 fragments can be defined for plotting PDOS, but OPDOS will only be plotted for fragments 1 and 2"
 	do while(.true.)
+		write(*,*)
 		do ifrag=1,nfragmax
 			if (nfragDOS(ifrag)==0) then
 				write(*,"(' Fragment',i5,', has not been defined')") ifrag
@@ -586,7 +661,7 @@ else if (isel==-1) then
 			end if
 		end do
 		write(*,*) "Input fragment index to define it, e.g. 2"
-		write(*,*) "Input a negative index can unset the fragment, e.g. -2"
+		write(*,*) "Input a negative index will unset the fragment, e.g. -2"
 		write(*,*) "Input two indices can exchange the two fragments, e.g. 1,4"
 		write(*,*) "Input ""e"" can export current fragment setting to DOSfrag.txt in current folder"
 		write(*,*) "Input ""i"" can import fragment setting from DOSfrag.txt in current folder"
@@ -644,13 +719,32 @@ else if (isel==-1) then
 			    	end if
                 else if (icompmethod==3.or.icompmethod==4) then !Set atoms in specific fragment
                     write(*,*) "Input index of the atoms comprising the fragment, e.g. 2,3,7-10"
+                    write(*,*) "You can also input an element to choose all corresponding atoms, e.g. Fe"
                     read(*,"(a)") c2000tmp
-                    call str2arr(c2000tmp,ntmp)
-                    nfragDOS(ifragsel)=ntmp
-                    call str2arr(c2000tmp,ntmp,fragDOS(1:ntmp,ifragsel))
-                    if (any(fragDOS(1:ntmp,ifragsel)<0).or.any(fragDOS(1:ntmp,ifragsel)>ncenter)) then
-                        write(*,*) "Error: The atom index exceeded valid range! You must redefine it"
-                        nfragDOS(ifragsel)=0
+                    if (iachar(c2000tmp(1:1))<48.or.iachar(c2000tmp(1:1))>57) then !Input an element
+						call lc2uc(c2000tmp(1:1))
+						call uc2lc(c2000tmp(2:2))
+                        nfragDOS(ifragsel)=count(a%name==c2000tmp(1:2))
+						if (nfragDOS(ifragsel)==0) then
+							write(*,*) "Error: No atom is selected"
+                        else
+							itmp=0
+							do iatm=1,ncenter
+								if (a(iatm)%name==c2000tmp(1:2)) then
+									itmp=itmp+1
+                                    fragDOS(itmp,ifragsel)=iatm
+                                end if
+                            end do
+                            write(*,"(i8,' atoms were selected')") itmp
+                        end if
+                    else
+						call str2arr(c2000tmp,ntmp)
+						nfragDOS(ifragsel)=ntmp
+						call str2arr(c2000tmp,ntmp,fragDOS(1:ntmp,ifragsel))
+						if (any(fragDOS(1:ntmp,ifragsel)<0).or.any(fragDOS(1:ntmp,ifragsel)>ncenter)) then
+							write(*,*) "Error: The atom index exceeded valid range! You must redefine it"
+							nfragDOS(ifragsel)=0
+						end if
                     end if
                 end if
 			end if
@@ -740,6 +834,7 @@ else if (isel==8) then
 		enelow=enelow*au2eV
 		enehigh=enehigh*au2eV
 		unitstr=" eV"
+        eneshift=eneshift*au2eV
 		!After change the unit, in principle, the curve (and hence Y-range) will be automatically reduced by 27.2114.& 
 		!str should also be reduced by 27.2114 so that the discrete line can be properly shown in the graph range &
 		!To compensate the reduce of str, scalecurve thus be augmented by corresponding factor
@@ -753,6 +848,7 @@ else if (isel==8) then
 		FWHM=FWHM/au2eV
 		enelow=enelow/au2eV
 		enehigh=enehigh/au2eV
+        eneshift=eneshift/au2eV
 		unitstr=" a.u."
 		str=str*au2eV
 		scalecurve=scalecurve/au2eV
@@ -823,23 +919,48 @@ else if (isel==0.or.isel==10) then
 	if (idoPDOS==1) then !Calculate composition used for plotting PDOS
         if (iPDOStype==1) then !Basis function or atom PDOS
             compfrag=0
-		    ntime=1 !One set of orbital
-		    if (ispin==3) ntime=2 !Unrestricted wavefunction and both spins are considered, two passes using different CObas are needed
-            if (icompmethod<=2) then !Mulliken/SCPA
-                call ask_Sbas_PBC
-		        write(*,*) "Calculating orbital composition, please wait..."
-		        OPfrag12=0
-			    tmpmat=>CObasa
-			    if (ispin==2) tmpmat=>CObasb
-			    do itime=1,ntime !itime=1: tmpmat=CObasa, itime=2: tmpmat=CObasb
-				    if (itime==2) tmpmat=>CObasb
+            if (ispin/=3) then
+				ntime=1 !One set of orbital will be calculated
+		    else
+				ntime=2 !Unrestricted wavefunction and both spins are considered, twice calculation respectively using CObas of different spin
+            end if
+            if (icompmethod<=2) then !Mulliken/SCPA orbital composition analysis method
+				if (icompmethod==1.or.idoOPDOS==1) call ask_Sbas_PBC !Generate overlap matrix if not available, which is needed by Mulliken or OPDOS
+				OPfrag12=0
+				call walltime(iwalltime1)
+			    do itime=1,ntime
+                    if (ispin/=3) then
+						write(*,*) "Calculating orbital composition, please wait..."
+						tmpmat=>CObasa !Calculate total or alpha
+						if (ispin==2) tmpmat=>CObasb !Calculate beta
+                    else
+						if (itime==1) then
+							write(*,*) "Calculating alpha orbital composition, please wait..."
+							tmpmat=>CObasa
+						else if (itime==2) then
+							write(*,*) "Calculating beta orbital composition, please wait..."
+							tmpmat=>CObasb
+                        end if
+                    end if
+                    !Count how many orbitals will be evaluated this time
+                    ncalc=0
+                    do imo=1,nbasis
+					    imoall=imo !The orbital index defined from 1 to nmo
+					    if (ispin==2.or.itime==2) imoall=imo+nbasis
+						if (MOene_dos(imoall)<enelow-3*FWHMmax.or.MOene_dos(imoall)>enehigh+3*FWHMmax.or.MOene(imo)==0) cycle
+						ncalc=ncalc+1 
+                    end do
+                    write(*,"(i8,' orbitals will be calculated')") ncalc
+                    !Calculate orbital compositions
+					iprog=0
 				    !$OMP PARALLEL DO SHARED(compfrag,OPfrag12) PRIVATE(ifrag,imo,imoall,imoslot,allsqr,i,j,ibas,jbas) schedule(dynamic) NUM_THREADS(nthreads)
 				    do imo=1,nbasis !Cycle MOs
-					    imoslot=imo !The index to be placed into arrays, count from 1 even for beta only
-					    if (itime==2) imoslot=imo+nbasis
-					    imoall=imo !The index defined from 1 to nmo
+					    imoslot=imo !The index to be placed into arrays (used to generate PDOS). It starts from 1 even only beta is considered
+					    if (itime==2) imoslot=imo+nbasis !Both spin case
+					    imoall=imo !The orbital index defined from 1 to nmo
 					    if (ispin==2.or.itime==2) imoall=imo+nbasis
 					    if (MOene_dos(imoall)<enelow-3*FWHMmax.or.MOene_dos(imoall)>enehigh+3*FWHMmax) cycle
+                        if (MOene(imoall)==0) cycle !They are not actual orbitals recorded in inputted wavefunction file, which are abundant in CP2K molden file
 					    if (icompmethod==2) allsqr=sum(tmpmat(:,imo)**2)
 					    do ifrag=1,nfragmax
 						    if (nfragDOS(ifrag)==0) cycle
@@ -848,27 +969,34 @@ else if (isel==0.or.isel==10) then
 							    if (icompmethod==2) then !SCPA
 								    compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+tmpmat(ibas,imo)**2/allsqr
 							    else !Mulliken
-								    do jbas=1,nbasis !Cycle all basis, included inner&external cross term and local term (when ibas==jbas)
-									    compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(ibas,jbas)
+								    do jbas=1,nbasis !Cycle all basis, included inner&external cross term and local term
+									    compfrag(imoslot,ifrag)=compfrag(imoslot,ifrag)+tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(jbas,ibas)
 								    end do
 							    end if
 						    end do
 					    end do
- 					    !Calculate Overlap population between frag 1&2 via Mulliken method
+ 					    !Calculate Overlap population between fragments 1 and 2 via Mulliken method
 					    if (idoOPDOS==1) then
 						    do i=1,nfragDOS(1)
 							    ibas=fragDOS(i,1)
 							    do j=1,nfragDOS(2)
 								    jbas=fragDOS(j,2)
-								    OPfrag12(imoslot)=OPfrag12(imoslot)+2*tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(ibas,jbas)
+								    OPfrag12(imoslot)=OPfrag12(imoslot)+tmpmat(ibas,imo)*tmpmat(jbas,imo)*Sbas(jbas,ibas)
 							    end do
 						    end do
 					    end if
+						!$OMP CRITICAL
+						iprog=iprog+1
+						call showprog(iprog,ncalc)
+						!$OMP END CRITICAL
 				    end do
 				    !$OMP END PARALLEL DO
 			    end do
+                if (idoOPDOS==1) OPfrag12(:)=OPfrag12(:)*2
+				call walltime(iwalltime2)
+				write(*,"(' Calculation of orbital composition took up wall clock time',i10,' s')") iwalltime2-iwalltime1
             
-            else if (icompmethod>=3) then !Hirshfeld/Becke, the compositions have already been calculated when switch to them in the interface
+            else if (icompmethod>=3) then !Hirshfeld/Becke orbital composition analysis method, the compositions are not calculated here because they have already been calculated when switching to these methods in the interface
                 do itime=1,ntime !1: alpha, 2: beta
                     do imo=1,nbasis !Cycle MOs
 					    imoslot=imo !The index to be placed into arrays, count from 1 even for beta only
@@ -956,13 +1084,14 @@ else if (isel==0.or.isel==10) then
 		inow=3*(imo-1)
 		irealmo=imo
 		if (ispin==2) irealmo=imo+nbasis
-        if (MOene_dos(irealmo)==0) then
+        !In the case of CP2K, virtual orbitals are not solved by default and energies are exactly zero, skip them. &
+        !Use MOene rather than MOene_dos because the latter may be shifted
+        if (MOene(irealmo)==0) then 
 			if (iwarnzero==0) then
 				write(*,*) "Note: There are orbitals with zero energy, they are automatically ignored"
-                write(*,*)
 				iwarnzero=1
             end if
-			cycle !In the case of CP2K, virtual orbitals are not solved and energies are exactly zero, skip them
+			cycle
         end if
 		DOSlinex(inow+1:inow+3)=MOene_dos(irealmo)
 		if (isel==0) then
@@ -1002,7 +1131,7 @@ else if (isel==0.or.isel==10) then
 		do imo=1,imoend !Cycle each orbital
 			irealmo=imo
 			if (ispin==2) irealmo=imo+nbasis
-            if (MOene_dos(irealmo)==0) cycle !In the case of CP2K, virtual orbitals are not solved and energies are exactly zero, skip them
+            if (MOene(irealmo)==0) cycle
 			preterm=str(imo)*0.5D0/pi*FWHM(imo)
 			do ipoint=1,num1Dpoints !Broaden imo as curve
 				tmp=preterm/( (curvexpos(ipoint)-MOene_dos(irealmo))**2+0.25D0*FWHM(imo)**2 )
@@ -1023,7 +1152,7 @@ else if (isel==0.or.isel==10) then
 		do imo=1,imoend !Cycle each orbital
 			irealmo=imo
 			if (ispin==2) irealmo=imo+nbasis
-            if (MOene_dos(irealmo)==0) cycle !In the case of CP2K, virtual orbitals are not solved and energies are exactly zero, skip them
+            if (MOene(irealmo)==0) cycle
 			gauss_c=FWHM(imo)/2D0/sqrt(2*dlog(2D0))
 			gauss_a=str(imo)/(gauss_c*sqrt(2D0*pi))
 			do ipoint=1,num1Dpoints !Broaden imo as curve
@@ -1053,7 +1182,7 @@ else if (isel==0.or.isel==10) then
         TDOSnomin=TDOSnomin+curvexpos(ipoint)*TDOScurve(ipoint)*enestep
         TDOSdenomin=TDOSdenomin+TDOScurve(ipoint)*enestep
     end do
-    write(*,"(' Center of TDOS:',f12.6,a)") TDOSnomin/TDOSdenomin,unitstr
+    write(*,"(/,' Center of TDOS:',f12.6,a)") TDOSnomin/TDOSdenomin,unitstr
     do ifrag=1,nfragmax
         if (nfragDOS(ifrag)>0) then
             PDOSnomin=0
@@ -1190,11 +1319,11 @@ else if (isel==0.or.isel==10) then
 						if (ispin==2) irealmo=imo+nbasis
 						if (MOocc_dos(irealmo)>0.and.MOene_dos(irealmo)>enetmp) then
 							enetmp=MOene_dos(irealmo)
-							iFermi=irealmo
+							iHOMO=irealmo
 						end if
 					end do
-					HOMOlevx=MOene_dos(iFermi)
-					write(*,"(a,f10.5,a)") " Note: The vertical dash line corresponds to HOMO level at",MOene_dos(iFermi),unitstr
+					HOMOlevx=MOene_dos(iHOMO)
+					write(*,"(a,f10.5,a)") " Note: The vertical dash line corresponds to HOMO level at",MOene_dos(iHOMO),unitstr
 					HOMOlevy(1)=ylowerleft
 					HOMOlevy(2)=yupperleft
 					call linwid(ilinewidth) !Set to user-defined line width
@@ -1271,10 +1400,11 @@ else if (isel==0.or.isel==10) then
 				if (ishowOPDOScurve==1.or.ishowOPDOSline==1) then
 					CALL LABDIG(nlabdigY_OPDOS,"Y")
 					CALL NAME('OPDOS','Y')
+					call height(ticksize) !Size of ticks
                     if (ishowYlab==1) CALL NAMDIS(45,'Y')
 					call setgrf('NONE','NONE','NONE','NAME')
 					CALL GRAF(enelow,enehigh,enelow,stepx, ylowerright,yupperright,ylowerright,(yupperright-ylowerright)/10D0)
-					call color('GREEN')
+                    call setcolor(12) !Dark green
 					call linwid(icurvewidth) !Set to user-defined line width
 					if (ishowOPDOScurve==1) CALL CURVE(curvexpos,OPDOScurve,num1Dpoints)
                     if (ilinebottom==0) then !If showing lines at bottom, OPDOS lines will never be shown
@@ -1286,6 +1416,7 @@ else if (isel==0.or.isel==10) then
 					call color('WHITE')
 					call XAXGIT !Draw a black line at Y=0 to cover the colored OPDOS line
 					call linwid(1) !Recover to default line width of dislin
+					call height(legtextsize) !Define legend text size
 					if (ishowlegend==1) call legend(clegend,3) !Draw the legends (for TDOS,PDOS,OPDOS), must before endgrf
 					call endgrf
 				end if
@@ -1379,33 +1510,34 @@ else if (isel==0.or.isel==10) then
 			end if
 			if (ishowTDOScurve==1) write(*,*) "5 Toggle showing TDOS curve, current: Yes"
 			if (ishowTDOScurve==0) write(*,*) "5 Toggle showing TDOS curve, current: No"
-			if (ishowTDOSline==1) write(*,*) "6 Toggle showing TDOS line, current: Yes"
-			if (ishowTDOSline==0) write(*,*) "6 Toggle showing TDOS line, current: No"
+			if (ishowTDOSline==1) write(*,*) "6 Toggle showing TDOS discrete lines, current: Yes"
+			if (ishowTDOSline==0) write(*,*) "6 Toggle showing TDOS discrete lines, current: No"
 			if (idoPDOS==1) then
 				write(*,*) "7 Toggle showing PDOS curves"
-				write(*,*) "8 Toggle showing PDOS lines"
+				write(*,*) "8 Toggle showing PDOS discrete lines"
 			end if
 			if (idoOPDOS==1) then
 				if (ishowOPDOScurve==1) write(*,*) "9 Toggle showing OPDOS curve, current: Yes"
 				if (ishowOPDOScurve==0) write(*,*) "9 Toggle showing OPDOS curve, current: No"
-				if (ishowOPDOSline==1) write(*,*) "10 Toggle showing OPDOS line, current: Yes"
-				if (ishowOPDOSline==0) write(*,*) "10 Toggle showing OPDOS line, current: No"
+				if (ishowOPDOSline==1) write(*,*) "10 Toggle showing OPDOS lines, current: Yes"
+				if (ishowOPDOSline==0) write(*,*) "10 Toggle showing OPDOS lines, current: No"
 			end if
-			if (idoPDOS==1) write(*,*) "11 Set color for PDOS curves and lines"
+			if (idoPDOS==1) write(*,*) "11 Set color for PDOS curves and discrete lines"
             if (ishowlegend==1) write(*,"(a,' X=',i5,', Y=',i5)") " 12 Set position of legends, current:",legendx,legendy
 			if (ishowlegend==1) write(*,*) "13 Toggle showing legends, current: Yes"
 			if (ishowlegend==0) write(*,*) "13 Toggle showing legends, current: No"
 			if (idoOPDOS==1) write(*,"(a,f10.5)") " 14 Set scale factor of Y-axis for OPDOS, current:",Yrightsclfac
-			write(*,*) "15 Toggle showing vertical dashed line to highlight HOMO level"
+			if (ishowHOMOlev==0) write(*,*) "15 Toggle showing a dashed line to highlight HOMO level, current: No"
+			if (ishowHOMOlev==1) write(*,*) "15 Toggle showing a dashed line to highlight HOMO level, current: Yes"
 			write(*,*) "16 Set the texts in the legends"
 			write(*,"(a,i3)") " 17 Set width of curves, current:",icurvewidth
-			write(*,"(a,i3)") " 18 Set width of lines, current:",ilinewidth
+			write(*,"(a,i3)") " 18 Set width of discrete lines, current:",ilinewidth
 		    if (ishowYlab==1) write(*,*) "19 Toggle showing labels and ticks on Y-axis, current: Yes"
 		    if (ishowYlab==0) write(*,*) "19 Toggle showing labels and ticks on Y-axis, current: No"
             write(*,*) "20 Set number of decimal places for axes"
             write(*,*) "21 Set text sizes"
-            if (ilinebottom==0) write(*,*) "22 Toggle drawing lines at bottom of curves, current: No"
-            if (ilinebottom==1) write(*,*) "22 Toggle drawing lines at bottom of curves, current: Yes"
+            if (ilinebottom==0) write(*,*) "22 Toggle drawing discrete lines at bottom of curves, current: No"
+            if (ilinebottom==1) write(*,*) "22 Toggle drawing discrete lines at bottom of curves, current: Yes"
 			read(*,*) isel2
 
             if (isel2==-1) then

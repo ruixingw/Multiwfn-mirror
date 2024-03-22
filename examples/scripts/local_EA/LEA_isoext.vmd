@@ -1,5 +1,5 @@
-#This script is used to draw LEA (local electron affinity) colored molecular vdW surface (rho=0.0005) with surface LEA extrema
-#density.cub, avglocion.cub and surfanalysis.pdb should be presented in current folder
+#This script is used to draw LEA (local electron affinity) colored molecular vdW surface (rho=0.01) with surface LEA extrema
+#density.cub, userfunc.cub and surfanalysis.pdb should be presented in current folder
 
 color scale method BWR
 color Display Background white
@@ -10,7 +10,7 @@ light 2 on
 light 3 on
 material change transmode EdgyGlass 1.000000
 
-#Lower and upper limit of color scale of ALIE (a.u.)
+#Lower and upper limit of color scale of LEA (a.u.)
 #If you want to change in VMD, input for example: mol scaleminmax 0 1 0.320000 0.360000
 set colorlow -0.8
 set colorhigh -0.3

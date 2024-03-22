@@ -2,7 +2,7 @@ module deftype
 type atomtype
 character name*2 !name of atom
 integer index !The index in periodic table, if ECP was used, charge will smaller than this value
-real*8 x,y,z,charge !Coordinate(Bohr) and charge of atoms
+real*8 x,y,z,charge !Coordinate (Bohr) and (atomic or effective nuclear) charge of atoms. According to .fch file, -Bq atom has charge of 0
 !resid and resname are filled when loading pdb/pqr/gro, and in this case "iresinfo" will be 1. &
 !In other cases, iresinfo=0, resid will be set to 1 and resname will be space, subroutine readinfile do these
 integer resid
@@ -168,11 +168,11 @@ real*8 :: radii_Hugo(0:nelesupp)=(/ 0.10D0,1.00D0,0.74D0,& !Ghost,H,Ne(1~2)
 1.41D0,1.34D0,1.31D0,1.32D0,1.27D0,1.23D0,1.23D0,1.21D0,1.14D0,1.49D0,1.35D0,1.37D0,1.27D0,1.21D0,1.12D0,1.83D0,1.16D0,& !Hf~Rn,Fr,Ra
 1.62D0,1.47D0,1.52D0,1.48D0,1.47D0,1.50D0,1.51D0,1.51D0,1.48D0,1.47D0,1.46D0,1.45D0,1.44D0,1.43D0,1.67D0,1.51D0,(1.5D0,i=105,nelesupp) /) !Ac~Rf,~all
 
-real*8 :: YWTatomcoeff(18,3)=reshape((/ & !Coef. of fitting B3LYP/6-31G* density by Weitao Yang group for the first three rows, see supporting info. of JACS,132,6498
+real*8 :: YWTatomcoeff(18,3)=reshape((/ & !Coef. of fitting B3LYP/6-31G* density by Weitao Yang group for the first three rows, see supporting info. of JACS,132,6498. I found the fitting quality is poor!
 0.2815D0,2.437D0,11.84D0,31.34D0,67.82D0,120.2D0,190.9D0,289.5D0,406.3D0,561.3D0,760.8D0,1016.0D0,1319.0D0,1658.0D0,2042.0D0,2501.0D0,3024.0D0,3625.0D0, &
 0D0,0D0,0.06332D0,0.3694D0,0.8527D0,1.172D0,2.247D0,2.879D0,3.049D0,6.984D0,22.42D0,37.17D0,57.95D0,87.16D0,115.7D0,158.0D0,205.5D0,260.0D0, &
 0D0,0D0,0D0,0D0,0D0,0D0,0D0,0D0,0D0,0D0,0.06358D0,0.3331D0,0.8878D0,0.7888D0,1.465D0,2.17D0,3.369D0,5.211D0 /),(/18,3/))
-real*8 :: YWTatomexp(18,3)=reshape((/ & !Corresponding exponent of YWTatom, the value setted to 1.0 don't have any meaning, only for avoiding divide zero
+real*8 :: YWTatomexp(18,3)=reshape((/ & !Corresponding exponent of YWTatom, the value set to 1.0 doesn't have any meaning, only for avoiding divide zero. Note that this is not exponent of STO, but its inverse!
 0.5288D0,0.3379D0,0.1912D0,0.139D0,0.1059D0,0.0884D0,0.0767D0,0.0669D0,0.0608D0,0.0549D0,0.0496D0,0.0449D0,0.0411D0,0.0382D0,0.0358D0,0.0335D0,0.0315D0,0.0296D0, &
 1.0D0,1.0D0,0.9992D0,0.6945D0,0.53D0,0.548D0,0.4532D0,0.3974D0,0.3994D0,0.3447D0,0.2511D0,0.215D0,0.1874D0,0.1654D0,0.1509D0,0.1369D0,0.1259D0,0.1168D0, &
 1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0D0,1.0236D0,0.7753D0,0.5962D0,0.6995D0,0.5851D0,0.5149D0,0.4974D0,0.4412D0 /),(/18,3/))
@@ -247,14 +247,15 @@ character :: shtype2name(-5:5)=(/ "H","G","F","D","L","S","P","D","F","G","H" /)
 !Convert shell type to the number of basis functions in the shell: 0=s,1=p,-1=sp,2=6d,-2=5d,3=10f,-3=7f,4=15g,-4=9g,5=21h,-5=11h
 integer :: shtype2nbas(-5:5)=(/ 11,9,7,5,4,1,3,6,10,15,21 /) 
 
-!-------- Variables for wfn information(_org means using for backuping the first loaded molecule)
+!-------- Variables for wavefunction information (_org means using for backuping the first loaded molecule)
 integer :: ibasmode=0 !0/1 = GTO/STO is used in current wavefunction
 integer :: nmo=0,nprims=0,ncenter=0,ncenter_org=0,nmo_org=0,nprims_org=0 !Number of orbitals, primitive functions, nuclei
-integer :: idxHOMO=0,idxHOMOb=0 !Index of total/alpha and beta-HOMO. Can be determined by subroutine getHOMOidx
-integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cube/VASP grid=7, grd/dx/vti=8, molden=9, gms=10, MDL mol/sdf=11, gjf or ORCA inp or mop =12, mol2=13, mwfn=14, gro=15, cp2k input=16, cif=17, POSCAR=18
+integer :: idxHOMO=0,idxHOMOb=0 !shtype of total/alpha and beta-HOMO. Can be determined by subroutine getHOMOidx
+integer :: ifiletype=0 !Plain text=0, fch/fchk=1, wfn=2, wfx=3, chg/pqr=4, pdb/xyz=5, NBO .31=6, cube/VASP grid=7, grd/dx/vti=8, molden=9, gms=10, MDL mol/sdf=11, gjf or ORCA inp or mop =12, mol2=13, mwfn=14, gro=15, cp2k input=16, cif=17, POSCAR=18, QE input=19
 integer :: wfntype=0 !0/1/2= R/U/RO single determinant wavefunction, 3/4=R/U multiconfiguration wavefunction
 real*8 :: totenergy=0,virialratio=2,nelec=0,naelec=0,nbelec=0
-integer :: loadmulti=-99,loadcharge=-99 !Spin multiplicity and net charge, loaded directly from input file (e.g. from .gjf or .xyz), only utilized in rare cases. -99 means unloaded
+integer :: loadmulti=-99,loadcharge=-99 !Spin multiplicity and net charge, loaded directly from input file (e.g. from .gjf, Gaussian .out, ORCA .inp, title line of .xyz), only utilized in rare cases. -99 means unloaded
+real*8 :: kp1crd=0,kp2crd=0,kp3crd=0 !k-point fractional coordinate in three directions in reciprocal space for present wavefunction
 !-------- Variables for nuclei & GTF & Orbitals. Note: Row and column of CO(:,:) correspond to orbital and GTF, respectively, in contrary to convention
 type(atomtype),allocatable :: a(:),a_org(:),a_tmp(:) !a_tmp is only used in local temporary operation, should be destoried immediatedly after using
 type(primtype),allocatable,target :: b(:)
@@ -326,6 +327,11 @@ real*8 :: cellv1_org(3),cellv2_org(3),cellv3_org(3),cellv1_bk(3),cellv2_bk(3),ce
 integer :: ifPBC=0,ifPBC_org,ifPBC_bk !Dimension of periodicity. 0=Isolated system, 1/2/3/=one/two/three dimensions
 integer :: PBCnx,PBCny,PBCnz,ifdoPBCx,ifdoPBCy,ifdoPBCz !PBC setting actually used in calculation, they will be specified by init_PBC
 integer :: PBCnx_in=1,PBCny_in=1,PBCnz_in=1,ifdoPBCx_in=1,ifdoPBCy_in=1,ifdoPBCz_in=1 !PBC setting read from settings.ini
+!Neighbouring information of GTFs (including images) w.r.t. reduced grids
+integer,allocatable :: neighGTF(:,:,:,:),neighnGTF(:,:,:) !neighGTF(1:neighnGTF(i,j,k),i,j,k) contains neighbouring GTF indices at reduced grid (i,j,k). Grid index range in X is 0 to size(neighnGTF,1)-1
+integer,allocatable :: neighGTFcell(:,:,:,:,:) !neighGTF(1/2/3,m,i,j,k) is cell index in direction 1/2/3 of the m GTF neighbouring to reduced grid (i,j,k)
+real*8 spcred !Spacing of reduced grids
+real*8 orgx_neigh,orgy_neigh,orgz_neigh !Starting position of reduced grids
 
 !-------- Connectivity matrix
 !Loaded from .mol/mol2 using readmol/readmol2 or readmolconn (from mol), value is formal bond order; can also be guessed via genconnmat, value is 1/0 (connected, not connected)
@@ -340,7 +346,7 @@ real*8,allocatable :: traj(:,:,:) !traj(1/2/3,a,i) corresponds to x/y/z of the a
 !-------- Points loaded from external file
 integer :: numextpt=0
 real*8,allocatable :: extpt(:,:),extpttmp(:) !extpt(i,1:4) corresponds to X/Y/Z/value of point i, length unit is Bohr. extpttmp only records function value
-!-------- Atomic radial densities, originally loaded from .rad file
+!-------- Atomic radial densities, may be loaded from .rad file, or generated by e.g. Hirshfeld-I and MBIS procedure
 integer,allocatable :: atmradnpt(:) !How many radial points that each atom has
 real*8 atmradpos(200) !Position of radial points, shared by all atoms, since it is generated by the same rule
 real*8,allocatable :: atmradrho(:,:) !(j,iatm) corresponds to density value at j radial point of iatm atom
@@ -391,15 +397,15 @@ integer :: idrawbasinidx=0 !Draw which basin
 integer :: idrawinternalbasin=0 !=1 Draw internal part of the basin, =0 Only draw boundary grids
 integer :: ifixorbsign=0 !if 1, during generating orbital isosurface by drawmolgui, most part will always be positive (namely if sum(cubmat)<0 or sum(cubmattmp)<0, the data sign will be inverted)
 integer :: iatom_on_plane=0,iatom_on_plane_far=0,ibond_on_plane=0,plesel,IGRAD_ARROW=0,ILABEL_ON_CONTOUR,ncontour
-integer :: ictrlabsize=20,ivdwctrlabsize=0,iwidthvdwctr=10,iwidthposctr=1,iwidthnegctr=1,iwidthgradline=1,iclrindbndlab=14,plane_axistextsize=60,plane_axisnamesize=50,bondthick2D=10
+integer :: ictrlabsize=20,ivdwctrlabsize=0,iwidthvdwctr=10,iwidthposctr=3,iwidthnegctr=3,iwidthgradline=1,iclrindbndlab=14,plane_axistextsize=60,plane_axisnamesize=50,bondthick2D=10
 integer :: iclrindctrpos=5,iclrindctrneg=5,ivdwclrindctr=3,iclrindgradline=6,vdwctrstyle(2)=(/1,0/),ctrposstyle(2)=(/1,0/),ctrnegstyle(2)=(/10,15/)
 integer :: isavepic=0,icurve_vertlinex=0,iclrindatmlab=1,imarkrefpos=0,ilog10y=0,iclrcurve=1
 integer :: inucespplot=0,idrawmol=1,idrawisosur=0,isosursec=0,idrawtype=1,idrawcontour=1
 integer :: iinvgradvec=0,icolorvecfield=0,vecclrind=30,idrawplanevdwctr=0,iplaneoutall=0,icurvethick=5,iclrtrans=0,ifillctrline=0,ishowclrfill_bar=0
 integer,allocatable :: highlightatomlist(:)
 character :: stream_intmethod*5="RK2"
-character :: clrtransname(0:18)*50=(/ character(len=50) :: "Rainbow & white/black for out-of-limit data","Rainbow","Reversed rainbow","Rainbow starting from white","Spectrum","Reversed Spectrum",&
-"Grey","Reversed Grey","Blue-White-Red","Red-White-Blue","Blue-Green-Red","Red-Green-Blue","White-Dark red","Black-Orange-Yellow","White-Dark green","Black-Green","White-Dark blue","Black-Blue-Cyan","Viridis" /)
+character :: clrtransname(0:19)*50=(/ character(len=50) :: "Rainbow & white/black for out-of-limit data","Rainbow","Reversed rainbow","Rainbow starting from white","Spectrum","Reversed Spectrum",&
+"Grey","Reversed Grey","Blue-White-Red","Red-White-Blue","Blue-Green-Red","Red-Green-Blue","White-Dark red","Black-Orange-Yellow","White-Dark green","Black-Green","White-Dark blue","Black-Blue-Cyan","Viridis","Yellow-Orange-Black" /)
 real*8 :: drawisosurgui_SWGSTP=0.01D0,drawisosurgui_lowlim=-5,drawisosurgui_highlim=5 !Control isovalue bar setting in drawisosurgui
 real*8 :: surcolorzmin,surcolorzmax !fillctr is the contour value will be draw on fillcolor map
 real*8 :: curve_vertlinex=0D0,curvexyratio=0.618D0 !Gold partition
@@ -461,10 +467,10 @@ real*8 :: globaltmp=0 !A variable can be used anywhere and can be set by option 
 !! About line/plane/grid calculation, inner parameter
 !For 3D grid data. If the grid is not rectangle, only gridvec can fully define translation vectors
 real*8 :: orgx,orgy,orgz,endx,endy,endz !Origin, end point and translation length in X/Y/Z. dx=0 means the box was not defined before
-real*8 :: dx=0,dy,dz !Translation length in X/Y/Z. dx=0 means the box was not defined before. Using dx,dy,dz should be avoided in the future, always use gridv1/2/3 instead!
 integer :: nx=80,ny=80,nz=80 !The number of grids in three directions (never necessarily in X,Y,Z!)
 real*8 :: boxlenX,boxlenY,boxlenZ,boxcenX,boxcenY,boxcenZ !For temporary exchange data for setting box in GUI
-real*8 :: gridv1(3),gridv2(3),gridv3(3) !1/2/3th translation vector of grid. dx,dy,dz corresponds to 1(1), 2(2), 3(3) terms
+real*8 :: gridv1(3),gridv2(3),gridv3(3) !1/2/3th translation vector of grid. dx,dy,dz corresponds to gridv1(1), gridv2(2), gridv3(3)
+real*8 :: dx=0,dy,dz !Translation length in X/Y/Z. dx=0 means the box was not defined before. Using dx,dy,dz should be avoided in the future, always use gridv1/2/3 instead!
 !For 2D plane map
 real*8 :: v1x,v1y,v2x,v2y,v1z,v2z,a1x,a1y,a1z,a2x,a2y,a2z,a3x,a3y,a3z,d1,d2 !Translation vector 1 and 2, three point in self-defined plane for projecting label, d1,d2=Length of v1,v2
 real*8 :: orgx2D,orgy2D,orgz2D !X, Y, Z coordinate of origin of the plane map in molecular Cartesian space

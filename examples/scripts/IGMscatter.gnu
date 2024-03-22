@@ -2,7 +2,7 @@ set terminal postscript landscape enhanced color 'Helvetica' 20
 set encoding iso_8859_1
 set output 'IGMscatter.ps' 
 set key 
-set ylabel '{/Symbol d}g (a.u)' font "Helvetica, 20" 
+set ylabel '{/Symbol d}g (a.u.)' font "Helvetica, 20" 
 set xlabel 'sign({/Symbol-Oblique l}_2){/Symbol-Oblique r} (a.u.)' font "Helvetica, 20"
 set pm3d map
 set palette defined (-0.05 "blue",0.0 "green", 0.05 "red")

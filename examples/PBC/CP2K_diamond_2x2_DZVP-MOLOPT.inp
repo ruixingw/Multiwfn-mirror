@@ -102,8 +102,7 @@
     &END SCF
     &PRINT
       &MO_MOLDEN
-        NDIGITS 8
-        GTO_KIND SPHERICAL
+        NDIGITS 9
       &END MO_MOLDEN
     &END PRINT
   &END DFT

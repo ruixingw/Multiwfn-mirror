@@ -1,19 +1,20 @@
 !-------- Main interface of various other functions part 2
 subroutine otherfunc3_main
 implicit real*8 (a-h,o-z)
+
 do while(.true.)
 	write(*,*)
 	write(*,*) "              ============ Other functions (Part 3) ============ "
 	write(*,*) "0 Return"
 	write(*,*) "1 Viewing free regions and calculating free volume in a cell"
 	write(*,*) "2 Fitting atomic radial density as linear combination of multiple STOs or GTFs"
-    write(*,*) "3 Visualize (hyper)polarizability via unit sphere and vector representations"
+    !write(*,*) "3 Visualize (hyper)polarizability via unit sphere and vector representations"
     write(*,*) "4 Simulating scanning tunneling microscope (STM) image"
     write(*,*) "5 Calculate electric dipole/multipole moments and electronic spatial extent"
     write(*,*) "6 Calculate energies of present orbitals by inputting Fock matrix"
     write(*,*) "7 Geometry operation on the present system"
     write(*,*) "8 Plot surface distance projection map"
-    
+    write(*,*) "9 Determine Fermi level"
 	read(*,*) isel
 	if (isel==0) then
 		return
@@ -21,7 +22,7 @@ do while(.true.)
         call freeregion
 	else if (isel==2) then
         call fitatmdens
-	else if (isel==3) then
+	else if (isel==3) then !Hidden
         call vis_hypol
 	else if (isel==4) then
         call STM
@@ -33,6 +34,8 @@ do while(.true.)
         call geom_operation
     else if (isel==8) then
         call molsurf_distmap
+    else if (isel==9) then
+        call calc_Fermi_level
 	end if
 end do
 end subroutine
@@ -347,7 +350,7 @@ end subroutine
 !!------- Module used by fitatmdens and related routines
 module fitatmdens_mod
 real*8,allocatable :: radr(:),radrho(:) !Radial distance and sphericallized density
-integer :: ifittype=3 !=1: Minimize absolute error, =2: Minimize relative error, =3: Minimize RDF error
+integer :: ifittype=2 !=1: Minimize absolute error, =2: Minimize relative error, =3: Minimize RDF error
 integer :: ifunctype=1 !=1: STO, =2: GTF
 integer,parameter :: maxfitfunc=1000 !Maximum number of fitting functions
 real*8 exp_fit(maxfitfunc) !If exponents are requested to be fixed, use this array to pass exponents to the calculation routine
@@ -364,7 +367,7 @@ use util
 use plot
 implicit real*8 (a-h,o-z)
 character(len=3) :: funclab(2)=(/ "STO","GTF" /)
-character clegend*80,c200tmp*200
+character clegend*80,c200tmp*200,c80tmp*80
 real*8 parm(maxfitfunc*2) !Up to maxfitfunc fitting functions. The first half is coefficient, the latter half is exponents
 real*8,allocatable :: fiterr(:),fitrho(:) !Fitting error and fitted density at each fitting point
 integer :: npoint_CB=0
@@ -385,6 +388,7 @@ if (ncenter/=1.or.a(1)%x/=0.or.a(1)%y/=0.or.a(1)%z/=0) then
     read(*,*)
 end if
 
+maxcall=10000
 expcutoff=1 !Disable exponent truncation
 radstep=0.001D0/b2a
 npoint=4000
@@ -415,6 +419,7 @@ do while(.true.)
     if (idelredun==0) write(*,*) "11 Toggle removing redundant fitting functions, current: No"
     if (idelredun==1) write(*,*) "11 Toggle removing redundant fitting functions, current: Yes"
     write(*,"(a,i4)") " 12 Set number of second kind Gauss-Chebyshev fitting points, current:",npoint_CB
+    write(*,"(a,i10)") " 13 Set maximum number of function calls, current:",maxcall
     read(*,*) isel
     
     if (isel==0) then
@@ -442,14 +447,18 @@ do while(.true.)
             write(*,*)
             write(*,*) "0 Return"
             write(*,*) "1 Load initial guess from text file"
-            write(*,*) "2 Set initial guess as ""crude fitting by a few STOs with variable exponents"""
-            write(*,*) "3 Set initial guess as ""fine fitting by 30 GTFs with fixed exponents"""
-            write(*,*) "4 Set initial guess as ""fine fitting by 10 GTFs with variable exponents"""
-            write(*,*) "5 Set initial guess as ""fine fitting by 15 GTFs with variable exponents"""
+            write(*,*) "  Prebuilt settings:"
+            write(*,*) "2 Crude fitting by a few STOs with variable exponents"
+            write(*,*) "3 Ideal fitting by 30 GTFs with fixed exponents"
+            write(*,*) "4 Fine fitting by 15 GTFs with variable exponents"
+            write(*,*) "5 Fine fitting by 10 GTFs with variable exponents"
             !write(*,*) "6 Set initial guess as ""fine fitting by 20 GTFs with variable exponents"""
             !GTF with variable exponents higher than 15 is not a good idea, it is extremely expensive &
-            !and often the lmdif1 routine return unoptimized result or convergence tolerance cannot be reached, &
+            !and often the lmdif1 routine returns unoptimized result or convergence tolerance cannot be reached, &
             !and the result is never detectably better than 15 GTFs
+            write(*,*) "7 Relatively fine fitting by no more than 10 GTFs with variable exponents"
+            write(*,*) "Hint: Accuracy & number of functions: 3>4>5>7>2"
+            if (nfitfunc>0) write(*,*) "10 Combine two fitting functions together"
             read(*,*) isel2
             
             if (isel2==0) then
@@ -463,7 +472,7 @@ do while(.true.)
 	                write(*,*) "Cannot find the file, input again!"
                 end do
                 open(10,file=c200tmp,status="old")
-                nfitfunc=totlinenum(10,2)
+                nfitfunc=totlinenum(10,1)
                 if (nfitfunc>maxfitfunc) then
                     write(*,"(' Error: Number of fitting functions should not exceed',i6)") maxfitfunc
                     write(*,*) "Press ENTER button to cancel loading"
@@ -474,14 +483,15 @@ do while(.true.)
                     end do
                 end if
                 close(10)
-            else if (isel2==2) then !Initial guess of STO
+            else if (isel2==2) then !Initial guess of few STOs
                 ifixexp=0
-                idelredun=0
+                ifunctype=1
+                idelredun=1
                 if (a(1)%index<=2) then
                     nfitfunc=1
                     parm(1)=1D0
                     parm(2)=2D0
-                else if (a(1)%index<=10) then
+                else if (a(1)%index<=10) then !For second row, using more STOs does not improve result
                     nfitfunc=2
                     parm(1:nfitfunc)=(/ 100,1 /)
                     parm(nfitfunc+1:2*nfitfunc)=(/ 10,2 /)
@@ -507,7 +517,7 @@ do while(.true.)
                 nfitfunc=30
                 idelredun=1
                 do ifunc=1,nfitfunc
-                    !parm(nfitfunc+ifunc)=0.1D0*2D0**(ifunc-1) !Using this is safer, but tail cannot be represent as well as below setting
+                    !parm(nfitfunc+ifunc)=0.1D0*2D0**(ifunc-1) !Using this is safer, but tail cannot be represented as well as below setting
                     parm(nfitfunc+ifunc)=0.05D0*2D0**(ifunc-1)
                 end do
                 parm(1:nfitfunc)=1
@@ -516,26 +526,52 @@ do while(.true.)
                 ifunctype=2
                 idelredun=1
                 if (isel2==4) then
-                    nfitfunc=10
-                    do ifunc=1,nfitfunc
-                        parm(nfitfunc+ifunc)=0.1D0*2.5D0**(ifunc-1)
-                    end do
-                else if (isel2==5) then
                     nfitfunc=15
                     do ifunc=1,nfitfunc
                         parm(nfitfunc+ifunc)=0.1D0*2D0**(ifunc-1)
                     end do
-                else if (isel2==6) then
-                    nfitfunc=20
+                else if (isel2==5) then
+                    nfitfunc=10
                     do ifunc=1,nfitfunc
-                        parm(nfitfunc+ifunc)=0.05D0*1.6D0**(ifunc-1)
+                        parm(nfitfunc+ifunc)=0.1D0*2.5D0**(ifunc-1)
                     end do
+                !else if (isel2==6) then
+                !    nfitfunc=20
+                !    do ifunc=1,nfitfunc
+                !        parm(nfitfunc+ifunc)=0.05D0*1.6D0**(ifunc-1)
+                !    end do
                 end if
                 parm(1:nfitfunc)=1
                 tol=1E-4 !Use more loose tolerance than default make convergence easier while the quality is not detectably lowered
+            else if (isel2==7) then !Initial guess of few GTFs
+                ifixexp=0
+                ifunctype=2
+                idelredun=1
+                if (a(1)%index<=18) then
+                    nfitfunc=6
+                    do ifunc=1,nfitfunc
+                        parm(nfitfunc+ifunc)=0.15D0*2.5D0**(ifunc-1)
+                    end do
+                else
+                    nfitfunc=10
+                    do ifunc=1,nfitfunc
+                        parm(nfitfunc+ifunc)=0.1D0*2.5D0**(ifunc-1)
+                    end do
+                end if
+                parm(1:nfitfunc)=1
+            else if (isel2==10) then
+                write(*,"(a)") " Input indices of the functions to combine (e.g. 1,3), whose average exponent will be taken as the new exponent, &
+                and their coefficients will be summed up"
+                read(*,*) ifunc1,ifunc2
+                parm(ifunc1)=parm(ifunc1)+parm(ifunc2)
+                parm(nfitfunc+ifunc1)=(parm(nfitfunc+ifunc1)+parm(nfitfunc+ifunc2))/2
+                parm(ifunc2:ifunc2+2*nfitfunc)=parm(ifunc2+1:ifunc2+2*nfitfunc+1)
+                nfitfunc=nfitfunc-1
+                parm(nfitfunc+ifunc2:nfitfunc+ifunc2+nfitfunc)=parm(nfitfunc+ifunc2+1:nfitfunc+ifunc2+1+nfitfunc)
+                write(*,*) "Done!"
             end if
         end do
-        
+        maxcall=10000*2*nfitfunc
     else if (isel==4) then
         write(*,*) "Input fitting tolerance, e.g. 1E-7"
         write(*,*) "The smaller the value, the better the fitting accuracy while higher the cost"
@@ -580,7 +616,10 @@ do while(.true.)
         write(*,*) "Set the number of second kind Gauss-Chebyshev points used in fitting, e.g. 80"
         write(*,*) "If input 0, then this kind of points will not be included in fitting"
         read(*,*) npoint_CB
-    
+    else if (isel==13) then
+        write(*,*) "Input maximum number of function calls, e.g. 300000"
+        write(*,"(a)") " Note: If the error minimization does not converge when reaches this condition, the minimization will stop and unconverged result will be reported"
+        read(*,*) maxcall
     else if (isel==1) then !Do fitting
     
         if (nfitfunc==0) then
@@ -666,7 +705,6 @@ do while(.true.)
         
         !!!!!! Start fitting !!!!!!
         nparm=nfitfunc*2
-        maxcall=1000*nparm
         write(*,"(/,' Maximum number of function calls:',i8)") maxcall
         write(*,"(' Convergence tolerance:',f16.8)") tol
         if (ifixexp==1) write(*,*) "Exponents are kept fixed as requested"
@@ -832,6 +870,7 @@ do while(.true.)
             write(*,"(a)") " 5 Export fitted density from 0 to 10 Angstrom with double dense grid to fitdens.txt in current folder"
             write(*,*) "6 Check integral of fitted density"
             write(*,*) "7 Check fitted density at a given radial distance"
+            write(*,*) "8 Output coefficients and exponents as Fortran code to a .txt file" !For my personal use
             read(*,*) isel2
             if (isel2==0) then
                 exit
@@ -945,6 +984,20 @@ do while(.true.)
                 write(*,*) "Input radial distance in Angstrom, e.g. 3.8"
                 read(*,*) rtmp
                 write(*,"(' Fitted density is',1PE16.8,' a.u.')") calcfitdens(rtmp/b2a,nparm,parm)
+            else if (isel2==8) then
+                write(c80tmp,"(i3.3,'_',a,'.txt')") a(1)%index,trim(ind2name(a(1)%index))
+                open(10,file=trim(c80tmp),status="replace")
+                write(10,"(a,i3,a)") "case(",a(1)%index,")"
+                if (ifunctype==1) write(10,"(a,i2)") "    nSTO=",nfitfunc
+                if (ifunctype==2) write(10,"(a,i2)") "    nGTF=",nfitfunc
+                do ifunc=1,nfitfunc
+                    write(10,"('    atomcoeff(',i2,')=',1PD16.8)") ifunc,parm(ifunc)
+                end do
+                do ifunc=1,nfitfunc
+                    write(10,"('    atomexp(',i2,')=',1PD16.8)") ifunc,parm(nfitfunc+ifunc)
+                end do
+                close(10)
+                write(*,*) "Data has been outputted to "//trim(c80tmp)
             end if
         end do
         
@@ -1065,10 +1118,15 @@ real*8,external :: LDOS_STM
 if (allocated(cubmat)) deallocate(cubmat)
 nx=200;ny=200
 !Set initial range, in Bohr
-orgx=minval(a%x)-3
-endx=maxval(a%x)+3
-orgy=minval(a%y)-3
-endy=maxval(a%y)+3
+if (ifPBC==0) then
+    orgx=minval(a%x)-3
+    endx=maxval(a%x)+3
+    orgy=minval(a%y)-3
+    endy=maxval(a%y)+3
+else
+    call cellmaxxyz(endx,endy,zmax)
+    call cellminxyz(orgx,orgy,zmin)
+end if
 orgz=maxval(a%z)+0.7D0/b2a !Scan Z=0.7~2.5 Angstrom with respect to top atom
 endz=orgz+1.8D0/b2a
 
@@ -1080,11 +1138,18 @@ if (.not.allocated(b)) then
 end if
 
 if (wfntype==3.or.wfntype==4) then
-    write(*,"(a)") " Warning: This function does not formally support wavefunction with non-integer orbital occupancy!"
-    write(*,"(a)") " However, if your wavefunction indeed recorded correct orbital energy information, you may still use this function, &
-    but you need to manually specify a proper Fermi level via option 3 and set a bias voltage via option 2"
-    write(*,*) "Press ENTER button to continue"
+    write(*,"(a)") " Error: This function does not formally support wavefunction with non-integer orbital occupancy!"
+    write(*,"(a)") " Please enter subfunction 9 of main function 300 to determine Fermi level, which can be used in the present function, and &
+    at the same time, all orbital occupancies will be set to integer"
+    write(*,*) "Press ENTER button to return"
     read(*,*)
+    return
+else if (wfntype==2) then
+    write(*,"(a)") " Error: Restricted open-shell wavefunction is not directly supported by this function. You should first use subfunction 37 in &
+    main function 6 to transform the wavefunction to equivalent unrestricted open-shell form!"
+    write(*,*) "Press ENTER button to return"
+    read(*,*)
+    return
 else !Single-determinant wavefunction
     if (allocated(CObasa)) then
         call getHOMOidx
@@ -1217,25 +1282,46 @@ do while(.true.)
         end if
         write(*,"(/,' Lower limit of MO energy considered in the calculation:',f12.3,' eV')") Elow*au2eV
         write(*,"(' Upper limit of MO energy considered in the calculation:',f12.3,' eV')") Ehigh*au2eV
-        nconsider=0
         write(*,*) "The MOs taken into account in the current STM simulation:"
+        ialphabeg=0 !Record range of alpha (or spatial) MOs to be considered
+        ialphaend=0
+        ibetabeg=0 !Record range of beta MOs to be considered
+        ibetaend=0
+        nconsider=0
         do imo=1,nmo
+            iadd=0
             if (bias<=0) then !Electron flows from sample to tip
-                if (MOocc(imo)>0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) then
+                if (MOocc(imo)/=0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) then
                     write(*,"(' MO',i6,'   Occ=',f6.3,'   Energy=',f12.4,' eV   Type: ',a)") imo,MOocc(imo),MOene(imo)*au2eV,trim(orbtypename(MOtype(imo)))
-                    nconsider=nconsider+1
+                    iadd=1
                 end if
             else if (bias>0) then !Electron flows from tip to sample
                 if (MOocc(imo)==0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) then
                     write(*,"(' MO',i6,'   Occ=',f6.3,'   Energy=',f12.4,' eV   Type: ',a)") imo,MOocc(imo),MOene(imo)*au2eV,trim(orbtypename(MOtype(imo)))
-                    nconsider=nconsider+1
+                    iadd=1
                 end if
+            end if
+            if (iadd==1) then
+                if (MOtype(imo)<=1) then
+                    if (ialphabeg==0) ialphabeg=imo
+                    ialphaend=imo
+                else
+                    if (ibetabeg==0) ibetabeg=imo
+                    ibetaend=imo
+                end if
+                nconsider=nconsider+1
             end if
         end do
         if (nconsider==0) then
             write(*,*) "None. Therefore the calculation is canceled"
             cycle
         else
+            if (wfntype==0) then
+                write(*,"(' Range of MOs to be taken into account:',2i8)") ialphabeg,ialphaend
+            else
+                write(*,"(' Range of alpha MOs to be taken into account:',2i8)") ialphabeg,ialphaend
+                write(*,"(' Range of beta MOs to be taken into account: ',2i8)") ibetabeg,ibetaend
+            end if
             write(*,"(' Totally',i5,' MOs are taken into account',/)") nconsider
         end if
         
@@ -1261,20 +1347,33 @@ do while(.true.)
             gridv2=(/ 0D0,dy,0D0 /)
             gridv3=(/ 0D0,0D0,dz /)
 	        write(*,"(' Grid spacings in X,Y,Z are',3f12.6,' Bohr')") dx,dy,dz
+            if (ifPBC==0) then
+	            call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+            else
+	            call gen_neigh_GTF !Generate neighbouring GTFs list at reduced grids, for faster evaluation
+            end if
             write(*,*) "Calculating, please wait..."
             allocate(cubmat(nx,ny,nz))
             call walltime(iwalltime1)
             ifinish=0
-            !$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(ix,xpos,iy,ypos,iz,zpos) schedule(dynamic) NUM_THREADS(nthreads)
+            !$OMP PARALLEL DO SHARED(cubmat,ifinish) PRIVATE(ix,xpos,iy,ypos,iz,zpos) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
             do iz=1,nz
                 do iy=1,ny
                     do ix=1,nx
                         call getgridxyz(ix,iy,iz,xpos,ypos,zpos)
-                        cubmat(ix,iy,iz)=LDOS_STM(xpos,ypos,zpos,Ef,bias)
+                        cubmat(ix,iy,iz)=LDOS_STM(xpos,ypos,zpos,ialphabeg,ialphaend)
+                        if (wfntype==0) then
+                            cubmat(ix,iy,iz)=cubmat(ix,iy,iz)*2
+                        else if (wfntype==1.and.ibetaend/=0) then !Beta part
+                            cubmat(ix,iy,iz)=cubmat(ix,iy,iz)+LDOS_STM(xpos,ypos,zpos,ibetabeg,ibetaend)
+                        end if
                     end do
+		            !$OMP CRITICAL
+		            ifinish=ifinish+1
+		            ishowprog=mod(ifinish,floor(ny*nz/100D0))
+		            if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
+        	        !$OMP END CRITICAL
                 end do
-                ifinish=ifinish+1
-                call showprog(ifinish,nz)
             end do
             !$OMP END PARALLEL DO
             call walltime(iwalltime2)
@@ -1330,7 +1429,7 @@ do while(.true.)
                     write(*,"(' Maximal Z is',f12.6,' Angstrom')") maxval(planemat)
                     clrlow=minval(planemat)*0.99999D0;clrhigh=maxval(planemat)*1.00001D0 !Avoid a few points marginally exceed upper limit
                     planestpz=(clrhigh-clrlow)/10
-                    orgz2D=0 !In fact this is meaningless for present case, but should be initialized...
+                    orgz2D=endz !In fact this is meaningless for present case, but can be used to determine distance for plotting atomic labels, namely distance between atom and maximum z of calculated region
                     idrawtype=1
                     idrawcontour=0
                     call gencontour(2,clrlow,clrhigh,10) !Generate contour lines evenly covering lower and upper limits
@@ -1348,7 +1447,12 @@ do while(.true.)
                 do ix=1,nx
                     xpos=orgx+(ix-1)*dx
                     ypos=orgy+(iy-1)*dy
-                    planemat(ix,iy)=LDOS_STM(xpos,ypos,orgz,Ef,bias)
+                    planemat(ix,iy)=LDOS_STM(xpos,ypos,orgz,ialphabeg,ialphaend)
+                    if (wfntype==0) then
+                        planemat(ix,iy)=planemat(ix,iy)*2
+                    else if (wfntype==1.and.ibetaend/=0) then !Beta part
+                        planemat(ix,iy)=planemat(ix,iy)+LDOS_STM(xpos,ypos,orgz,ibetabeg,ibetaend)
+                    end if
                 end do
             end do
             !$OMP END PARALLEL DO
@@ -1369,37 +1473,20 @@ end do
 end subroutine
 
 
-!!-------- Return LDOS for MOs from Ef-bias to Ef at x,y,z (Bohr). Invoked by subroutine STM
-real*8 function LDOS_STM(x,y,z,Ef,bias)
+!!-------- Return LDOS at x,y,z (Bohr) contributed by MO from ibeg to iend. Invoked by subroutine STM
+real*8 function LDOS_STM(x,y,z,ibeg,iend)
 use defvar
 use functions
 implicit real*8 (a-h,o-z)
-real*8 x,y,z,Ef,bias,wfnval(nmo)
+real*8 x,y,z,wfnval(nmo)
+integer ibeg,iend
 
-call orbderv(1,1,nmo,x,y,z,wfnval)
-if (bias<=0) then
-    Elow=Ef+bias
-    Ehigh=Ef
-else
-    Elow=Ef
-    Ehigh=Ef+bias
-end if
-
+call orbderv(1,ibeg,iend,x,y,z,wfnval)
 LDOS_STM=0
-do imo=1,nmo
-    if (MOtype(imo)==0) then !Spatial orbital
-        ndup=2
-    else !Spin orbital
-        ndup=1
-    end if
-    if (bias<=0) then !Electron flows from sample to tip
-        if (MOocc(imo)>0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) LDOS_STM=LDOS_STM+ndup*wfnval(imo)**2
-    else if (bias>0) then !Electron flows from tip to sample
-        if (MOocc(imo)==0.and.MOene(imo)>=Elow.and.MOene(imo)<=Ehigh) LDOS_STM=LDOS_STM+ndup*wfnval(imo)**2
-    end if
+do imo=ibeg,iend
+    LDOS_STM=LDOS_STM+wfnval(imo)**2
 end do
 end function
-
 
 
 
@@ -1587,7 +1674,8 @@ write(*,"(' Dipole moment (a.u.): ',3f14.6)") xinttot,yinttot,zinttot
 write(*,"(' Dipole moment (Debye):',3f14.6)") xinttot*au2debye,yinttot*au2debye,zinttot*au2debye
 dipmag=sqrt(xinttot**2+yinttot**2+zinttot**2)
 write(*,"(' Magnitude of dipole moment:',f14.6,' a.u.',f14.6,' Debye')") dipmag,dipmag*au2debye
-
+write(*,*)
+write(*,*) "Note: All units given below are in a.u."
 write(*,"(/,' Quadrupole moments (Standard Cartesian form):')")
 fac=1
 !fac=au2debye*b2a !If using this factor, result will be identical to "Quadrupole moment (field-independent basis, Debye-Ang):" printed by Gaussian
@@ -1648,9 +1736,6 @@ write(*,"(' XXYZ=',f16.4,'  YYXZ=',f16.4,'  ZZXY=',f16.4)") xxyzinttot*fac,yyxzi
 ESE=ESEx+ESEy+ESEz
 write(*,"(/,a,f16.6)") " Electronic spatial extent <r^2>:",ESE
 write(*,"(' Components of <r^2>:  X=',f15.6,'  Y=',f15.6,'  Z=',f15.6)") ESEx,ESEy,ESEz
-
-write(*,*)
-write(*,*) "Note: Unless otherwise specified, all data shown above are in a.u."
 end subroutine
 
 
@@ -1900,7 +1985,7 @@ do while(.true.)
             read(*,*)
             cycle
         else
-        	    call outcif_wrapper
+            call outcif_wrapper
         end if
     else if (isel==-3) then
     	    call outgjf_wrapper
@@ -1911,9 +1996,7 @@ do while(.true.)
     else if (isel==0) then
         if (ncenter<=300) then
             write(*,*) "Atom list:"
-		    do i=1,ncenter
-			    write(*,"(i5,'(',a2,')',' --> Charge:',f10.6,'  x,y,z(Bohr):',3f11.6)") i,a(i)%name,a(i)%charge,a(i)%x,a(i)%y,a(i)%z
-		    end do
+		    call showcoordA(0)
         else
 			write(*,"(a)") " Note: There are more than 300 atoms, so their information are not shown here now. &
             To print, in the manu bar please select ""Tools"" - ""Print XYZ coordinates"""
@@ -3271,4 +3354,147 @@ do iatm=1,ncenter
         return
     end if
 end do
+end subroutine
+
+
+
+
+!!-------- Calculate Fermi-level based on Fermi-Dirac distribution using energies of molecular orbitals
+subroutine calc_Fermi_level
+use defvar
+implicit real*8 (a-h,o-z)
+character c80tmp*80
+real*8 numelec,numelec_tmp
+real*8 :: thres=1D-6
+
+if (allocated(b)) then
+    if (wfntype==3.or.wfntype==4) then
+        write(*,"(a)") " Note: Because orbital occupation numbers are not all integer, now make orbital occupations integer and satisfy Aufbau principle"
+        call make_occ_integer_Aufbau
+    end if
+    call getHOMOidx
+    if (idxHOMO==nmo) then
+        write(*,*)
+        write(*,*) "Error: This function cannot be used because there is no unoccupied orbitals!"
+        return
+    end if
+else !Load orbital energies from plain text file
+    if (allocated(MOene)) deallocate(MOene)
+    open(10,file=filename,status="old")
+    read(10,"(a)") c80tmp
+    read(c80tmp,*,iostat=ierror) nocc,nvir,noccB,nvirB
+    if (ierror==0) then !Unrestricted
+        wfntype=1
+        nelec=nocc+noccB
+        nmo=nocc+nvir+noccB+nvirB
+        idxHOMO=nocc
+        idxHOMOb=nocc+nvir+noccB
+    else !Restricted
+        read(c80tmp,*) nocc,nvir
+        wfntype=0
+        nelec=2*nocc
+        nmo=nocc+nvir
+        idxHOMO=nocc
+    end if
+    allocate(MOene(nmo))
+    read(10,*) MOene(1:nocc)
+    read(10,*) MOene(nocc+1:nocc+nvir)
+    if (wfntype==1) then
+        read(10,*) MOene(nocc+nvir+1:nocc+nvir+noccB)
+        read(10,*) MOene(nocc+nvir+noccB+1:nocc+nvir+noccB+nvirB)
+    end if
+    close(10)
+    write(*,*) "Loading orbital energies from input file finished!"
+end if
+
+!call nelec_Ef_T(0.14448977718533D0,300D0,numelec)
+!write(*,*) numelec
+
+do while(.true.)
+    write(*,*)
+    write(*,*) "Input temperature (K) for determining Fermi level, e.g. 400"
+    write(*,*) "If press ENTER button directly, 298.15 K will be used"
+    write(*,*) "Input ""q"" can exit. Input ""thres"" can modify convergence threshold"
+    read(*,"(a)") c80tmp
+    if (index(c80tmp,'q')/=0) exit
+    if (c80tmp==" ") then
+        T=298.15D0
+    else if (c80tmp=="thres") then
+        write(*,*) "Input threshold, e.g. 1E-8"
+        read(*,*) thres
+        cycle
+    else
+        read(c80tmp,*) T
+    end if
+    if (T==0) then
+        write(*,"(a)") " Error: Fermi level is ill-defined at 0 K! Any value between E_HOMO and E_LUMO may be acceptable. Press ENTER button to return"
+        read(*,*)
+        cycle
+    end if
+    !Use bisection method to determine Fermi level
+    if (wfntype==0) then
+        vallow=MOene(idxHOMO)
+        valhigh=MOene(idxHOMO+1)
+    else
+        vallow=min(MOene(idxHOMO),MOene(idxHOMOb))
+        valhigh=max(MOene(idxHOMO+1),MOene(idxHOMOb+1))
+    end if
+    if (valhigh==0) then
+        write(*,"(a)") " Warning: This file does not contain actually calculated unoccupied orbitals! The result is meaningless!"
+        write(*,*) "Press ENTER button to return"
+        read(*,*)
+        exit
+    end if
+    iter=0
+    write(*,*) "Starting bisection method to determine Fermi level"
+    write(*,"(a,f10.1)") " Expected number of electrons:",nelec
+    write(*,"(a,1PE10.1)") " Convergence threshold of deviation to expected number of electrons:",thres
+    write(*,"(a,2f14.8,a)") " Initial lower and upper limits:",vallow,valhigh," Hartree"
+    call nelec_Ef_T(vallow,T,tmp_low)
+    call nelec_Ef_T(valhigh,T,tmp_high)
+    write(*,"(a,2f18.8)") " Corresponding number of electrons:",tmp_low,tmp_high
+    write(*,*)
+    do while(.true.)
+        iter=iter+1
+        Ef=(vallow+valhigh)/2D0
+        call nelec_Ef_T(Ef,T,numelec)
+        write(*,"(' Iter:',i5,'  Nelec:',f16.8,'  Dev.:',D13.5,'  Ef:',f14.8,' a.u.')") iter,numelec,numelec-nelec,Ef
+        if (iter>=1000) then
+            write(*,*) "Error: Number of electrons failed to converge to 1E-6 within 1000 iterations!"
+            exit
+        else if (abs(numelec-nelec)<thres) then
+            write(*,"(' Converged! Fermi level is',f14.8,' Hartree',f14.6,' eV')") Ef,Ef*au2eV
+            exit
+        end if
+        if (numelec>nelec) then
+            valhigh=Ef
+            call nelec_Ef_T(vallow,T,numelec_tmp)
+            if (numelec_tmp>nelec) then
+                vallow=vallow-0.01D0
+                write(*,"(' Decrease lower limit by 0.01 to ',f16.8,' a.u.')") vallow
+            end if
+        else
+            vallow=Ef
+            call nelec_Ef_T(valhigh,T,numelec_tmp)
+            if (numelec_tmp<nelec) then
+                valhigh=valhigh+0.01D0
+                write(*,"(' Increase upper limit by 0.01 to ',f16.8,' a.u.')") valhigh
+            end if
+        end if
+    end do
+end do
+end subroutine
+!--------- Get number of electrons at given Fermi level (a.u.) and temperature (K) based on Fermi-Dirac distribution using current orbitals
+subroutine nelec_Ef_T(Ef,T,numelec)
+use defvar
+real*8 occtmp(nmo),Ef,T,numelec
+occtmp=0
+do imo=1,nmo
+    if (MOene(imo)==0) cycle !Skip falsely filled MOs
+    !write(*,"(i5,4E16.8)") imo,(MOene(imo)-Ef),(boltzcau*T),(MOene(imo)-Ef)/(boltzcau*T),1D0/( 1+exp( (MOene(imo)-Ef)/(boltzcau*T) ) )
+    occtmp(imo)= 1D0/( 1+exp( (MOene(imo)-Ef)/(boltzcau*T) ) )
+    !write(*,"(i5,f16.8)") imo,occtmp(imo)
+end do
+numelec=sum(occtmp)
+if (wfntype==0.or.wfntype==2) numelec=numelec*2 !For spatial orbitals, the occupation should be doubled
 end subroutine

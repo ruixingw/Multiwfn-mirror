@@ -158,11 +158,21 @@ potpledis=dsqrt((x0-prjx)**2+(y0-prjy)**2+(z0-prjz)**2)
 end function
 
 
-!!---------- Project a point (x0,y0,z0) to a plane defined by x/y/z-1/2/3, prjx/y/z are XYZ of the resulting point
+!!---------- Project a point (x0,y0,z0) to a plane defined by three points x/y/z-1/2/3, prjx/y/z are XYZ of the resulting point
 subroutine pointprjple(x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz)
 real*8 x1,y1,z1,x2,y2,z2,x3,y3,z3,x0,y0,z0,prjx,prjy,prjz,A,B,C,D,t
 call pointABCD(x1,y1,z1,x2,y2,z2,x3,y3,z3,A,B,C,D)
-! (x0-x)/A=(y0-y)/B=(z0-z)/C ---> x=x0-t*A y=y0-t*B z=z0-t*C , substitute into Ax+By+Cz+D=0 solve t
+! (x0-x)/A=(y0-y)/B=(z0-z)/C=t, t is unknown ---> x=x0-t*A y=y0-t*B z=z0-t*C , substitute into Ax+By+Cz+D=0 solve t
+t=(D+A*x0+B*y0+C*z0)/(A**2+B**2+C**2)
+prjx=x0-t*A
+prjy=y0-t*B
+prjz=z0-t*C
+end subroutine
+
+
+!!---------- Project a point (x0,y0,z0) to a plane defined by A,B,C,D, prjx/y/z are XYZ of the resulting point
+subroutine pointprjpleABCD(A,B,C,D,x0,y0,z0,prjx,prjy,prjz)
+real*8 x0,y0,z0,prjx,prjy,prjz,A,B,C,D,t
 t=(D+A*x0+B*y0+C*z0)/(A**2+B**2+C**2)
 prjx=x0-t*A
 prjy=y0-t*B
@@ -527,6 +537,7 @@ implicit real*8 (a-h,o-z)
 integer natm,atmarr(natm)
 real*8 planeA,planeB,planeC,planeD,rmsfit
 real*8 tmpmat(3,natm),singval(3),matU(3,3),matV(natm,natm)
+
 cenx=sum(a(atmarr(:))%x)/natm
 ceny=sum(a(atmarr(:))%y)/natm
 cenz=sum(a(atmarr(:))%z)/natm
@@ -565,6 +576,20 @@ real*8 function ang2rad(ang)
 use defvar
 real*8 ang
 ang2rad=ang/180D0*pi
+end function
+
+
+!!--------- Get projection of a 3*3 matrix along a given vector. For example, component of magnetic shielding tensor
+!The vector will be automatically normalized here
+real*8 function prjmat(mat,vec)
+real*8 mat(3,3),vec(3),uvec(3)
+uvec=vec/dsqrt(sum(vec**2))
+prjmat=0
+do idir=1,3
+    do jdir=1,3
+        prjmat=prjmat+uvec(idir)*uvec(jdir)*mat(idir,jdir)
+    end do
+end do
 end function
 
 
@@ -1043,24 +1068,12 @@ end subroutine
 !---------Input path name, e.g. C:\ltwd\MIO.wfn, output file name, e.g. MIO
 subroutine path2filename(pathnamein,filenameout)
 character(len=*) pathnamein,filenameout
-!Find position of last dot
 do i=len_trim(pathnamein),1,-1
-	if (pathnamein(i:i)=='.') then
-		iend=i-1
-		exit
-	end if
+	if (pathnamein(i:i)=='/'.or.pathnamein(i:i)=='\') exit 
 end do
-if (i==0) iend=len_trim(pathnamein) !The path doesn't have a dot!
-!Find position of last slash
-istart=1
-do i=iend,1,-1
-	if (pathnamein(i:i)=='/'.or.pathnamein(i:i)=='\') then
-		istart=i+1
-		exit
-	end if
-end do
-filenameout=' '
-filenameout(1:iend-istart+1)=pathnamein(istart:iend)
+filenameout=pathnamein(i+1:)
+i=index(filenameout,'.')
+if (i/=0) filenameout(i:)=" "
 end subroutine
 
 
@@ -1268,6 +1281,21 @@ if (str(1:1)=='"'.or.str(1:1)=="'") str(1:1)=" "
 if (str(ltmp:ltmp)=='"'.or.str(ltmp:ltmp)=="'") str(ltmp:ltmp)=" "
 str=adjustl(str)
 end subroutine
+
+
+
+!!------- Show content of "nline" lines of fileid on screen, and the position of reading is unchanged
+subroutine showlines(ifileid,nline)
+character c200tmp*200
+do iline=1,nline
+	read(ifileid,"(a)") c200tmp
+    write(*,"(a)") trim(c200tmp)
+end do
+do iline=1,nline
+	backspace(ifileid)
+end do
+end subroutine
+
 
 
 
@@ -2023,9 +2051,9 @@ end subroutine
 subroutine readmatgau(fileid,mat,insemi,inform,inskipcol,inncol,innspace,iostat)
 !e.g. Lower trigonal matrix: readmatgau(10,tmpmat,1,"D14.6",7,5)   full matrix: readmatgau(10,tmpmat,0,"?",7,5)
 !mat: The matrix to return
-!Below are optional
+!Below are optional options
 !insemi: 1 means the matrix is a lower trigonal matrix. Default is full matrix
-!inform: Format used to read data, default is D14.6. e.g. "f8.4 " (must be 5 character). inform="?" means use free format to read
+!inform: Format used to read data, default is D14.6. e.g. "f8.4 " (must be 5 character!!!). inform="?" means use free format to read, recommended!
 !inskipcol: Number of column (marker) to be skipped at the beginning of each row, default is 7
 !inncol: Number of columns in each line, default is 5
 !innspace: Number of useless lines in between each frame, default is 1
@@ -2341,11 +2369,11 @@ end subroutine
 
 !--------- Determine the present file is input file of which code when the answer cannot be determined from file extension
 !The file must have been opened as "ifileid"
-!iprog=0: Cannot be identified  =1: CP2K  =2: ORCA
+!iprog=0: Cannot be identified  =1: CP2K  =2: ORCA  =3: Quantum ESPRESSO
 subroutine inputprog(ifileid,iprog)
 integer ifileid,iprog
 iprog=0
-call loclabel(ifileid,"&COORD ",ifound,maxline=500)
+call loclabel(ifileid,"&COORD ",ifound,maxline=10000) !Various information may present before &COORD, so maxline should be large
 if (ifound==1) then
     iprog=1
     return
@@ -2353,6 +2381,12 @@ end if
 call loclabel(ifileid,"* xyz ",ifound,maxline=500)
 if (ifound==1) then
     iprog=2
+    return
+end if
+call loclabel(ifileid,"&control ",ifound,maxline=1000)
+if (ifound==0) call loclabel(ifileid,"&CONTROL ",ifound,maxline=1000)
+if (ifound==1) then
+    iprog=3
     return
 end if
 end subroutine
@@ -2651,6 +2685,37 @@ end subroutine
 
 
 
+
+!!--------- Linear interpolation in 1D
+!r: position
+!val: interpolated value
+!ptpos: must vary from small to large
+subroutine linintpol(ptpos,ptval,npt,r,val)
+implicit real*8 (a-h,o-z)
+real*8 ptpos(npt),ptval(npt),r,val
+
+if (r<=ptpos(1)) then
+	val=ptval(1)
+    return
+else if (r>=ptpos(npt)) then
+	val=ptval(npt)
+    return
+end if
+do ipt=1,npt
+	if (ptpos(ipt)<r) then
+		lowpt=ipt
+    else
+		highpt=ipt
+        exit
+    end if
+end do
+der=(ptval(highpt)-ptval(lowpt))/(ptpos(highpt)-ptpos(lowpt))
+val=ptval(lowpt)+der*(r-ptpos(lowpt))
+end subroutine
+
+
+
+
 !--------- Show progress bar
 subroutine showprog(inow,nall)
 integer inow,nall
@@ -2661,7 +2726,7 @@ c80tmp=' Progress: ['
 c80tmp(13:62)=repeat('#',iprog)
 c80tmp(13+iprog:62)=repeat('-',50-iprog)
 c80tmp(63:63)=']'
-write(c80tmp(64:),"(f8.2,' %')") dfloat(inow)/nall*100
+write(c80tmp(64:),"(f8.1,' %')") dfloat(inow)/nall*100
 itmp=itmp+1
 if (itmp==1) c80tmp(79:79)='-'
 if (itmp==2) c80tmp(79:79)='\'

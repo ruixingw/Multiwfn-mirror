@@ -60,10 +60,17 @@ do while(.true.)
 	if (imapfunc==2) write(*,*) "2 Select mapped function, current: Average local ionization energy (ALIE)"
 	if (imapfunc==3) write(*,"(a)") " 2 Select mapped function, current: Electrostatic potential from atomic charges"
 	if (imapfunc==4) write(*,*) "2 Select mapped function, current: Local electron affinity"
+	if (imapfunc==-4) write(*,*) "2 Select mapped function, current: Local electron attachment energy (LEAE)"
 	if (imapfunc==5) write(*,*) "2 Select mapped function, current: Electron delocalization range function EDR(r;d)" 
 	if (imapfunc==6) write(*,*) "2 Select mapped function, current: Orbital overlap distance function D(r)"	
 	if (imapfunc==10) write(*,*) "2 Select mapped function, current: Pair density"
-	if (imapfunc==11) write(*,*) "2 Select mapped function, current: Electron density"
+	if (imapfunc==11) then
+		if (allocated(b)) then
+			write(*,*) "2 Select mapped function, current: Electron density"
+		else
+			write(*,*) "2 Select mapped function, current: Promolecular electron density"
+        end if
+    end if
 	if (imapfunc==12) write(*,*) "2 Select mapped function, current: Sign(lambda2)*rho"
 	if (imapfunc==20) write(*,*) "2 Select mapped function, current: d_i"
 	if (imapfunc==21) write(*,*) "2 Select mapped function, current: d_e"
@@ -128,7 +135,7 @@ do while(.true.)
 					exit
                 end if
             end do
-			imapfunc=22
+			imapfunc=11
 		else if (isurftypetmp==10) then
 			isurftype=10
 			write(*,*) "Input the path of .cub or .grd file, e.g. C:\ltwd.cub"
@@ -181,6 +188,7 @@ do while(.true.)
 		write(*,*) "2 Average local ionization energy (ALIE)"
 		write(*,*) "3 Electrostatic potential from atomic charges in a .chg file"
 		write(*,*) "4 Local electron affinity (LEA)"
+		write(*,*) "-4 Local electron attachment energy (LEAE)"
 		write(*,*) "5 Electron delocalization range function EDR(r;d)"	
 		write(*,*) "6 Orbital overlap length function D(r) which maximizes EDR(r;d)"	
 ! 		if (allocated(b)) write(*,*) "10 Pair density" !Rarely used by normal users, so comment it
@@ -204,15 +212,34 @@ do while(.true.)
 		else
 			ireadextmapval=0
 			if (imapfunc==1.or.imapfunc==11.or.imapfunc==12) grdspc=0.25D0
-			if (imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==5.or.imapfunc==6.or.imapfunc==-1.or.imapfunc==10) grdspc=0.2D0
+			if (imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4.or.imapfunc==5.or.imapfunc==6.or.imapfunc==-1.or.imapfunc==10) grdspc=0.2D0
 		end if
-		if (imapfunc==5) then !Input length scale to evaluate EDR(r;d)
+		critmerge=grdspc*spcmergeratio
+        if (imapfunc==-4) then
+			surfisoval=0.004D0 !Commonly LEAE is studied on rho=0.004 a.u. isosurface
+            write(*,*) "Note: Isovalue has been changed to 0.004 a.u."
+		else if (imapfunc==3) then
+			write(*,"(a)") " Please input the path of the .chg file which contains the atomic charges of present system. e.g. C:\sob.chg"
+			do while(.true.)
+				read(*,"(a)") c200tmp
+				inquire(file=c200tmp,exist=alive)
+				if (alive) exit
+				write(*,*) "Error: Cannot find the file, input again"
+			end do
+			nucchgbackup=a%charge
+			open(10,file=c200tmp,status="old")
+			do icen=1,ncenter
+				read(10,*) c80tmp,rnouse,rnouse,rnouse,a(icen)%charge
+				if (trim(c80tmp)/=trim(a(icen)%name)) write(*,"(' Warning: The name of atom',i7,' in .chg file is not consistent with present system',i7)") icen
+			end do
+			close(10)
+			write(*,*) "The atomic charges have been loaded"
+		else if (imapfunc==5) then !Input length scale to evaluate EDR(r;d)
 			write(*,*) "The EDR(r;d) computing code was contributed by Arshad Mehmood"
 			write(*,"(a,/)") " References: J. Chem. Phys., 141, 144104 (2014); J. Chem. Theory Comput., 12, 79 (2016); Angew. Chem. Int. Ed., 56, 6878 (2017)"
 			write(*,*) " Input length scale d (Bohr), e.g. 0.85"
 			read(*,*) dedr
-		end if
-		if (imapfunc==6) then !Input parameters to evaluate D(r)
+		else if (imapfunc==6) then !Input parameters to evaluate D(r)
 			write(*,*) "The D(r) computing code was contributed by Arshad Mehmood"
 			write(*,"(a,/)") " References: J. Chem. Theory Comput., 12, 3185 (2016); Phys. Chem. Chem. Phys., 17, 18305 (2015)"
 			write(*,*) "1 Manually input total number, start and increment in EDR exponents"
@@ -251,31 +278,14 @@ do while(.true.)
 				wrtstart=wrtstart/edrainc
 				write(*,"(E13.5)") wrtexpo(wrtnumedr) 
 			end do
+		else if (imapfunc==20.or.imapfunc==21) then
+			write(*,*) "NOTE: ALL VALUES OF THIS FUNCTION SHOWN IN LATER STAGE WILL BE BOHR!"
 		end if
-		critmerge=grdspc*spcmergeratio
-		if (imapfunc==3) then
-			write(*,"(a)") " Please input the path of the .chg file which contains the atomic charges of present system. e.g. C:\sob.chg"
-			do while(.true.)
-				read(*,"(a)") c200tmp
-				inquire(file=c200tmp,exist=alive)
-				if (alive) exit
-				write(*,*) "Error: Cannot find the file, input again"
-			end do
-			nucchgbackup=a%charge
-			open(10,file=c200tmp,status="old")
-			do icen=1,ncenter
-				read(10,*) c80tmp,rnouse,rnouse,rnouse,a(icen)%charge
-				if (trim(c80tmp)/=trim(a(icen)%name)) write(*,"(' Warning: The name of atom',i7,' in .chg file is not consistent with present system',i7)") icen
-			end do
-			close(10)
-			write(*,*) "The atomic charges have been loaded"
-		end if
-		if (imapfunc==20.or.imapfunc==21) write(*,*) "NOTE: ALL VALUES OF THIS FUNCTION SHOWN IN LATER STAGE WILL BE BOHR!"
 		
 	else if (isel==3) then
 		write(*,*) "Input a value (in Bohr), e.g. 0.2"
 		if (imapfunc==0.or.imapfunc==1.or.imapfunc==20.or.imapfunc==21.or.imapfunc==22) write(*,*) "Note: In general 0.25 is enough. For higher accuracy, 0.15~0.20 is recommended"
-		if (imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-1) write(*,*) "Note: In general 0.20 is enough. For higher accuracy, 0.13~0.17 is recommended"
+		if (imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4.or.imapfunc==-1) write(*,*) "Note: In general 0.20 is enough. For higher accuracy, 0.13~0.17 is recommended"
 		read(*,*) grdspc
 		critmerge=grdspc*spcmergeratio
 		
@@ -283,7 +293,7 @@ do while(.true.)
 		do while(.true.)
 			write(*,*)
 			write(*,*) "0 Return to upper level menu"
-			write(*,"(a,f7.4)") " 1 The ratio of vdW radius used to extend spatial region of cubic grids:",vdwmulti
+			write(*,"(a,f7.4)") " 1 Set ratio of vdW radii used to extend spatial region for grids:",vdwmulti
 			if (ifelim==0) write(*,*) "2 Toggle if eliminating redundant vertices: No"
 			if (ifelim==1) write(*,"(a,f6.3,a)") " 2 Toggle if eliminating redundant vertices: Yes, criterion is",critmerge," Bohr"
 			write(*,"(' 3 Number of bisections before linear interpolation, current:',i5)") nbisec
@@ -294,8 +304,8 @@ do while(.true.)
 			if (isel2==0) then
 				exit
 			else if (isel2==1) then
-				write(*,*) "Input a value"
-				write(*,"(a)") "Note: 1.7 is enough for the case of isovalue=0.001, for lower isovalue, a larger value is needed"
+				write(*,*) "Input ratio of vdW radii, e.g. 1.5"
+				if (isurftype==1) write(*,"(a)") " Note: 1.7 is enough for the case of isovalue=0.001, for lower isovalue, a larger value is needed"
 				read(*,*) vdwmulti
 			else if (isel2==2) then
 				if (ifelim==1) then
@@ -351,9 +361,15 @@ end do
 !======== Start calculation ========!
 !======== Start calculation ========!
 !======== Start calculation ========!
-! Delete high-lying virtual orbitals to speed up calculation
-if (imapfunc/=0.and.imapfunc/=4.and.imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call delvirorb(1)
-call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+
+if (imapfunc/=0.and.imapfunc/=4.and.imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call delvirorb(1) ! Delete high-lying virtual orbitals to speed up calculation
+if (allocated(b)) then
+	if (ifPBC==0) then
+		call gen_GTFuniq(0) !Generate unique GTFs, for faster evaluation in orbderv
+	else
+		call gen_neigh_GTF !Generate neighbouring GTFs list at reduced grids, for faster evaluation
+	end if
+end if
 
 call walltime(iclktime1)
 if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculate grid data for determining isosurface
@@ -408,61 +424,80 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 		! call savecubmat(100,1,1)
 		
 	else if (isurftype==5) then !Hirshfeld analysis, calculate weighting distribution of a specific set of atom
-		write(*,*) "Hirshfeld analysis requests atomic densities, please select how to obtain them"
-		write(*,*) "1 Use build-in sphericalized atomic densities in free-states (recommended)"
-		write(*,"(a)") " 2 Provide wavefunction file of involved elements by yourself or invoke Gaussian to automatically calculate them"
-		read(*,*) ihirshmode
 		if (allocated(cubmat)) deallocate(cubmat)
 		if (allocated(cubmattmp)) deallocate(cubmattmp)
 		allocate(cubmat(nx,ny,nz),cubmattmp(nx,ny,nz))
 		cubmat=0D0
 		cubmattmp=0D0
-		if (ihirshmode==1) then !Doesn't work well currently, because interpolation of density at long range is problematic by Lagrange method
+		!I found ihirshmode=1 is always a satisfactory choice, so I decide not bother users to select
+		!write(*,*) "Hirshfeld analysis requests atomic densities, please select how to obtain them"
+		!write(*,*) "1 Use build-in sphericalized atomic densities in free-states (recommended)"
+		!write(*,"(a)") " 2 Provide wavefunction file of involved elements by yourself or invoke Gaussian to automatically calculate them"
+		!read(*,*) ihirshmode
+		!if (ihirshmode==1) then
 			do iatm=1,ncenter
-				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
+				!I attempted to use truncation, which reduce cost significantly for >1000 atoms system, unfortunately this will cost Hirshfeld surface occur at molecular open boundary...
+				!xtmp=a(iatm)%x;ytmp=a(iatm)%y;ztmp=a(iatm)%z
+    !            crit2=(vdwr(a(iatm)%index)*3)**2
+                iadd=0
+                if (any(HirBecatm==iatm)) iadd=1
+				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp,dist2) schedule(dynamic) NUM_THREADS(nthreads)
 				do k=1,nz
 					do j=1,ny
 						do i=1,nx
 							call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
-							denstmp=calcatmdens(iatm,tmpx,tmpy,tmpz,18)
+                            !dist2=(xtmp-tmpx)**2+(ytmp-tmpy)**2+(ztmp-tmpz)**2
+                            !if (dist2>crit2) cycle
+							denstmp=calcatmdens(iatm,tmpx,tmpy,tmpz,-1) !Use STO fitted atomic density, can cover rather long distance to avoid zero denominator of Hirshfeld weight
 							cubmattmp(i,j,k)=cubmattmp(i,j,k)+denstmp
-							if (any(HirBecatm==iatm)) cubmat(i,j,k)=cubmat(i,j,k)+denstmp !Density of specified fragment
+							if (iadd==1) cubmat(i,j,k)=cubmat(i,j,k)+denstmp !Density of specified fragment
 						end do
 					end do
 				end do
 				!$OMP END PARALLEL DO
 				call showprog(iatm,ncenter)
 			end do
-		else if (ihirshmode==2) then
-			call setpromol
-			do iatm=1,ncenter_org
-				call dealloall(0)
-				call readwfn(custommapname(iatm),1)
-				!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
-				do k=1,nz
-					do j=1,ny
-						do i=1,nx
-							call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
-							denstmp=fdens(tmpx,tmpy,tmpz)
-							cubmattmp(i,j,k)=cubmattmp(i,j,k)+denstmp
-							if (any(HirBecatm==iatm)) cubmat(i,j,k)=cubmat(i,j,k)+denstmp !Density of specified fragment
-						end do
-					end do
-				end do
-				!$OMP END PARALLEL DO
-				call showprog(iatm,ncenter_org)
-			end do
-			call dealloall(0)
-			write(*,"(' Reloading ',a)") trim(firstfilename)
-			call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule)
-		end if
-		cubmat=cubmat/cubmattmp
+		!else if (ihirshmode==2) then
+		!	call setpromol
+		!	do iatm=1,ncenter_org
+		!		call dealloall(0)
+		!		call readwfn(custommapname(iatm),1)
+		!		!$OMP PARALLEL DO SHARED(cubmat,cubmattmp) PRIVATE(i,j,k,tmpx,tmpy,tmpz,denstmp) schedule(dynamic) NUM_THREADS(nthreads)
+		!		do k=1,nz
+		!			do j=1,ny
+		!				do i=1,nx
+		!					call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
+		!					denstmp=fdens(tmpx,tmpy,tmpz)
+		!					cubmattmp(i,j,k)=cubmattmp(i,j,k)+denstmp
+		!					if (any(HirBecatm==iatm)) cubmat(i,j,k)=cubmat(i,j,k)+denstmp !Density of specified fragment
+		!				end do
+		!			end do
+		!		end do
+		!		!$OMP END PARALLEL DO
+		!		call showprog(iatm,ncenter_org)
+		!	end do
+		!	call dealloall(0)
+		!	write(*,"(' Reloading ',a)") trim(firstfilename)
+		!	call readinfile(firstfilename,1) !Retrieve to first loaded file(whole molecule)
+		!end if
+		do k=1,nz
+			do j=1,ny
+				do i=1,nx
+					if (cubmattmp(i,j,k)==0) then !At very distant region, promolecular density can be zero
+						cubmat(i,j,k)=0
+                    else
+						cubmat(i,j,k)=cubmat(i,j,k)/cubmattmp(i,j,k)
+                    end if
+                end do
+            end do
+        end do
 
 	else if (isurftype==6) then !Becke analysis, calculate weighting distribution of a specific set of atom
 		if (allocated(cubmat)) deallocate(cubmat)
 		allocate(cubmat(nx,ny,nz))
 		cubmat=0D0
 		ifinish=0
+        call showprog(0,nz)
 		!We calculate Becke weight for all atoms, but only summing up the value of we selected atoms to cubmat
 		!$OMP PARALLEL DO SHARED(cubmat) PRIVATE(i,j,k,rnowx,rnowy,rnowz,Pvec) schedule(dynamic) NUM_THREADS(nthreads)
 		do k=1,nz
@@ -470,7 +505,7 @@ if (isurftype==1.or.isurftype==2.or.isurftype==5.or.isurftype==6) then !Calculat
 				do i=1,nx
                     call getgridxyz(i,j,k,rnowx,rnowy,rnowz)
                     !Calculate Becke weight of all atoms (Pvec) at current point
-					call BeckePvec(rnowx,rnowy,rnowz,Pvec,vdwr_tianlu,3)
+					call BeckePvec(rnowx,rnowy,rnowz,Pvec,covr,3)
 					cubmat(i,j,k)=cubmat(i,j,k)+sum(Pvec(HirBecatm(:)))
 				end do
 			end do
@@ -829,6 +864,8 @@ if (ireadextmapval==0) then !Directly calculate
 		write(*,*) "Calculating electrostatic potential based on atomic charges at surface vertices"
 	else if (imapfunc==4) then
 		write(*,*) "Calculating local electron affinity at surface vertices..."
+	else if (imapfunc==-4) then
+		write(*,*) "Calculating local electron attachment energy at surface vertices..."
 	else if (imapfunc==5) then		
 		write(*,*) "Calculating EDR(r;d) at surface vertices..."
 	else if (imapfunc==6) then		
@@ -891,31 +928,32 @@ if (ireadextmapval==0) then !Directly calculate
 			nHirBecatm=0
 			allocate(HirBecatm(nHirBecatm))
 		end if
-        !It is best to add CRITICAL to the progress variable, however this may slow down calculation. In current case
-        !The progress bar may be messed up when calculation of mapped function is very fast (e.g. ALIE), this is not a big problem.
         
         noldthreads=nthreads
         if (imapfunc==1) then !ESP
             if (iESPcode==2.or.iESPcode==3) then
                 call doinitlibreta(1)
-                if (isys==1.and.nESPthreads>10) nthreads=10
+                if (isys==1.and.nthreads>12) nthreads=12
             end if
         end if
         write(*,*)
-        call showprog(0,100)
-		!$OMP PARALLEL DO SHARED(survtx,iprog,ii) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
+        
+        ifinish=0
+        ndosurvtx=count(elimvtx(:)==0)
+        call showprog(0,nsurvtx)
+		!$OMP PARALLEL DO SHARED(survtx,ifinish,ishowprog) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
 		do icyc=1,nsurvtx
 			if (elimvtx(icyc)==1) cycle
 			survtx(icyc)%value=calcmapfunc(imapfunc,survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z,nHirBecatm,HirBecatm)
-			iprog=iprog+1
-			progress=dfloat(iprog)/ncurrvtx*100
-			if (progress>=ii) then
-				ii=ii+iprogstep
-				if (imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call showprog(ii,100)
-			end if
+			!$OMP CRITICAL
+            ifinish=ifinish+1
+			ishowprog=mod(ifinish,floor(ndosurvtx/100D0))
+			if (ishowprog==0) call showprog(floor(100D0*ifinish/ndosurvtx),100)
+            !$OMP END CRITICAL
 		end do
 		!$OMP END PARALLEL DO
-		if (ii<100) call showprog(100,100) !Guarantee that 100% must be printed
+		if (ishowprog/=0) call showprog(100,100)
+        
         !Focal-point approximation for evaluating ESP
         !"High method / large BS" = "High method / small BS" (current survtx%value) + "Low method / large BS" (FPAfile2) - "Low method / small BS" (FPAfile1)
 		if (iFPA==1) then
@@ -926,7 +964,7 @@ if (ireadextmapval==0) then !Directly calculate
 				write(*,*) "Calculating ESP..."
 				call dealloall(0)
                 call readinfile(FPAfile1,1)
-        			!$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
+                !$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
 				do icyc=1,nsurvtx
 					if (elimvtx(icyc)==1) cycle
 					survtx(icyc)%value=survtx(icyc)%value - calcmapfunc(imapfunc,survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z,nHirBecatm,HirBecatm)
@@ -936,7 +974,7 @@ if (ireadextmapval==0) then !Directly calculate
 				write(*,*) "Calculating ESP..."
 				call dealloall(0)
                 call readinfile(FPAfile2,1)
-        			!$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
+                !$OMP PARALLEL DO SHARED(survtx) PRIVATE(icyc) schedule(dynamic) NUM_THREADS(nthreads)
 				do icyc=1,nsurvtx
 					if (elimvtx(icyc)==1) cycle
 					survtx(icyc)%value=survtx(icyc)%value + calcmapfunc(imapfunc,survtx(icyc)%x,survtx(icyc)%y,survtx(icyc)%z,nHirBecatm,HirBecatm)
@@ -1090,7 +1128,7 @@ cmin: do ivtx=1,nsurvtx
 	surlocminidx(nsurlocmin)=ivtx
 end do cmin
 write(*,"(a,i6)") " The number of surface minima:",nsurlocmin
-if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 	write(*,*) "  #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)"
 else
 	write(*,*) "  #             Value           X/Y/Z coordinate(Angstrom)"
@@ -1099,7 +1137,7 @@ do i=1,nsurlocmin
 	idx=surlocminidx(i)
 	char1tmp=' '
 	if (idx==indsurfmin) char1tmp='*' !Mark minimum term by asterisk
-	if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+	if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 		write(*,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 	else
 		write(*,"(a,i5,f19.7,3x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
@@ -1127,7 +1165,7 @@ cmax: do ivtx=1,nsurvtx
 	surlocmaxidx(nsurlocmax)=ivtx
 end do cmax
 write(*,"(a,i6)") " The number of surface maxima:",nsurlocmax
-if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 	write(*,*) "  #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)"
 else
 	write(*,*) "  #             Value           X/Y/Z coordinate(Angstrom)"
@@ -1136,7 +1174,7 @@ do i=1,nsurlocmax
 	idx=surlocmaxidx(i) !Convert to absolute surface vertice index
 	char1tmp=' '
 	if (idx==indsurfmax) char1tmp='*' !Mark maximum term by asterisk
-	if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+	if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 		write(*,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 	else
 		write(*,"(a,i5,f19.7,3x,3f11.6)") char1tmp,i,survtx(idx)%value,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
@@ -1161,7 +1199,7 @@ end if
 
 if (imapfunc==1.or.imapfunc==3) then !ESP or ESP from atomic charges
 	write(*,"(' Minimal value:',f13.5,' kcal/mol   Maximal value:',f13.5,' kcal/mol')") survtx(indsurfmin)%value*au2kcal,survtx(indsurfmax)%value*au2kcal
-else if (imapfunc==2.or.imapfunc==4) then !ALIE or LEA
+else if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) then !ALIE or LEA or LEAE
 	write(*,"(' Minimal value:',f13.5,' eV,   Maximal value:',f13.5,' eV')") survtx(indsurfmin)%value*au2eV,survtx(indsurfmax)%value*au2eV
 else
 	write(*,"(' Minimal value:',f16.8,'    Maximal value:',f16.8)") survtx(indsurfmin)%value,survtx(indsurfmax)%value
@@ -1208,7 +1246,7 @@ if (imapfunc==1.or.imapfunc==3) then !ESP or ESP from atomic charges
 	write(*,"(' Negative average value:',f13.8,' a.u. (',f13.5,' kcal/mol)')") avgneg,avgneg*au2kcal
 else if (imapfunc==2) then !ALIE is always positive
 	write(*,"(' Average value: ',f13.8,' a.u. (',f13.5,' eV,',f13.5,' kcal/mol)')") avgpos,avgpos*au2eV,avgpos*au2kcal
-else if (imapfunc==4) then !LEA
+else if (imapfunc==4.or.imapfunc==-4) then !LEA or LEAE
 	write(*,"(' Overall average value: ',f11.7,' a.u. (',f10.5,' eV,',f13.5,' kcal/mol)')") avgall,avgall*au2eV,avgall*au2kcal
 	write(*,"(' Positive average value:',f11.7,' a.u. (',f10.5,' eV,',f13.5,' kcal/mol)')") avgpos,avgpos*au2eV,avgpos*au2kcal
 	write(*,"(' Negative average value:',f11.7,' a.u. (',f10.5,' eV,',f13.5,' kcal/mol)')") avgneg,avgneg*au2eV,avgneg*au2kcal
@@ -1252,7 +1290,7 @@ if (imapfunc==1.or.imapfunc==3) then
     write(*,"(' Polar surface area (|ESP| > 10 kcal/mol):    ',f10.2,' Angstrom^2  (',f6.2,' %)')") surfareapol*b2a*b2a,surfareapol/surfareaall*100
 else if (imapfunc==2) then
 	write(*,"(' Variance:  ',f13.8,' a.u.^2  (',f13.5,' eV^2,',E13.5,' kcal/mol^2)')") variall,variall*au2eV**2,variall*au2kcal**2
-else if (imapfunc==4) then
+else if (imapfunc==4.or.imapfunc==-4) then
 	write(*,"(' Overall variance: ',f10.6,' a.u.^2  (',f10.5,' eV^2,',E12.5,' kcal/mol^2)')") variall,variall*au2eV**2,variall*au2kcal**2
 	write(*,"(' Positive variance:',f10.6,' a.u.^2  (',f10.5,' eV^2,',E12.5,' kcal/mol^2)')") varipos,varipos*au2eV**2,varipos*au2kcal**2
 	write(*,"(' Negative variance:',f10.6,' a.u.^2  (',f10.5,' eV^2,',E12.5,' kcal/mol^2)')") varineg,varineg*au2eV**2,varineg*au2kcal**2
@@ -1261,13 +1299,36 @@ else
 	write(*,"(' Positive variance: ',f20.10)") varipos
 	write(*,"(' Negative variance: ',f20.10)") varineg
 end if
+
+!Calculate Skewness, as requested in http://sobereva.com/wfnbbs/viewtopic.php?id=925
+skewall=0
+skewpos=0
+skewneg=0
+do i=1,nsurtri
+	if (elimtri(i)==1) cycle
+	valtmp=surtriang(i)%value
+    areatmp=surtriang(i)%area
+    skewall=skewall+areatmp*(valtmp-avgall)**3
+	if (valtmp>=0D0) then
+		skewpos=skewpos+areatmp*(valtmp-avgpos)**3
+	else
+		skewneg=skewneg+areatmp*(valtmp-avgneg)**3
+	end if
+end do
+skewall=skewall/surfareaall/variall**(3D0/2D0)
+skewpos=skewpos/surfareapos/varipos**(3D0/2D0)
+skewneg=skewneg/surfareaneg/varineg**(3D0/2D0)
+write(*,"(' Overall skewness: ',f20.10)") skewall
+if (surfareapos>0) write(*,"(' Positive skewness:',f20.10)") skewpos
+if (surfareaneg>0) write(*,"(' Negative skewness:',f20.10)") skewneg
+
 write(*,*)
 write(*,*) "Surface analysis finished!"
 
 call walltime(iclktime2)
 write(*,"(' Total wall clock time passed during this task:',i6,' s')") iclktime2-iclktime1
 if (imapfunc/=0.and.imapfunc/=4.and.imapfunc/=20.and.imapfunc/=21.and.imapfunc/=22) call delvirorb_back(1)
-call del_GTFuniq !Destory unique GTF informtaion
+if (allocated(b)) call del_GTFuniq !Destory unique GTF informtaion
 if (imapfunc==1) write(*,"(a)") " Citation of molecular polarity index (MPI): Carbon, 171, 514 (2021) DOI: 10.1016/j.carbon.2020.09.048"
 
 
@@ -1311,7 +1372,7 @@ do while(.true.)
 ! 	write(*,*) "16 Export center of surface facets as pdb file" !Can also output to xyz file
     write(*,*) "18 Discard some surface extrema by inputting their indices"
     write(*,*) "19 Merge some surface extrema and take their average position"
-	if (imapfunc==22) write(*,*) "20 Fingerprint plot and local contact analyses"
+	if (isurftype==5.or.isurftype==6) write(*,*) "20 Fingerprint plot and local contact analyses"
 	read(*,*) isel
 	
 	if (isel==-3) then
@@ -1319,6 +1380,7 @@ do while(.true.)
 		call drawisosurgui(1)
 		
 	else if (isel==-2) then
+		write(*,*) "Exporting surf.cub..."
 		open(10,file="surf.cub",status="replace")
 		call outcube(cubmat,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
@@ -1335,7 +1397,7 @@ do while(.true.)
 			open(ides,file="surfanalysis.txt",status="replace")
 		end if
 		write(ides,"(a,i6)") " Number of surface minima:",count(surlocminidx(1:nsurlocmin)/=0)
-		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 			write(ides,*) "  #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)"
 		else
 			write(ides,*) "  #             Value           X/Y/Z coordinate(Angstrom)"
@@ -1345,7 +1407,7 @@ do while(.true.)
 			if (idx==0) cycle !The extreme has already been discarded
 			char1tmp=" "
 			if (idx==indsurfmin) char1tmp="*"
-			if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+			if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 				write(ides,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,&
 				survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 			else
@@ -1354,7 +1416,7 @@ do while(.true.)
 		end do
 		write(ides,*)
 		write(ides,"(a,i6)") " Number of surface maxima:",count(surlocmaxidx(1:nsurlocmax)/=0)
-		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 			write(ides,*) "  #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)"
 		else
 			write(ides,*) "  #             Value           X/Y/Z coordinate(Angstrom)"
@@ -1364,7 +1426,7 @@ do while(.true.)
 			if (idx==0) cycle !The extreme has already been discarded
 			char1tmp=" "
 			if (idx==indsurfmax) char1tmp="*"
-			if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+			if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 				write(ides,"(a,i5,f12.8,f12.6,f12.6,4x,3f11.6)") char1tmp,i,survtx(idx)%value,&
 				survtx(idx)%value*au2eV,survtx(idx)%value*au2kcal,survtx(idx)%x*b2a,survtx(idx)%y*b2a,survtx(idx)%z*b2a
 			else
@@ -1385,12 +1447,16 @@ do while(.true.)
 			call getcellabc(asize,bsize,csize,alpha,beta,gamma)
 			write(10,"('CRYST1',3f9.3,3f7.2)") asize,bsize,csize,alpha,beta,gamma
 		end if
-		if (imapfunc==1.or.imapfunc==3) then
+		if (imapfunc==1.or.imapfunc==3) then !ESP
 			if (iESPev==0) then
 				write(10,"(a)") "REMARK   Unit of B-factor field (i.e. ESP) is kcal/mol"
 			else if (iESPev==1) then
 				write(10,"(a)") "REMARK   Unit of B-factor field (i.e. ESP) is eV"
 			end if
+        else if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) then
+            if (imapfunc==2) write(10,"(a)") "REMARK   Unit of B-factor field (ALIE) is eV"
+            if (imapfunc==4) write(10,"(a)") "REMARK   Unit of B-factor field (LEA) is eV"
+            if (imapfunc==-4) write(10,"(a)") "REMARK   Unit of B-factor field (LEAE) is eV"
 		end if
         write(10,"(a)") "REMARK   Carbon: Surface maximum    Oxygen: surface minimum"
 		do i=1,nsurlocmax
@@ -1402,7 +1468,7 @@ do while(.true.)
 				else if (iESPev==1) then
 					tmpval=survtx(idx)%value*au2eV
 				end if
-			else if (imapfunc==2.or.imapfunc==4) then
+			else if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) then
 				tmpval=survtx(idx)%value*au2eV
 			else
 				tmpval=survtx(idx)%value
@@ -1419,7 +1485,7 @@ do while(.true.)
 				else if (iESPev==1) then
 					tmpval=survtx(idx)%value*au2eV
 				end if
-			else if (imapfunc==2.or.imapfunc==4) then
+			else if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) then
 				tmpval=survtx(idx)%value*au2eV
 			else
 				tmpval=survtx(idx)%value
@@ -1437,7 +1503,7 @@ do while(.true.)
 			else if (iESPev==1) then
 				write(*,"(a)") " B-factor field records mapped function value in eV"
 			end if
-		else if (imapfunc==2.or.imapfunc==4) then
+		else if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) then
 			write(*,"(a)") " B-factor field records mapped function value in eV"
 		else
 			write(*,"(a)") " B-factor field records mapped function value in original unit"
@@ -1522,7 +1588,7 @@ do while(.true.)
 				else if (iESPev==1) then
 					tmpfuncval=survtx(i)%value*au2eV
 				end if
-			else if (imapfunc==2.or.imapfunc==4) then
+			else if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) then
 				tmpfuncval=survtx(i)%value*au2eV
 			else if (imapfunc==11.or.imapfunc==12) then
 				tmpfuncval=survtx(i)%value*tmpfac
@@ -1558,7 +1624,7 @@ do while(.true.)
 		if (imapfunc==1.or.imapfunc==3) then
 			if (iESPev==0) write(*,"(a)") " B-factor field records mapped function value in kcal/mol"
 			if (iESPev==1) write(*,"(a)") " B-factor field records mapped function value in eV"
-		else if (imapfunc==2.or.imapfunc==4) then
+		else if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) then
 			write(*,"(a)") " B-factor field records mapped function value in eV"
 		else
 			write(*,"(a)") " B-factor field records mapped function value in original unit"
@@ -1587,7 +1653,7 @@ do while(.true.)
 		write(10,"(i10)") ncurrvtx
 		do i=1,nsurvtx
 			if (elimvtx(i)==0) then
-				if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+				if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 					write(10,"(3f13.7,4x,3f16.10)") survtx(i)%x,survtx(i)%y,survtx(i)%z,survtx(i)%value,survtx(i)%value*au2eV,survtx(i)%value*au2kcal
 				else
 					write(10,"(3f13.7,4x,f18.10)") survtx(i)%x,survtx(i)%y,survtx(i)%z,survtx(i)%value
@@ -1595,7 +1661,7 @@ do while(.true.)
 			end if
 		end do
 		write(*,"(a)") " Done, all surface vertices (not including the ones have been eliminated) have been outputted to vtx.txt in current folder"
-		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 			write(*,"(a)") " The first line is the number of points. Column 1,2,3,4,5,6 respectively correspond to coordinate of X/Y/Z in Bohr, mapped function in a.u., eV and kcal/mol"
 		else
 			write(*,"(a)") " The first line is the number of points. Column 1,2,3,4 respectively correspond to coordinate of X/Y/Z in Bohr and mapped function in original unit"
@@ -1682,7 +1748,7 @@ do while(.true.)
 		write(*,*) "Input the number of statistical intervals, e.g. 5"
 		read(*,*) nintval
 		convunit=1D0
-		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4) then
+		if (imapfunc==1.or.imapfunc==2.or.imapfunc==3.or.imapfunc==4.or.imapfunc==-4) then
 			write(*,*) "The inputted range is in which unit?"
 			write(*,*) "1: a.u.     2: eV     3: kcal/mol"
 			read(*,*) iunit
@@ -1923,7 +1989,7 @@ do while(.true.)
 				write(*,"(' Average value: ',f13.8,' a.u. (',f13.8,' eV,',f14.8,' kcal/mol)')") fragsuravg(1,2),fragsuravg(1,2)*au2eV,fragsuravg(1,2)*au2kcal
 				write(*,"(' Variance:  ',f13.8,' a.u.^2  (',f13.8,' eV^2,',E14.6,' kcal/mol^2)')") fragsurvar(1,2),fragsurvar(1,2)*au2eV**2,fragsurvar(1,2)*au2kcal**2
 			end if
-		else if (imapfunc==4) then
+		else if (imapfunc==4.or.imapfunc==-4) then
 			if (isel==11) then
 				write(*,*) "Note: Below minimal and maximal values are in eV"
 				write(*,*) " Atom#    All/Positive/Negative area (Ang^2)  Minimal value   Maximal value"
@@ -2003,21 +2069,27 @@ do while(.true.)
 		
 	else if (isel==13) then !Calculate and export cube file of a mapped function
 		write(*,*) "Calculating grid data of mapped function..."
-		iprog=0
 		if (allocated(cubmattmp)) deallocate(cubmattmp)
         allocate(cubmattmp(nx,ny,nz))
-		!$OMP PARALLEL DO SHARED(cubmattmp,iprog) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads)
+        ifinish=0
+        ntmp=floor(ny*nz/100D0)
+		!$OMP PARALLEL DO SHARED(cubmattmp,ifinish,ishowprog) PRIVATE(i,j,k,tmpx,tmpy,tmpz) schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
                     call getgridxyz(i,j,k,tmpx,tmpy,tmpz)
 					cubmattmp(i,j,k)=calcmapfunc(imapfunc,tmpx,tmpy,tmpz,nHirBecatm,HirBecatm)
 				end do
+				!$OMP CRITICAL
+				ifinish=ifinish+1
+				ishowprog=mod(ifinish,ntmp)
+				if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
+        		!$OMP END CRITICAL
 			end do
-			iprog=iprog+1
-			call showprog(iprog,nz)
 		end do
 		!$OMP END PARALLEL DO
+        if (ishowprog/=0) call showprog(100,100)
+		write(*,*) "Exporting mapfunc.cub..."
 		open(10,file="mapfunc.cub",status="replace")
 		call outcube(cubmattmp,nx,ny,nz,orgx,orgy,orgz,gridv1,gridv2,gridv3,10)
 		close(10)
@@ -2058,7 +2130,7 @@ do while(.true.)
 			surtriz=sum(survtx(surtriang(itri)%idx(1:3))%z)/3D0
 			if (imapfunc==-1.or.imapfunc==0) tmpfuncval=surtriang(itri)%value
 			if (imapfunc==1.or.imapfunc==3) tmpfuncval=surtriang(itri)%value*au2kcal
-			if (imapfunc==2.or.imapfunc==4) tmpfuncval=surtriang(itri)%value*au2eV
+			if (imapfunc==2.or.imapfunc==4.or.imapfunc==-4) tmpfuncval=surtriang(itri)%value*au2eV
 			if (tmpfuncval>999.99D0) tmpfuncval=999.99D0 !Avoid excess limit then become, because B-factor field only have three integer position
 			if (tmpfuncval<-99.99D0) tmpfuncval=-99.99D0
 			write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
@@ -2125,7 +2197,7 @@ do while(.true.)
         if (itype==2) write(*,"(i5,' negative extrema have been merged as negative extreme',i5)") ncount,ifirst
         write(*,*) "Note that the value of mapped function at this extreme is not updated"
 	else if (isel==20) then !Fingerprint plot
-		call fingerprt(HirBecatm,nHirBecatm)
+        call fingerprt(HirBecatm,nHirBecatm,imapfunc)
 	end if
 end do
 
@@ -2140,20 +2212,20 @@ end subroutine
 
 
 !!----------------- Fingerprint plot analysis
-subroutine fingerprt(HirBecatm,nHirBecatm)
+subroutine fingerprt(HirBecatm,nHirBecatm,imapfunc)
 use plot
 use surfvertex
 use util
 use functions
 implicit real*8 (a-h,o-z)
-integer nHirBecatm,HirBecatm(nHirBecatm),tmparr(ncenter),ifcontactvtx(nsurvtx)
-real*8 dens(nsurvtx)
-real*8 vtxdnorm(nsurvtx),d_i(nsurvtx),d_e(nsurvtx) !In Angstrom
+integer nHirBecatm,HirBecatm(nHirBecatm),tmparr(ncenter),ifcontactvtx(nsurvtx),imapfunc
+real*8 dens(nsurvtx),densall(nsurvtx),elecontact(nelesupp,nelesupp)
+real*8 d_i(nsurvtx),d_e(nsurvtx) !In Angstrom
 real*8 :: rlow=0.6D0,rhigh=2.6D0,rstep=0.2D0
 integer :: ptsize=15
 integer,allocatable :: inarr(:),outarr(:),notHirBecatm(:)
 real*8,allocatable :: xarr(:),yarr(:)
-character c2000tmp*2000,c2tmp*2
+character c2000tmp*2000,c2tmp*2,c80tmp*80
 !Set default inside and outside fragment
 ninarr=nHirBecatm
 nnotHirBecatm=ncenter-nHirBecatm !The number of atoms do not belong to Hirshfeld/Becke fragment
@@ -2171,22 +2243,23 @@ outarr=notHirBecatm
 
 do while(.true.)
     write(*,*)
-	write(*,*) "  -------------- Fingerprint plot and local contact analyses --------------"
+    call menutitle("Fingerprint plot and local contact analyses",10,1)
 	write(*,*) "-1 Return"
 	write(*,*) "0 Start analysis"
-	write(*,"(a,i8)") " 1 Set the inside atoms, current number is",ninarr
-	write(*,"(a,i8)") " 2 Set the outside atoms, current number is",noutarr
+	write(*,"(a,i8)") " 1 Set inside atoms for option 0, current number is",ninarr
+	write(*,"(a,i8)") " 2 Set outside atoms for option 0, current number is",noutarr
+    write(*,*) "3 Calculate contact area between different elements"
 	read(*,*) isel
 
 	if (isel==-1) then
 		return
 	else if (isel==1) then
 		tmparr=0 !If tmparr(i)=1, i will be in this fragment
-		write(*,*) "The index of current inside atoms"
+		write(*,*) "The indices of current inside atoms"
 		write(*,"(10i7)") inarr
-		write(*,*) "Now input two conditions, the inside atoms will be their intersection"
+		write(*,"(a)") " Now input two conditions (atom index range and then element), the inside atoms will be their intersection"
 		write(*,*)
-		write(*,"(a)") " First, input index range, e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 are selected"
+		write(*,"(a)") " Input index range of atoms, e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 are selected"
 		write(*,"(a)") " Note: If press ENTER button directly, all atoms in the Hirshfeld/Becke fragment will be taken into consideration"
 		read(*,"(a)") c2000tmp
 		if (c2000tmp==" ") then
@@ -2196,8 +2269,8 @@ do while(.true.)
 			call str2arr(c2000tmp,nelement)
 			call str2arr(c2000tmp,nelement,tmparr(1:nelement))
 		end if
-		write(*,*) "Please input element as filter condition, e.g. Cl"
-		write(*,*) "Note: If press ENTER button directly, the element filter will be ignored"
+		write(*,*) "Input element as filter condition, e.g. Cl"
+		write(*,*) "Note: If press ENTER button directly, this condition will be ignored"
 		read(*,"(a)") c2tmp
 		deallocate(inarr)
 		if (c2tmp==" ") then
@@ -2223,11 +2296,11 @@ do while(.true.)
 		end do
 	else if (isel==2) then
 		tmparr=0 !If tmparr(i)=1, i will be in this fragment
-		write(*,*) "The index of current outside atoms"
+		write(*,*) "Index of current outside atoms"
 		write(*,"(10i7)") outarr
-		write(*,*) "Now input two conditions, the outside atoms will be their intersection"
+		write(*,"(a)") " Now input two conditions (atom index range and then element), the inside atoms will be their intersection"
 		write(*,*)
-		write(*,"(a)") " First, input index range, e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 are selected"
+		write(*,"(a)") " Input index range of atoms, e.g. 1,3-6,8,10-11 means the atoms 1,3,4,5,6,8,10,11 are selected"
 		write(*,"(a)") " Note: If press ENTER button directly, all atoms do not belong to the Hirshfeld/Becke fragment will be taken into consideration"
 		read(*,"(a)") c2000tmp
 		if (c2000tmp==" ") then
@@ -2237,8 +2310,8 @@ do while(.true.)
 			call str2arr(c2000tmp,nelement)
 			call str2arr(c2000tmp,nelement,tmparr(1:nelement))
 		end if
-		write(*,*) "Please input element as filter condition, e.g. Cl"
-		write(*,*) "Note: If press ENTER button directly, the element filter will be ignored"
+		write(*,*) "Input element as filter condition, e.g. Cl"
+		write(*,*) "Note: If press ENTER button directly, this condition will be ignored"
 		read(*,"(a)") c2tmp
 		deallocate(outarr)
 		if (c2tmp==" ") then
@@ -2289,7 +2362,6 @@ do while(.true.)
 			end do
 			d_i(ivtx)=dsqrt(dist2minin)*b2a
 			d_e(ivtx)=dsqrt(dist2minout)*b2a
-            vtxdnorm(ivtx)=surfana_norm(survtx(ivtx)%x,survtx(ivtx)%y,survtx(ivtx)%z,nHirBecatm,HirBecatm)
 			if (any(inarr==iminin).and.any(outarr==iminout)) then !This point is on local contact surface
 				ncontactvtx=ncontactvtx+1
                 ifcontactvtx(ivtx)=1 !This is a point on local contact surface
@@ -2300,10 +2372,22 @@ do while(.true.)
         !For each point, calculate number of other points in specific radius and divide by circle area
 		radtest=0.03D0 !Compare radius in Angstrom
         dens=0
+        densall=0
+        !$OMP PARALLEL DO SHARED(dens,densall) PRIVATE(ivtx,di1,de1,jvtx,di2,de2,dist) schedule(dynamic) NUM_THREADS(nthreads)
 		do ivtx=1,nsurvtx
-			if (ifcontactvtx(ivtx)==0) cycle
+			if (elimvtx(ivtx)==1) cycle
             di1=d_i(ivtx)
             de1=d_e(ivtx)
+            !Statisticize entire contact surface
+			do jvtx=1,nsurvtx
+				if (elimvtx(jvtx)==1) cycle
+				di2=d_i(jvtx)
+				de2=d_e(jvtx)
+                dist=dsqrt((di1-di2)**2+(de1-de2)**2)
+                if (dist<radtest) densall(ivtx)=densall(ivtx)+1
+            end do
+            !Statisticize local contact surface (may also correspond to entire surface if user do not modify definition of inside/outside atoms)
+			if (ifcontactvtx(ivtx)==0) cycle
 			do jvtx=1,nsurvtx
 				if (ifcontactvtx(jvtx)==0) cycle
 				di2=d_i(jvtx)
@@ -2312,7 +2396,9 @@ do while(.true.)
                 if (dist<radtest) dens(ivtx)=dens(ivtx)+1
 			end do
         end do
+        !$OMP END PARALLEL DO
         dens=dens/(pi*radtest**2)
+        densmax=maxval(densall)/(pi*radtest**2) !Used to define upper limit of color scale
         
         !Loop over all center of surface facets, if a facet belongs to a contact surface, sum it area to arealoc
         !Also, calculate Hirshfeld surface area here
@@ -2358,13 +2444,13 @@ do while(.true.)
         
 		do while(.true.)
 		    write(*,*)
-            write(*,*) "------ Post process menu of fingerprint map and local contact analyses ------"
+            call menutitle("Post process menu of fingerprint map and local contact analyses",6,1)
 			write(*,*) "-1 Return"
 			write(*,*) "0 Show fingerprint plot (quality is much poorer than that saved by option 1)"
 			write(*,*) "1 Save fingerprint plot to an image file in current folder"
 			write(*,"(a,i3)") " 2 Set size of points, current:",ptsize
 			write(*,"(a,f8.3,a,f8.3,a,f5.2,a)") " 3 Set range of axes, current: from",rlow," to",rhigh,', with step',rstep,' Angstrom'
-			write(*,*) "4 Export surface points to .pdb file in current folder"
+			write(*,*) "4 Export surface points to .pqr file in current folder"
 			write(*,*) "5 Export d_i and d_e of surface points to .txt file in current folder"
 			read(*,*) isel3
             
@@ -2418,7 +2504,6 @@ do while(.true.)
 				call curve(xarr,yarr,nnow)
                 deallocate(xarr,yarr)
                 !Plot points on local contact surface
-                densmax=maxval(dens)
                 do ivtx=1,nsurvtx
 					if (ifcontactvtx(ivtx)==1) then
                         call percent2RGB(1,dens(ivtx)/densmax,Rval,Gval,Bval)
@@ -2440,7 +2525,7 @@ do while(.true.)
                 write(*,*) "Input step size, e.g. 0.2"
                 read(*,*) rstep
 			else if (isel3==4) then
-				open(10,file="finger.pdb",status="replace")
+				open(10,file="finger.pqr",status="replace")
 				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' points on the surface')") ncontactvtx
 				if (ifPBC>0) then
 					call getcellabc(asize,bsize,csize,alpha,beta,gamma)
@@ -2450,13 +2535,13 @@ do while(.true.)
 					if (ifcontactvtx(ivtx)==0) cycle
                     idx=ivtx
                     if (ivtx>99999) idx=99999
-					write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
-					"HETATM",idx,' '//"C "//' ',"MOL",'A',1,survtx(ivtx)%x*b2a,survtx(ivtx)%y*b2a,survtx(ivtx)%z*b2a,1.0,vtxdnorm(ivtx),"C "
+                    write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
+					"HETATM",idx,' '//"C "//' ',"MOL",'A',1,survtx(ivtx)%x*b2a,survtx(ivtx)%y*b2a,survtx(ivtx)%z*b2a,survtx(ivtx)%value,1D0," C"
 				end do
 				write(10,"('END')")
 				close(10)
-				write(*,"(a)") " The points on the current contact surface have been outputted to finger.pdb in current folder"
-				open(10,file="finger_all.pdb",status="replace")
+				write(*,"(a)") " The points on the local contact surface have been outputted to finger.pqr in current folder"
+				open(10,file="finger_all.pqr",status="replace")
 				write(10,"('REMARK   Generated by Multiwfn, totally',i10,' points on the surface')") ncurrvtx
 				if (ifPBC>0) then
 					call getcellabc(asize,bsize,csize,alpha,beta,gamma)
@@ -2466,13 +2551,19 @@ do while(.true.)
 					if (elimvtx(ivtx)==1) cycle
                     idx=ivtx
                     if (ivtx>99999) idx=99999
-					write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,2f6.2,10x,a2)") &
-					"HETATM",idx,' '//"C "//' ',"MOL",'A',1,survtx(ivtx)%x*b2a,survtx(ivtx)%y*b2a,survtx(ivtx)%z*b2a,1.0,vtxdnorm(ivtx),"C "
+					write(10,"(a6,i5,1x,a4,1x,a3, 1x,a1,i4,4x,3f8.3,f13.8,f9.4,a2)") &
+					"HETATM",idx,' '//"C "//' ',"MOL",'A',1,survtx(ivtx)%x*b2a,survtx(ivtx)%y*b2a,survtx(ivtx)%z*b2a,survtx(ivtx)%value,1D0," C"
 				end do
 				write(10,"('END')")
 				close(10)
-				write(*,"(a)") " The points on the entire Hirshfeld/Becke surface have been outputted to finger_all.pdb in current folder"
-                write(*,*) "Beta factor in these files corresponds to d_norm in Angstrom"
+				write(*,"(a)") " The points on the entire contact surface have been outputted to finger_all.pqr in current folder"
+                if (imapfunc==11) then
+					write(*,*) """Charge"" field in these files correspond to electron density (a.u.)"
+                else if (imapfunc==22) then
+					write(*,*) """Charge"" field in these files correspond to d_norm in Angstrom"
+                else
+					write(*,*) """Charge"" field in these files correspond to the mapped function value"
+                end if
 			else if (isel3==5) then
 				open(10,file="di_de.txt",status="replace")
 				do ivtx=1,nsurvtx
@@ -2491,6 +2582,68 @@ do while(.true.)
                 write(*,*) "Columns 1 and 2 in these files are d_i and d_e, respectively"
 			end if
 		end do
+
+    else if (isel==3) then !Calculate contact area between different elements 
+        !Loop over all center of surface facets, attribute its area to element pair
+		elecontact=0 !elecontact(8,1) means contact area between oxygen of inside atoms and hydrogen of outside atoms
+        do itri=1,nsurtri
+	        if (elimtri(itri)==1) cycle
+			surtrix=sum(survtx(surtriang(itri)%idx(1:3))%x)/3D0 !Center of triangles
+			surtriy=sum(survtx(surtriang(itri)%idx(1:3))%y)/3D0
+			surtriz=sum(survtx(surtriang(itri)%idx(1:3))%z)/3D0
+			dist2minin=1D100
+			dist2minout=1D100
+			iminin=0
+			iminout=0
+			do iatm=1,ncenter
+				dist2=(a(iatm)%x-surtrix)**2+(a(iatm)%y-surtriy)**2+(a(iatm)%z-surtriz)**2
+				if (any(HirBecatm==iatm)) then !Find the closest atom in Hirshfeld/Becke fragment to the surface point
+					if (dist2<dist2minin) then
+						dist2minin=dist2
+						iminin=iatm
+					end if
+				else !Find the closest atom that does not belong to Hirshfeld/Becke fragment to the surface point
+					if (dist2<dist2minout) then
+						dist2minout=dist2
+						iminout=iatm
+					end if
+				end if
+			end do
+            iele=a(iminin)%index
+            jele=a(iminout)%index
+			elecontact(iele,jele)=elecontact(iele,jele)+surtriang(itri)%area
+        end do
+        elecontact=elecontact*b2a*b2a
+        areaall=sum(elecontact)
+        write(*,"(a)") " Inside element, outside element, their contact area (Angstrom^2) and percentage (%)"
+        do iele=1,nelesupp !Loop inside elements
+			do jele=1,nelesupp !Loop outside elements
+				if (elecontact(iele,jele)/=0) then
+					write(c80tmp,"(a,'-',a)") trim(ind2name(iele)),trim(ind2name(jele))
+					write(*,"(2x,a,f12.3,f12.3)") c80tmp(1:5),elecontact(iele,jele),elecontact(iele,jele)/areaall*100
+                end if
+            end do
+        end do
+        write(*,*)
+        write(*,*) "The same as above, but do not distinguish inside and outside elements"
+        do iele=1,nelesupp
+			do jele=iele,nelesupp
+				if (iele==jele) then
+					if (elecontact(iele,iele)/=0) then
+						write(c80tmp,"(a,'-',a)") trim(ind2name(iele)),trim(ind2name(jele))
+						write(*,"(2x,a,f12.3,f12.3)") c80tmp(1:11),elecontact(iele,iele),elecontact(iele,iele)/areaall*100
+					end if
+                else
+					tmparea=elecontact(iele,jele)+elecontact(jele,iele)
+					if (tmparea/=0) then
+						write(c80tmp,"(a,'-',a,'/',a,'-',a)") trim(ind2name(iele)),trim(ind2name(jele)),trim(ind2name(jele)),trim(ind2name(iele))
+						write(*,"(2x,a,f12.3,f12.3)") c80tmp(1:11),tmparea,tmparea/areaall*100
+					end if
+                end if
+            end do
+        end do
+        write(*,*)
+		write(*,"(' Area of total contact surface is',f10.3,' Angstrom^2')") areaall
 	end if
 end do
 end subroutine
@@ -2910,6 +3063,8 @@ else if (imapfunc==3) then
 	calcmapfunc=nucesp(x,y,z)
 else if (imapfunc==4) then
 	calcmapfunc=loceleaff(x,y,z)
+else if (imapfunc==-4) then
+	calcmapfunc=loceleatt(x,y,z)
 else if (imapfunc==5) then
 	calcmapfunc=edr(x,y,z)
 else if (imapfunc==6) then

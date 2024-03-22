@@ -1,0 +1,11 @@
+#p b3lyp/6-31+G* nmr=csgt iop(10/93=2)
+
+template file
+
+  0  1
+[geometry]
+
+AICD.txt
+
+17,20,21
+

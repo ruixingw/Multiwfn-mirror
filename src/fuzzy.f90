@@ -5,10 +5,12 @@
 !The integration grid is directly controlled by sphpot and radpot in settings.ini, since integrand may be not proportional to electron density,
 !the grid will not be adjusted automatically as proposed by Becke for more efficient integration of XC functional
 !
-!For integrating value (function 1), molecular grid is always used, becaues it makes integrating e.g. Laplacian significantly more accurate &
-!when Hirshfeld(/-I) is used because of its over-smooth behavior, while the increase of computational cost is basically negligible.
+!For integrating function value (subfunction 1), molecular grid (iintgrid=2) is always used (looping all atoms in turn, use atomic integration grids to calculate integral contribution to every atom), &
+!because it makes integrating e.g. Laplacian significantly more accurate when Hirshfeld(/-I) is used because of its over-extension behavior, while the increase of computational cost is basically negligible
+!For subfunction 1, "-5 Define the atoms to be considered" doesn't affect calculation process, but only the integral of selected atoms will be printed finally
+!
 !However, for calculating AOM, using molecular grid makes calculation much more expensive, while improvement on result is only notable &
-!when diffuse functions are heavily used, so atomic grid is employed by default and can be changed by users
+!when diffuse functions are heavily used, so atomic grid is employed by default and can be changed by users. This is determined by iAOMgrid
 subroutine intatomspace(iwork)
 use functions
 use util
@@ -28,7 +30,8 @@ real*8,allocatable :: alldens(:,:) !Density of all free-atoms on grids of curren
 integer nmatsize,nmatsizeb !Number of lowest MOs considered for total/alpha and beta
 integer :: iAOMgrid=1 !Type of grids for AOM integration. =1: Atomic grid   =2: Molecular grid
 real*8,allocatable :: orbvalarr(:,:)
-real*8 AOMtmp(nmo,nmo),orbval(nmo)
+real*8 orbval(nmo)
+real*8,allocatable :: AOMtmp(:,:)
 !---
 real*8 rintvalp(ncenter,10) !Private for each OpenMP thread
 real*8 promol(radpot*sphpot),atomdens(radpot*sphpot),selfdens(radpot*sphpot),selfdensgrad(3,radpot*sphpot),selfdenslapl(radpot*sphpot) !For Hirshfeld partition
@@ -54,7 +57,7 @@ integer,allocatable :: aromatatm(:)
 real*8 atmpol(ncenter) !Atomic polarizability estimated by TS method
 real*8 quadmom(3,3),tmpvec(3),tmpmat(3,3)
 
-!Atomic polarizability table, 2020 version http://ctcp.massey.ac.nz/index.php?menu=dipole&page=dipole
+!Atomic polarizability table, 2020 version https://ctcp.massey.ac.nz/index.php?group=&page=dipole&menu=dipole
 real*8 :: atmpol_free(1:nelesupp)=(/ &
 4.50711D0,1.38375D0,164.1125D0,37.74D0,20.5D0,11.3D0,7.4D0,5.3D0,3.74D0,2.66110D0,& !H~Ne
 162.7D0,71.2D0,57.8D0,37.3D0,25D0,19.4D0,14.6D0,11.083D0,& !Na~Ar
@@ -111,8 +114,11 @@ if (iwork==0) then
     else if (iAOMgrid==2) then
 		write(*,*) "-6 Choose type of integration grid for AOM, current: Molecular grid"
     end if
-	if (natmcalclist==ncenter) write(*,*) "-5 Define the atoms to be considered in options 1, 2, 13, current: all atoms"
-	if (natmcalclist/=ncenter) write(*,"(a,i5,a)") " -5 Define the atoms to be considered in options 1, 2, 13, current:",natmcalclist," atoms"
+	if (natmcalclist==ncenter) then
+		write(*,*) "-5 Define the atoms to be considered in options 1, 2, 13, current: all atoms"
+	else
+		write(*,"(a,i5,a)") " -5 Define the atoms to be considered in options 1, 2 and 13, current:",natmcalclist," atoms"
+    end if
 	write(*,*) "-4 Adjust reference parameter for FLU"
 	if (ipartition==1) then !For Becke
 		write(*,"(' -3 Set the number of iterations for Becke partition, current:',i3)") nbeckeiter
@@ -141,6 +147,9 @@ if (iwork==0) then
 	write(*,*) "11 Calculate multi-center delocalization index" !Only can be used for HF/DFT closed-shell wavefunction
     write(*,*) "12 Calculate information-theoretic aromaticity index (ACS Omega, 3, 18370)"
     write(*,*) "13 Calculate atomic effective volume, free volume and polarizability"
+    !!If orbital occupancy has been modified before entering fuzzy analysis module, Hirshfeld-I cannot be chosen. &
+    !This option makes orbital occupancy can be changed after generating H-I information, so that H-I partition can be used to integrate functions contributed by specific orbitals
+    if (ipartition==4) write(*,*) "26 Set occupation of some orbitals"
   	!write(*,*) "101 Integrate a function in Hirshfeld atomic space with molecular grid"
 	if (ispecial==2) then
 		write(*,*) "99 Calculate relative Shannon and Fisher entropy and 2nd-order term"
@@ -166,6 +175,9 @@ if (isel==0) then
 	
 else if (isel==101) then
 	call intHirsh_molgrid
+	
+else if (isel==26) then
+	call modorbocc
 	
 else if (isel==-11) then
 	if (numcp>0) then
@@ -215,7 +227,7 @@ else if (isel==-5) then
 			exit
 		end if
 	end do
-	write(*,*) "Done! The atoms you chose:"
+	write(*,*) "Done! The atoms you chosen:"
 	write(*,"(10i6)") atmcalclist(1:natmcalclist)
 	write(*,*)
 	
@@ -337,6 +349,8 @@ else if (isel==-1) then
 	if (imodwfn==1.and.(ipartition==2.or.ipartition==4)) then !These two modes need reloading firstly loaded file, so they cannot be already modified
 		write(*,"(a)") " Error: Since the wavefunction has been modified by you or by other functions, present function is unable to use. &
 		Please reboot Multiwfn and reload the file"
+        write(*,*) "Press ENTER button to continue"
+        read(*,*)
 		ipartition=ipartitionold
 		cycle
 	end if
@@ -348,7 +362,7 @@ else if (isel==-1) then
 		call Hirshfeld_I(2)
 	end if
 end if
-if (isel==101.or.isel<0) cycle
+if (isel==26.or.isel==101.or.isel<0) cycle
 
 
 !!=======================================
@@ -433,6 +447,8 @@ else if (isel==3.or.isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==9.or.isel=
 			end if
 			if (allocated(AOM)) deallocate(AOM,AOMsum) !For PLR, the previous AOM and AOMsum allocated by PDI/FLU is too small, so here should be released
 			allocate(AOM(nmatsize,nmatsize,ncenter),AOMsum(nmatsize,nmatsize))
+            if (allocated(AOMtmp)) deallocate(AOMtmp) 
+            allocate(AOMtmp(nmatsize,nmatsize))
 			AOM=0
 			AOMsum=0
 		else if (wfntype==1.or.wfntype==4) then !UHF, U-post-HF
@@ -465,6 +481,8 @@ else if (isel==3.or.isel==4.or.isel==5.or.isel==6.or.isel==7.or.isel==9.or.isel=
 			if (allocated(AOMb)) deallocate(AOMb,AOMsumb)
 			allocate(AOM(nmatsizea,nmatsizea,ncenter),AOMb(nmatsizeb,nmatsizeb,ncenter))
 			allocate(AOMsum(nmatsizea,nmatsizea),AOMsumb(nmatsizeb,nmatsizeb))
+            if (allocated(AOMtmp)) deallocate(AOMtmp) 
+            allocate(AOMtmp(nmatsizea,nmatsizea)) !Because nmatsizea >= nmatsizeb
 			AOM=0
 			AOMb=0
 			AOMsum=0
@@ -540,8 +558,9 @@ end if
 
 !! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!
 !! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!!! Cycle each atom !!
+
 do iatm=1,ncenter
-	if ( (isel==1.or.isel==2.or.isel==13).and.all(atmcalclist(1:natmcalclist)/=iatm) ) cycle
+	if ( (isel==2.or.isel==13).and.all(atmcalclist(1:natmcalclist)/=iatm) ) cycle
 	if (isel==12) then
         if (all(aromatatm(1:naromatatm)/=iatm)) cycle
     end if
@@ -670,7 +689,7 @@ do iatm=1,ncenter
             else if (ipartition==3) then !Hirshfeld based on interpolation of built-in atomic radius density
 				!$OMP parallel do shared(atomdens) private(ipt) num_threads(nthreads)
 				do ipt=1+iradcut*sphpot,radpot*sphpot
-					atomdens(ipt)=calcatmdens(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,18)
+					atomdens(ipt)=calcatmdens(jatm,gridatm(ipt)%x,gridatm(ipt)%y,gridatm(ipt)%z,0)
 				end do
 				!$OMP end parallel do
 			else !Hirshfeld-I based on refined atomic radial density
@@ -963,7 +982,7 @@ do iatm=1,ncenter
 		end do
         !Calculate free volume
         freeV=0
-        	gridatm%x=gridatm%x-a(iatm)%x !Recover the integration points to (0,0,0) as center
+        gridatm%x=gridatm%x-a(iatm)%x !Recover the integration points to (0,0,0) as center
 		gridatm%y=gridatm%y-a(iatm)%y
 		gridatm%z=gridatm%z-a(iatm)%z
 		call dealloall(0)
@@ -1038,7 +1057,7 @@ do iatm=1,ncenter
 		if ((wfntype==1.or.wfntype==4).and.nmatsizeb>0) then
 			MOinit=iendalpha+1
 			MOend=iendalpha+nmatsizeb
-        		if (iAOMgrid==1) then !Atomic grid
+            if (iAOMgrid==1) then !Atomic grid
 				!$OMP parallel shared(AOMb) private(i,imo,jmo,AOMtmp,orbval,tmpval) num_threads(nthreads)
 				AOMtmp=0D0
 				!$OMP do schedule(dynamic)
@@ -1047,13 +1066,13 @@ do iatm=1,ncenter
 					do jmo=MOinit,MOend
 						tmpval=atmspcweight(i)*orbval(jmo)*gridatm(i)%value
 						do imo=jmo,MOend
-							AOMtmp(imo,jmo)=AOMtmp(imo,jmo)+tmpval*orbval(imo)
+							AOMtmp(imo-iendalpha,jmo-iendalpha)=AOMtmp(imo-iendalpha,jmo-iendalpha)+tmpval*orbval(imo)
 						end do
 					end do
 				end do
 				!$OMP end do
 				!$OMP CRITICAL
-					AOMb(1:nmatsizeb,1:nmatsizeb,iatm)=AOMb(1:nmatsizeb,1:nmatsizeb,iatm)+AOMtmp(MOinit:MOend,MOinit:MOend)
+					AOMb(1:nmatsizeb,1:nmatsizeb,iatm)=AOMb(1:nmatsizeb,1:nmatsizeb,iatm)+AOMtmp(MOinit-iendalpha:MOend-iendalpha,MOinit-iendalpha:MOend-iendalpha)
 				!$OMP end CRITICAL
 				!$OMP end parallel
 			else if (iAOMgrid==2) then !Molecular grid
@@ -1084,22 +1103,6 @@ do iatm=1,ncenter
 					AOMb(jmo,imo,:)=AOMb(imo,jmo,:)
 				end do
 			end do
-        
-			!do i=1+iradcut*sphpot,radpot*sphpot
-			!	call orbderv(1,MOinit,MOend,gridatm(i)%x,gridatm(i)%y,gridatm(i)%z,orbval)
-			!	do imo=MOinit,MOend
-			!		imotmp=imo-iendalpha !So that the index starts from 1 to nbelec
-   !                 tmpval=atmspcweight(i)*orbval(imo)*gridatm(i)%value
-			!		do jmo=imo,MOend
-			!			jmotmp=jmo-iendalpha
-			!			AOMb(imotmp,jmotmp,iatm)=AOMb(imotmp,jmotmp,iatm)+tmpval*orbval(jmo)
-			!		end do
-			!	end do
-			!end do					
-			!AOMb(:,:,iatm)=AOMb(:,:,iatm)+transpose(AOMb(:,:,iatm))
-			!do imo=1,nmatsizeb
-			!	AOMb(imo,imo,iatm)=AOMb(imo,imo,iatm)/2D0
-			!end do
         end if
 	end if
     
@@ -1108,9 +1111,11 @@ do iatm=1,ncenter
 	if (isel==12) then
         ifinish=ifinish+1
         call showprog(ifinish,naromatatm)
-    else if ((isel==2.and.iout==20).or.(isel/=2.and.isel/=13)) then
+    else if (isel==2.and.iout==20) then
         ifinish=ifinish+1
         call showprog(ifinish,natmcalclist)
+    else if (isel/=2.and.isel/=13) then
+        call showprog(iatm,ncenter)
     end if
 	
 end do !End cycling atoms
@@ -1300,18 +1305,23 @@ end if
 !!====================================================
 write(*,*)
 if (isel==1) then
-	sumval=sum(rintval(:,1))
-	sumabsval=sum(abs(rintval(:,1)))
+	do iatm=1,ncenter
+		if ( all(atmcalclist(1:natmcalclist)/=iatm) ) rintval(iatm,1)=0
+    end do
+	sumval=sum(rintval(atmcalclist(1:natmcalclist),1))
+	sumabsval=sum(abs(rintval(atmcalclist(1:natmcalclist),1)))
 	write(*,*) "  Atomic space        Value                % of sum            % of sum abs"
-	if (any(abs(rintval(:,1))>1D9).or.all(abs(rintval(:,1))<1D-7)) then
-		do iatm=1,ncenter
+	if (any(abs(rintval(atmcalclist(1:natmcalclist),1))>1D9).or.all(abs(rintval(atmcalclist(1:natmcalclist),1))<1D-7)) then
+		do idx=1,natmcalclist
+			iatm=atmcalclist(idx)
 			write(*,"(i6,'(',a2,')  ',E20.10,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
 		end do
 		write(*,"(' Summing up above values:',E20.10)") sumval
 		write(*,"(' Summing up absolute value of above values:',E20.10)") sumabsval
     else
-		do iatm=1,ncenter
-			write(*,"(i6,'(',a2,')  ',f20.8,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
+		do idx=1,natmcalclist
+			iatm=atmcalclist(idx)
+            write(*,"(i6,'(',a2,')  ',f20.8,1x,f20.6,1x,f20.6)") iatm,a(iatm)%name,rintval(iatm,1),rintval(iatm,1)/sumval*100,rintval(iatm,1)/sumabsval*100
 		end do
 		write(*,"(' Summing up above values:',f20.8)") sumval
 		write(*,"(' Summing up absolute value of above values:',f20.8)") sumabsval
@@ -1473,6 +1483,7 @@ else if (isel==2) then !Multipole moment
     end if
     
 else if (isel==3) then !Output AOM
+    write(*,*) "Exporting AOM.txt in current folder..."
 	open(10,file="AOM.txt",status="replace")
 	if (wfntype==0.or.wfntype==2.or.wfntype==3) then
 		do iatm=1,ncenter

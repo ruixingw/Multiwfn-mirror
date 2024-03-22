@@ -7,7 +7,7 @@
 !When 50-50 is used in Gaussian, both singlet and triplet states are taken into account together. However, &
 !when generation of triplet is specified in ORCA, only one set of excited state can be taken into account
 module excitinfo
-character :: excitfilename*200=" " !"D:\CM\my_program\Multiwfn\x\excittrans\4-Nitroaniline\4-Nitroaniline.out". If nstates=0, then Multiwfn asks user to input
+character :: excitfilename*200=" " !If nstates=0, then Multiwfn asks user to input
 integer :: ifiletypeexc !1=Gaussian output; 2=ORCA output; 3=Plain text file; 4=Firefly output file
 integer :: iORCAsTD=0 !1=ORCA with sTDA/sTDDFT, 0: Common ORCA TDA/TDDFT
 integer :: iwarnORCA_TD=1 !If need to show warn when loading TDDFT coefficiens of ORCA, =1: Warn. Once warn once
@@ -234,7 +234,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 			call loclabel(10,"Excited State",ifound,0)
 			if (ifound==1) then
 				read(10,"(a)") c80tmp
-                if (index(c80tmp,'f=')/=0) nstates=nstates+1
+                if ((index(c80tmp,'f=')/=0.and.ifiletypeexc==1).or.ifiletypeexc==3) nstates=nstates+1 !For Gaussian case, the line must contain f= to avoiding count irrelevant lines
 			else
 				exit
 			end if
@@ -258,7 +258,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
             read(10,"(50x,i7)") nstates
 		end if
         !This label is the most safest way of determining how many times of electronic excitation calculations have done
-        !If singlet and triplet are both calculated, will be count once
+        !If singlet and triplet are both calculated, will be counted once
         call loclabelfinal(10,"TD-DFT XC SETUP",numexctime)
         if (numexctime>1) then
 			write(*,"(a,i4,a)") " Note: Electron excitation information can be found",numexctime," times in the file, &
@@ -316,6 +316,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
             end if
         end do
 	end if
+    
 	if (nstates>1) then
         if (maxloadexc==0) then
             write(*,"(' There are',i5,' excited states, loading basic information...')") nstates
@@ -384,7 +385,7 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 		    end if
             rewind(10)
             do igeom=1,numexctime
-                call loclabel(10,"Number of roots to be determined",ifound,0)
+				call loclabel(10,"TD-DFT XC SETUP",ifound,0)
                 read(10,*)
             end do
 		    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
@@ -494,9 +495,26 @@ else !The [excitfilename/=" ".and.nstates=0] case is involved in TDMplot
 	else if (ifiletypeexc==6) then !CP2K output file
         call loclabelfinal(10,"TDDFPT states of multiplicity",ifound)
         read(10,"(a)") c80tmp
-        allexcmulti=1
-        if (index(c80tmp,'3')/=0) allexcmulti=3
-        if (index(c80tmp,"U-TDDFPT")/=0) allexcmulti=0 !Excited states are not spin pure states
+        if (index(c80tmp,"U-TDDFPT")/=0) then
+			allexcmulti=0 !Excited states are not spin pure states
+        else
+			allexcmulti=1
+			if (index(c80tmp,'3')/=0) then
+				imultisel=3
+				call loclabel(10,"TDDFPT states of multiplicity 1",ifound) !SOC-TDDFT calculate both singlet and triplet excited states
+				if (ifound==1) then
+					write(*,*) "Load which kind of excited states?"
+					write(*,*) "1: Singlet   3: Triplet"
+					read(*,*) imultisel
+				end if
+                allexcmulti=imultisel
+				if (imultisel==1) then
+					call loclabelfinal(10,"TDDFPT states of multiplicity 1",ifound)
+                else
+					call loclabelfinal(10,"TDDFPT states of multiplicity 3",ifound)
+                end if
+			end if
+        end if
         call loclabel(10,"TDDFPT|",ifound,0) !Load oscillator strength
 		do iexc=1,nstates
 			read(10,*) c80tmp,itmp,allexcene(iexc),r1,r2,r3,allexcf(iexc)
@@ -868,7 +886,15 @@ else
         
 	else if (ifiletypeexc==6) then !CP2K output file
 		allexcdir(:,:)=1 !CP2K is fully based on TDA
-		call loclabelfinal(10,"number             orbital",ifound)
+        if (allexcmulti(1)==1) then
+			call loclabelfinal(10,"TDDFPT states of multiplicity 1",ifound)
+			call loclabel(10,"number             orbital",ifound,0)
+        else if (allexcmulti(1)==3) then
+			call loclabelfinal(10,"TDDFPT states of multiplicity 3",ifound)
+			call loclabel(10,"number             orbital",ifound,0)
+		else
+			call loclabelfinal(10,"number             orbital",ifound)
+        end if
 		read(10,*);read(10,*)
 		do iexc=1,nstates
 			read(10,*)
@@ -1043,7 +1069,11 @@ else if (ifiletypeexc==2) then !ORCA output file
     if (iORCAsTD==0) then !Regular case
 	    !Worthnotingly, in at least ORCA 4.0, de-excitation is not separately outputted as <-, but combined into ->
 	    !Here we still check <-, because hopefully Neese may change the convention of ORCA output in the future...
-	    call loclabel(10,"the weight of the individual excitations are printed")
+        do igeom=1,numexctime
+            call loclabel(10,"TD-DFT XC SETUP",ifound,0)
+            read(10,*)
+        end do
+	    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
 	    if (allexcmulti(1)==3) then !When triplets=on, ORCA calculates both singlet and triplet excited states, now move to the latter
 		    read(10,*)
 		    call loclabel(10,"the weight of the individual excitations are printed",ifound,0)
@@ -1232,7 +1262,15 @@ else if (ifiletypeexc==5) then !GAMESS-US output file
     
 else if (ifiletypeexc==6) then !ORCA output file
 	excdir(:)=1 !CP2K is fully based on TDA
-	call loclabelfinal(10,"number             orbital",ifound)
+    if (allexcmulti(1)==1) then
+		call loclabelfinal(10,"TDDFPT states of multiplicity 1",ifound)
+		call loclabel(10,"number             orbital",ifound,0)
+    else if (allexcmulti(1)==3) then
+		call loclabelfinal(10,"TDDFPT states of multiplicity 3",ifound)
+		call loclabel(10,"number             orbital",ifound,0)
+	else
+		call loclabelfinal(10,"number             orbital",ifound)
+    end if
 	do iexc=1,istate
         call loclabel(10,"eV",ifound,0)
 		read(10,*)
@@ -1433,7 +1471,7 @@ write(*,*) "Tian Lu, et al., Carbon, 165, 461-467 (2020) DOI: 10.1016/j.carbon.2
 	else if (isel==1) then
 		exit
 	else if (isel==2) then
-		call hole_ele_MOcontri	
+		call hole_ele_MOcontri
 	else if (isel==3) then
 		call hole_ele_atmcontri_heatmap
 	else if (isel==4) then
@@ -1468,14 +1506,18 @@ do iexcitorb=1,excnorb
 	if (abs(exccoeff(iexcitorb))<0.01D0) skippair(iexcitorb)=.true.
 end do
 
-call gen_GTFuniq(1) !Generate unique GTFs, for faster evaluation
+if (ifPBC==0) then
+	call gen_GTFuniq(1) !Generate unique GTFs, for faster evaluation
+else
+	call gen_neigh_GTF !Generate neighbouring GTFs list at reduced grids, for faster evaluation
+end if
 write(*,*) "Calculating grid data..."
 call walltime(iwalltime1)
 
 ifinish=0
-!$OMP PARALLEL DO SHARED(ifinish,holegrid,elegrid,transdens,holecross,elecross,magtrdens) &
+!$OMP PARALLEL DO SHARED(ifinish,ishowprog,holegrid,elegrid,transdens,holecross,elecross,magtrdens) &
 !$OMP PRIVATE(i,j,k,tmpx,tmpy,tmpz,orbval,wfnderv,imo,jmo,excwei,iexcitorb,jexcitorb,ileft,jleft,iright,jright,tmpleft,tmpright,idir,jdir,tmpval) &
-!$OMP schedule(dynamic) NUM_THREADS(nthreads)
+!$OMP schedule(dynamic) NUM_THREADS(nthreads) collapse(2)
 do k=1,nz
 	do j=1,ny
 		do i=1,nx
@@ -1551,11 +1593,16 @@ do k=1,nz
 				end do
 			end do
 		end do
+		!$OMP CRITICAL
+		ifinish=ifinish+1
+		ishowprog=mod(ifinish,ceiling(nz*ny/100D0))
+		if (ishowprog==0) call showprog(floor(100D0*ifinish/(ny*nz)),100)
+		!$OMP END CRITICAL
 	end do
-    ifinish=ifinish+1
-    call showprog(ifinish,nz)
 end do
 !$OMP END PARALLEL DO
+if (ishowprog/=0) call showprog(100,100)
+
 holecross=holecross*2 !Because "jexcitorb=iexcitorb+1,excnorb" does not considered duplicated cross terms
 elecross=elecross*2
 deallocate(skippair)
@@ -1649,6 +1696,13 @@ hole_deloc=dsqrt(hole_deloc*dvol)*100
 rtransmagx=rtransmagx*dvol
 rtransmagy=rtransmagy*dvol
 rtransmagz=rtransmagz*dvol
+if (excmulti==3) write(*,"(a,/)") " Note: The transition moments shown below correspond to spatial part, while orthogonality of spin part of wavefunction is ignored"
+
+if (rnormele==0) then
+	write(*,"(a,/)") " Warning: Integral of electron distribution is exactly zero, it is highly likely that &
+    wavefunctions of virtual orbitals were not recorded in your inputted wavefunction file! In this case hole-electron analysis is meaningless"
+end if
+
 write(*,"(' Integral of hole:    ',f12.6)") rnormhole
 write(*,"(' Integral of electron:',f12.6)") rnormele
 write(*,"(' Integral of transition density:',f12.6)") rinttransdens
@@ -1850,7 +1904,7 @@ do while(.true.)
 						if (ifac==1) cubmat(i,j,k)=-tmpx*transdens(i,j,k)
 						if (ifac==2) cubmat(i,j,k)=-tmpy*transdens(i,j,k)
 						if (ifac==3) cubmat(i,j,k)=-tmpz*transdens(i,j,k)
-                        if (ifac==4) cubmat(i,j,k)=dsqrt(tmpx**2+tmpy**2+tmpz**2)*transdens(i,j,k)
+                        if (ifac==4) cubmat(i,j,k)=dsqrt(tmpx**2+tmpy**2+tmpz**2)*abs(transdens(i,j,k))
 					end do
 				end do
 			end do
@@ -2137,7 +2191,7 @@ end subroutine
 subroutine hole_ele_atmcontri_heatmap
 use defvar
 use util
-use dislin_d
+use dislin
 implicit real*8 (a-h,o-z)
 character c200tmp*200,c2000tmp*2000
 real*8 :: atmcomp(ncenter,nmo),xyratio=0.15D0
@@ -2152,8 +2206,11 @@ write(*,*) "1 Mulliken (very fast, but incompatible with diffuse functions)"
 write(*,*) "2 Hirshfeld partition (slower but very robust)"
 read(*,*) imethod
 
-if (imethod==1) call atmcontri_holeele_Mulliken(he_atm(:,1),he_atm(:,2),1) !Calculate atomic contribution to hole and electron via Mulliken-like partition
-if (imethod==2) call atmcontri_holeele_Hirshfeld(he_atm(:,1),he_atm(:,2),1) !Calculate atomic contribution to hole and electron via Hirshfeld partition
+if (imethod==1) then
+	call atmcontri_holeele_Mulliken(he_atm(:,1),he_atm(:,2),1) !Calculate atomic contribution to hole and electron via Mulliken-like partition
+else if (imethod==2) then
+	call atmcontri_holeele_Hirshfeld(he_atm(:,1),he_atm(:,2),1) !Calculate atomic contribution to hole and electron via Hirshfeld partition
+end if
 
 do iatm=1,ncenter !Evaluate overlap in atom space. If contribution to hole or electron is unphysical negative, then the overlap will be regarded as zero
 ! 	he_atm(iatm,3)=minval(he_atm(iatm,1:2)) !Not as good as below
@@ -2416,6 +2473,8 @@ implicit real*8 (a-h,o-z)
 real*8 atmhole(ncenter),atmele(ncenter)
 real*8 Tmat(nbasis,nbasis) !Used to store intermediate data during calculating atomic contribution
 
+call ask_Sbas_PBC !For PBC case, calculate Sbas if it is not currently available
+
 atmhole=0;atmele=0
 call walltime(iwalltime1)
 if (ioutinfo==1) write(*,*) "Evaluating atomic contributions..."
@@ -2511,6 +2570,12 @@ implicit real*8 (a-h,o-z)
 real*8 atmhole(ncenter),atmele(ncenter)
 real*8 hole(radpot*sphpot),ele(radpot*sphpot),promol(radpot*sphpot),tmpdens(radpot*sphpot),selfdens(radpot*sphpot)
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
+
+if (ifPBC/=0) then
+	write(*,*) "Error: Periodic system is unsupported in this case! Press ENTER button to exit"
+    read(*,*)
+    stop
+end if
 
 atmhole=0
 atmele=0
@@ -2969,6 +3034,12 @@ real*8,allocatable :: GTFdipint(:,:)
 integer,allocatable :: stateidx(:)
 character strtmp1,strtmp2,selectyn,c2000tmp*2000
 
+if (ifPBC/=0) then
+	write(*,"(a)") " Error: This function does not support periodic case yet! Press ENTER button to return"
+    read(*,*)
+    return
+end if
+
 write(*,*) "Initializing data, please wait..."
 write(*,*)
 !Calculate dipole moment integral matrix
@@ -3116,6 +3187,12 @@ real*8 beckeweigrid(radpot*sphpot),orbval(nmo,radpot*sphpot),orbvalpt(radpot*sph
 type(content) gridatm(radpot*sphpot),gridatmorg(radpot*sphpot)
 character strtmp1,strtmp2,selectyn,c2000tmp*2000
 ! excitfilename="x\excittrans\4-Nitroaniline\4-Nitroaniline.out"
+
+if (ifPBC/=0) then
+	write(*,"(a)") " Error: This function does not support periodic case yet! Press ENTER button to return"
+    read(*,*)
+    return
+end if
 
 call walltime(iwalltime1)
 write(*,*) "Calculating overlap matrix between MOs, please wait patiently..."
@@ -3751,7 +3828,7 @@ end do
 !$OMP END PARALLEL DO
 call walltime(iwalltime2)
 write(*,"(' (Stage 3 took up wall clock time',i10,' s)',/)") iwalltime2-iwalltime1
-if (isel==1.or.isel==2) write(iout,"(a,/)") " Note: The transition dipole moments reported below only correspond to spatial part, the spin part is not taken into account"
+if (isel==1.or.isel==2) write(iout,"(a,/)") " Note: The transition dipole moments reported below only correspond to spatial part, the spin part is not taken into account!"
 
 if (all(allexcmulti==allexcmulti(1))) then !All states have same spin, in this case all options are available
 	if (idiptype==1) then !Electric
@@ -3766,7 +3843,7 @@ if (all(allexcmulti==allexcmulti(1))) then !All states have same spin, in this c
 			end do
             if (iGSESonly==0) then
 				write(iout,*)
-				write(iout,"(' Note: In below output the case of i=j corresponds to contribution of electron to dipole moment of excited state i')")
+				write(iout,"(' Note: In below output the case of i=j corresponds to contribution of electron to dipole moment of excited state i (contribution of nuclear charges is not taken into account!)')")
 				write(iout,"(' Transition electric dipole moment between excited states (a.u.):')")
 				write(iout,*) "    i     j         X             Y             Z        Diff.(eV)   Oscil.str"
             end if
@@ -3823,7 +3900,7 @@ else !Not all states have the same spin, 50-50 with singlet ground state is assu
 			write(allexclab(iexc),"(' T',i3)") iT
 		end if
 	end do
-	write(iout,"(' Note: In below output the case of i=j corresponds to contribution of electron to dipole moment of excited state i')")
+	write(iout,"(' Note: In below output the case of i=j corresponds to contribution of electron to dipole moment of excited state i (contribution of nuclear charges is not taken into account!)')")
     if (idiptype==1) then
 		write(iout,"(' Transition electric dipole moment between singlet states (a.u.):')")
     else if (idiptype==2) then
@@ -4093,7 +4170,7 @@ integer,allocatable :: frag(:,:),fragnatm(:)
 !Load density transition matrix in basis representation
 if (excitfilename==" ") then
 	write(*,*) "Below kinds of files are acceptable"
-	write(*,*) "(1) Gaussian/ORCA output file of electron excitation task"
+	write(*,"(a)") " (1) Output file of electron excitation task of Gaussian, ORCA, CP2K, GAMESS-US/Firefly, CP2K, xtb, BDF, TDM will be calculated based on configuration and MO coefficients"
 	write(*,*) "(2) Gaussian output file of electron excitation task with IOp(6/8=3)"
 	write(*,*) "(3) tdmat.txt, which contains transition density matrix"
 	write(*,"(a)") " (4) One of AAtrdip.txt, AAtrdipX.txt, AAtrdipY.txt, AAtrdipZ.txt, which contains atom transition dipole moment matrix"
@@ -4490,8 +4567,11 @@ if (icompmethod==1.or.icompmethod==2) then !Mulliken-like or Hirshfeld partition
 	call loadallexcinfo(1)
 	call selexcit(istate)
 	call loadexccoeff(istate,1)
-	if (icompmethod==1) call atmcontri_holeele_Mulliken(atmhole,atmele,1)
-	if (icompmethod==2) call atmcontri_holeele_Hirshfeld(atmhole,atmele,1)
+	if (icompmethod==1) then
+		call atmcontri_holeele_Mulliken(atmhole,atmele,1)
+	else if (icompmethod==2) then
+		call atmcontri_holeele_Hirshfeld(atmhole,atmele,1)
+    end if
 else if (icompmethod==3) then !Employ fuzzy partition to obtain atomic contributions based on interpolated function of existing cube files of hole and electron
 	iuserfuncold=iuserfunc
 	iuserfunc=-1
@@ -5404,6 +5484,7 @@ call loadallexcinfo(1)
 call selexcit(istate)
 call loadexccoeff(istate,1)
 call genTDM(1,3)
+call ask_Sbas_PBC
 
 bastrpopa=0
 if (wfntype==1.or.wfntype==4) then
@@ -5491,7 +5572,7 @@ call str2arr(c2000tmp,nexcsel,excarr)
 
 call ask_Sbas_PBC
 if (cfgcrossthres/=0) then
-	write(*,"(/,a,f8.5,a)") " Note: When calculating cross term of density matrix of excited state, configurations with absolute value of coefficient <",&
+	write(*,"(/,a,f9.6,a)") " Note: When calculating cross term of density matrix of excited state, configurations with absolute value of coefficient <",&
     cfgcrossthres," will be ignored to reduce cost. The threshold is determined by ""cfgcrossthres"" in settings.ini"
 end if
 
@@ -6153,7 +6234,7 @@ do ifrag=1,nfrag
 end do
 close(12)
 
-!Generate data in CTspectrum\total_spectrum.txt
+!Generate data in CT_multiple\total_spectrum.txt
 open(12,file=tmpdir//"total_spectrum.txt",status="replace")
 write(12,*) nstates,1
 do istate=1,nstates
@@ -6161,7 +6242,7 @@ do istate=1,nstates
 end do
 close(12)
 
-!Generate data in CTspectrum\Redis_xxx.txt
+!Generate data in CT_multiple\Redis_xxx.txt
 do ifrag=1,nfrag
     write(c80tmp,"(a,i1,a)") tmpdir//"Redis_",ifrag,".txt"
     open(12,file=trim(c80tmp),status="replace")
@@ -6172,7 +6253,7 @@ do ifrag=1,nfrag
     close(12)
 end do
 
-!Generate data in CTspectrum\ET_xxx.txt
+!Generate data in CT_multiple\ET_xxx.txt
 do ifrag=1,nfrag
     do jfrag=ifrag+1,nfrag
         write(c80tmp,"(a,i1,a,i1,a)") tmpdir//"ET_",ifrag,"to",jfrag,".txt"

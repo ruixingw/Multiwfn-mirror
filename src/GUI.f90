@@ -6,12 +6,56 @@ integer iatm1text,iatm2text,iatm3text,iatm4text,igeomresult
 integer idisisosurnumpt,idisisosurverypoor,idisisosurpoor,idisisosurdef,idisisosurgood,idisisosurhigh,idisisosurveryhigh,idisisosurperfect
 real*8 :: aug3D_main0=6D0
 
+!Used by subroutine myDWGTXT
+integer imyDWGTXT
+character myDWGTXTstr*2000 
+
 contains
+
 
 !!--------- Select input file by GUI
 subroutine selfilegui
 CALL dwgfil("Choose an input file (.wfn/wfx/fch/molden/mwfn/chg/pdb/xyz/mol/mol2/cif/cub, etc.)",filename,"*")
 end subroutine
+
+
+!!-------- DWGTXT often crashes under Window (at least for dislin 2022-Mar). This is my replacement for DWGTXT
+!promptstr is string of prompt, defstr is default string
+!The loaded text will be stored to myDWGTXTstr defined in the module GUI, maximum 2000 characters
+subroutine myDWGTXT(promptstr,defstr)
+character(len=*) promptstr,defstr
+CALL swgtit(" ")
+call swgwth(70)
+CALL WGINI('VERT',idiswindow)
+call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
+call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
+CALL SWGJUS("CENTER","LABEL") !Center the label text
+call WGLAB(idiswindow,trim(promptstr),itext)
+call WGTXT(idiswindow," ",imyDWGTXT)
+call SWGTXT(imyDWGTXT,defstr)
+CALL WGBAS(idiswindow,"HORI",idishori)
+CALL SWGWTH(20)
+call wgpbut(idishori,"OK",idisok)
+call wgpbut(idishori,"Cancel",idisreturn)
+call SWGCBK(idisreturn,myDWGTXT_return)
+call SWGCBK(idisok,myDWGTXT_load)
+call SWGCBK(imyDWGTXT,myDWGTXT_load)
+CALL WGFIN
+end subroutine
+!--------- Load string from text box created by myDWGTXT
+subroutine myDWGTXT_load(id)
+integer,intent (in) :: id
+call GWGTXT(imyDWGTXT,myDWGTXTstr)
+call sendok
+end subroutine
+!--------- Return from myDWGTXT
+subroutine myDWGTXT_return(id)
+integer,intent (in) :: id
+myDWGTXTstr=" "
+call sendok
+end subroutine
+
+
 
 !!--------- A GUI for drawing molecular structure and orbital isosurface
 subroutine drawmolgui
@@ -20,12 +64,8 @@ character ictmp*5,molorblist*600000 !Max 99999 orbitals (the 0th is "none"), eac
 isavepic=0
 if (ifPBC>0) then
     aug3D_main0=-1 !For PBC system, make box size consistent with cell
-    ishowdatarange=1 !Show box
-    if (allocated(b)) then
-		nprevorbgrid=25000 !Corresponding to very poor quality
-		write(*,"(a)") " Note: Because this is a periodic system, the default grid quality is set to ""very poor"" to reduce &
-        possibly high cost for visualizing orbitals. To use better grid qualtiy, choose ""Isosur. quality"" in menu bar of GUI"
-    end if
+    call getcellabc(asize,bsize,csize,alpha,beta,gamma)
+    if (nint(alpha)/=90.or.nint(beta)/=90.or.nint(gamma)/=90) ishowdatarange=1 !If the cell if orthogonal, do not show grid data range, since it will overlap with cell frame
 end if
 !Set variables for viewing orbitals
 molorblist(1:5)="None"
@@ -87,7 +127,7 @@ call wgapp(idisisosurquality,"Set number of grid points",idisisosurnumpt)
 call wgapp(idisisosurquality,"Very poor quality (super fast, 25k points)",idisisosurverypoor)
 call wgapp(idisisosurquality,"Poor quality (very fast, 50k points)",idisisosurpoor)
 call wgapp(idisisosurquality,"Default (fast, 120k points)",idisisosurdef)
-call wgapp(idisisosurquality,"good quality (300k points)",idisisosurgood)
+call wgapp(idisisosurquality,"Good quality (300k points)",idisisosurgood)
 call wgapp(idisisosurquality,"High quality (500k points)",idisisosurhigh)
 call wgapp(idisisosurquality,"Very high quality (1000k points)",idisisosurveryhigh)
 call wgapp(idisisosurquality,"Perfect quality (1500k points)",idisisosurperfect)
@@ -116,6 +156,7 @@ if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
 CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
 if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
 CALL wgapp(idisotherset,"Set atom highlighting",idishighlightatom)
+CALL wgapp(idisotherset,"Load bonding connectivity from mol/mol2 file",idisloadconn)
 CALL WGPOP(idiswindow,"Tools",idistools)
 CALL wgapp(idistools,"Write settings to GUIsettings.ini",idiswriteGUIsetting)
 CALL wgapp(idistools,"Load settings from GUIsettings.ini",idisloadGUIsetting)
@@ -179,7 +220,14 @@ if (isys==1.and.(imodlayout==0.or.imodlayout==2)) then
 	call swgwin(100,5,70,115)
 	call swgtyp("VERT","SCALE")
 	call swgstp(0.002D0)
-	call wgscl(idisbotrig,"Isovalue",0D0,0.4D0,sur_value_orb,3,idisisosurscl)
+    if (ncenter<200) then
+		call wgscl(idisbotrig,"Isovalue",0D0,0.4D0,sur_value_orb,3,idisisosurscl)
+    else if (ncenter<400) then
+		call wgscl(idisbotrig,"Isovalue",0D0,0.2D0,sur_value_orb,3,idisisosurscl)
+    else
+		call swgstp(0.001D0)
+		call wgscl(idisbotrig,"Isovalue",0D0,0.1D0,sur_value_orb,3,idisisosurscl)
+    end if
 else if ((isys==1.and.imodlayout==1).or.isys==2) then !Use different layout for linux, since the sizes of widgets relative to Windows version are different
 	CALL SWGSPC(0D0,0.5D0)
 	call WGLAB(idisright2,"Orbitals:",iorbseltext)
@@ -191,7 +239,14 @@ else if ((isys==1.and.imodlayout==1).or.isys==2) then !Use different layout for 
 	call swgtyp("HORI","PBAR")
 	call swgtyp("HORI","SCALE")
 	call swgstp(0.002D0)
-	call wgscl(idisright2,"Isovalue of orbital",0D0,0.4D0,sur_value_orb,3,idisisosurscl)
+    if (ncenter<200) then
+		call wgscl(idisright2,"Isovalue of orbital",0D0,0.4D0,sur_value_orb,3,idisisosurscl)
+    else if (ncenter<400) then
+		call wgscl(idisright2,"Isovalue of orbital",0D0,0.2D0,sur_value_orb,3,idisisosurscl)
+    else
+		call swgstp(0.001D0)
+		call wgscl(idisright2,"Isovalue of orbital",0D0,0.1D0,sur_value_orb,3,idisisosurscl)
+    end if
 end if
 
 call SWGCBK(idisorbinfo,showorbinfo1)
@@ -254,6 +309,7 @@ call SWGCBK(idisselfrag,GUIselfrag)
 call SWGCBK(idisgetatmidx_by_ele,getatmidx_by_ele)
 call SWGCBK(idisshowcoordA,showcoordA)
 call SWGCBK(idisshowcoordB,showcoordB)
+call SWGCBK(idisloadconn,loadconn)
 call SWGCBK(idisshowfractcoord,showfractcoord)
 call SWGCBK(idisexpintcoord,export_intcoord)
 call SWGCBK(idisreturn,GUIreturn)
@@ -282,7 +338,7 @@ call SWGCBK(idisisosurscl,setisosurscl)
 CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 idrawisosur=0 !Don't draw the cubmat in memory at first time go into the GUI
-if (isys==1) call drawmol !Directly show image in Windows GUI.
+if (isys==1) call drawmol !Directly show image in Windows GUI
 !However, in linux, "draw" widget is available only after WGFIN subroutine so we need a mouse event to active it, before this, the draw widget cannot be used, this is why "if (isys==1)"
 CALL WGFIN
 idrawisosur=0 !After ending this GUI, recover to initial setting
@@ -308,12 +364,12 @@ if (isavepic==1) then
 	call drawplane(dp_init1,dp_end1,dp_init2,dp_end2,dp_init3,dp_end3,idrawtype)
 else if (isavepic==0) then
 	if (idrawtype==3) CALL swgtit('Relief map')
-	if (idrawtype==4) CALL swgtit('Shaded surface map')
-	if (idrawtype==5) CALL swgtit('Shaded surface map with projected color-filled map')
+	if (idrawtype==4) CALL swgtit('Shaded relief map')
+	if (idrawtype==5) CALL swgtit('Shaded relief map with projected color-filled map')
 	if (imodlayout==2) then
-		call swgwth(73)
+		call swgwth(plotwinsize3D-15)
 	else
-		CALL swgwth(96)
+		CALL swgwth(plotwinsize3D)
 		CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
 	end if
 	call SWGPOP("NOOK")  !Don't show OK&QUIT in upper menu
@@ -378,9 +434,9 @@ GUI_mode=3 !Use GUI_mode setting in dislin response routine
 isavepic=0
 CALL swgtit('Isosurface graph')
 if (imodlayout==2) then
-	call swgwth(73)
+	call swgwth(plotwinsize3D-15)
 else
-	CALL swgwth(96)
+	CALL swgwth(plotwinsize3D)
 	CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
 end if
 call SWGPOP("NOOK")  !Don't show OK&QUIT in upper menu
@@ -429,6 +485,7 @@ CALL wgapp(idisotherset,"Use line style",idisuseline)
 CALL wgapp(idisotherset,"Toggle showing hydrogens",idisshowhydrogen)
 CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
 if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
+CALL wgapp(idisotherset,"Load bonding connectivity from mol/mol2 file",idisloadconn)
 CALL wgapp(idisotherset,"Write settings to isosur.ini",idiswriteisosursetting)
 CALL wgapp(idisotherset,"Load settings from isosur.ini",idisloadisosursetting)
 
@@ -524,6 +581,7 @@ call SWGCBK(idisreset,resetview)
 call SWGCBK(idisisosurscl,setisosurscl)
 call SWGCBK(idisscrval,setscrval)
 call SWGCBK(idisshowhydrogen,setshowhydrogen)
+call SWGCBK(idisloadconn,loadconn)
 call SWGCBK(idiswriteisosursetting,write_isosur_setting)
 call SWGCBK(idisloadisosursetting,load_isosur_setting)
 if (isosursec==0) call SWGCBK(idisshowbothsign,setshowbothsign)
@@ -544,8 +602,8 @@ call SWGCBK(idisatmsize,setatmsize)
 if (isys==1) call drawmol
 CALL WGFIN
 idrawisosur=0
-isosur1style=1
-isosur2style=1
+!isosur1style=1
+!isosur2style=1
 isosursec=0
 end subroutine
 
@@ -556,7 +614,7 @@ GUI_mode=4
 isavepic=0
 CALL swgtit('Molecular structure, critical points and topology paths')
 if (imodlayout==2) then
-	call swgwth(73)
+	call swgwth(plotwinsize3D-15)
 else
 	call swgwth(plotwinsize3D)
 	CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
@@ -587,6 +645,7 @@ CALL wgapp(idisotherset,"Use vdW style",idisusevdW)
 CALL wgapp(idisotherset,"Use line style",idisuseline)
 CALL wgapp(idisotherset,"Toggle showing hydrogens",idisshowhydrogen)
 CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
+CALL wgapp(idisotherset,"Load bonding connectivity from mol/mol2 file",idisloadconn)
 if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
 !Main region
 CALL WGDRAW(idiswindow,idisgraph) !Draw-widget to display molecular structure
@@ -649,6 +708,7 @@ call SWGCBK(idissavepic,savepic)
 call SWGCBK(idissetangle,setviewangle)
 call SWGCBK(idissetzoom,setzoom)
 call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
+call SWGCBK(idisloadconn,loadconn)
 call SWGCBK(idisatmlabtyp,setatmlabtyp)
 call SWGCBK(idisatmlabclr,setatmlabclr)
 call SWGCBK(idisuseCPK,setCPKstyle)
@@ -684,7 +744,7 @@ GUI_mode=5
 isavepic=0
 CALL swgtit('Molecular structure, surface minima and maxima')
 if (imodlayout==2) then
-	call swgwth(73)
+	call swgwth(plotwinsize3D-15)
 else
 	call swgwth(plotwinsize3D)
 	CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
@@ -779,7 +839,7 @@ basinlist((numrealatt+2)*5+1:(numrealatt+2)*5+5)="|"//"Boun" !numrealatt+2 means
 
 CALL swgtit('Molecular structure, attractors and basins')
 if (imodlayout==2) then
-	call swgwth(73)
+	call swgwth(plotwinsize3D-15)
 else
 	call swgwth(plotwinsize3D)
 	CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
@@ -826,6 +886,7 @@ CALL wgapp(idisotherset,"Toggle showing cell frame",idisshowcell)
 if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
 CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
 if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
+CALL wgapp(idisotherset,"Load bonding connectivity from mol/mol2 file",idisloadconn)
 CALL SWGSPC(1D0,0D0)
 if (imodlayout<=1) then
 	call SWGSTP(0.1D0)
@@ -888,6 +949,7 @@ CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 call SWGCBK(idisshowcell,setshowcell)
 call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
+call SWGCBK(idisloadconn,loadconn)
 idrawbasinidx=-10 !Don't draw basins by default
 if (isys==1) call drawmol
 CALL WGFIN
@@ -909,7 +971,7 @@ do idomain=1,ndomain
 end do
 CALL swgtit('Molecular structure and domains')
 if (imodlayout==2) then
-	call swgwth(73)
+	call swgwth(plotwinsize3D-15)
 else
 	call swgwth(plotwinsize3D)
 	CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
@@ -950,6 +1012,7 @@ CALL wgapp(idisotherset,"Toggle showing cell frame",idisshowcell)
 if (ifPBC==0) call swgatt(idisshowcell,"INACTIVE","STATUS")
 CALL wgapp(idisotherset,"Toggle showing all boundary atoms",idisshowboundaryatom)
 if (ifPBC==0) call swgatt(idisshowboundaryatom,"INACTIVE","STATUS")
+CALL wgapp(idisotherset,"Load bonding connectivity from mol/mol2 file",idisloadconn)
 CALL SWGSPC(1D0,0D0)
 call SWGSTP(0.1D0)
 call wgscl(idisright,"Ratio of atomic size",0D0,5D0,ratioatmsphere,2,idisatmsize)
@@ -993,6 +1056,7 @@ call SWGCBK(idisbondradius,setbondradius)
 call SWGCBK(idisdomainplot,showdomainsel)
 call SWGCBK(idisshowcell,setshowcell)
 call SWGCBK(idisshowboundaryatom,setshowboundaryatom)
+call SWGCBK(idisloadconn,loadconn)
 CALL SWGSPC(4D0,0.5D0) !Reset the default widget spacing
 call swgtyp("HORI","SCALE") !Reset the default mode for list widget
 if (isys==1) call drawmol
@@ -1009,9 +1073,9 @@ ishowdatarange=1 !Draw box range
 ishowatmlab=0 !Don't show atomic labels
 CALL swgtit('Setting up box')
 if (imodlayout==2) then
-	call swgwth(73)
+	call swgwth(plotwinsize3D-15)
 else
-	call swgwth(plotwinsize3D+6)
+	call swgwth(plotwinsize3D)
 	CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
 	call SWGPOP("NOOK")  !Don't show OK&QUIT in upper menu
 end if
@@ -1133,9 +1197,9 @@ GUI_mode=7 !Use GUI_mode setting in dislin response routine
 isavepic=0
 CALL swgtit(' ')
 if (imodlayout==2) then
-	call swgwth(73)
+	call swgwth(plotwinsize3D-15)
 else
-	call swgwth(plotwinsize3D+6)
+	call swgwth(plotwinsize3D)
 	CALL SWGOPT("CENTER","POSITION") !Main window appear in the center of screen
 end if
 call SWGPOP("NOOK")  !Don't show OK&QUIT in upper menu
@@ -1294,7 +1358,12 @@ end subroutine
 
 subroutine resetview(id)
 integer,intent (in) :: id
-iorthoview=0
+if (ifPBC/=0) then
+	ishowcell=1 !Show cell
+    iorthoview=1 !Use orthographic view
+else
+	iorthoview=0
+end if
 XVU=150D0
 YVU=30D0
 XFAC=1D0
@@ -1629,7 +1698,9 @@ else
 		if (allocated(cubmat)) deallocate(cubmat)
 		allocate(cubmat(nx,ny,nz))
         ifinish=0
-		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat,ifinish) NUM_THREADS(nthreads)
+        if (ifPBC>0) call gen_neigh_GTF
+		!call walltime(iwalltime1)
+		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat,ifinish) NUM_THREADS(nthreads) collapse(2)
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
@@ -1646,11 +1717,13 @@ else
 			!!$OMP end CRITICAL
 		end do
 		!$OMP end parallel do
+		!call walltime(iwalltime2)
+		!write(*,"(' Generate orbital wavefunction took up',i10,' s')") iwalltime2-iwalltime1
 		if (ifixorbsign==1.and.sum(cubmat)<0) cubmat=-cubmat
 	else if (isosursec==1) then !Save cube data for isosurface 2 to cubmattmp
 		if (allocated(cubmattmp)) deallocate(cubmattmp)
 		allocate(cubmattmp(nx,ny,nz))
-		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat) NUM_THREADS(nthreads)
+		!$OMP parallel do PRIVATE(i,j,k,tmpx,tmpy,tmpz) SHARED(cubmat) NUM_THREADS(nthreads) collapse(2)
 		do k=1,nz
 			do j=1,ny
 				do i=1,nx
@@ -2101,12 +2174,39 @@ end subroutine
 subroutine setatmlabtyp(id)
 use defvar
 integer,intent (in) :: id
-CALL swgtit(" ")
+character typelist*200
+!This code often causes crash when selecting a term under Win11, so do not use
+!CALL swgtit(" ")
+!if (any(a%index==0)) then
+!	call dwglis("Choose label type","Element symbol|Atom index|Element+Index|Only Bq index|Bq index starts from 1|No Bq label",iatmlabtype3D)
+!else
+!	call dwglis("Choose label type","Element symbol|Atom index|Element+Index",iatmlabtype3D)
+!end if
+!call drawmol
 if (any(a%index==0)) then
-	call dwglis("Choose label type","Element symbol|Atom index|Element+Index|Only Bq index|Bq index starts from 1|No Bq label",iatmlabtype3D)
+	typelist="Element symbol|Atom index|Element+Index|Only Bq index|Bq index starts from 1|No Bq label"
 else
-	call dwglis("Choose label type","Element symbol|Atom index|Element+Index",iatmlabtype3D)
+	typelist="Element symbol|Atom index|Element+Index"
 end if
+call SWGPOP("NOOK")  !Don't show OK&QUIT&HELP in upper menu
+call SWGPOP("NOQUIT")
+call SWGPOP("NOHELP")
+CALL swgtit("Choose label type")
+CALL WGINI('VERT',idiswindow)
+call swgatt(idiswindow,"INACTIVE","CLOSE") !Disable close button
+call swgatt(idiswindow,"OFF","MAXI") !Disable maximization button
+CALL WGLIS(idiswindow,typelist,0,idisseltype)
+call wgpbut(idiswindow,"RETURN",idisreturn)
+call SWGCBK(idisseltype,changeatmlabtype)
+call SWGCBK(idisreturn,GUIreturn)
+CALL WGFIN
+end subroutine
+!Change atomic label type to selected one
+subroutine changeatmlabtype(id)
+use defvar
+integer,intent (in) :: id
+integer itype
+call gwglis(id,iatmlabtype3D)
 call drawmol
 end subroutine
 
@@ -2705,14 +2805,14 @@ subroutine GUIselfrag(id)
 use defvar
 use util
 integer,intent (in) :: id
-character c80tmp*80,c2000tmp*2000
+character c2000tmp*2000
 integer iffrag(ncenter),array(ncenter)
-c80tmp=" "
 CALL SWGWTH(50)
 CALL swgtit("Select fragment")
-call dwgtxt("Input index of any atom in the fragment, e.g. 3",c80tmp)
-if (c80tmp==" ") return
-read(c80tmp,*) iatm
+call myDWGTXT("Input index of any atom in the fragment, e.g. 3"," ")
+if (myDWGTXTstr==" ") return
+
+read(myDWGTXTstr,*) iatm
 if (iatm<1.or.iatm>ncenter) return
 
 call getfragatoms(iatm,iffrag)
@@ -2749,22 +2849,21 @@ subroutine getatmidx_by_ele(id)
 use defvar
 use util
 integer,intent (in) :: id
-character c80tmp*80,c2000tmp*2000
+character c20000tmp*20000
 integer array(ncenter)
-c80tmp=" "
 CALL SWGWTH(50)
 CALL swgtit("Get atom indices via element")
-call dwgtxt("Input element name, e.g. Fe",c80tmp)
-if (c80tmp==" ") return
+call myDWGTXT("Input element name, e.g. Fe"," ")
+if (myDWGTXTstr==" ") return
 
 nsel=0
 do iatm=1,ncenter
-    if (a(iatm)%name==trim(c80tmp)) then
+    if (a(iatm)%name==trim(adjustl(myDWGTXTstr))) then
         nsel=nsel+1
         array(nsel)=iatm
     end if
 end do
-call arr2str_2(array(1:nsel),c2000tmp) !Convert indices of the selected atoms to string
+call arr2str_2(array(1:nsel),c20000tmp) !Convert indices of the selected atoms to string
 
 !Highlight selected atoms
 if (allocated(highlightatomlist)) deallocate(highlightatomlist)
@@ -2774,9 +2873,14 @@ call drawmol
 
 CALL SWGWTH(50)
 if (isys==1) then
-    call dwgtxt("Indices of selected atoms:",c2000tmp)
+    if (len_trim(c20000tmp)<=256) then !WGTXT can at most shown 256 characters
+		call myDWGTXT("Indices of selected atoms:",trim(c20000tmp))
+    else
+		write(*,"(/,' Indices of selected atoms:',/,a)") trim(c20000tmp)
+		call dwgmsg("Indices of selected atoms have been shown in console window")
+    end if
 else
-    write(*,"(/,' Indices of selected atoms:',/,a)") trim(c2000tmp)
+    write(*,"(/,' Indices of selected atoms:',/,a)") trim(c20000tmp)
     call dwgmsg("Indices of selected atoms have been shown in console window")
 end if
 deallocate(highlightatomlist)
@@ -2832,6 +2936,24 @@ end subroutine
 
 
 
+!!!-------- Interface of loading bonding connectivity from mol/mol2
+subroutine loadconn(id)
+integer,intent (in) :: id
+character :: c200tmp*200
+call myDWGTXT("Input path of .mol or .mol2 file, e.g. D:\love\nico.mol2"," ")
+if (myDWGTXTstr==" ") return
+inquire(file=myDWGTXTstr,exist=alive)
+if (.not.alive) then
+	call dwgmsg("Error: Cannot find the file!")
+    return
+end if
+call readmolconn(trim(myDWGTXTstr))
+call drawmol
+call dwgmsg("Bonding connectivity has been loaded and updated!")
+end subroutine
+
+
+
 !!!-------- Export all internal coordinates
 subroutine export_intcoord(id)
 integer,intent (in) :: id
@@ -2879,12 +3001,17 @@ use defvar
 use util
 integer,intent (in) :: id
 character c2000tmp*2000
+
 if (allocated(highlightatomlist)) deallocate(highlightatomlist)
-c2000tmp=" "
-CALL SWGWTH(100)
-CALL swgtit("Set highlighting for a batch of atoms")
-call dwgtxt("Input indices of the atoms to be highlighted, e.g. 3,7-11,23",c2000tmp)
-CALL SWGWTH(20) !Recover default
+
+call myDWGTXT("Input indices of the atoms to be highlighted, e.g. 3,7-11,23"," ")
+c2000tmp=trim(myDWGTXTstr)
+
+!c2000tmp=" "
+!CALL SWGWTH(100)
+!CALL swgtit("Set highlighting for a batch of atoms")
+!call dwgtxt("Input indices of the atoms to be highlighted, e.g. 3,7-11,23",c2000tmp)
+!CALL SWGWTH(20) !Recover default
 if (c2000tmp/=" ") then
     call str2arr(c2000tmp,ntmp)
     allocate(highlightatomlist(ntmp))
